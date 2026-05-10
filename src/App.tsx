@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { checkSession, generateReport, login, searchCompanies, type ReportProgress } from "./api";
+import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { downloadReportDocx } from "./docx/export-report";
 import { loadLastReport, saveLastReport } from "./storage";
+import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ScoreItem } from "./shared/report";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
+type ChartPhase = "idle" | "loading" | "ready" | "error";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -20,6 +22,10 @@ function App() {
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [report, setReport] = useState<InvestmentReport | null>(() => loadLastReport());
+  const [chartBundle, setChartBundle] = useState<ChartBundle | null>(null);
+  const [chartPhase, setChartPhase] = useState<ChartPhase>("idle");
+  const [chartError, setChartError] = useState("");
+  const [priceMode, setPriceMode] = useState<PriceMode>("adjusted");
 
   useEffect(() => {
     void checkSession()
@@ -48,8 +54,10 @@ function App() {
     event.preventDefault();
     if (!query.trim()) return;
     setError("");
+    setChartError("");
     setPhase("searching");
     setSelectedCompany(null);
+    setChartBundle(null);
     try {
       const nextCandidates = await searchCompanies(query.trim());
       setCandidates(nextCandidates);
@@ -85,6 +93,26 @@ function App() {
       setError(err instanceof Error ? err.message : "报告生成失败。");
     } finally {
       setStartedAt(null);
+    }
+  }
+
+  async function submitChart(nextPriceMode = priceMode) {
+    if (!selectedCompany) {
+      setChartError("请先从候选列表中选择具体公司。");
+      setPhase("selecting");
+      return;
+    }
+
+    setChartError("");
+    setPriceMode(nextPriceMode);
+    setChartPhase("loading");
+    try {
+      const bundle = await fetchChartData({ company: selectedCompany, priceMode: nextPriceMode });
+      setChartBundle(bundle);
+      setChartPhase("ready");
+    } catch (err) {
+      setChartPhase("error");
+      setChartError(err instanceof Error ? err.message : "图表数据生成失败。");
     }
   }
 
@@ -159,11 +187,32 @@ function App() {
           {phase === "generating" ? "正在生成深度报告..." : "生成完整评分报告"}
         </button>
 
+        <section className="chart-controls">
+          <span>股价口径</span>
+          <div className="segmented-control" role="group" aria-label="股价口径">
+            <button type="button" className={priceMode === "adjusted" ? "active" : ""} disabled={chartPhase === "loading"} onClick={() => void submitChart("adjusted")}>
+              前复权
+            </button>
+            <button type="button" className={priceMode === "raw" ? "active" : ""} disabled={chartPhase === "loading"} onClick={() => void submitChart("raw")}>
+              原始价
+            </button>
+          </div>
+          <button className="secondary-button" type="button" disabled={!selectedCompany || chartPhase === "loading"} onClick={() => void submitChart()}>
+            {chartPhase === "loading" ? "正在生成图表..." : "生成图表"}
+          </button>
+          {chartError ? <p className="error-text">{chartError}</p> : null}
+        </section>
+
         <ProgressPanel progress={progress} phase={phase} elapsedSeconds={elapsedSeconds} fallbackEvidenceCount={report?.evidence.length ?? 0} />
         {error ? <p className="error-text">{error}</p> : null}
       </aside>
 
-      <section className="workspace">{report ? <ReportView report={report} /> : <EmptyState />}</section>
+      <section className="workspace">
+        {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
+          <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
+        ) : null}
+        {report ? <ReportView report={report} chartBundle={chartBundle ?? undefined} /> : <EmptyState />}
+      </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
         <CandidateModal
@@ -261,7 +310,174 @@ function ProgressPanel({
   );
 }
 
-function ReportView({ report }: { report: InvestmentReport }) {
+function ChartDashboard({
+  chartBundle,
+  chartPhase,
+  report,
+  priceMode,
+}: {
+  chartBundle: ChartBundle | null;
+  chartPhase: ChartPhase;
+  report: InvestmentReport | null;
+  priceMode: PriceMode;
+}) {
+  const priceSeries = chartBundle?.priceSeries.map((point) => ({ label: point.date, value: point.close })) ?? [];
+  const drawdownSeries = chartBundle?.drawdownSeries.map((point) => ({ label: point.date, value: point.drawdown })) ?? [];
+  const financialSeries = report ? extractFinancialChartSeries(report) : [];
+  const moduleScores = report ? extractModuleScoreSeries(report) : [];
+  const hasPriceData = priceSeries.length > 0;
+
+  return (
+    <section className="chart-dashboard">
+      <header>
+        <div>
+          <p className="eyebrow">图表驾驶舱</p>
+          <h2>{chartBundle?.company.name ?? "正在准备图表"}</h2>
+          <p className="muted">
+            {priceMode === "adjusted" ? "前复权/调整价" : "原始收盘价"}口径
+            {chartBundle?.marketSnapshot.latestDate ? ` / 最新数据 ${chartBundle.marketSnapshot.latestDate}` : ""}
+          </p>
+        </div>
+        <div className="chart-metrics">
+          <InfoTile title="最新价格" value={formatMetric(chartBundle?.marketSnapshot.currentPrice)} />
+          <InfoTile title="最大回撤" value={formatPercent(chartBundle?.marketSnapshot.maxDrawdown)} />
+          <InfoTile title="数据点" value={chartBundle ? `${chartBundle.priceSeries.length} 个` : chartPhase === "loading" ? "读取中" : "待生成"} />
+        </div>
+      </header>
+
+      {chartPhase === "loading" ? <p className="chart-placeholder">正在读取公开历史行情并计算回撤...</p> : null}
+      {chartPhase === "error" && !chartBundle ? <p className="chart-placeholder">图表数据生成失败，请稍后重试。</p> : null}
+
+      <div className="chart-grid">
+        <ChartCard title="十年股价走势" empty={!hasPriceData} emptyText="公开历史价格数据不足，无法绘制股价图。">
+          <LineChart series={priceSeries} stroke="#255f54" />
+        </ChartCard>
+        <ChartCard title="最大回撤曲线" empty={!drawdownSeries.length} emptyText="价格序列不足，无法计算回撤。">
+          <LineChart series={drawdownSeries} stroke="#b3432f" suffix="%" />
+        </ChartCard>
+        <ChartCard title="财务趋势" empty={!financialSeries.length} emptyText="生成完整评分报告后，会从十年财务表提取收入、利润、现金流和负债率。">
+          <FinancialMiniCharts series={financialSeries} />
+        </ChartCard>
+        <ChartCard title="估值安全边际" empty={!report} emptyText="生成完整评分报告后，会显示当前价格与合理价值、买入区间、减仓区间的关系。">
+          {report ? <ValuationRange report={report} currentPrice={chartBundle?.marketSnapshot.currentPrice} /> : null}
+        </ChartCard>
+        <ChartCard title="10 大模块评分" empty={!moduleScores.length} emptyText="生成完整评分报告后，会显示 10 大模块评分。">
+          <ScoreBarChart series={moduleScores} />
+        </ChartCard>
+      </div>
+
+      {chartBundle?.evidence.length ? (
+        <div className="chart-evidence">
+          {chartBundle.evidence.map((item) => (
+            <a key={`${item.title}-${item.url}`} href={item.url || undefined} target="_blank" rel="noreferrer">
+              {item.title} / {item.freshness}
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ChartCard({ title, empty, emptyText, children }: { title: string; empty: boolean; emptyText: string; children: React.ReactNode }) {
+  return (
+    <section className="chart-card">
+      <h3>{title}</h3>
+      {empty ? <p className="chart-placeholder">{emptyText}</p> : children}
+    </section>
+  );
+}
+
+function LineChart({ series, stroke, suffix = "" }: { series: Array<{ label: string; value: number }>; stroke: string; suffix?: string }) {
+  const width = 640;
+  const height = 220;
+  const padding = { top: 18, right: 18, bottom: 32, left: 48 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = series.map((point) => point.value);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = max - min || 1;
+  const points = series.map((point, index) => {
+    const x = padding.left + (series.length === 1 ? plotWidth : (index / (series.length - 1)) * plotWidth);
+    const y = padding.top + plotHeight - ((point.value - min) / range) * plotHeight;
+    return `${x},${y}`;
+  });
+  const first = series[0];
+  const last = series.at(-1);
+
+  return (
+    <svg className="chart-svg" viewBox={`0 0 ${width} ${height}`} role="img">
+      <line x1={padding.left} y1={padding.top + plotHeight} x2={width - padding.right} y2={padding.top + plotHeight} />
+      <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + plotHeight} />
+      <polyline points={points.join(" ")} fill="none" stroke={stroke} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <text x={padding.left} y={padding.top - 6}>{formatMetric(max, suffix)}</text>
+      <text x={padding.left} y={padding.top + plotHeight + 18}>{formatMetric(min, suffix)}</text>
+      {first ? <text x={padding.left} y={height - 8}>{first.label}</text> : null}
+      {last ? <text x={width - padding.right - 90} y={height - 8}>{last.label}</text> : null}
+    </svg>
+  );
+}
+
+function FinancialMiniCharts({ series }: { series: ChartSeries[] }) {
+  return (
+    <div className="financial-mini-grid">
+      {series.map((item) => (
+        <div key={item.label}>
+          <span>{item.label}</span>
+          <LineChart series={item.points} stroke={item.label.includes("负债") ? "#b3432f" : "#255f54"} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScoreBarChart({ series }: { series: Array<{ label: string; value: number }> }) {
+  return (
+    <div className="score-bars">
+      {series.map((item) => (
+        <div key={item.label} className="score-bar-row">
+          <span>{item.label}</span>
+          <div>
+            <i style={{ width: `${Math.max(2, Math.min(100, item.value))}%` }} />
+          </div>
+          <strong>{item.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ValuationRange({ report, currentPrice }: { report: InvestmentReport; currentPrice?: number }) {
+  const current = currentPrice ?? parseNumbers(report.valuationAnalysis.currentPrice)[0];
+  const fair = parseNumbers(report.valuationAnalysis.fairValueRange);
+  const buy = parseNumbers(report.valuationAnalysis.buyRange);
+  const sell = parseNumbers(report.valuationAnalysis.sellReduceRange);
+  const values = [current, ...fair, ...buy, ...sell].filter((value): value is number => value !== undefined);
+  if (!values.length) return <p className="chart-placeholder">估值区间无法解析为图形，保留文字判断：{report.valuationAnalysis.conclusion}</p>;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const position = (value: number) => ((value - min) / span) * 100;
+  return (
+    <div className="valuation-range">
+      <div className="range-track">
+        {buy.length >= 2 ? <span className="buy-range" style={{ left: `${position(buy[0])}%`, width: `${position(buy[1]) - position(buy[0])}%` }} /> : null}
+        {fair.length >= 2 ? <span className="fair-range" style={{ left: `${position(fair[0])}%`, width: `${position(fair[1]) - position(fair[0])}%` }} /> : null}
+        {sell[0] !== undefined ? <span className="sell-marker" style={{ left: `${position(sell[0])}%` }} /> : null}
+        {current !== undefined ? <span className="current-marker" style={{ left: `${position(current)}%` }} /> : null}
+      </div>
+      <div className="range-labels">
+        <span>低估/买入：{report.valuationAnalysis.buyRange}</span>
+        <span>合理：{report.valuationAnalysis.fairValueRange}</span>
+        <span>当前：{formatMetric(current)}</span>
+      </div>
+      <p>{report.valuationAnalysis.conclusion}</p>
+    </div>
+  );
+}
+
+function ReportView({ report, chartBundle }: { report: InvestmentReport; chartBundle?: ChartBundle }) {
   const jsonUrl = useMemo(() => {
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     return URL.createObjectURL(blob);
@@ -280,7 +496,7 @@ function ReportView({ report }: { report: InvestmentReport }) {
           <p className="muted">{report.oneSentence}</p>
         </div>
         <div className="actions">
-          <button type="button" onClick={() => downloadReportDocx(report)}>
+          <button type="button" onClick={() => downloadReportDocx(report, chartBundle)}>
             导出 DOCX
           </button>
           <a href={jsonUrl} download={`${report.company.name}-cstd-alpha.json`}>
@@ -526,6 +742,22 @@ function EmptyState() {
 function listItems(items: string[]) {
   const values = items.length ? items : ["数据不足，需要继续核验。"];
   return values.map((item) => <li key={item}>{item}</li>);
+}
+
+function formatMetric(value: number | string | undefined, suffix = "") {
+  if (typeof value === "string") return value || "待验证";
+  if (value === undefined || !Number.isFinite(value)) return "待验证";
+  return `${Math.abs(value) >= 1000 ? value.toLocaleString("zh-CN", { maximumFractionDigits: 0 }) : value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}${suffix}`;
+}
+
+function formatPercent(value: number | undefined) {
+  return value === undefined ? "待验证" : `${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`;
+}
+
+function parseNumbers(value: string) {
+  return Array.from(value.matchAll(/-?\d+(?:\.\d+)?/g))
+    .map((match) => Number(match[0]))
+    .filter((number) => Number.isFinite(number));
 }
 
 const fullSectionTitles = {

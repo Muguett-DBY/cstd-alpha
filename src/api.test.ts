@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { generateReport, searchCompanies } from "./api";
+import { fetchChartData, generateReport, searchCompanies } from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -41,5 +41,42 @@ describe("API client", () => {
     );
 
     await expect(searchCompanies("万科A")).resolves.toMatchObject([{ name: "万科A", code: "000002", listingPlace: "深A" }]);
+  });
+
+  test("requests chart data with selected company and price mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          company: { name: "万科A", ticker: "000002", market: "深A" },
+          asOf: "2026-05-10T00:00:00.000Z",
+          priceMode: "adjusted",
+          priceSeries: [{ date: "2026-05-08", close: 4, adjustedClose: 4, volume: 100 }],
+          drawdownSeries: [{ date: "2026-05-08", price: 4, peak: 4, drawdown: 0 }],
+          marketSnapshot: { currentPrice: 4 },
+          evidence: [],
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const company = {
+      id: "eastmoney:0.000002",
+      name: "万科A",
+      code: "000002",
+      exchange: "深圳证券交易所",
+      listingPlace: "深A",
+      marketType: "AStock",
+      quoteId: "0.000002",
+      source: "eastmoney" as const,
+    };
+
+    await expect(fetchChartData({ company, priceMode: "adjusted" })).resolves.toMatchObject({ company: { name: "万科A" }, priceMode: "adjusted" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chart-data",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ company, priceMode: "adjusted" }),
+      }),
+    );
   });
 });

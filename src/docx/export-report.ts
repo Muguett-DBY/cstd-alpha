@@ -1,11 +1,18 @@
+import {
+  extractFinancialChartSeries,
+  extractModuleScoreSeries,
+  renderBarChartSvg,
+  renderLineChartSvg,
+  type ChartBundle,
+} from "../shared/chart";
 import type { FinancialRow, InvestmentReport, ModuleScore, ScoreItem } from "../shared/report";
 
 type Docx = typeof import("docx");
 
-export async function buildReportDocxBlob(report: InvestmentReport) {
+export async function buildReportDocxBlob(report: InvestmentReport, chartBundle?: ChartBundle) {
   const docx = await import("docx");
   const doc = new docx.Document({
-    sections: [buildSection(report, docx)],
+    sections: [buildSection(report, docx, chartBundle)],
     styles: {
       paragraphStyles: [
         {
@@ -21,8 +28,8 @@ export async function buildReportDocxBlob(report: InvestmentReport) {
   return docx.Packer.toBlob(doc);
 }
 
-export function downloadReportDocx(report: InvestmentReport) {
-  void buildReportDocxBlob(report).then((blob) => {
+export function downloadReportDocx(report: InvestmentReport, chartBundle?: ChartBundle) {
+  void buildReportDocxBlob(report, chartBundle).then((blob) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -34,7 +41,7 @@ export function downloadReportDocx(report: InvestmentReport) {
   });
 }
 
-function buildSection(report: InvestmentReport, docx: Docx) {
+function buildSection(report: InvestmentReport, docx: Docx, chartBundle?: ChartBundle) {
   return {
     properties: {
       page: {
@@ -51,6 +58,7 @@ function buildSection(report: InvestmentReport, docx: Docx) {
       paragraph(report.oneSentence, docx),
       heading("一页结论与评分仪表盘", docx),
       paragraph(report.fullSections.onePageConclusion, docx),
+      ...chartSummary(report, chartBundle, docx),
       heading("模块评分", docx),
       moduleTable(report.moduleScores, docx),
       heading("20 项详细评分", docx),
@@ -92,6 +100,25 @@ function buildSection(report: InvestmentReport, docx: Docx) {
       paragraph(report.disclaimer, docx),
     ],
   };
+}
+
+function chartSummary(report: InvestmentReport, chartBundle: ChartBundle | undefined, docx: Docx) {
+  if (!chartBundle) return [];
+  const priceSeries = chartBundle.priceSeries.map((point) => ({ label: point.date, value: point.close }));
+  const financialSeries = extractFinancialChartSeries(report);
+  const moduleSeries = extractModuleScoreSeries(report);
+  return [
+    heading("图表摘要", docx),
+    paragraph(
+      `价格口径：${chartBundle.priceMode === "adjusted" ? "前复权/调整价" : "原始收盘价"}；最新价格：${
+        chartBundle.marketSnapshot.currentPrice ?? "待验证"
+      }；最大回撤：${chartBundle.marketSnapshot.maxDrawdown ?? "待验证"}%。`,
+      docx,
+    ),
+    ...(priceSeries.length ? [imageParagraph(renderLineChartSvg({ title: "十年股价走势", series: priceSeries }), docx)] : [paragraph("十年股价数据不足，未插入价格图。", docx)]),
+    ...(financialSeries[0] ? [imageParagraph(renderLineChartSvg({ title: `${financialSeries[0].label}趋势`, series: financialSeries[0].points, stroke: "#9b5c1d" }), docx)] : []),
+    ...(moduleSeries.length ? [imageParagraph(renderBarChartSvg({ title: "10 大模块评分", series: moduleSeries }), docx)] : []),
+  ];
 }
 
 function scoreTable(report: InvestmentReport, docx: Docx) {
@@ -180,6 +207,28 @@ function paragraph(text: string, docx: Docx) {
   });
 }
 
+function imageParagraph(svg: string, docx: Docx) {
+  return new docx.Paragraph({
+    spacing: { before: 80, after: 180 },
+    children: [
+      new docx.ImageRun({
+        type: "svg",
+        data: new TextEncoder().encode(svg),
+        transformation: { width: 600, height: 240 },
+        fallback: {
+          type: "png",
+          data: transparentPng(),
+        },
+        altText: {
+          title: "CSTD Alpha 图表",
+          description: "公司研究报告图表摘要",
+          name: "CSTD Alpha chart",
+        },
+      }),
+    ],
+  });
+}
+
 function tableRow(values: string[], docx: Docx, header = false) {
   return new docx.TableRow({
     children: values.map(
@@ -223,4 +272,13 @@ function formatDate(value: string) {
 
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, "-");
+}
+
+function transparentPng() {
+  const base64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }

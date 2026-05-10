@@ -39,7 +39,8 @@
 }
 
 .auth-form,
-.report-form {
+.report-form,
+.chart-controls {
   display: grid;
   gap: 10px;
   margin-top: 26px;
@@ -88,9 +89,32 @@ button:disabled {
 }
 
 .ghost-button,
+.secondary-button,
 .actions a {
   background: white;
   color: var(--ink);
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.segmented-control button,
+.secondary-button {
+  border-color: var(--line);
+}
+
+.segmented-control button {
+  background: white;
+  color: var(--ink);
+}
+
+.segmented-control button.active {
+  border-color: var(--teal);
+  background: #e6f4f1;
+  color: var(--teal);
 }
 
 .app-shell {
@@ -324,6 +348,205 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.chart-dashboard {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fffdf8;
+}
+
+.chart-dashboard header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.chart-dashboard h2 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 30px;
+}
+
+.chart-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.chart-card {
+  display: grid;
+  gap: 10px;
+  min-height: 260px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.chart-card:nth-child(5) {
+  grid-column: 1 / -1;
+}
+
+.chart-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.chart-placeholder {
+  margin: 0;
+  align-self: center;
+  color: var(--muted);
+}
+
+.chart-svg {
+  width: 100%;
+  min-height: 180px;
+}
+
+.chart-svg line {
+  stroke: var(--line);
+}
+
+.chart-svg text {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.financial-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.financial-mini-grid > div {
+  display: grid;
+  gap: 6px;
+}
+
+.financial-mini-grid span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.score-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.score-bar-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.score-bar-row span {
+  color: var(--body);
+  font-size: 13px;
+}
+
+.score-bar-row div {
+  height: 12px;
+  border-radius: 999px;
+  background: #efe6d8;
+  overflow: hidden;
+}
+
+.score-bar-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+}
+
+.score-bar-row strong {
+  color: var(--ink);
+  font-size: 13px;
+  text-align: right;
+}
+
+.valuation-range {
+  display: grid;
+  gap: 14px;
+}
+
+.range-track {
+  position: relative;
+  height: 44px;
+  border-radius: 999px;
+  background: #efe6d8;
+}
+
+.buy-range,
+.fair-range {
+  position: absolute;
+  top: 10px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.buy-range {
+  background: rgba(37, 95, 84, 0.3);
+}
+
+.fair-range {
+  background: rgba(198, 154, 70, 0.35);
+}
+
+.current-marker,
+.sell-marker {
+  position: absolute;
+  top: 4px;
+  width: 3px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.current-marker {
+  background: var(--ink);
+}
+
+.sell-marker {
+  background: #b3432f;
+}
+
+.range-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chart-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chart-evidence a {
+  color: var(--teal);
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
 .score-tile,
 .decision,
 .info-tile {
@@ -551,7 +774,11 @@ button:disabled {
   .score-strip,
   .dashboard-grid,
   .scenario-grid,
-  .item-columns {
+  .item-columns,
+  .chart-dashboard header,
+  .chart-grid,
+  .chart-metrics,
+  .financial-mini-grid {
     grid-template-columns: 1fr;
   }
 
@@ -570,7 +797,12 @@ button:disabled {
   .table-row,
   .candidate-row,
   .evidence-list a,
-  .score-item-card header {
+  .score-item-card header,
+  .score-bar-row {
     grid-template-columns: 1fr;
+  }
+
+  .chart-card:nth-child(5) {
+    grid-column: auto;
   }
 }

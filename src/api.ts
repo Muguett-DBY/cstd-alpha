@@ -1,7 +1,13 @@
+import type { ChartBundle, PriceMode } from "./shared/chart";
 import type { CompanyCandidate, InvestmentReport } from "./shared/report";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
+};
+
+export type FetchChartDataInput = {
+  company: CompanyCandidate;
+  priceMode: PriceMode;
 };
 
 export type ReportProgress = {
@@ -55,6 +61,18 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
 
   if (!finalReport) throw new Error("报告响应没有包含最终报告。");
   return finalReport;
+}
+
+export async function fetchChartData(input: FetchChartDataInput): Promise<ChartBundle> {
+  const response = await fetch("/api/chart-data", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) throw new Error((await readError(response)) || "图表数据生成失败。");
+  return (await response.json()) as ChartBundle;
 }
 
 async function* readNdjson(response: Response): AsyncGenerator<Record<string, unknown>> {

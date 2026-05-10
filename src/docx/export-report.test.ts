@@ -45,4 +45,26 @@ describe("DOCX export", () => {
     expect(blob.type).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     expect(blob.size).toBeGreaterThan(1000);
   });
+
+  test("creates a valid docx blob with chart summary", async () => {
+    const plainBlob = await buildReportDocxBlob(normalizedReport);
+    const blob = await buildReportDocxBlob(normalizedReport, {
+      company: { name: "Example Inc.", ticker: "EXM", market: "US" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      priceMode: "adjusted",
+      priceSeries: [
+        { date: "2024-01-01", close: 10, adjustedClose: 10, volume: 100 },
+        { date: "2025-01-01", close: 15, adjustedClose: 15, volume: 120 },
+      ],
+      drawdownSeries: [
+        { date: "2024-01-01", price: 10, peak: 10, drawdown: 0 },
+        { date: "2025-01-01", price: 15, peak: 15, drawdown: 0 },
+      ],
+      marketSnapshot: { currentPrice: 15, maxDrawdown: 0, latestDate: "2025-01-01" },
+      evidence: [],
+    });
+
+    expect(blob.type).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(blob.size).toBeGreaterThan(plainBlob.size);
+  });
 });

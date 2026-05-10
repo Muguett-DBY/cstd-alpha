@@ -1,4 +1,5 @@
 import type { CompanyCandidate, CompanyIdentity, EvidenceItem } from "../../src/shared/report";
+import { buildDrawdownSeries, normalizeChartBundle, type ChartBundle, type PriceMode, type PricePoint } from "../../src/shared/chart";
 
 export type EvidenceBundle = {
   company: CompanyIdentity;
@@ -14,6 +15,12 @@ type FetchEvidenceInput = {
   ticker?: string;
   market?: string;
   company?: CompanyCandidate;
+  fetchImpl?: FetchLike;
+};
+
+type FetchChartInput = {
+  company: CompanyCandidate;
+  priceMode: PriceMode;
   fetchImpl?: FetchLike;
 };
 
@@ -193,6 +200,51 @@ export async function fetchPublicCompanyEvidence({
   };
 }
 
+export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }: FetchChartInput): Promise<ChartBundle> {
+  const asOf = new Date().toISOString();
+  const useEastmoney = Boolean(company.quoteId && (company.listingPlace.includes("A") || company.listingPlace.includes("港") || company.quoteId.startsWith("0.") || company.quoteId.startsWith("1.") || company.quoteId.startsWith("116.")));
+  const url = useEastmoney ? eastmoneyKlineUrl(company.quoteId || company.secid || company.code, priceMode) : yahooTenYearChartUrl(company.yahooSymbol || company.code);
+  const json = await fetchJson(url, fetchImpl);
+  const priceSeries = useEastmoney ? normalizeEastmoneyKlines(json, priceMode) : normalizeYahooChart(json, priceMode);
+  const drawdownSeries = buildDrawdownSeries(priceSeries);
+  const latest = priceSeries.at(-1);
+  const meta = isRecord(firstArrayItem(recordPath(json, ["chart", "result"]))?.meta)
+    ? (firstArrayItem(recordPath(json, ["chart", "result"]))?.meta as Record<string, unknown>)
+    : undefined;
+
+  return normalizeChartBundle({
+    company: {
+      name: company.name,
+      ticker: company.code,
+      market: company.listingPlace,
+      sector: company.marketType,
+    },
+    asOf,
+    priceMode,
+    priceSeries,
+    drawdownSeries,
+    marketSnapshot: {
+      currentPrice: latest?.close,
+      latestDate: latest?.date,
+      currency: stringValue(meta?.currency),
+      exchangeName: company.exchange || stringValue(meta?.exchangeName),
+      source: useEastmoney ? "Eastmoney" : "Yahoo Finance",
+    },
+    evidence: [
+      {
+        title: `${company.code} 十年股价数据`,
+        source: useEastmoney ? "Eastmoney public kline endpoint" : "Yahoo Finance public chart endpoint",
+        url,
+        retrievedAt: asOf,
+        freshness: priceSeries.length ? "latest-public" : "unavailable",
+        notes: priceSeries.length
+          ? `${priceMode === "adjusted" ? "前复权/调整价" : "原始收盘价"}口径，返回 ${priceSeries.length} 个价格点。`
+          : "公开历史价格接口未返回可用数据。",
+      },
+    ],
+  });
+}
+
 export async function searchCompanyCandidates(query: string, fetchImpl: FetchLike = fetch): Promise<CompanyCandidate[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
@@ -244,6 +296,19 @@ function buildFundamentalsUrl(symbol: string) {
   return `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(
     symbol,
   )}?type=${types.join(",")}&merge=false&period1=${fiveYearsAgo}&period2=${now}`;
+}
+
+function eastmoneyKlineUrl(secid: string, priceMode: PriceMode) {
+  const now = new Date();
+  const begin = `${now.getUTCFullYear() - 10}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`;
+  const fqt = priceMode === "adjusted" ? "1" : "0";
+  return `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(
+    secid,
+  )}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=${fqt}&beg=${begin}&end=20500101`;
+}
+
+function yahooTenYearChartUrl(symbol: string) {
+  return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1mo&events=history&includeAdjustedClose=true`;
 }
 
 function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
@@ -333,6 +398,60 @@ function normalizeEastmoneyQuote(quote: Record<string, unknown>) {
   };
 }
 
+function normalizeEastmoneyKlines(value: unknown, priceMode: PriceMode): PricePoint[] {
+  const rows = arrayPath(value, ["data", "klines"]);
+  return rows.reduce<PricePoint[]>((points, row) => {
+      if (typeof row !== "string") return points;
+      const [date, open, close, high, low, volume, amount, , changePercent] = row.split(",");
+      const closeValue = numberFromString(close);
+      if (!date || closeValue === undefined) return points;
+      points.push({
+        date,
+        open: numberFromString(open),
+        close: closeValue,
+        adjustedClose: priceMode === "adjusted" ? closeValue : closeValue,
+        rawClose: priceMode === "raw" ? closeValue : undefined,
+        high: numberFromString(high),
+        low: numberFromString(low),
+        volume: numberFromString(volume) ?? 0,
+        amount: numberFromString(amount),
+        changePercent: numberFromString(changePercent),
+      });
+      return points;
+    }, []);
+}
+
+function normalizeYahooChart(value: unknown, priceMode: PriceMode): PricePoint[] {
+  const chart = firstArrayItem(recordPath(value, ["chart", "result"]));
+  const timestamps = Array.isArray(chart?.timestamp) ? chart.timestamp : [];
+  const quote = firstArrayItem(recordPath(chart, ["indicators", "quote"]));
+  const adjusted = firstArrayItem(recordPath(chart, ["indicators", "adjclose"]));
+  const closes = Array.isArray(quote?.close) ? quote.close : [];
+  const adjustedCloses = Array.isArray(adjusted?.adjclose) ? adjusted.adjclose : [];
+  const opens = Array.isArray(quote?.open) ? quote.open : [];
+  const highs = Array.isArray(quote?.high) ? quote.high : [];
+  const lows = Array.isArray(quote?.low) ? quote.low : [];
+  const volumes = Array.isArray(quote?.volume) ? quote.volume : [];
+
+  return timestamps.reduce<PricePoint[]>((points, timestamp, index) => {
+      const rawClose = numberValue(closes[index]);
+      const adjustedClose = numberValue(adjustedCloses[index]) ?? rawClose;
+      const close = priceMode === "adjusted" ? adjustedClose : rawClose;
+      if (typeof timestamp !== "number" || close === undefined) return points;
+      points.push({
+        date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+        open: numberValue(opens[index]),
+        close,
+        adjustedClose: adjustedClose ?? close,
+        rawClose,
+        high: numberValue(highs[index]),
+        low: numberValue(lows[index]),
+        volume: numberValue(volumes[index]) ?? 0,
+      });
+      return points;
+    }, []);
+}
+
 function normalizeFundamentals(items: unknown[] | undefined) {
   if (!items) return undefined;
   const result: Record<string, unknown> = {};
@@ -411,6 +530,12 @@ function stringValue(value: unknown) {
 
 function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function numberFromString(value: string | undefined) {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function eastmoneyScaledNumber(value: unknown) {
