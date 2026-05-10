@@ -1,7 +1,57 @@
 import { describe, expect, test, vi } from "vitest";
-import { fetchPublicCompanyEvidence } from "./providers";
+import { fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
 
 describe("public data providers", () => {
+  test("prioritizes Eastmoney Chinese market candidates before Yahoo fallback", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        QuotationCodeTable: {
+          Data: [
+            {
+              Code: "000002",
+              Name: "万科A",
+              JYS: "6",
+              Classify: "AStock",
+              SecurityTypeName: "深A",
+              QuoteID: "0.000002",
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await searchCompanyCandidates("万科A", fetchMock);
+
+    expect(result[0]).toMatchObject({
+      name: "万科A",
+      code: "000002",
+      listingPlace: "深A",
+      quoteId: "0.000002",
+      source: "eastmoney",
+    });
+    expect(result[0].name).not.toContain("Agilent");
+  });
+
+  test("normalizes common Chinese company searches across A/H/US markets", async () => {
+    const responses = [
+      [{ Code: "AAPL", Name: "苹果", JYS: "NASDAQ", Classify: "UsStock", SecurityTypeName: "美股", QuoteID: "105.AAPL" }],
+      [{ Code: "00700", Name: "腾讯控股", JYS: "HK", Classify: "HK", SecurityTypeName: "港股", QuoteID: "116.00700" }],
+      [{ Code: "600519", Name: "贵州茅台", JYS: "2", Classify: "AStock", SecurityTypeName: "沪A", QuoteID: "1.600519" }],
+    ];
+    const fetchMock = vi.fn().mockImplementation(() => {
+      const Data = responses.shift() ?? [];
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ QuotationCodeTable: { Data } }),
+      });
+    });
+
+    await expect(searchCompanyCandidates("苹果", fetchMock)).resolves.toMatchObject([{ code: "AAPL", listingPlace: "美股" }]);
+    await expect(searchCompanyCandidates("腾讯", fetchMock)).resolves.toMatchObject([{ code: "00700", listingPlace: "港股" }]);
+    await expect(searchCompanyCandidates("贵州茅台", fetchMock)).resolves.toMatchObject([{ code: "600519", listingPlace: "沪A" }]);
+  });
+
   test("normalizes Yahoo quote and summary data", async () => {
     const fetchMock = vi
       .fn()

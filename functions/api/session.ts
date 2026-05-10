@@ -14,11 +14,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as { password?: string } | null;
 
   if (!env.REPORT_PASSWORD || !env.AUTH_SECRET) {
-    return json({ error: "Auth is not configured." }, 500);
+    return json({ error: "服务器认证尚未配置。" }, 500);
   }
 
   if (!body?.password || body.password !== env.REPORT_PASSWORD) {
-    return json({ error: "Invalid password." }, 401);
+    return json({ error: "密码不正确。" }, 401);
   }
 
   return json(

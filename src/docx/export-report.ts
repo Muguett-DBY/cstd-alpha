@@ -1,4 +1,4 @@
-import type { InvestmentReport, ModuleScore } from "../shared/report";
+import type { FinancialRow, InvestmentReport, ModuleScore, ScoreItem } from "../shared/report";
 
 type Docx = typeof import("docx");
 
@@ -49,30 +49,43 @@ function buildSection(report: InvestmentReport, docx: Docx) {
       scoreTable(report, docx),
       heading("核心一句话", docx),
       paragraph(report.oneSentence, docx),
+      heading("一页结论与评分仪表盘", docx),
+      paragraph(report.fullSections.onePageConclusion, docx),
       heading("模块评分", docx),
       moduleTable(report.moduleScores, docx),
+      heading("20 项详细评分", docx),
+      scoreItemsTable(report.scoreItems20, docx),
       heading("红线与封顶", docx),
       ...riskParagraphs(report, docx),
-      heading("公司概况", docx),
-      paragraph(report.sections.companyOverview, docx),
-      heading("行业与细分赛道", docx),
-      paragraph(report.sections.industry, docx),
+      heading("公司概况与发展史", docx),
+      paragraph(report.fullSections.companyOverview, docx),
+      heading("行业与细分赛道分析", docx),
+      paragraph(report.fullSections.industryTrack, docx),
       heading("商业模式与价值链", docx),
-      paragraph(report.sections.businessModel, docx),
-      heading("竞争优势与护城河", docx),
-      paragraph(report.sections.moat, docx),
+      paragraph(report.fullSections.businessModel, docx),
+      heading("核心竞争力与长期竞争优势", docx),
+      paragraph(report.fullSections.moat, docx),
       heading("管理层、治理结构与股东文化", docx),
-      paragraph(report.sections.governance, docx),
-      heading("财务质量与现金流", docx),
-      paragraph(report.sections.financialQuality, docx),
+      paragraph(report.fullSections.governance, docx),
+      heading("十年财务数据总表", docx),
+      financialRowsTable(report.financialTenYear.rows, docx),
+      paragraph(report.financialTenYear.interpretation, docx),
+      heading("财务质量与现金流分析", docx),
+      paragraph(report.fullSections.financialQuality, docx),
       heading("成长空间与重大转折", docx),
-      paragraph(report.sections.growth, docx),
+      paragraph(report.fullSections.growthInflection, docx),
       heading("估值与安全边际", docx),
-      paragraph(report.sections.valuation, docx),
+      paragraph(report.fullSections.valuation, docx),
+      paragraph(
+        `当前价格：${report.valuationAnalysis.currentPrice}；合理价值区间：${report.valuationAnalysis.fairValueRange}；期望买入区间：${report.valuationAnalysis.buyRange}；减仓区间：${report.valuationAnalysis.sellReduceRange}`,
+        docx,
+      ),
       heading("风险清单与反证条件", docx),
-      paragraph(report.sections.risks, docx),
+      paragraph(report.fullSections.risks, docx),
       heading("最终投资结论", docx),
-      paragraph(report.sections.finalConclusion, docx),
+      paragraph(report.fullSections.finalConclusion, docx),
+      heading("账户管理与仓位规则", docx),
+      paragraph(report.fullSections.accountRules, docx),
       heading("证据来源", docx),
       ...report.evidence.map((item) => paragraph(`${item.title} | ${item.source} | ${item.freshness} | ${item.url || "无 URL"}`, docx)),
       heading("使用声明", docx),
@@ -87,7 +100,8 @@ function scoreTable(report: InvestmentReport, docx: Docx) {
     borders: tableBorders(docx),
     rows: [
       tableRow(["投资结论", report.conclusion, "公司质量分 CQS", `${report.cqs} / 100`], docx, true),
-      tableRow(["综合投资吸引力 IAS", `${report.ias} / 100`, "评级说明", scoreLabel(report.ias)], docx),
+      tableRow(["综合投资吸引力 IAS", `${report.ias} / 100`, "评级说明", report.qualitativeBand || scoreLabel(report.ias)], docx),
+      tableRow(["估值判断", report.summaryDashboard.valuationView, "建议仓位", report.summaryDashboard.positionAdvice], docx),
     ],
   });
 }
@@ -97,9 +111,33 @@ function moduleTable(modules: ModuleScore[], docx: Docx) {
     width: { size: 100, type: docx.WidthType.PERCENTAGE },
     borders: tableBorders(docx),
     rows: [
-      tableRow(["模块", "权重", "得分", "核心摘要"], docx, true),
-      ...modules.map((module) => tableRow([module.name, `${module.weight}%`, `${module.score}`, module.summary], docx)),
+      tableRow(["模块", "权重", "得分", "标签", "核心摘要"], docx, true),
+      ...modules.map((module) => tableRow([module.name, `${module.weight}%`, `${module.score}`, module.label, module.summary], docx)),
     ],
+  });
+}
+
+function scoreItemsTable(items: ScoreItem[], docx: Docx) {
+  return new docx.Table({
+    width: { size: 100, type: docx.WidthType.PERCENTAGE },
+    borders: tableBorders(docx),
+    rows: [
+      tableRow(["序号", "评分项", "权重", "得分", "标签", "理由"], docx, true),
+      ...items.map((item, index) => tableRow([String(index + 1), item.title, `${item.weight}%`, `${item.score}`, item.label, item.reason], docx)),
+    ],
+  });
+}
+
+function financialRowsTable(rows: FinancialRow[], docx: Docx) {
+  const years = Array.from(new Set(rows.flatMap((row) => Object.keys(row.values)))).slice(-10);
+  const bodyRows = rows.length
+    ? rows.map((row) => tableRow([row.metric, ...years.map((year) => row.values[year] || "-"), row.trend], docx))
+    : [tableRow(["数据不足", ...years.map(() => "-"), "待验证"], docx)];
+
+  return new docx.Table({
+    width: { size: 100, type: docx.WidthType.PERCENTAGE },
+    borders: tableBorders(docx),
+    rows: [tableRow(["指标", ...years, "趋势"], docx, true), ...bodyRows],
   });
 }
 

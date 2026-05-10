@@ -1,24 +1,45 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { generateReport } from "./api";
+import { generateReport, searchCompanies } from "./api";
 
 describe("API client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  test("treats streamed JSON error payloads as failed report generation", async () => {
+  test("treats streamed NDJSON error payloads as failed report generation", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "DeepSeek request failed." }), { status: 200 })),
+      vi.fn().mockResolvedValue(new Response(`${JSON.stringify({ type: "error", error: "DeepSeek request failed." })}\n`, { status: 200 })),
     );
 
     await expect(
       generateReport({
-        companyName: "Apple Inc.",
-        ticker: "AAPL",
-        market: "US",
-        language: "zh-CN",
+        company: {
+          id: "eastmoney:105.AAPL",
+          name: "苹果",
+          code: "AAPL",
+          exchange: "NASDAQ",
+          listingPlace: "美股",
+          marketType: "UsStock",
+          quoteId: "105.AAPL",
+          source: "eastmoney",
+        },
       }),
     ).rejects.toThrow("DeepSeek request failed.");
+  });
+
+  test("returns candidates from company search API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [{ id: "eastmoney:0.000002", name: "万科A", code: "000002", exchange: "6", listingPlace: "深A", marketType: "AStock", source: "eastmoney" }],
+          }),
+        ),
+      ),
+    );
+
+    await expect(searchCompanies("万科A")).resolves.toMatchObject([{ name: "万科A", code: "000002", listingPlace: "深A" }]);
   });
 });

@@ -8,6 +8,19 @@ export type CompanyIdentity = {
   sector?: string;
 };
 
+export type CompanyCandidate = {
+  id: string;
+  name: string;
+  code: string;
+  exchange: string;
+  listingPlace: string;
+  marketType: string;
+  quoteId?: string;
+  secid?: string;
+  yahooSymbol?: string;
+  source: "eastmoney" | "yahoo";
+};
+
 export type ModuleWeight = {
   id: string;
   name: string;
@@ -17,9 +30,30 @@ export type ModuleWeight = {
 export type ModuleScore = ModuleWeight & {
   score: number;
   weightedScore: number;
+  label: ScoreLabel;
   summary: string;
   evidence: string[];
   concerns: string[];
+};
+
+export type ScoreLabel = "极好" | "好" | "一般" | "差";
+
+export type ScoreItemDefinition = {
+  id: string;
+  title: string;
+  moduleId: string;
+  moduleName: string;
+  weight: number;
+  question: string;
+};
+
+export type ScoreItem = ScoreItemDefinition & {
+  score: number;
+  label: ScoreLabel;
+  evidence: string[];
+  deductions: string[];
+  recentChange: string;
+  reason: string;
 };
 
 export type RedFlag = {
@@ -51,6 +85,84 @@ export type ReportSections = {
   finalConclusion: string;
 };
 
+export type FullReportSections = {
+  onePageConclusion: string;
+  companyOverview: string;
+  industryTrack: string;
+  businessModel: string;
+  moat: string;
+  governance: string;
+  financialQuality: string;
+  growthInflection: string;
+  valuation: string;
+  risks: string;
+  finalConclusion: string;
+  accountRules: string;
+};
+
+export type SummaryDashboard = {
+  valuationView: string;
+  positionAdvice: string;
+  investmentHorizon: string;
+  keyReasons: string[];
+  keyRisks: string[];
+  trackingMetrics: string[];
+};
+
+export type QualitativeAnalysis = {
+  companyHistory: string;
+  lifecycle: string;
+  businessStructure: string;
+  shareholderPosition: string;
+};
+
+export type FinancialRow = {
+  metric: string;
+  values: Record<string, string>;
+  trend: string;
+  interpretation: string;
+};
+
+export type FinancialTenYear = {
+  rows: FinancialRow[];
+  interpretation: string;
+};
+
+export type ValuationScenario = {
+  name: string;
+  assumptions: string;
+  value: string;
+  expectedReturn: string;
+  probability: string;
+};
+
+export type ValuationAnalysis = {
+  currentPrice: string;
+  fairValueRange: string;
+  buyRange: string;
+  sellReduceRange: string;
+  methods: string[];
+  scenarios: ValuationScenario[];
+  conclusion: string;
+};
+
+export type RiskMatrixItem = {
+  type: string;
+  risk: string;
+  probability: string;
+  impact: string;
+  warningMetric: string;
+  response: string;
+};
+
+export type AccountRules = {
+  companyGrade: string;
+  maxPosition: string;
+  addCondition: string;
+  reduceCondition: string;
+  reviewTiming: string;
+};
+
 export type InvestmentReport = {
   company: CompanyIdentity;
   asOf: string;
@@ -58,10 +170,19 @@ export type InvestmentReport = {
   oneSentence: string;
   cqs: number;
   ias: number;
+  qualitativeBand: string;
+  summaryDashboard: SummaryDashboard;
   moduleScores: ModuleScore[];
+  scoreItems20: ScoreItem[];
   redFlags: RedFlag[];
   evidence: EvidenceItem[];
   sections: ReportSections;
+  qualitativeAnalysis: QualitativeAnalysis;
+  financialTenYear: FinancialTenYear;
+  valuationAnalysis: ValuationAnalysis;
+  riskMatrix: RiskMatrixItem[];
+  accountRules: AccountRules;
+  fullSections: FullReportSections;
   disclaimer: string;
 };
 
@@ -78,6 +199,29 @@ export const MODULE_WEIGHTS: ModuleWeight[] = [
   { id: "minorityShareholder", name: "小股东友好度与所有者视角", weight: 2 },
 ];
 
+export const SCORE_ITEMS_20: ScoreItemDefinition[] = [
+  { id: "industryLifecycle", title: "行业生命周期与产业状态", moduleId: "industry", moduleName: "行业与生命周期", weight: 6, question: "行业处于成长/成熟/衰退？产业利润池是否扩大？" },
+  { id: "industryCyclicality", title: "行业周期性与需求稳定性", moduleId: "industry", moduleName: "行业与生命周期", weight: 4, question: "强周期/弱周期/非周期？需求受宏观影响多大？" },
+  { id: "businessModelQuality", title: "商业模式质量", moduleId: "businessModel", moduleName: "商业模式与价值链", weight: 7, question: "是否高毛利、高复购、高粘性、低资本开支、现金流好？" },
+  { id: "bargainingAndCashConversion", title: "价值链议价能力与现金转换", moduleId: "businessModel", moduleName: "商业模式与价值链", weight: 3, question: "上下游谁更强？收入确认、回款、应收账款是否健康？" },
+  { id: "assetAndCostStructure", title: "运营成本/资产轻重/资本开支", moduleId: "businessModel", moduleName: "商业模式与价值链", weight: 2, question: "劳动密集/资金密集/技术密集/营销密集？扩张代价高不高？" },
+  { id: "durableMoat", title: "长期竞争优势/护城河", moduleId: "moat", moduleName: "竞争优势与护城河", weight: 8, question: "品牌、技术、成本、渠道、规模、牌照、网络效应是否可持续？" },
+  { id: "marketPosition", title: "市场地位/垄断性/竞争格局", moduleId: "moat", moduleName: "竞争优势与护城河", weight: 4, question: "国内外地位、份额、CR3/CR5、价格战程度。" },
+  { id: "innovationRisk", title: "技术创新/产品迭代/替代风险", moduleId: "moat", moduleName: "竞争优势与护城河", weight: 2, question: "研发有效性、产品生命周期、被替代风险。" },
+  { id: "revenueGrowthQuality", title: "收入增长质量", moduleId: "growth", moduleName: "成长性与重大转折期", weight: 5, question: "增长来自需求/份额/价格/并购？是否可持续？" },
+  { id: "profitAndFcfGrowth", title: "扣非净利与自由现金流增长", moduleId: "growth", moduleName: "成长性与重大转折期", weight: 5, question: "利润增长是否能变成自由现金流？" },
+  { id: "roeRoicMargins", title: "ROE/ROIC 与利润率", moduleId: "financialQuality", moduleName: "财务质量与现金流", weight: 6, question: "高 ROE 是否来自经营能力而不是高杠杆？利润率趋势如何？" },
+  { id: "cashFlowConsistency", title: "现金流质量与三表一致性", moduleId: "financialQuality", moduleName: "财务质量与现金流", weight: 5, question: "经营现金流、扣非净利、FCF 是否长期匹配？" },
+  { id: "balanceSheetHealth", title: "资产负债/财务健康/商誉", moduleId: "financialQuality", moduleName: "财务质量与现金流", weight: 5, question: "短债、有息负债、商誉、存货、应收是否有风险？" },
+  { id: "managementExecution", title: "管理层战略与执行", moduleId: "governance", moduleName: "管理层与治理结构", weight: 5, question: "战略是否聚焦主业？过去承诺兑现度如何？" },
+  { id: "governanceFairness", title: "治理结构/大小股东公平", moduleId: "governance", moduleName: "管理层与治理结构", weight: 5, question: "关联交易、质押、激励、审计、信息披露是否友好？" },
+  { id: "capitalReturn", title: "股东回报/分红回购/资本配置", moduleId: "capitalAllocation", moduleName: "股东回报与资本配置", weight: 8, question: "分红、回购注销、再投资回报、并购质量。" },
+  { id: "relativeValuation", title: "估值合理性/历史与同业", moduleId: "valuation", moduleName: "估值合理性与安全边际", weight: 6, question: "PE/PB/PS/EV/EBITDA 历史分位与同业对比。" },
+  { id: "tenYearReturnSafety", title: "十年回报反推/安全边际", moduleId: "valuation", moduleName: "估值合理性与安全边际", weight: 6, question: "按十年后利润和合理 PE 反推，预期回报够不够？" },
+  { id: "riskAndDisconfirmingEvidence", title: "风险清单与反证条件", moduleId: "riskResilience", moduleName: "风险韧性与反证条件", weight: 6, question: "风险是否可监控？反证条件是否明确？" },
+  { id: "ownerPerspective", title: "小股东长期回报预期/所有者视角", moduleId: "minorityShareholder", moduleName: "小股东友好度与所有者视角", weight: 2, question: "站在散户长期持有者角度，是否值得做股权所有者？" },
+];
+
 export const REQUIRED_SECTION_KEYS: Array<keyof ReportSections> = [
   "companyOverview",
   "industry",
@@ -89,6 +233,21 @@ export const REQUIRED_SECTION_KEYS: Array<keyof ReportSections> = [
   "valuation",
   "risks",
   "finalConclusion",
+];
+
+export const REQUIRED_FULL_SECTION_KEYS: Array<keyof FullReportSections> = [
+  "onePageConclusion",
+  "companyOverview",
+  "industryTrack",
+  "businessModel",
+  "moat",
+  "governance",
+  "financialQuality",
+  "growthInflection",
+  "valuation",
+  "risks",
+  "finalConclusion",
+  "accountRules",
 ];
 
 export function calculateWeightedScore(scores: ModuleScore[]) {
@@ -108,18 +267,36 @@ export function applyRiskCaps(score: number, redFlags: RedFlag[]) {
   return roundScore(Math.min(score, ...caps));
 }
 
+export function scoreLabel(score: number): ScoreLabel {
+  if (score >= 85) return "极好";
+  if (score >= 70) return "好";
+  if (score >= 50) return "一般";
+  return "差";
+}
+
+export function qualitativeBand(score: number) {
+  if (score <= 30) return "高风险垃圾股";
+  if (score <= 50) return "平庸";
+  if (score <= 70) return "中规中矩";
+  if (score <= 85) return "优质";
+  return "卓越复合成长股";
+}
+
 export function validateReportPayload(value: unknown): InvestmentReport {
   if (!isRecord(value)) throw new Error("Report payload must be an object");
   if (!isRecord(value.company) || !isNonEmptyString(value.company.name)) {
     throw new Error("Report payload missing company name");
   }
-  if (!isRecord(value.sections)) throw new Error("Report payload missing sections");
 
-  for (const key of REQUIRED_SECTION_KEYS) {
-    if (!isNonEmptyString(value.sections[key])) {
-      throw new Error(`Missing required report section: ${key}`);
-    }
-  }
+  const evidence = normalizeEvidence(value.evidence);
+  const redFlags = normalizeRedFlags(value.redFlags);
+  const scoreItems20 = normalizeScoreItems(value.scoreItems20);
+  const computed = computeScores(scoreItems20, redFlags, evidence);
+  const cqs = Array.isArray(value.scoreItems20) ? computed.cqs : clampScore(value.cqs);
+  const ias = Array.isArray(value.scoreItems20) ? computed.ias : applyEvidenceCaps(clampScore(value.ias), evidence, redFlags);
+  const conclusion = normalizeConclusion(value.conclusion, ias);
+  const sections = normalizeSections(value.sections, value.fullSections, value.company.name);
+  const fullSections = normalizeFullSections(value.fullSections, sections, value.company.name);
 
   return {
     company: {
@@ -130,16 +307,23 @@ export function validateReportPayload(value: unknown): InvestmentReport {
       sector: optionalString(value.company.sector),
     },
     asOf: isNonEmptyString(value.asOf) ? value.asOf : new Date().toISOString(),
-    conclusion: normalizeConclusion(value.conclusion),
-    oneSentence: isNonEmptyString(value.oneSentence) ? value.oneSentence : "暂无一句话结论。",
-    cqs: clampScore(value.cqs),
-    ias: clampScore(value.ias),
-    moduleScores: normalizeModuleScores(value.moduleScores),
-    redFlags: normalizeRedFlags(value.redFlags),
-    evidence: normalizeEvidence(value.evidence),
-    sections: Object.fromEntries(
-      REQUIRED_SECTION_KEYS.map((key) => [key, String((value.sections as Record<string, unknown>)[key])]),
-    ) as ReportSections,
+    conclusion,
+    oneSentence: isNonEmptyString(value.oneSentence) ? value.oneSentence : fallbackText(value.company.name, "核心一句话"),
+    cqs,
+    ias,
+    qualitativeBand: qualitativeBand(ias),
+    summaryDashboard: normalizeSummaryDashboard(value.summaryDashboard),
+    moduleScores: Array.isArray(value.scoreItems20) ? computed.modules : normalizeModuleScores(value.moduleScores),
+    scoreItems20,
+    redFlags,
+    evidence,
+    sections,
+    qualitativeAnalysis: normalizeQualitativeAnalysis(value.qualitativeAnalysis, value.company.name),
+    financialTenYear: normalizeFinancialTenYear(value.financialTenYear),
+    valuationAnalysis: normalizeValuationAnalysis(value.valuationAnalysis),
+    riskMatrix: normalizeRiskMatrix(value.riskMatrix),
+    accountRules: normalizeAccountRules(value.accountRules),
+    fullSections,
     disclaimer: isNonEmptyString(value.disclaimer)
       ? value.disclaimer
       : "本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。",
@@ -148,61 +332,100 @@ export function validateReportPayload(value: unknown): InvestmentReport {
 
 export function emptyReport(companyName: string, message: string): InvestmentReport {
   const now = new Date().toISOString();
-  const moduleScores = calculateWeightedScore(
-    MODULE_WEIGHTS.map((module) => ({
-      ...module,
-      score: 0,
-      weightedScore: 0,
-      summary: "数据不足，无法评分。",
-      evidence: [],
-      concerns: [message],
-    })),
-  ).modules;
-
-  return {
+  return validateReportPayload({
     company: { name: companyName },
     asOf: now,
     conclusion: "观察",
     oneSentence: message,
     cqs: 0,
     ias: 0,
-    moduleScores,
+    scoreItems20: SCORE_ITEMS_20.map((item) => ({
+      ...item,
+      score: 0,
+      label: "差",
+      evidence: [],
+      deductions: [message],
+      recentChange: "数据不足；对分数影响：无法判断",
+      reason: message,
+    })),
     redFlags: [{ label: "公开数据不足", cap: 50, severity: "warning", evidence: message }],
     evidence: [],
-    sections: {
-      companyOverview: message,
-      industry: message,
-      businessModel: message,
-      moat: message,
-      governance: message,
-      financialQuality: message,
-      growth: message,
-      valuation: message,
-      risks: message,
-      finalConclusion: message,
-    },
+    sections: Object.fromEntries(REQUIRED_SECTION_KEYS.map((key) => [key, message])),
+    fullSections: Object.fromEntries(REQUIRED_FULL_SECTION_KEYS.map((key) => [key, message])),
     disclaimer: "本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。",
-  };
+  });
+}
+
+function computeScores(scoreItems20: ScoreItem[], redFlags: RedFlag[], evidence: EvidenceItem[]) {
+  const modules = MODULE_WEIGHTS.map((module) => {
+    const items = scoreItems20.filter((item) => item.moduleId === module.id);
+    const weightedScore = roundScore(items.reduce((sum, item) => sum + (item.score * item.weight) / 100, 0));
+    const score = module.weight ? roundScore((weightedScore / module.weight) * 100) : 0;
+    return {
+      ...module,
+      score,
+      weightedScore,
+      label: scoreLabel(score),
+      summary: summarizeItems(items),
+      evidence: items.flatMap((item) => item.evidence).slice(0, 4),
+      concerns: items.flatMap((item) => item.deductions).slice(0, 4),
+    };
+  });
+
+  const qualityItems = scoreItems20.filter((item) => item.moduleId !== "valuation");
+  const qualityWeight = qualityItems.reduce((sum, item) => sum + item.weight, 0);
+  const cqs = roundScore((qualityItems.reduce((sum, item) => sum + (item.score * item.weight) / 100, 0) / qualityWeight) * 100);
+  const rawIas = roundScore(scoreItems20.reduce((sum, item) => sum + (item.score * item.weight) / 100, 0));
+
+  return { cqs, ias: applyEvidenceCaps(rawIas, evidence, redFlags), modules };
+}
+
+function applyEvidenceCaps(score: number, evidence: EvidenceItem[], redFlags: RedFlag[]) {
+  const latestPublicCount = evidence.filter((item) => item.freshness === "latest-public").length;
+  const caps = latestPublicCount < 2 ? [...redFlags, { label: "公开证据不足", cap: 50, severity: "warning" as const }] : redFlags;
+  return applyRiskCaps(score, caps);
+}
+
+function normalizeScoreItems(value: unknown): ScoreItem[] {
+  const rawItems = Array.isArray(value) ? value.filter(isRecord) : [];
+  return SCORE_ITEMS_20.map((definition) => {
+    const raw = rawItems.find((item) => item.id === definition.id || item.title === definition.title);
+    const score = clampScore(raw?.score);
+    return {
+      ...definition,
+      score,
+      label: normalizeScoreLabel(raw?.label, score),
+      evidence: stringArray(raw?.evidence),
+      deductions: stringArray(raw?.deductions),
+      recentChange: isNonEmptyString(raw?.recentChange) ? raw.recentChange : "未提供最近 12 个月变化判断；对分数影响：0",
+      reason: isNonEmptyString(raw?.reason) ? raw.reason : "数据不足：模型未提供该项完整评分理由。",
+    };
+  });
 }
 
 function normalizeModuleScores(value: unknown): ModuleScore[] {
   if (!Array.isArray(value) || value.length === 0) {
-    return MODULE_WEIGHTS.map((module) => ({
-      ...module,
-      score: 0,
-      weightedScore: 0,
-      summary: "模型未提供该模块评分。",
-      evidence: [],
-      concerns: ["缺少模型输出。"],
-    }));
+    return calculateWeightedScore(
+      MODULE_WEIGHTS.map((module) => ({
+        ...module,
+        score: 0,
+        weightedScore: 0,
+        label: "差" as const,
+        summary: "模型未提供该模块评分。",
+        evidence: [],
+        concerns: ["缺少模型输出。"],
+      })),
+    ).modules;
   }
 
   const normalized = MODULE_WEIGHTS.map((weight) => {
     const raw = value.find((item) => isRecord(item) && item.id === weight.id);
+    const score = clampScore(isRecord(raw) ? raw.score : 0);
     return {
       ...weight,
-      score: clampScore(isRecord(raw) ? raw.score : 0),
+      score,
       weightedScore: 0,
+      label: normalizeScoreLabel(isRecord(raw) ? raw.label : undefined, score),
       summary: isRecord(raw) && isNonEmptyString(raw.summary) ? raw.summary : "暂无摘要。",
       evidence: isRecord(raw) ? stringArray(raw.evidence) : [],
       concerns: isRecord(raw) ? stringArray(raw.concerns) : [],
@@ -237,9 +460,161 @@ function normalizeEvidence(value: unknown): EvidenceItem[] {
   }));
 }
 
-function normalizeConclusion(value: unknown): InvestmentReport["conclusion"] {
+function normalizeSections(value: unknown, fullValue: unknown, companyName: unknown): ReportSections {
+  const sections = isRecord(value) ? value : {};
+  const fullSections = isRecord(fullValue) ? fullValue : {};
+  const name = isNonEmptyString(companyName) ? companyName : "目标公司";
+  return {
+    companyOverview: sectionText(sections.companyOverview ?? fullSections.companyOverview, name, "公司概况"),
+    industry: sectionText(sections.industry ?? fullSections.industryTrack, name, "行业与细分赛道"),
+    businessModel: sectionText(sections.businessModel ?? fullSections.businessModel, name, "商业模式与价值链"),
+    moat: sectionText(sections.moat ?? fullSections.moat, name, "核心竞争力与长期竞争优势"),
+    governance: sectionText(sections.governance ?? fullSections.governance, name, "管理层、治理结构与股东文化"),
+    financialQuality: sectionText(sections.financialQuality ?? fullSections.financialQuality, name, "财务质量与现金流"),
+    growth: sectionText(sections.growth ?? fullSections.growthInflection, name, "成长空间与重大转折期"),
+    valuation: sectionText(sections.valuation ?? fullSections.valuation, name, "估值与安全边际"),
+    risks: sectionText(sections.risks ?? fullSections.risks, name, "风险清单与反证条件"),
+    finalConclusion: sectionText(sections.finalConclusion ?? fullSections.finalConclusion, name, "最终投资结论"),
+  };
+}
+
+function normalizeFullSections(value: unknown, sections: ReportSections, companyName: unknown): FullReportSections {
+  const raw = isRecord(value) ? value : {};
+  const name = isNonEmptyString(companyName) ? companyName : "目标公司";
+  return {
+    onePageConclusion: sectionText(raw.onePageConclusion, name, "一页结论与评分仪表盘"),
+    companyOverview: sectionText(raw.companyOverview ?? sections.companyOverview, name, "公司概况与发展史"),
+    industryTrack: sectionText(raw.industryTrack ?? sections.industry, name, "行业与细分赛道分析"),
+    businessModel: sectionText(raw.businessModel ?? sections.businessModel, name, "商业模式与价值链"),
+    moat: sectionText(raw.moat ?? sections.moat, name, "核心竞争力与长期竞争优势"),
+    governance: sectionText(raw.governance ?? sections.governance, name, "管理层、治理结构与股东文化"),
+    financialQuality: sectionText(raw.financialQuality ?? sections.financialQuality, name, "十年财务数据与现金流分析"),
+    growthInflection: sectionText(raw.growthInflection ?? sections.growth, name, "成长空间与重大转折期判断"),
+    valuation: sectionText(raw.valuation ?? sections.valuation, name, "估值分析：好公司是否有好价格"),
+    risks: sectionText(raw.risks ?? sections.risks, name, "风险清单与反证条件"),
+    finalConclusion: sectionText(raw.finalConclusion ?? sections.finalConclusion, name, "最终投资结论"),
+    accountRules: sectionText(raw.accountRules, name, "账户管理与仓位规则"),
+  };
+}
+
+function normalizeSummaryDashboard(value: unknown): SummaryDashboard {
+  const raw = isRecord(value) ? value : {};
+  return {
+    valuationView: optionalString(raw.valuationView) ?? "待验证",
+    positionAdvice: optionalString(raw.positionAdvice) ?? "观察仓",
+    investmentHorizon: optionalString(raw.investmentHorizon) ?? "至少 5 年",
+    keyReasons: stringArray(raw.keyReasons),
+    keyRisks: stringArray(raw.keyRisks),
+    trackingMetrics: stringArray(raw.trackingMetrics),
+  };
+}
+
+function normalizeQualitativeAnalysis(value: unknown, companyName: unknown): QualitativeAnalysis {
+  const raw = isRecord(value) ? value : {};
+  const name = isNonEmptyString(companyName) ? companyName : "目标公司";
+  return {
+    companyHistory: sectionText(raw.companyHistory, name, "公司发展史"),
+    lifecycle: sectionText(raw.lifecycle, name, "生命周期阶段"),
+    businessStructure: sectionText(raw.businessStructure, name, "业务结构"),
+    shareholderPosition: sectionText(raw.shareholderPosition, name, "四方博弈中的股东地位"),
+  };
+}
+
+function normalizeFinancialTenYear(value: unknown): FinancialTenYear {
+  const raw = isRecord(value) ? value : {};
+  const rows = Array.isArray(raw.rows)
+    ? raw.rows.filter(isRecord).map((row) => ({
+        metric: optionalString(row.metric) ?? "未命名指标",
+        values: isRecord(row.values) ? Object.fromEntries(Object.entries(row.values).map(([key, item]) => [key, String(item ?? "")])) : {},
+        trend: optionalString(row.trend) ?? "待验证",
+        interpretation: optionalString(row.interpretation) ?? "数据不足：该指标需要人工复核。",
+      }))
+    : [];
+  return {
+    rows,
+    interpretation: optionalString(raw.interpretation) ?? "数据不足：模型未提供完整十年财务解读。",
+  };
+}
+
+function normalizeValuationAnalysis(value: unknown): ValuationAnalysis {
+  const raw = isRecord(value) ? value : {};
+  return {
+    currentPrice: optionalString(raw.currentPrice) ?? "待验证",
+    fairValueRange: optionalString(raw.fairValueRange) ?? "待验证",
+    buyRange: optionalString(raw.buyRange) ?? "待验证",
+    sellReduceRange: optionalString(raw.sellReduceRange) ?? "待验证",
+    methods: stringArray(raw.methods),
+    scenarios: Array.isArray(raw.scenarios)
+      ? raw.scenarios.filter(isRecord).map((item) => ({
+          name: optionalString(item.name) ?? "未命名情景",
+          assumptions: optionalString(item.assumptions) ?? "待验证",
+          value: optionalString(item.value) ?? "待验证",
+          expectedReturn: optionalString(item.expectedReturn) ?? "待验证",
+          probability: optionalString(item.probability) ?? "待验证",
+        }))
+      : [],
+    conclusion: optionalString(raw.conclusion) ?? "数据不足：模型未提供完整估值结论。",
+  };
+}
+
+function normalizeRiskMatrix(value: unknown): RiskMatrixItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    type: optionalString(item.type) ?? "未分类风险",
+    risk: optionalString(item.risk) ?? "待验证",
+    probability: optionalString(item.probability) ?? "待验证",
+    impact: optionalString(item.impact) ?? "待验证",
+    warningMetric: optionalString(item.warningMetric) ?? "待验证",
+    response: optionalString(item.response) ?? "观察",
+  }));
+}
+
+function normalizeAccountRules(value: unknown): AccountRules {
+  const raw = isRecord(value) ? value : {};
+  return {
+    companyGrade: optionalString(raw.companyGrade) ?? "待定",
+    maxPosition: optionalString(raw.maxPosition) ?? "观察仓",
+    addCondition: optionalString(raw.addCondition) ?? "基本面未恶化且估值更有吸引力时再考虑。",
+    reduceCondition: optionalString(raw.reduceCondition) ?? "估值明显偏高、基本面恶化或风险暴露时减仓。",
+    reviewTiming: optionalString(raw.reviewTiming) ?? "下一次财报或重大公告后复盘。",
+  };
+}
+
+function normalizeConclusion(value: unknown, ias: number): InvestmentReport["conclusion"] {
   const allowed: InvestmentReport["conclusion"][] = ["买入", "加仓", "持有", "观察", "减仓", "卖出", "回避"];
-  return allowed.includes(value as InvestmentReport["conclusion"]) ? (value as InvestmentReport["conclusion"]) : "观察";
+  const conclusion = allowed.includes(value as InvestmentReport["conclusion"]) ? (value as InvestmentReport["conclusion"]) : "观察";
+  if (ias <= 30) return "回避";
+  if (ias <= 50 && (conclusion === "买入" || conclusion === "加仓" || conclusion === "持有")) return "观察";
+  return conclusion;
+}
+
+function normalizeScoreLabel(value: unknown, score: number): ScoreLabel {
+  return value === "极好" || value === "好" || value === "一般" || value === "差" ? value : scoreLabel(score);
+}
+
+function summarizeItems(items: ScoreItem[]) {
+  const strongest = items
+    .filter((item) => item.score >= 70)
+    .map((item) => item.title)
+    .slice(0, 2)
+    .join("、");
+  const weakest = items
+    .filter((item) => item.score < 50)
+    .map((item) => item.title)
+    .slice(0, 2)
+    .join("、");
+  if (strongest && weakest) return `优势在${strongest}，主要扣分来自${weakest}。`;
+  if (strongest) return `相对优势在${strongest}。`;
+  if (weakest) return `主要扣分来自${weakest}。`;
+  return "整体表现中性，仍需更多证据验证。";
+}
+
+function sectionText(value: unknown, companyName: string, sectionName: string) {
+  return isNonEmptyString(value) ? value : fallbackText(companyName, sectionName);
+}
+
+function fallbackText(companyName: string, sectionName: string) {
+  return `数据不足：${companyName} 的「${sectionName}」未获得足够可靠证据或模型未按模板提供完整内容，需要继续人工复核。`;
 }
 
 function clampScore(value: unknown) {

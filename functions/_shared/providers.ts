@@ -1,4 +1,4 @@
-import type { CompanyIdentity, EvidenceItem } from "../../src/shared/report";
+import type { CompanyCandidate, CompanyIdentity, EvidenceItem } from "../../src/shared/report";
 
 export type EvidenceBundle = {
   company: CompanyIdentity;
@@ -13,6 +13,7 @@ type FetchEvidenceInput = {
   companyName: string;
   ticker?: string;
   market?: string;
+  company?: CompanyCandidate;
   fetchImpl?: FetchLike;
 };
 
@@ -20,11 +21,13 @@ export async function fetchPublicCompanyEvidence({
   companyName,
   ticker,
   market,
+  company,
   fetchImpl = fetch,
 }: FetchEvidenceInput): Promise<EvidenceBundle> {
   const retrievedAt = new Date().toISOString();
-  const searchQuote = await searchYahooQuote(ticker || companyName, fetchImpl);
-  const symbol = ticker || stringValue(searchQuote?.symbol);
+  const selectedCompany = company;
+  const searchQuote = selectedCompany ? undefined : await searchYahooQuote(ticker || companyName, fetchImpl);
+  const symbol = selectedCompany?.yahooSymbol || selectedCompany?.code || ticker || stringValue(searchQuote?.symbol);
 
   if (!symbol) {
     return unavailableBundle(companyName, market, retrievedAt, "Could not resolve a public market ticker.");
@@ -36,31 +39,53 @@ export async function fetchPublicCompanyEvidence({
   )}?modules=assetProfile,summaryDetail,financialData,defaultKeyStatistics,price,calendarEvents,earnings`;
   const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
   const fundamentalsUrl = buildFundamentalsUrl(symbol);
+  const eastmoneyQuoteUrl = selectedCompany?.quoteId
+    ? `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(
+        selectedCompany.quoteId,
+      )}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`
+    : "";
+  const secucode = selectedCompany ? eastmoneySecucode(selectedCompany) : undefined;
+  const incomeUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GINCOMEQC", "APP_F10_GINCOMEQC", secucode) : "";
+  const cashflowUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GCASHFLOW", "APP_F10_GCASHFLOW", secucode) : "";
+  const balanceUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GBALANCE", "APP_F10_GBALANCE", secucode) : "";
 
-  const quoteJson = await fetchJson(quoteUrl, fetchImpl);
+  const eastmoneyQuoteJson = eastmoneyQuoteUrl ? await fetchJson(eastmoneyQuoteUrl, fetchImpl) : null;
+  const eastmoneyQuote = isRecord(recordPath(eastmoneyQuoteJson, ["data"])) ? (recordPath(eastmoneyQuoteJson, ["data"]) as Record<string, unknown>) : undefined;
+  const incomeJson = incomeUrl ? await fetchJson(incomeUrl, fetchImpl) : null;
+  const cashflowJson = cashflowUrl ? await fetchJson(cashflowUrl, fetchImpl) : null;
+  const balanceJson = balanceUrl ? await fetchJson(balanceUrl, fetchImpl) : null;
+  const incomeRows = arrayPath(incomeJson, ["result", "data"]);
+  const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
+  const balanceRows = arrayPath(balanceJson, ["result", "data"]);
+
+  const quoteJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(quoteUrl, fetchImpl);
   const quote = firstArrayItem(recordPath(quoteJson, ["quoteResponse", "result"]));
-  const summaryJson = await fetchJson(summaryUrl, fetchImpl);
+  const summaryJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(summaryUrl, fetchImpl);
   const summary = firstArrayItem(recordPath(summaryJson, ["quoteSummary", "result"]));
-  const chartJson = await fetchJson(chartUrl, fetchImpl);
+  const chartJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(chartUrl, fetchImpl);
   const chart = firstArrayItem(recordPath(chartJson, ["chart", "result"]));
   const chartMeta = isRecord(chart?.meta) ? chart.meta : undefined;
-  const fundamentalsJson = await fetchJson(fundamentalsUrl, fetchImpl);
+  const fundamentalsJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(fundamentalsUrl, fetchImpl);
   const fundamentals = Array.isArray(recordPath(fundamentalsJson, ["timeseries", "result"]))
     ? (recordPath(fundamentalsJson, ["timeseries", "result"]) as unknown[])
     : undefined;
 
-  if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals) {
+  const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
+
+  if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals && !eastmoneyQuote && !hasEastmoneyFinancials) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
   }
 
   const profile = isRecord(summary?.assetProfile) ? summary.assetProfile : undefined;
   const price = isRecord(summary?.price) ? summary.price : undefined;
   const mergedQuote = {
+    ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote) : {}),
     ...(searchQuote ?? {}),
     ...(chartMeta ?? {}),
     ...(quote ?? {}),
   };
   const name =
+    selectedCompany?.name ||
     stringValue(quote?.longName) ||
     stringValue(price?.longName) ||
     stringValue(chartMeta?.longName) ||
@@ -71,20 +96,43 @@ export async function fetchPublicCompanyEvidence({
   return {
     company: {
       name,
-      ticker: stringValue(quote?.symbol) || stringValue(chartMeta?.symbol) || stringValue(searchQuote?.symbol) || symbol,
-      market: stringValue(quote?.market) || stringValue(searchQuote?.exchDisp) || stringValue(chartMeta?.exchangeName) || market,
+      ticker: selectedCompany?.code || stringValue(quote?.symbol) || stringValue(chartMeta?.symbol) || stringValue(searchQuote?.symbol) || symbol,
+      market:
+        selectedCompany?.listingPlace ||
+        stringValue(quote?.market) ||
+        stringValue(searchQuote?.exchDisp) ||
+        stringValue(chartMeta?.exchangeName) ||
+        market,
       industry: stringValue(profile?.industry) || stringValue(searchQuote?.industry) || stringValue(searchQuote?.industryDisp),
-      sector: stringValue(profile?.sector) || stringValue(searchQuote?.sector) || stringValue(searchQuote?.sectorDisp),
+      sector: selectedCompany?.marketType || stringValue(profile?.sector) || stringValue(searchQuote?.sector) || stringValue(searchQuote?.sectorDisp),
     },
     retrievedAt,
     evidence: [
       {
         title: `${symbol} symbol search`,
-        source: "Yahoo Finance public search endpoint",
-        url: `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker || companyName)}&quotesCount=1&newsCount=0`,
+        source: selectedCompany ? "Eastmoney public suggest endpoint" : "Yahoo Finance public search endpoint",
+        url: selectedCompany
+          ? `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(companyName)}&type=14&count=5`
+          : `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker || companyName)}&quotesCount=1&newsCount=0`,
         retrievedAt,
-        freshness: searchQuote ? "latest-public" : "unavailable",
-        notes: searchQuote ? "Public company identity, exchange, sector and industry match." : "Search endpoint returned no data.",
+        freshness: selectedCompany || searchQuote ? "latest-public" : "unavailable",
+        notes: selectedCompany || searchQuote ? "Public company identity, exchange, sector and industry match." : "Search endpoint returned no data.",
+      },
+      {
+        title: `${symbol} Eastmoney quote snapshot`,
+        source: "Eastmoney public quote endpoint",
+        url: eastmoneyQuoteUrl,
+        retrievedAt,
+        freshness: eastmoneyQuote ? "latest-public" : "unavailable",
+        notes: eastmoneyQuote ? "Latest public market price, volume, market cap and valuation snapshot." : "Eastmoney quote unavailable.",
+      },
+      {
+        title: `${symbol} Eastmoney financial statements`,
+        source: "Eastmoney public financial statement endpoints",
+        url: incomeUrl || cashflowUrl || balanceUrl,
+        retrievedAt,
+        freshness: hasEastmoneyFinancials ? "latest-public" : "unavailable",
+        notes: "Income statement, cash flow statement and balance sheet rows where available.",
       },
       {
         title: `${symbol} latest quote`,
@@ -131,11 +179,43 @@ export async function fetchPublicCompanyEvidence({
           price: chartMeta,
           financialData: normalizeFundamentals(fundamentals),
         } satisfies Record<string, unknown>),
+      selectedCompany,
+      eastmoney: {
+        quote: eastmoneyQuote,
+        incomeRows,
+        cashflowRows,
+        balanceRows,
+      },
       search: searchQuote ?? undefined,
       chart: chart ?? undefined,
       fundamentals: normalizeFundamentals(fundamentals),
     },
   };
+}
+
+export async function searchCompanyCandidates(query: string, fetchImpl: FetchLike = fetch): Promise<CompanyCandidate[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const eastmoneyUrl = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(
+    trimmed,
+  )}&type=14&token=D43BF722C8E33BD61D078A2FA2B7E485&count=8`;
+  const eastmoneyJson = await fetchJson(eastmoneyUrl, fetchImpl);
+  const eastmoneyCandidates = arrayPath(eastmoneyJson, ["QuotationCodeTable", "Data"])
+    .map(normalizeEastmoneyCandidate)
+    .filter((item): item is CompanyCandidate => Boolean(item));
+
+  if (eastmoneyCandidates.length > 0) return dedupeCandidates(eastmoneyCandidates);
+
+  const yahooJson = await fetchJson(
+    `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trimmed)}&quotesCount=8&newsCount=0`,
+    fetchImpl,
+  );
+  const yahooCandidates = arrayPath(yahooJson, ["quotes"])
+    .map(normalizeYahooCandidate)
+    .filter((item): item is CompanyCandidate => Boolean(item));
+
+  return dedupeCandidates(yahooCandidates);
 }
 
 async function searchYahooQuote(companyName: string, fetchImpl: FetchLike) {
@@ -166,6 +246,93 @@ function buildFundamentalsUrl(symbol: string) {
   )}?type=${types.join(",")}&merge=false&period1=${fiveYearsAgo}&period2=${now}`;
 }
 
+function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
+  return `https://datacenter.eastmoney.com/securities/api/data/get?type=${type}&sty=${style}&filter=(SECUCODE%3D%22${encodeURIComponent(
+    secucode,
+  )}%22)&p=1&ps=10&sr=-1&st=REPORT_DATE`;
+}
+
+function eastmoneySecucode(candidate: CompanyCandidate) {
+  if (candidate.marketType === "AStock" || candidate.listingPlace.includes("A")) {
+    const suffix = candidate.quoteId?.startsWith("1.") || candidate.listingPlace.includes("沪") ? "SH" : "SZ";
+    return `${candidate.code}.${suffix}`;
+  }
+  if (candidate.marketType === "HK" || candidate.listingPlace.includes("港")) return `${candidate.code}.HK`;
+  return undefined;
+}
+
+function normalizeEastmoneyCandidate(value: unknown): CompanyCandidate | undefined {
+  if (!isRecord(value)) return undefined;
+  const code = stringValue(value.Code);
+  const name = stringValue(value.Name);
+  if (!code || !name) return undefined;
+  const listingPlace = stringValue(value.SecurityTypeName) || stringValue(value.JYS) || "未知市场";
+  const quoteId = stringValue(value.QuoteID);
+  return {
+    id: `eastmoney:${quoteId || code}`,
+    name,
+    code,
+    exchange: eastmoneyExchangeName(stringValue(value.JYS), quoteId, listingPlace),
+    listingPlace,
+    marketType: stringValue(value.Classify) || listingPlace,
+    quoteId,
+    secid: quoteId,
+    yahooSymbol: eastmoneyYahooSymbol(code, listingPlace),
+    source: "eastmoney",
+  };
+}
+
+function eastmoneyExchangeName(rawExchange: string | undefined, quoteId: string | undefined, listingPlace: string) {
+  if (listingPlace.includes("深") || quoteId?.startsWith("0.") || rawExchange === "0") return "深圳证券交易所";
+  if (listingPlace.includes("沪") || quoteId?.startsWith("1.") || rawExchange === "1") return "上海证券交易所";
+  if (listingPlace.includes("港") || quoteId?.startsWith("116.") || rawExchange === "116") return "香港交易所";
+  if (listingPlace.includes("美")) return "美国市场";
+  return rawExchange && !/^\d+$/.test(rawExchange) ? rawExchange : listingPlace;
+}
+
+function normalizeYahooCandidate(value: unknown): CompanyCandidate | undefined {
+  if (!isRecord(value)) return undefined;
+  const code = stringValue(value.symbol);
+  const name = stringValue(value.longname) || stringValue(value.shortname);
+  if (!code || !name) return undefined;
+  const exchange = stringValue(value.exchDisp) || stringValue(value.exchange) || "海外市场";
+  return {
+    id: `yahoo:${code}`,
+    name,
+    code,
+    exchange,
+    listingPlace: exchange,
+    marketType: stringValue(value.quoteType) || stringValue(value.typeDisp) || "Equity",
+    yahooSymbol: code,
+    source: "yahoo",
+  };
+}
+
+function eastmoneyYahooSymbol(code: string, listingPlace: string) {
+  if (listingPlace.includes("深")) return `${code}.SZ`;
+  if (listingPlace.includes("沪")) return `${code}.SS`;
+  if (listingPlace.includes("港")) return `${code}.HK`;
+  return code;
+}
+
+function normalizeEastmoneyQuote(quote: Record<string, unknown>) {
+  return {
+    symbol: stringValue(quote.f57),
+    longName: stringValue(quote.f58),
+    regularMarketPrice: eastmoneyScaledNumber(quote.f43),
+    regularMarketDayHigh: eastmoneyScaledNumber(quote.f44),
+    regularMarketDayLow: eastmoneyScaledNumber(quote.f45),
+    regularMarketOpen: eastmoneyScaledNumber(quote.f46),
+    regularMarketVolume: numberValue(quote.f47),
+    regularMarketPreviousClose: eastmoneyScaledNumber(quote.f60),
+    marketCap: numberValue(quote.f116),
+    trailingPE: eastmoneyScaledNumber(quote.f162),
+    priceToBook: eastmoneyScaledNumber(quote.f167),
+    regularMarketChange: eastmoneyScaledNumber(quote.f169),
+    regularMarketChangePercent: eastmoneyScaledNumber(quote.f170),
+  };
+}
+
 function normalizeFundamentals(items: unknown[] | undefined) {
   if (!items) return undefined;
   const result: Record<string, unknown> = {};
@@ -180,6 +347,16 @@ function normalizeFundamentals(items: unknown[] | undefined) {
 
 function pickDefined(record: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function dedupeCandidates(candidates: CompanyCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.source}:${candidate.code}:${candidate.listingPlace}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function fetchJson(url: string, fetchImpl: FetchLike): Promise<unknown> {
@@ -219,12 +396,27 @@ function recordPath(value: unknown, path: string[]): unknown {
   return path.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
 }
 
+function arrayPath(value: unknown, path: string[]): unknown[] {
+  const result = recordPath(value, path);
+  return Array.isArray(result) ? result : [];
+}
+
 function firstArrayItem(value: unknown): Record<string, unknown> | undefined {
   return Array.isArray(value) && isRecord(value[0]) ? value[0] : undefined;
 }
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function eastmoneyScaledNumber(value: unknown) {
+  const number = numberValue(value);
+  if (number === undefined || number === -100 || number === 0) return number;
+  return Math.round((number / 100) * 1000) / 1000;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

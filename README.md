@@ -1,18 +1,23 @@
 # CSTD Alpha
 
-Private AI-assisted company research workspace for generating CQS + IAS scoring reports from public financial data and DeepSeek V4 Pro.
+中文优先的私人公司研究工具。输入公司名后先确认上市主体，再用公开财务数据和 DeepSeek V4 Pro 生成 CQS + IAS 深度评分报告。
 
-## Workflow
+## 工作流
 
-1. Password gate protects the app and API.
-2. User enters company name plus optional ticker and market.
-3. Cloudflare Pages Function fetches latest available public financial/profile data.
-4. DeepSeek `deepseek-v4-pro` runs with thinking enabled and `reasoning_effort: "max"`.
-5. The app renders a structured report and exports DOCX/JSON.
+1. 密码门保护网页和 API。
+2. 用户输入公司名或代码，系统返回候选公司：公司名、代码、上市地、交易所。
+3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
+4. DeepSeek `deepseek-v4-pro` 使用 thinking mode 和 `reasoning_effort: "max"` 生成完整报告。
+5. 前端实时显示 NDJSON 进度流，并支持 DOCX/JSON 导出。
 
-## Local Development
+## API
 
-Create `.dev.vars` from `.dev.vars.example`:
+- `GET /api/company-search?q=万科A`：返回候选公司列表。
+- `POST /api/report`：请求体为 `{ "company": CompanyCandidate }`，响应为 NDJSON 进度流。
+
+## 本地开发
+
+从 `.dev.vars.example` 创建 `.dev.vars`：
 
 ```env
 DEEPSEEK_API_KEY="..."
@@ -20,7 +25,7 @@ REPORT_PASSWORD="..."
 AUTH_SECRET="..."
 ```
 
-Then run:
+然后运行：
 
 ```bash
 npm install
@@ -29,27 +34,27 @@ npm run build
 npm run pages:dev
 ```
 
-## Deployment
+## 部署
 
-Production is designed for Cloudflare Pages Direct Upload through GitHub Actions.
+生产环境通过 GitHub Actions 使用 Cloudflare Pages Direct Upload。
 
-Required GitHub repository secrets:
+GitHub 仓库 secrets：
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 
-Required Cloudflare Pages secrets:
+Cloudflare Pages secrets：
 
 - `DEEPSEEK_API_KEY`
 - `REPORT_PASSWORD`
 - `AUTH_SECRET`
 
-Project:
+项目：
 
 - GitHub: `Muguett-DBY/cstd-alpha`
 - Cloudflare Pages: `cstd-alpha`
 - Custom domain: `alpha.custard.top`
 
-## Safety
+## 安全声明
 
-The report is for learning, research, and personal review only. It is not investment advice. When public data is unavailable, the app must show the gap instead of inventing facts.
+报告仅用于学习、研究和个人复盘，不构成任何买卖建议。公开数据不可用时，系统必须标明数据缺口，不能编造事实。

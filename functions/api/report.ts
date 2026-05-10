@@ -1,6 +1,7 @@
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
+import type { CompanyCandidate } from "../../src/shared/report";
 
 type Env = {
   AUTH_SECRET: string;
@@ -8,6 +9,7 @@ type Env = {
 };
 
 type ReportRequest = {
+  company?: CompanyCandidate;
   companyName?: string;
   ticker?: string;
   market?: string;
@@ -19,34 +21,42 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const body = (await request.json().catch(() => null)) as ReportRequest | null;
-  const companyName = body?.companyName?.trim();
-  if (!companyName) return json({ error: "companyName is required." }, 400);
+  const company = body?.company;
+  const companyName = company?.name?.trim() || body?.companyName?.trim();
+  if (!companyName) return json({ error: "请先搜索并选择一个候选公司。" }, 400);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "DEEPSEEK_API_KEY is not configured." }, 500);
 
-  try {
+  return streamNdjson(async (emit) => {
+    emit({ type: "progress", stage: "confirmed", label: "已确认公司", detail: company ? `${company.name} / ${company.code} / ${company.listingPlace}` : companyName, percent: 5 });
+    emit({ type: "progress", stage: "market_data", label: "读取行情数据", detail: "正在读取公开行情、交易所与估值快照。", percent: 18 });
+    emit({ type: "progress", stage: "financial_data", label: "读取财务数据", detail: "正在读取利润表、现金流量表、资产负债表与公开财务时间序列。", percent: 32 });
+
     const evidence = await fetchPublicCompanyEvidence({
       companyName,
-      ticker: body?.ticker?.trim() || undefined,
-      market: body?.market?.trim() || undefined,
+      ticker: company?.code || body?.ticker?.trim() || undefined,
+      market: company?.listingPlace || body?.market?.trim() || undefined,
+      company,
     });
 
-    return streamJson(async () => {
-      const report = await callDeepSeekReport({
-        apiKey: env.DEEPSEEK_API_KEY,
-        evidence,
-        language: body?.language ?? "zh-CN",
-      });
-
-      return { report, evidence };
+    emit({
+      type: "progress",
+      stage: "evidence_ready",
+      label: "证据包完成",
+      detail: `已整理 ${evidence.evidence.length} 条公开证据，开始深度评分。`,
+      percent: 48,
     });
-  } catch (error) {
-    return json(
-      {
-        error: error instanceof Error ? error.message : "Report generation failed.",
-      },
-      502,
-    );
-  }
+    emit({ type: "progress", stage: "deepseek", label: "DeepSeek 深度分析", detail: "V4 Pro max thinking 正在逐项生成 20 项评分和完整报告。", percent: 62 });
+
+    const report = await callDeepSeekReport({
+      apiKey: env.DEEPSEEK_API_KEY,
+      evidence,
+      language: "zh-CN",
+    });
+
+    emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶、模板章节和导出结构。", percent: 90 });
+    emit({ type: "progress", stage: "done", label: "报告完成", detail: "深度报告已生成，可在网页查看或导出 DOCX。", percent: 100 });
+    emit({ type: "final", report, evidence });
+  });
 };
 
 function json(data: unknown, status = 200) {
@@ -59,28 +69,37 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function streamJson(task: () => Promise<unknown>) {
+type ProgressEvent = {
+  type: "progress";
+  stage: string;
+  label: string;
+  detail: string;
+  percent: number;
+  at?: string;
+};
+
+type StreamEmit = (event: ProgressEvent | { type: "final"; report: unknown; evidence: unknown } | { type: "error"; error: string }) => void;
+
+function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
   const encoder = new TextEncoder();
   let keepalive: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(encoder.encode("\n"));
+      const emit: StreamEmit = (event) => {
+        const payload = event.type === "progress" ? { ...event, at: event.at ?? new Date().toISOString() } : event;
+        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+      };
+
       keepalive = setInterval(() => {
-        controller.enqueue(encoder.encode("\n"));
+        emit({ type: "progress", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
       }, 10_000);
 
-      task()
-        .then((data) => {
-          controller.enqueue(encoder.encode(JSON.stringify(data)));
-        })
+      task(emit)
         .catch((error) => {
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                error: error instanceof Error ? error.message : "Report generation failed.",
-              }),
-            ),
-          );
+          emit({
+            type: "error",
+            error: error instanceof Error ? error.message : "报告生成失败。",
+          });
         })
         .finally(() => {
           if (keepalive) clearInterval(keepalive);

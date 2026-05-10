@@ -1,4 +1,4 @@
-import type { InvestmentReport } from "./shared/report";
+import { validateReportPayload, type InvestmentReport } from "./shared/report";
 
 const LAST_REPORT_KEY = "cstd-alpha:last-report";
 
@@ -9,7 +9,7 @@ export function saveLastReport(report: InvestmentReport) {
 export function loadLastReport() {
   try {
     const raw = localStorage.getItem(LAST_REPORT_KEY);
-    return raw ? (JSON.parse(raw) as InvestmentReport) : null;
+    return raw ? validateReportPayload(JSON.parse(raw)) : null;
   } catch {
     return null;
   }

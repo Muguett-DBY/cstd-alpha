@@ -4,6 +4,8 @@ import {
   type InvestmentReport,
   MODULE_WEIGHTS,
   REQUIRED_SECTION_KEYS,
+  REQUIRED_FULL_SECTION_KEYS,
+  SCORE_ITEMS_20,
   type ReportSections,
 } from "../../src/shared/report";
 import { jsonrepair } from "jsonrepair";
@@ -97,13 +99,18 @@ Rules:
 - Use only the evidence bundle and clearly mark missing data. Do not invent facts.
 - This is research, not investment advice.
 - Score harshly: ordinary companies should not easily exceed 70.
+- Bad companies must receive low scores. Do not give a polite high score when cash flow, leverage, governance, growth, or valuation evidence is poor.
+- Every score must be specific, evidence-based, and non-ambiguous. Use labels 极好 / 好 / 一般 / 差.
 - Return the report object at the JSON top level. Do not nest it under "report" or "data".
 - Include top-level company: { name, ticker, market, industry, sector }. company.name is mandatory.
 - Calculate CQS from company quality modules. Calculate IAS after valuation and risk caps.
 - Use these exact section keys: companyOverview, industry, businessModel, moat, governance, financialQuality, growth, valuation, risks, finalConclusion.
 - Include all 10 moduleScores with ids matching the provided moduleWeights.
-- Keep each section concise: 70-130 Chinese characters or 45-90 English words.
-- Keep module summaries under 45 Chinese characters or 30 English words.
+- Include all 20 scoreItems20 with ids matching the provided scoreItems20 definitions. Each item needs score, label, evidence, deductions, recentChange, reason.
+- Include fullSections with these exact keys: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
+- Write a complete deep Chinese report. Do not compress the report into a short card. Each major fullSections paragraph should contain concrete evidence, judgment, and deduction logic.
+- Include financialTenYear.rows for available years and metrics. If a value is unavailable, write 数据不足, not a fake number.
+- Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
 - Include evidence with source URLs and retrievedAt timestamps, maximum 8 items.
 - Conclusions must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
 `;
@@ -155,6 +162,9 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
         "quarterlyTotalAssets",
         "quarterlyTotalDebt",
         "quarterlyStockholdersEquity",
+        "incomeRows",
+        "cashflowRows",
+        "balanceRows",
       ]),
       summaryDetail: pick(asRecord(summary?.summaryDetail), [
         "marketCap",
@@ -182,6 +192,7 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
       price: pick(asRecord(summary?.price), ["longName", "shortName", "currency", "exchangeName", "quoteType"]),
       calendarEvents: pick(asRecord(summary?.calendarEvents), ["earnings", "exDividendDate", "dividendDate"]),
       earnings: pick(asRecord(summary?.earnings), ["financialsChart", "earningsChart"]),
+      eastmoney: pick(asRecord(evidence.facts.eastmoney), ["quote", "incomeRows", "cashflowRows", "balanceRows"]),
     },
   };
 }
@@ -236,9 +247,46 @@ function buildExpectedOutputShape(evidence: EvidenceBundle) {
       evidence: [],
       concerns: [],
     })),
+    scoreItems20: SCORE_ITEMS_20.map((item) => ({
+      ...item,
+      score: 0,
+      label: "一般",
+      evidence: [],
+      deductions: [],
+      recentChange: "",
+      reason: "",
+    })),
     redFlags: [],
     evidence: evidence.evidence,
     sections: Object.fromEntries(REQUIRED_SECTION_KEYS.map((key) => [key, ""])) as ReportSections,
+    qualitativeAnalysis: {
+      companyHistory: "",
+      lifecycle: "",
+      businessStructure: "",
+      shareholderPosition: "",
+    },
+    financialTenYear: {
+      rows: [],
+      interpretation: "",
+    },
+    valuationAnalysis: {
+      currentPrice: "",
+      fairValueRange: "",
+      buyRange: "",
+      sellReduceRange: "",
+      methods: [],
+      scenarios: [],
+      conclusion: "",
+    },
+    riskMatrix: [],
+    accountRules: {
+      companyGrade: "",
+      maxPosition: "",
+      addCondition: "",
+      reduceCondition: "",
+      reviewTiming: "",
+    },
+    fullSections: Object.fromEntries(REQUIRED_FULL_SECTION_KEYS.map((key) => [key, ""])),
     disclaimer: "本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。",
   };
 }

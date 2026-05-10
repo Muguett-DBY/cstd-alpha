@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildReportDocxBlob } from "./export-report";
-import { MODULE_WEIGHTS, type InvestmentReport } from "../shared/report";
+import { MODULE_WEIGHTS, validateReportPayload, type InvestmentReport } from "../shared/report";
 
 const report: InvestmentReport = {
   company: { name: "Example Inc.", ticker: "EXM", market: "US" },
@@ -15,6 +15,7 @@ const report: InvestmentReport = {
     weight: module.weight,
     score: 70,
     weightedScore: module.weight * 0.7,
+    label: "好",
     summary: "summary",
     evidence: ["evidence"],
     concerns: ["concern"],
@@ -34,11 +35,12 @@ const report: InvestmentReport = {
     finalConclusion: "final",
   },
   disclaimer: "Research only.",
-};
+} as InvestmentReport;
+const normalizedReport = validateReportPayload(report);
 
 describe("DOCX export", () => {
   test("creates a valid docx blob", async () => {
-    const blob = await buildReportDocxBlob(report);
+    const blob = await buildReportDocxBlob(normalizedReport);
 
     expect(blob.type).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     expect(blob.size).toBeGreaterThan(1000);
