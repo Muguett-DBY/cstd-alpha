@@ -96,12 +96,20 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      yield JSON.parse(trimmed) as Record<string, unknown>;
+      yield parseNdjsonLine(trimmed);
     }
   }
 
   buffer += decoder.decode();
-  if (buffer.trim()) yield JSON.parse(buffer.trim()) as Record<string, unknown>;
+  if (buffer.trim()) yield parseNdjsonLine(buffer.trim());
+}
+
+function parseNdjsonLine(line: string): Record<string, unknown> {
+  try {
+    return JSON.parse(line) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error("报告响应不完整，请重试。", { cause: error });
+  }
 }
 
 async function readError(response: Response) {

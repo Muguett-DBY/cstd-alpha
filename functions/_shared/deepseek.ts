@@ -14,6 +14,7 @@ type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
+export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["onePageConclusion", "companyOverview", "industryTrack"],
@@ -42,8 +43,9 @@ export class DeepSeekReportError extends Error {
     message: string,
     public readonly code: string,
     public readonly retryable = true,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "DeepSeekReportError";
   }
 }
@@ -65,30 +67,12 @@ export async function callDeepSeekReport({
 }: DeepSeekInput): Promise<InvestmentReport> {
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
 
-  const scoringJson = await requestDeepSeekJson({
+  const scoringJson = await requestScoringJson({
     apiKey,
     fetchImpl,
-    maxTokens: 18000,
-    messages: [
-      {
-        role: "system",
-        content: buildScoringSystemPrompt(language),
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            task: "Generate the structured scoring JSON only. Do not write the long narrative fullSections in this pass.",
-            moduleWeights: MODULE_WEIGHTS,
-            scoreItems20: SCORE_ITEMS_20,
-            expectedOutputShape: buildScoringOutputShape(evidence),
-            evidence: compactEvidenceForPrompt(evidence),
-          },
-          null,
-          2,
-        ),
-      },
-    ],
+    language,
+    evidence,
+    onProgress,
   });
 
   const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
@@ -103,6 +87,77 @@ export async function callDeepSeekReport({
 
   const report = validateReportPayload(mergeNarrativePayload(scoringReport, { fullSections }, evidence));
   return withProviderContext(report, evidence);
+}
+
+async function requestScoringJson({
+  apiKey,
+  fetchImpl,
+  language,
+  evidence,
+  onProgress,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  evidence: EvidenceBundle;
+  onProgress?: DeepSeekInput["onProgress"];
+}) {
+  try {
+    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: false });
+  } catch (error) {
+    if (!isRetryableModelOutputError(error)) throw error;
+    onProgress?.({
+      stage: "deepseek_scoring_retry",
+      label: "评分结构重试",
+      detail: "模型第一次返回的评分 JSON 不完整，正在用更紧凑结构重试。",
+      percent: 64,
+    });
+    return requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true });
+  }
+}
+
+async function requestScoringJsonOnce({
+  apiKey,
+  fetchImpl,
+  language,
+  evidence,
+  strictLength,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  evidence: EvidenceBundle;
+  strictLength: boolean;
+}) {
+  const scoringJson = await requestDeepSeekJson({
+    apiKey,
+    fetchImpl,
+    maxTokens: 18000,
+    messages: [
+      {
+        role: "system",
+        content: buildScoringSystemPrompt(language, strictLength),
+      },
+      {
+        role: "user",
+        content: JSON.stringify(
+          {
+            task: strictLength
+              ? "Generate the minimum complete structured scoring JSON. Keep all text very short."
+              : "Generate the structured scoring JSON only. Do not write the long narrative fullSections in this pass.",
+            moduleWeights: strictLength ? undefined : MODULE_WEIGHTS,
+            scoreItems20: SCORE_ITEMS_20.map(({ id, title, moduleId, weight }) => ({ id, title, moduleId, weight })),
+            expectedOutputShape: buildScoringOutputShape(evidence, strictLength),
+            evidence: compactEvidenceForPrompt(evidence),
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  });
+  assertScoringPayloadComplete(scoringJson);
+  return scoringJson;
 }
 
 async function requestNarrativeSections({
@@ -161,7 +216,7 @@ async function requestNarrativeBatch({
   try {
     return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false });
   } catch (error) {
-    if (!isModelOutputLengthError(error)) throw error;
+    if (!isRetryableModelOutputError(error)) throw error;
     return requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true });
   }
 }
@@ -251,10 +306,14 @@ async function requestDeepSeekJson({
   const content = choice?.message?.content;
   if (choice?.finish_reason === "length" || !content?.trim()) throw new DeepSeekReportError(MODEL_OUTPUT_LENGTH_MESSAGE, "MODEL_OUTPUT_LENGTH", true);
 
-  return parseJsonObject(content);
+  try {
+    return parseJsonObject(content);
+  } catch (error) {
+    throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true, { cause: error });
+  }
 }
 
-function buildScoringSystemPrompt(language: "zh-CN" | "en") {
+function buildScoringSystemPrompt(language: "zh-CN" | "en", strictLength: boolean) {
   return `
 You are CSTD Alpha, a cautious long-term fundamental investment research assistant.
 Return ONLY one valid JSON object. Do not wrap it in Markdown.
@@ -267,6 +326,7 @@ Rules:
 - Bad companies must receive low scores. Do not give a polite high score when cash flow, leverage, governance, growth, or valuation evidence is poor.
 - Every score must be specific, evidence-based, and non-ambiguous. Use labels 极好 / 好 / 一般 / 差.
 - This is a compact scoring pass. Do not write long paragraphs. The full narrative is generated later in smaller batches.
+- ${strictLength ? "Strict retry mode: output only required scalar fields, 20 scoreItems20, short valuation/risk/account fields, and evidence references. No optional prose." : "Normal mode: compact but complete structured scoring output."}
 - Return the report object at the JSON top level. Do not nest it under "report" or "data".
 - Include top-level company: { name, ticker, market, industry, sector }. company.name is mandatory.
 - Calculate 公司质量评分（CQS）from company quality modules. Calculate 投资吸引力评分（IAS）after valuation and risk caps. In all human-readable report text, use the Chinese names first, with abbreviations only in parentheses.
@@ -407,8 +467,8 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
   };
 }
 
-function buildScoringOutputShape(evidence: EvidenceBundle) {
-  return {
+function buildScoringOutputShape(evidence: EvidenceBundle, strictLength: boolean) {
+  const base = {
     company: {
       name: evidence.company.name,
       ticker: evidence.company.ticker ?? "",
@@ -419,16 +479,6 @@ function buildScoringOutputShape(evidence: EvidenceBundle) {
     asOf: evidence.retrievedAt,
     conclusion: "观察",
     oneSentence: "",
-    cqs: 0,
-    ias: 0,
-    moduleScores: MODULE_WEIGHTS.map(({ id }) => ({
-      id,
-      score: 0,
-      label: "一般",
-      summary: "",
-      evidence: [],
-      concerns: [],
-    })),
     scoreItems20: SCORE_ITEMS_20.map(({ id }) => ({
       id,
       score: 0,
@@ -440,13 +490,6 @@ function buildScoringOutputShape(evidence: EvidenceBundle) {
     })),
     redFlags: [],
     evidence: evidence.evidence,
-    sections: Object.fromEntries(REQUIRED_SECTION_KEYS.map((key) => [key, ""])) as ReportSections,
-    qualitativeAnalysis: {
-      companyHistory: "",
-      lifecycle: "",
-      businessStructure: "",
-      shareholderPosition: "",
-    },
     financialTenYear: {
       rows: [],
       interpretation: "",
@@ -469,6 +512,29 @@ function buildScoringOutputShape(evidence: EvidenceBundle) {
       reviewTiming: "",
     },
     disclaimer: "本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。",
+  };
+
+  if (strictLength) return base;
+
+  return {
+    ...base,
+    cqs: 0,
+    ias: 0,
+    moduleScores: MODULE_WEIGHTS.map(({ id }) => ({
+      id,
+      score: 0,
+      label: "一般",
+      summary: "",
+      evidence: [],
+      concerns: [],
+    })),
+    sections: Object.fromEntries(REQUIRED_SECTION_KEYS.map((key) => [key, ""])) as ReportSections,
+    qualitativeAnalysis: {
+      companyHistory: "",
+      lifecycle: "",
+      businessStructure: "",
+      shareholderPosition: "",
+    },
   };
 }
 
@@ -576,8 +642,10 @@ function withProviderContext(report: InvestmentReport, evidence: EvidenceBundle)
   };
 }
 
-function isModelOutputLengthError(error: unknown) {
-  return typeof error === "object" && error !== null && (error as Record<string, unknown>).code === "MODEL_OUTPUT_LENGTH";
+function isRetryableModelOutputError(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as Record<string, unknown>).code;
+  return code === "MODEL_OUTPUT_LENGTH" || code === "MODEL_OUTPUT_INVALID_JSON";
 }
 
 function normalizeSections(rawSections: unknown, topLevel: Record<string, unknown>, evidence: EvidenceBundle) {
@@ -626,6 +694,20 @@ function parseJsonObject(content: string) {
         cause: error,
       });
     }
+  }
+}
+
+function assertScoringPayloadComplete(value: unknown) {
+  const payload = unwrapReportPayload(value);
+  if (!isRecord(payload) || !Array.isArray(payload.scoreItems20)) {
+    throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true);
+  }
+  const rawItems = payload.scoreItems20.filter(isRecord);
+  const itemIds = new Set(rawItems.map((item) => (typeof item.id === "string" ? item.id : "")));
+  const hasAllItems = SCORE_ITEMS_20.every((item) => itemIds.has(item.id));
+  const hasNumericScores = rawItems.every((item) => typeof item.score === "number" && Number.isFinite(item.score));
+  if (rawItems.length < SCORE_ITEMS_20.length || !hasAllItems || !hasNumericScores) {
+    throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true);
   }
 }
 

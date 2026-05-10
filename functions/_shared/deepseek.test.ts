@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { callDeepSeekReport, MODEL_OUTPUT_LENGTH_MESSAGE } from "./deepseek";
+import { callDeepSeekReport, MODEL_OUTPUT_INVALID_JSON_MESSAGE, MODEL_OUTPUT_LENGTH_MESSAGE } from "./deepseek";
 import type { EvidenceBundle } from "./providers";
+import { SCORE_ITEMS_20 } from "../../src/shared/report";
 
 const evidence: EvidenceBundle = {
   company: { name: "Example Inc.", ticker: "EXM", market: "US" },
@@ -32,6 +33,15 @@ function reportPayload(overrides: Record<string, unknown> = {}) {
     cqs: 60,
     ias: 55,
     moduleScores: [],
+    scoreItems20: SCORE_ITEMS_20.map((item, index) => ({
+      id: item.id,
+      score: 55 + (index % 10),
+      label: "一般",
+      evidence: ["公开证据"],
+      deductions: ["扣分点"],
+      recentChange: "最近 12 个月影响有限。",
+      reason: "基于公开证据给出中性评分。",
+    })),
     redFlags: [],
     evidence: [],
     sections: {
@@ -124,6 +134,40 @@ describe("DeepSeek report client", () => {
     });
   });
 
+  test("retries the scoring pass when DeepSeek returns incomplete JSON without a length finish reason", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ finish_reason: "stop", message: { content: `{"company":{"name":"Example Inc."},"scoreItems20":[` } }],
+        }),
+      })
+      .mockResolvedValueOnce(modelResponse(reportPayload()));
+    mockNarrativeBatches(fetchMock);
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(report.company.name).toBe("Example Inc.");
+    expect(report.scoreItems20).toHaveLength(20);
+  });
+
+  test("maps unrecoverable incomplete JSON to a Chinese retryable model error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ finish_reason: "stop", message: { content: `{"company":{"name":"Example Inc."},"scoreItems20":[` } }],
+      }),
+    });
+
+    await expect(callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock })).rejects.toMatchObject({
+      message: MODEL_OUTPUT_INVALID_JSON_MESSAGE,
+      code: "MODEL_OUTPUT_INVALID_JSON",
+      retryable: true,
+    });
+  });
+
   test("combines structured scoring and narrative sections without losing provider company identity", async () => {
     const maotaiEvidence: EvidenceBundle = {
       ...evidence,
@@ -141,7 +185,7 @@ describe("DeepSeek report client", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(modelResponse(reportPayload({ company: { name: "贵州茅台" }, scoreItems20: [] })));
+      .mockResolvedValueOnce(modelResponse(reportPayload({ company: { name: "贵州茅台" } })));
     mockNarrativeBatches(fetchMock);
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence: maotaiEvidence, fetchImpl: fetchMock });
@@ -172,30 +216,7 @@ describe("DeepSeek report client", () => {
   });
 
   test("repairs malformed JSON before schema validation", async () => {
-    const malformed = `{
-      "company": {"name": "Example Inc."}
-      "asOf": "2026-05-10T00:00:00.000Z",
-      "conclusion": "观察",
-      "oneSentence": "A test company.",
-      "cqs": 60,
-      "ias": 55,
-      "moduleScores": [],
-      "redFlags": [],
-      "evidence": [],
-      "sections": {
-        "companyOverview": "overview",
-        "industry": "industry",
-        "businessModel": "model",
-        "moat": "moat",
-        "governance": "governance",
-        "financialQuality": "financials",
-        "growth": "growth",
-        "valuation": "valuation",
-        "risks": "risks",
-        "finalConclusion": "final"
-      },
-      "disclaimer": "Research only."
-    }`;
+    const malformed = JSON.stringify(reportPayload()).replace('},"asOf"', '}"asOf"');
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({

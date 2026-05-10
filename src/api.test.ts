@@ -28,6 +28,33 @@ describe("API client", () => {
     ).rejects.toThrow("DeepSeek request failed.");
   });
 
+  test("maps malformed streamed NDJSON to a Chinese incomplete-response error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          `${JSON.stringify({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "处理中", percent: 62, at: "2026-05-10T00:00:00.000Z" })}\n{"type":"error"`,
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(
+      generateReport({
+        company: {
+          id: "eastmoney:1.600519",
+          name: "贵州茅台",
+          code: "600519",
+          exchange: "上海证券交易所",
+          listingPlace: "沪A",
+          marketType: "AStock",
+          quoteId: "1.600519",
+          source: "eastmoney",
+        },
+      }),
+    ).rejects.toThrow("报告响应不完整，请重试。");
+  });
+
   test("returns candidates from company search API", async () => {
     vi.stubGlobal(
       "fetch",
