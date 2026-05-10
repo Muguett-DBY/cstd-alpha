@@ -18,6 +18,7 @@ function App() {
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<ReportProgress[]>([]);
+  const [evidenceCount, setEvidenceCount] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
@@ -78,11 +79,14 @@ function App() {
 
     setError("");
     setProgress([]);
+    setEvidenceCount(0);
+    setReport(null);
     setStartedAt(Date.now());
     setPhase("generating");
 
     try {
       const nextReport = await generateReport({ company: selectedCompany }, (item) => {
+        if (typeof item.evidenceCount === "number") setEvidenceCount(item.evidenceCount);
         setProgress((current) => [...current.slice(-12), item]);
       });
       setReport(nextReport);
@@ -203,7 +207,7 @@ function App() {
           {chartError ? <p className="error-text">{chartError}</p> : null}
         </section>
 
-        <ProgressPanel progress={progress} phase={phase} elapsedSeconds={elapsedSeconds} fallbackEvidenceCount={report?.evidence.length ?? 0} />
+        <ProgressPanel progress={progress} phase={phase} elapsedSeconds={elapsedSeconds} evidenceCount={evidenceCount || report?.evidence.length || 0} />
         {error ? <p className="error-text">{error}</p> : null}
       </aside>
 
@@ -273,28 +277,23 @@ function ProgressPanel({
   progress,
   phase,
   elapsedSeconds,
-  fallbackEvidenceCount,
+  evidenceCount,
 }: {
   progress: ReportProgress[];
   phase: Phase;
   elapsedSeconds: number;
-  fallbackEvidenceCount: number;
+  evidenceCount: number;
 }) {
   const latest = progress.at(-1);
-  const currentEvidenceCount =
-    progress.reduce((count, item) => {
-      const match = item.detail.match(/(\d+)\s*条/);
-      return match ? Number(match[1]) : count;
-    }, phase === "generating" ? 0 : fallbackEvidenceCount) ?? 0;
   return (
     <section className="progress-panel">
       <div className="progress-head">
         <span>生成状态</span>
-        <strong>{phase === "generating" ? `${elapsedSeconds}s` : phase === "ready" ? "完成" : "待开始"}</strong>
+        <strong>{phase === "generating" ? `${elapsedSeconds}s` : phase === "ready" ? "完成" : phase === "error" ? "失败" : "待开始"}</strong>
       </div>
       <meter min="0" max="100" value={latest?.percent ?? (phase === "ready" ? 100 : 0)} />
       <p>{latest ? `${latest.label}：${latest.detail}` : "选择公司后开始读取公开数据并生成报告。"}</p>
-      <small>当前证据数量：{currentEvidenceCount}</small>
+      <small>当前证据数量：{evidenceCount}</small>
       <ol>
         {progress.map((item, index) => (
           <li key={`${item.stage}-${item.at}-${index}`}>

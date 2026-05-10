@@ -44,13 +44,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       label: "证据包完成",
       detail: `已整理 ${evidence.evidence.length} 条公开证据，开始深度评分。`,
       percent: 48,
+      evidenceCount: evidence.evidence.length,
     });
-    emit({ type: "progress", stage: "deepseek", label: "DeepSeek 深度分析", detail: "V4 Pro max thinking 正在逐项生成 20 项评分和完整报告。", percent: 62 });
+    emit({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "V4 Pro max thinking 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
 
     const report = await callDeepSeekReport({
       apiKey: env.DEEPSEEK_API_KEY,
       evidence,
       language: "zh-CN",
+      onProgress: (progress) => emit({ type: "progress", ...progress }),
     });
 
     emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶、模板章节和导出结构。", percent: 90 });
@@ -76,9 +78,26 @@ type ProgressEvent = {
   detail: string;
   percent: number;
   at?: string;
+  evidenceCount?: number;
 };
 
-type StreamEmit = (event: ProgressEvent | { type: "final"; report: unknown; evidence: unknown } | { type: "error"; error: string }) => void;
+type HeartbeatEvent = {
+  type: "heartbeat";
+  stage: string;
+  label: string;
+  detail: string;
+  percent: number;
+  at?: string;
+};
+
+type ErrorEvent = {
+  type: "error";
+  error: string;
+  code?: string;
+  retryable?: boolean;
+};
+
+type StreamEmit = (event: ProgressEvent | HeartbeatEvent | { type: "final"; report: unknown; evidence: unknown } | ErrorEvent) => void;
 
 function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
   const encoder = new TextEncoder();
@@ -86,20 +105,17 @@ function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const emit: StreamEmit = (event) => {
-        const payload = event.type === "progress" ? { ...event, at: event.at ?? new Date().toISOString() } : event;
+        const payload = event.type === "progress" || event.type === "heartbeat" ? { ...event, at: event.at ?? new Date().toISOString() } : event;
         controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
       };
 
       keepalive = setInterval(() => {
-        emit({ type: "progress", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
+        emit({ type: "heartbeat", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
       }, 10_000);
 
       task(emit)
         .catch((error) => {
-          emit({
-            type: "error",
-            error: error instanceof Error ? error.message : "报告生成失败。",
-          });
+          emit(errorEvent(error));
         })
         .finally(() => {
           if (keepalive) clearInterval(keepalive);
@@ -119,4 +135,14 @@ function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+function errorEvent(error: unknown): ErrorEvent {
+  const record = typeof error === "object" && error !== null ? (error as Record<string, unknown>) : {};
+  return {
+    type: "error",
+    error: error instanceof Error ? error.message : "报告生成失败。",
+    code: typeof record.code === "string" ? record.code : undefined,
+    retryable: typeof record.retryable === "boolean" ? record.retryable : undefined,
+  };
 }

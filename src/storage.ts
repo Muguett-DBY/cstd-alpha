@@ -9,8 +9,23 @@ export function saveLastReport(report: InvestmentReport) {
 export function loadLastReport() {
   try {
     const raw = localStorage.getItem(LAST_REPORT_KEY);
-    return raw ? validateReportPayload(JSON.parse(raw)) : null;
+    if (!raw) return null;
+    const report = validateReportPayload(JSON.parse(raw));
+    if (isLegacyModelFailureReport(report)) {
+      localStorage.removeItem(LAST_REPORT_KEY);
+      return null;
+    }
+    return report;
   } catch {
     return null;
   }
+}
+
+function isLegacyModelFailureReport(report: InvestmentReport) {
+  const message = "DeepSeek returned an empty final response";
+  return (
+    report.oneSentence.includes(message) ||
+    Object.values(report.fullSections).some((section) => section.includes(message)) ||
+    (report.cqs === 0 && report.ias === 0 && report.evidence.length === 0 && report.redFlags.some((flag) => flag.evidence?.includes(message)))
+  );
 }

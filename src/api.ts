@@ -17,6 +17,7 @@ export type ReportProgress = {
   detail: string;
   percent: number;
   at: string;
+  evidenceCount?: number;
 };
 
 export async function checkSession() {
