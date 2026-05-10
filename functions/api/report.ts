@@ -29,13 +29,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ticker: body?.ticker?.trim() || undefined,
       market: body?.market?.trim() || undefined,
     });
-    const report = await callDeepSeekReport({
-      apiKey: env.DEEPSEEK_API_KEY,
-      evidence,
-      language: body?.language ?? "zh-CN",
-    });
 
-    return json({ report, evidence });
+    return streamJson(async () => {
+      const report = await callDeepSeekReport({
+        apiKey: env.DEEPSEEK_API_KEY,
+        evidence,
+        language: body?.language ?? "zh-CN",
+      });
+
+      return { report, evidence };
+    });
   } catch (error) {
     return json(
       {
@@ -52,6 +55,49 @@ function json(data: unknown, status = 200) {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+    },
+  });
+}
+
+function streamJson(task: () => Promise<unknown>) {
+  const encoder = new TextEncoder();
+  let keepalive: ReturnType<typeof setInterval> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode("\n"));
+      keepalive = setInterval(() => {
+        controller.enqueue(encoder.encode("\n"));
+      }, 10_000);
+
+      task()
+        .then((data) => {
+          controller.enqueue(encoder.encode(JSON.stringify(data)));
+        })
+        .catch((error) => {
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                error: error instanceof Error ? error.message : "Report generation failed.",
+              }),
+            ),
+          );
+        })
+        .finally(() => {
+          if (keepalive) clearInterval(keepalive);
+          controller.close();
+        });
+    },
+    cancel() {
+      if (keepalive) clearInterval(keepalive);
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }

@@ -33,7 +33,9 @@ export async function generateReport(input: GenerateReportInput): Promise<Invest
 
   if (!response.ok) throw new Error((await readError(response)) || "Report generation failed.");
 
-  const data = (await response.json()) as { report: InvestmentReport };
+  const data = (await response.json()) as { report?: InvestmentReport; error?: string };
+  if (data.error) throw new Error(data.error);
+  if (!data.report) throw new Error("Report response did not include a report.");
   return data.report;
 }
 
