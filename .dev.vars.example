@@ -1,0 +1,3 @@
+DEEPSEEK_API_KEY="paste-deepseek-key-here"
+REPORT_PASSWORD="replace-with-local-password"
+AUTH_SECRET="replace-with-long-random-secret"

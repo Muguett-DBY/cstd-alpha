@@ -1,0 +1,38 @@
+{
+  "name": "cstd-alpha",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck:functions": "tsc --noEmit --ignoreConfig --skipLibCheck --target ES2023 --lib ES2023 --module ESNext --moduleResolution Bundler --types @cloudflare/workers-types functions/api/session.ts functions/api/report.ts functions/_shared/auth.ts functions/_shared/providers.ts functions/_shared/deepseek.ts src/shared/report.ts",
+    "pages:dev": "wrangler pages dev dist",
+    "pages:deploy": "wrangler pages deploy dist --project-name=cstd-alpha --branch=main"
+  },
+  "dependencies": {
+    "docx": "^9.6.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260510.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.90.0"
+  }
+}
