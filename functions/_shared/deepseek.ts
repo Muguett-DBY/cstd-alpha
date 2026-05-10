@@ -490,6 +490,9 @@ Language: ${language === "zh-CN" ? "Simplified Chinese" : "English"}.
 
 Rules:
 - Use only the evidence bundle and clearly mark missing data. Do not invent facts.
+- Distinguish provider failure from business weakness. Yahoo/Eastmoney endpoint failure is not evidence that the company is bad.
+- For US-listed companies, SEC EDGAR Company Facts and official investor-relations financial statements are authoritative when Yahoo or Eastmoney financial endpoints are unavailable.
+- If SEC/official financial evidence is present, never write that the company's financial statements are fully missing just because Yahoo returned no data.
 - This is research, not investment advice.
 - Score harshly: ordinary companies should not easily exceed 70.
 - Bad companies must receive low scores. Do not give a polite high score when cash flow, leverage, governance, growth, or valuation evidence is poor.
@@ -523,6 +526,7 @@ Rules:
 - Return only { "scoreItemDetails": [...] } at the JSON top level.
 - Do not change numeric scores, labels, item ids, item titles, or weights.
 - Use only the provided scoring report, normalized financial table, valuation data, and evidence bundle. Do not invent facts.
+- Distinguish data-provider failures from company weakness. If SEC/official financial data is present for a US company, use it and do not describe the company as financially unassessable merely because Yahoo failed.
 - Each requested item must include 2-4 concrete evidence bullets, 1-3 direct deduction bullets, a recentChange sentence, and a reason.
 - Evidence bullets should mention the latest available period, source freshness, metric name, or valuation snapshot when possible.
 - Reasons must be direct and non-ambiguous: bad evidence means low score; do not write polite neutral language for weak companies.
@@ -540,6 +544,7 @@ Rules:
 - Return only { "fullSections": { ... } } at the JSON top level.
 - Use only these fullSections keys in this batch: ${keys.join(", ")}.
 - Base the writing only on the validated scoring report and evidence bundle. Do not invent facts.
+- Distinguish provider failures from company weakness. For US companies, SEC EDGAR and official investor-relations financial evidence should override Yahoo/Eastmoney financial endpoint failures.
 - Write direct conclusions. If evidence is weak, say 数据不足 and explain the impact.
 - Each section should be complete enough for a Word report, but avoid unnecessary repetition so the JSON response is not truncated.
 - ${strictLength ? "Strict retry mode: each section must be 220-420 Chinese characters and should prioritize conclusion, evidence, deduction logic, and tracking metrics." : "Each section should usually be 350-650 Chinese characters, with concrete evidence and deduction logic."}
@@ -624,6 +629,7 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
       calendarEvents: pick(asRecord(summary?.calendarEvents), ["earnings", "exDividendDate", "dividendDate"]),
       earnings: pick(asRecord(summary?.earnings), ["financialsChart", "earningsChart"]),
       eastmoney: pick(asRecord(evidence.facts.eastmoney), ["quote", "incomeRows", "cashflowRows", "balanceRows"]),
+      sec: pick(asRecord(evidence.facts.sec), ["cik", "title", "companyFacts", "latestAnnual", "latestQuarter", "normalizedFinancialTenYear", "summaryFinancialData"]),
       financialTenYear: evidence.facts.financialTenYear,
     },
   };

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildFinancialTenYearFromEastmoney, fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
+import { buildFinancialTenYearFromEastmoney, buildFinancialTenYearFromSecFacts, fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
 
 describe("public data providers", () => {
   test("prioritizes Eastmoney Chinese market candidates before Yahoo fallback", async () => {
@@ -360,4 +360,177 @@ describe("public data providers", () => {
     expect(result.facts.fundamentals.trailingTotalRevenue).toEqual([{ raw: 391000000000, asOfDate: "2025-09-30" }]);
     expect(result.evidence.filter((item) => item.freshness === "latest-public")).toHaveLength(3);
   });
+
+  test("normalizes SEC company facts into named USD financial rows", () => {
+    const financialTenYear = buildFinancialTenYearFromSecFacts(secAppleFacts());
+
+    expect(financialTenYear.rows.map((row) => row.metric)).toEqual(
+      expect.arrayContaining(["营业收入", "净利润", "经营现金流", "总资产", "总负债", "股东权益", "摊薄每股收益", "股票回购支出"]),
+    );
+    expect(financialTenYear.rows.some((row) => row.metric === "未命名指标")).toBe(false);
+    expect(financialTenYear.rows.find((row) => row.metric === "营业收入")?.values).toMatchObject({
+      "2024": "3910.35亿美元",
+      "2025": "4161.61亿美元",
+    });
+    expect(financialTenYear.rows.find((row) => row.metric === "资产负债率")?.values["2025"]).toBe("81.57%");
+    expect(financialTenYear.latestPeriod).toBe("FY2025 10-K");
+  });
+
+  test("uses SEC fallback for AAPL when Yahoo is unavailable and fixes US quote scaling", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: {
+              f57: "AAPL",
+              f58: "苹果",
+              f43: 293320,
+              f44: 294710,
+              f45: 289110,
+              f46: 291000,
+              f47: 52690000,
+              f60: 287440,
+              f116: 4308095261920,
+              f162: 0,
+              f167: 4046,
+              f169: 5880,
+              f170: 205,
+            },
+          }),
+        });
+      }
+      if (url.includes("company_tickers.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." } }),
+        });
+      }
+      if (url.includes("companyfacts/CIK0000320193.json")) {
+        return Promise.resolve({ ok: true, json: async () => secAppleFacts() });
+      }
+      return Promise.resolve({ ok: false, status: 401, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "苹果",
+      company: {
+        id: "eastmoney:105.AAPL",
+        name: "苹果",
+        code: "AAPL",
+        exchange: "美国市场",
+        listingPlace: "美股",
+        marketType: "UsStock",
+        quoteId: "105.AAPL",
+        secid: "105.AAPL",
+        yahooSymbol: "AAPL",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock,
+    });
+
+    expect(result.company).toMatchObject({ name: "苹果", ticker: "AAPL", market: "美股" });
+    expect(result.facts.quote).toMatchObject({
+      regularMarketPrice: 293.32,
+      regularMarketDayHigh: 294.71,
+      regularMarketPreviousClose: 287.44,
+      regularMarketChange: 5.88,
+      regularMarketChangePercent: 2.05,
+      priceToBook: 40.46,
+    });
+    expect((result.facts.quote as Record<string, unknown>).trailingPE).toBe(39.64);
+    expect(result.facts.financialTenYear).toMatchObject({
+      latestPeriod: "FY2025 10-K",
+      rows: expect.arrayContaining([expect.objectContaining({ metric: "营业收入" }), expect.objectContaining({ metric: "股票回购支出" })]),
+    });
+    expect(result.facts.sec).toMatchObject({
+      cik: "0000320193",
+      latestAnnual: expect.objectContaining({ form: "10-K", fiscalYear: 2025 }),
+    });
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "SEC EDGAR companyfacts endpoint", freshness: "latest-public" })]));
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Apple Investor Relations", freshness: "latest-public" })]));
+  });
 });
+
+function secAppleFacts() {
+  return {
+    cik: 320193,
+    entityName: "Apple Inc.",
+    facts: {
+      "us-gaap": {
+        RevenueFromContractWithCustomerExcludingAssessedTax: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 391_035_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 416_161_000_000 },
+            ],
+          },
+        },
+        NetIncomeLoss: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 93_736_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 112_010_000_000 },
+            ],
+          },
+        },
+        NetCashProvidedByUsedInOperatingActivities: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 118_254_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 132_451_000_000 },
+            ],
+          },
+        },
+        Assets: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 364_980_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 359_241_000_000 },
+            ],
+          },
+        },
+        Liabilities: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 308_030_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 293_021_000_000 },
+            ],
+          },
+        },
+        StockholdersEquity: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 56_950_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 66_220_000_000 },
+            ],
+          },
+        },
+        EarningsPerShareDiluted: {
+          units: {
+            "USD/shares": [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 6.08 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 7.4 },
+            ],
+          },
+        },
+        PaymentsForRepurchaseOfCommonStock: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 94_949_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 89_402_000_000 },
+            ],
+          },
+        },
+        PaymentsOfDividends: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 15_234_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 15_638_000_000 },
+            ],
+          },
+        },
+      },
+    },
+  };
+}

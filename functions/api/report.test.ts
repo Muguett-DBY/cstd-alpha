@@ -71,6 +71,30 @@ describe("report API stream", () => {
       retryable: true,
     });
   });
+
+  test("emits US SEC fallback progress when SEC evidence is available", async () => {
+    const usEvidence: EvidenceBundle = {
+      ...evidence,
+      company: { name: "苹果", ticker: "AAPL", market: "美股" },
+      facts: {
+        sec: {
+          cik: "0000320193",
+          latestAnnual: { form: "10-K", fiscalYear: 2025 },
+        },
+      },
+    };
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(usEvidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: usEvidence.company, evidence: usEvidence.evidence });
+
+    const events = await postReportEvents();
+
+    expect(events.find((event) => event.stage === "us_sec_fallback")).toMatchObject({
+      type: "progress",
+      label: "美股财报来源切换",
+      evidenceCount: 2,
+    });
+  });
 });
 
 async function postReportEvents() {

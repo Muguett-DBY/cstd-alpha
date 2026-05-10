@@ -29,6 +29,39 @@ type FetchChartInput = {
   fetchImpl?: FetchLike;
 };
 
+type SecFactEntry = {
+  fy?: number;
+  fp?: string;
+  form?: string;
+  filed?: string;
+  end?: string;
+  val?: number;
+  frame?: string;
+};
+
+type SecFilingSummary = {
+  form?: string;
+  fiscalYear?: number;
+  fiscalPeriod?: string;
+  end?: string;
+  filed?: string;
+};
+
+type SecCompanyData = {
+  cik: string;
+  title: string;
+  companyFactsUrl: string;
+  companyFacts: unknown;
+  latestAnnual?: SecFilingSummary;
+  latestQuarter?: SecFilingSummary;
+  normalizedFinancialTenYear: NormalizedFinancialTenYear;
+  summaryFinancialData?: Record<string, unknown>;
+};
+
+const SEC_TICKER_OVERRIDES: Record<string, { cik_str: number; ticker: string; title: string }> = {
+  AAPL: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." },
+};
+
 export async function fetchPublicCompanyEvidence({
   companyName,
   ticker,
@@ -69,7 +102,9 @@ export async function fetchPublicCompanyEvidence({
   const incomeRows = arrayPath(incomeJson, ["result", "data"]);
   const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
-  const financialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
+  const eastmoneyFinancialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
+  const secData = selectedCompany && isUsListedCompany(selectedCompany) ? await fetchSecCompanyData(symbol, fetchImpl) : undefined;
+  const financialTenYear = eastmoneyFinancialTenYear.rows.length ? eastmoneyFinancialTenYear : secData?.normalizedFinancialTenYear ?? eastmoneyFinancialTenYear;
 
   const quoteJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(quoteUrl, fetchImpl);
   const quote = firstArrayItem(recordPath(quoteJson, ["quoteResponse", "result"]));
@@ -84,19 +119,23 @@ export async function fetchPublicCompanyEvidence({
     : undefined;
 
   const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
+  const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length);
 
-  if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals && !eastmoneyQuote && !hasEastmoneyFinancials) {
+  if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals && !eastmoneyQuote && !hasPublicFinancials) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
   }
 
   const profile = isRecord(summary?.assetProfile) ? summary.assetProfile : undefined;
   const price = isRecord(summary?.price) ? summary.price : undefined;
+  const providerFinancialData = normalizeFundamentals(fundamentals) ?? secData?.summaryFinancialData;
   const mergedQuote = {
-    ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote) : {}),
+    ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote, selectedCompany) : {}),
     ...(searchQuote ?? {}),
     ...(chartMeta ?? {}),
     ...(quote ?? {}),
   };
+  const inferredTrailingPe = inferTrailingPe(mergedQuote.regularMarketPrice, providerFinancialData?.trailingDilutedEPS);
+  if (inferredTrailingPe !== undefined && mergedQuote.trailingPE === undefined) mergedQuote.trailingPE = inferredTrailingPe;
   const name =
     selectedCompany?.name ||
     stringValue(quote?.longName) ||
@@ -147,8 +186,36 @@ export async function fetchPublicCompanyEvidence({
         freshness: hasEastmoneyFinancials ? "latest-public" : "unavailable",
         notes: financialTenYear.rows.length
           ? `Normalized ${financialTenYear.rows.length} named financial metrics from public statements. Latest period: ${financialTenYear.latestPeriod ?? "unknown"}.`
-          : "Income statement, cash flow statement and balance sheet rows where available.",
+          : selectedCompany && isUsListedCompany(selectedCompany)
+            ? "Eastmoney does not expose usable US financial statements here; SEC fallback was attempted."
+            : "Income statement, cash flow statement and balance sheet rows where available.",
       },
+      ...(selectedCompany && isUsListedCompany(selectedCompany)
+        ? [
+            {
+              title: `${symbol} SEC company facts`,
+              source: "SEC EDGAR companyfacts endpoint",
+              url: secData?.companyFactsUrl || "https://www.sec.gov/files/company_tickers.json",
+              retrievedAt,
+              freshness: secData?.normalizedFinancialTenYear.rows.length ? "latest-public" : "unavailable",
+              notes: secData
+                ? `SEC CIK ${secData.cik}; normalized ${secData.normalizedFinancialTenYear.rows.length} USD financial metrics. Latest annual filing: ${secData.latestAnnual?.form ?? "unknown"} ${secData.latestAnnual?.fiscalYear ?? ""}.`
+                : "SEC ticker mapping or companyfacts endpoint returned no usable data.",
+            } satisfies EvidenceItem,
+          ]
+        : []),
+      ...(isAppleSymbol(symbol) && selectedCompany && isUsListedCompany(selectedCompany)
+        ? [
+            {
+              title: "Apple latest official financial statements",
+              source: "Apple Investor Relations",
+              url: "https://www.apple.com/newsroom/pdfs/fy2026q2/FY26_Q2_Consolidated_Financial_Statements.pdf",
+              retrievedAt,
+              freshness: "latest-public",
+              notes: "Apple official consolidated financial statements are available as supplemental public evidence for AAPL.",
+            } satisfies EvidenceItem,
+          ]
+        : []),
       {
         title: `${symbol} latest quote`,
         source: "Yahoo Finance public quote endpoint",
@@ -192,7 +259,7 @@ export async function fetchPublicCompanyEvidence({
             sector: stringValue(searchQuote?.sector) || stringValue(searchQuote?.sectorDisp),
           }),
           price: chartMeta,
-          financialData: normalizeFundamentals(fundamentals),
+          financialData: providerFinancialData,
         } satisfies Record<string, unknown>),
       selectedCompany,
       eastmoney: {
@@ -201,10 +268,21 @@ export async function fetchPublicCompanyEvidence({
         cashflowRows,
         balanceRows,
       },
+      sec: secData
+        ? {
+            cik: secData.cik,
+            title: secData.title,
+            companyFacts: summarizeSecCompanyFacts(secData.companyFacts, secData.companyFactsUrl),
+            latestAnnual: secData.latestAnnual,
+            latestQuarter: secData.latestQuarter,
+            normalizedFinancialTenYear: secData.normalizedFinancialTenYear,
+            summaryFinancialData: secData.summaryFinancialData,
+          }
+        : undefined,
       financialTenYear: financialTenYear.rows.length ? financialTenYear : undefined,
       search: searchQuote ?? undefined,
       chart: chart ?? undefined,
-      fundamentals: normalizeFundamentals(fundamentals),
+      fundamentals: providerFinancialData,
     },
   };
 }
@@ -315,6 +393,54 @@ export function buildFinancialTenYearFromEastmoney(incomeRows: unknown[], cashfl
   };
 }
 
+export function buildFinancialTenYearFromSecFacts(companyFacts: unknown): NormalizedFinancialTenYear {
+  const usGaap = secUsGaapFacts(companyFacts);
+  if (!usGaap) {
+    return {
+      rows: [],
+      interpretation: "SEC EDGAR 未返回可整理为十年表的 us-gaap 财务数据。",
+    };
+  }
+
+  const revenue = secAnnualValueMap(usGaap, ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"], ["USD"]);
+  const netIncome = secAnnualValueMap(usGaap, ["NetIncomeLoss"], ["USD"]);
+  const operatingCashFlow = secAnnualValueMap(usGaap, ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"], ["USD"]);
+  const assets = secAnnualValueMap(usGaap, ["Assets"], ["USD"]);
+  const liabilities = secAnnualValueMap(usGaap, ["Liabilities"], ["USD"]);
+  const equity = secAnnualValueMap(usGaap, ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"], ["USD"]);
+  const dilutedEps = secAnnualValueMap(usGaap, ["EarningsPerShareDiluted"], ["USD/shares", "USD/shares"]);
+  const buybacks = secAnnualValueMap(usGaap, ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfCommonStocks", "RepurchasesOfCommonStock"], ["USD"]);
+  const dividends = secAnnualValueMap(usGaap, ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"], ["USD"]);
+  const metricMaps = [revenue, netIncome, operatingCashFlow, assets, liabilities, equity, dilutedEps, buybacks, dividends];
+  const years = Array.from(new Set(metricMaps.flatMap((map) => Array.from(map.keys()))))
+    .sort()
+    .slice(-10);
+
+  const rows = [
+    secMetricRow("营业收入", years, revenue, "usd", "用 SEC 年报收入数据观察业务规模、增长中枢和需求韧性。"),
+    secMetricRow("净利润", years, netIncome, "usd", "用 SEC 年报净利润数据观察最终盈利能力和利润趋势。"),
+    secMetricRow("经营现金流", years, operatingCashFlow, "usd", "检验利润是否转换为真实经营现金流，是财务质量和回购能力的重要依据。"),
+    secMetricRow("总资产", years, assets, "usd", "观察资产规模和资产结构变化，配合负债与权益判断财务安全垫。"),
+    secMetricRow("总负债", years, liabilities, "usd", "观察杠杆和偿债压力，避免只看利润而忽略资产负债表风险。"),
+    secMetricRow("股东权益", years, equity, "usd", "观察净资产基础和回购后权益变化，辅助判断资本配置强度。"),
+    secDerivedMetricRow("资产负债率", years, liabilities, assets, "ratio", "用总负债除以总资产衡量财务杠杆；持续偏高需降低财务健康评分。"),
+    secDerivedMetricRow("净利率", years, netIncome, revenue, "ratio", "用净利润除以收入衡量最终利润留存能力，反映品牌、成本与费用控制。"),
+    secMetricRow("摊薄每股收益", years, dilutedEps, "perShare", "用于结合当前股价推导市盈率，避免把行情源 PE=0 误判为真实估值。"),
+    secMetricRow("分红现金支出", years, dividends, "usd", "观察现金分红力度和股东回报的稳定性。"),
+    secMetricRow("股票回购支出", years, buybacks, "usd", "观察回购规模和资本配置强度，是美股股东回报分析的核心证据。"),
+  ].filter((row): row is FinancialTenYear["rows"][number] => Boolean(row));
+
+  const latestAnnual = latestSecFilingSummary(companyFacts, "annual");
+  return {
+    rows,
+    interpretation: rows.length
+      ? `已从 SEC EDGAR Company Facts 整理 ${years.length} 个 fiscal year 的美元口径具名财务指标；最新年报为 ${latestAnnual?.fiscalYear ? `FY${latestAnnual.fiscalYear}` : "待验证"}。`
+      : "SEC EDGAR 未返回可整理为十年表的年度财务数据。",
+    latestPeriod: latestAnnual?.fiscalYear ? `FY${latestAnnual.fiscalYear} ${latestAnnual.form ?? "SEC"}` : undefined,
+    latestUpdate: latestAnnual?.filed,
+  };
+}
+
 export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }: FetchChartInput): Promise<ChartBundle> {
   const asOf = new Date().toISOString();
   const useEastmoney = Boolean(company.quoteId && (company.listingPlace.includes("A") || company.listingPlace.includes("港") || company.quoteId.startsWith("0.") || company.quoteId.startsWith("1.") || company.quoteId.startsWith("116.")));
@@ -400,6 +526,44 @@ async function searchYahooQuote(companyName: string, fetchImpl: FetchLike) {
   )}&quotesCount=1&newsCount=0`;
   const json = await fetchJson(searchUrl, fetchImpl);
   return firstArrayItem(recordPath(json, ["quotes"]));
+}
+
+async function fetchSecCompanyData(symbol: string, fetchImpl: FetchLike): Promise<SecCompanyData | undefined> {
+  const tickerMapUrl = "https://www.sec.gov/files/company_tickers.json";
+  const tickerMap = await fetchJson(tickerMapUrl, fetchImpl);
+  const entry = findSecTickerEntry(tickerMap, symbol);
+  if (!entry) return undefined;
+
+  const cik = String(entry.cik_str).padStart(10, "0");
+  const companyFactsUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
+  const companyFacts = await fetchJson(companyFactsUrl, fetchImpl);
+  if (!companyFacts) return undefined;
+
+  const normalizedFinancialTenYear = buildFinancialTenYearFromSecFacts(companyFacts);
+  const summaryFinancialData = buildSecSummaryFinancialData(companyFacts);
+  return {
+    cik,
+    title: entry.title,
+    companyFactsUrl,
+    companyFacts,
+    latestAnnual: latestSecFilingSummary(companyFacts, "annual"),
+    latestQuarter: latestSecFilingSummary(companyFacts, "quarter"),
+    normalizedFinancialTenYear,
+    summaryFinancialData,
+  };
+}
+
+function findSecTickerEntry(value: unknown, symbol: string) {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  if (!isRecord(value)) return SEC_TICKER_OVERRIDES[normalizedSymbol];
+  for (const item of Object.values(value)) {
+    if (!isRecord(item)) continue;
+    const ticker = stringValue(item.ticker)?.toUpperCase();
+    const cik = numberValue(item.cik_str);
+    const title = stringValue(item.title);
+    if (ticker === normalizedSymbol && cik !== undefined && title) return { cik_str: cik, ticker, title };
+  }
+  return SEC_TICKER_OVERRIDES[normalizedSymbol];
 }
 
 function buildFundamentalsUrl(symbol: string) {
@@ -504,22 +668,39 @@ function eastmoneyYahooSymbol(code: string, listingPlace: string) {
   return code;
 }
 
-function normalizeEastmoneyQuote(quote: Record<string, unknown>) {
-  return {
+function isUsListedCompany(candidate: CompanyCandidate) {
+  return Boolean(
+    candidate.listingPlace.includes("美") ||
+    candidate.marketType.toLowerCase().includes("us") ||
+    candidate.exchange.toLowerCase().includes("nasdaq") ||
+    candidate.exchange.toLowerCase().includes("nyse") ||
+    candidate.quoteId?.startsWith("105.") ||
+    candidate.quoteId?.startsWith("106.") ||
+    candidate.quoteId?.startsWith("107.")
+  );
+}
+
+function isAppleSymbol(symbol: string) {
+  return symbol.trim().toUpperCase() === "AAPL";
+}
+
+function normalizeEastmoneyQuote(quote: Record<string, unknown>, company: CompanyCandidate | undefined) {
+  const isUs = company ? isUsListedCompany(company) : false;
+  return pickDefined({
     symbol: stringValue(quote.f57),
     longName: stringValue(quote.f58),
-    regularMarketPrice: eastmoneyScaledNumber(quote.f43),
-    regularMarketDayHigh: eastmoneyScaledNumber(quote.f44),
-    regularMarketDayLow: eastmoneyScaledNumber(quote.f45),
-    regularMarketOpen: eastmoneyScaledNumber(quote.f46),
+    regularMarketPrice: eastmoneyPriceNumber(quote.f43, isUs),
+    regularMarketDayHigh: eastmoneyPriceNumber(quote.f44, isUs),
+    regularMarketDayLow: eastmoneyPriceNumber(quote.f45, isUs),
+    regularMarketOpen: eastmoneyPriceNumber(quote.f46, isUs),
     regularMarketVolume: numberValue(quote.f47),
-    regularMarketPreviousClose: eastmoneyScaledNumber(quote.f60),
+    regularMarketPreviousClose: eastmoneyPriceNumber(quote.f60, isUs),
     marketCap: numberValue(quote.f116),
-    trailingPE: eastmoneyScaledNumber(quote.f162),
-    priceToBook: eastmoneyScaledNumber(quote.f167),
-    regularMarketChange: eastmoneyScaledNumber(quote.f169),
-    regularMarketChangePercent: eastmoneyScaledNumber(quote.f170),
-  };
+    trailingPE: eastmoneyRatioField(quote.f162, true),
+    priceToBook: eastmoneyRatioField(quote.f167, true),
+    regularMarketChange: eastmoneyPriceNumber(quote.f169, isUs),
+    regularMarketChangePercent: eastmoneyPercentNumber(quote.f170),
+  });
 }
 
 function normalizeEastmoneyKlines(value: unknown, priceMode: PriceMode): PricePoint[] {
@@ -625,6 +806,171 @@ function latestStatementRow(rows: unknown[]) {
   return sorted.at(-1);
 }
 
+function secUsGaapFacts(companyFacts: unknown): Record<string, unknown> | undefined {
+  const facts = isRecord(companyFacts) ? companyFacts.facts : undefined;
+  const usGaap = isRecord(facts) ? facts["us-gaap"] : undefined;
+  return isRecord(usGaap) ? usGaap : undefined;
+}
+
+function secAnnualValueMap(usGaap: Record<string, unknown>, tags: string[], units: string[]) {
+  for (const tag of tags) {
+    const entries = secFactEntries(usGaap[tag], units).filter((entry) => isSecAnnualEntry(entry));
+    if (!entries.length) continue;
+    const annual = new Map<string, { value: number; entry: SecFactEntry }>();
+    for (const entry of entries) {
+      const year = secEntryYear(entry);
+      if (!year || entry.val === undefined) continue;
+      const existing = annual.get(year);
+      if (!existing || compareSecEntries(existing.entry, entry) <= 0) annual.set(year, { value: entry.val, entry });
+    }
+    if (annual.size) return annual;
+  }
+  return new Map<string, { value: number; entry: SecFactEntry }>();
+}
+
+function secFactEntries(metric: unknown, acceptedUnits: string[]) {
+  if (!isRecord(metric) || !isRecord(metric.units)) return [];
+  for (const unit of acceptedUnits) {
+    const entries = metric.units[unit];
+    if (Array.isArray(entries)) return entries.filter(isSecFactEntry);
+  }
+  return [];
+}
+
+function isSecFactEntry(value: unknown): value is SecFactEntry {
+  if (!isRecord(value)) return false;
+  return typeof value.val === "number" && Number.isFinite(value.val);
+}
+
+function isSecAnnualEntry(entry: SecFactEntry) {
+  const form = entry.form ?? "";
+  const fp = entry.fp ?? "";
+  const frame = entry.frame ?? "";
+  return form.includes("10-K") || fp === "FY" || /^CY\d{4}$/.test(frame);
+}
+
+function isSecQuarterEntry(entry: SecFactEntry) {
+  const form = entry.form ?? "";
+  const fp = entry.fp ?? "";
+  return form.includes("10-Q") || /^Q[1-3]$/.test(fp);
+}
+
+function secEntryYear(entry: SecFactEntry) {
+  if (entry.fy !== undefined && Number.isFinite(entry.fy)) return String(entry.fy);
+  return entry.end?.match(/^(\d{4})-/)?.[1];
+}
+
+function secMetricRow(
+  metric: string,
+  years: string[],
+  values: Map<string, { value: number; entry: SecFactEntry }>,
+  kind: "usd" | "ratio" | "perShare",
+  interpretation: string,
+) {
+  const numericValues = years
+    .map((year) => ({ year, value: values.get(year)?.value }))
+    .filter((item): item is { year: string; value: number } => item.value !== undefined);
+  if (!numericValues.length) return undefined;
+  return {
+    metric,
+    values: Object.fromEntries(
+      numericValues.map((item) => [
+        item.year,
+        kind === "usd" ? formatUsdAmount(item.value) : kind === "perShare" ? formatUsdPerShare(item.value) : formatRatio(item.value),
+      ]),
+    ),
+    trend: trendText(numericValues.map((item) => item.value), kind === "ratio" ? "ratio" : "amount"),
+    interpretation,
+  };
+}
+
+function secDerivedMetricRow(
+  metric: string,
+  years: string[],
+  numerator: Map<string, { value: number; entry: SecFactEntry }>,
+  denominator: Map<string, { value: number; entry: SecFactEntry }>,
+  kind: "ratio",
+  interpretation: string,
+) {
+  const derived = new Map<string, { value: number; entry: SecFactEntry }>();
+  for (const year of years) {
+    const numeratorValue = numerator.get(year);
+    const denominatorValue = denominator.get(year);
+    const value = ratio(numeratorValue?.value, denominatorValue?.value);
+    if (value !== undefined && numeratorValue) derived.set(year, { value, entry: numeratorValue.entry });
+  }
+  return secMetricRow(metric, years, derived, kind, interpretation);
+}
+
+function latestSecFilingSummary(companyFacts: unknown, mode: "annual" | "quarter"): SecFilingSummary | undefined {
+  const usGaap = secUsGaapFacts(companyFacts);
+  if (!usGaap) return undefined;
+  const entries = [
+    ...secFactEntries(usGaap.RevenueFromContractWithCustomerExcludingAssessedTax, ["USD"]),
+    ...secFactEntries(usGaap.Revenues, ["USD"]),
+    ...secFactEntries(usGaap.NetIncomeLoss, ["USD"]),
+    ...secFactEntries(usGaap.Assets, ["USD"]),
+  ].filter((entry) => (mode === "annual" ? isSecAnnualEntry(entry) : isSecQuarterEntry(entry)));
+  const latest = entries.sort(compareSecEntries).at(-1);
+  if (!latest) return undefined;
+  return {
+    form: latest.form,
+    fiscalYear: latest.fy,
+    fiscalPeriod: latest.fp,
+    end: latest.end,
+    filed: latest.filed,
+  };
+}
+
+function buildSecSummaryFinancialData(companyFacts: unknown) {
+  const usGaap = secUsGaapFacts(companyFacts);
+  if (!usGaap) return undefined;
+  const revenue = secAnnualValueMap(usGaap, ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"], ["USD"]);
+  const netIncome = secAnnualValueMap(usGaap, ["NetIncomeLoss"], ["USD"]);
+  const operatingCashFlow = secAnnualValueMap(usGaap, ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"], ["USD"]);
+  const assets = secAnnualValueMap(usGaap, ["Assets"], ["USD"]);
+  const liabilities = secAnnualValueMap(usGaap, ["Liabilities"], ["USD"]);
+  const equity = secAnnualValueMap(usGaap, ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"], ["USD"]);
+  const eps = secAnnualValueMap(usGaap, ["EarningsPerShareDiluted"], ["USD/shares"]);
+  const latestYear = Array.from(new Set([...revenue.keys(), ...netIncome.keys(), ...operatingCashFlow.keys(), ...assets.keys(), ...liabilities.keys(), ...equity.keys(), ...eps.keys()]))
+    .sort()
+    .at(-1);
+  if (!latestYear) return undefined;
+  const netMargin = ratio(netIncome.get(latestYear)?.value, revenue.get(latestYear)?.value);
+  const result = pickDefined({
+    totalRevenue: rawMetric(revenue.get(latestYear)?.value),
+    trailingTotalRevenue: rawMetric(revenue.get(latestYear)?.value),
+    trailingNetIncome: rawMetric(netIncome.get(latestYear)?.value),
+    trailingOperatingCashFlow: rawMetric(operatingCashFlow.get(latestYear)?.value),
+    trailingDilutedEPS: rawMetric(eps.get(latestYear)?.value),
+    quarterlyTotalAssets: rawMetric(assets.get(latestYear)?.value),
+    quarterlyTotalDebt: rawMetric(liabilities.get(latestYear)?.value),
+    quarterlyStockholdersEquity: rawMetric(equity.get(latestYear)?.value),
+    profitMargins: rawMetric(netMargin === undefined ? undefined : netMargin / 100),
+    source: "SEC EDGAR Company Facts",
+    fiscalYear: latestYear,
+  });
+  return Object.keys(result).length ? result : undefined;
+}
+
+function summarizeSecCompanyFacts(companyFacts: unknown, sourceUrl: string) {
+  const record = isRecord(companyFacts) ? companyFacts : {};
+  return pickDefined({
+    cik: record.cik,
+    entityName: record.entityName,
+    sourceUrl,
+    available: true,
+  });
+}
+
+function rawMetric(value: number | undefined) {
+  return value === undefined ? undefined : { raw: value };
+}
+
+function compareSecEntries(a: SecFactEntry, b: SecFactEntry) {
+  return `${a.filed ?? ""}:${a.end ?? ""}`.localeCompare(`${b.filed ?? ""}:${b.end ?? ""}`);
+}
+
 function statementNumber(row: Record<string, unknown> | undefined, keys: string[]) {
   if (!row) return undefined;
   for (const key of keys) {
@@ -641,6 +987,14 @@ function ratio(numerator: number | undefined, denominator: number | undefined) {
 
 function formatAmount(value: number) {
   return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿`;
+}
+
+function formatUsdAmount(value: number) {
+  return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿美元`;
+}
+
+function formatUsdPerShare(value: number) {
+  return `$${value.toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatRatio(value: number) {
@@ -733,10 +1087,37 @@ function numberFromString(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function eastmoneyScaledNumber(value: unknown) {
+function inferTrailingPe(price: unknown, dilutedEps: unknown) {
+  const priceValue = numberValue(price);
+  const epsValue = metricRawNumber(dilutedEps);
+  if (priceValue === undefined || epsValue === undefined || epsValue <= 0) return undefined;
+  return Math.round((priceValue / epsValue) * 100) / 100;
+}
+
+function metricRawNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (isRecord(value)) return numberValue(value.raw);
+  return undefined;
+}
+
+function eastmoneyPriceNumber(value: unknown, isUs: boolean) {
+  return eastmoneyScaledNumber(value, isUs ? 1000 : 100);
+}
+
+function eastmoneyRatioField(value: unknown, zeroAsUnavailable: boolean) {
+  return eastmoneyScaledNumber(value, 100, zeroAsUnavailable);
+}
+
+function eastmoneyPercentNumber(value: unknown) {
+  return eastmoneyScaledNumber(value, 100);
+}
+
+function eastmoneyScaledNumber(value: unknown, divisor = 100, zeroAsUnavailable = false) {
   const number = numberValue(value);
-  if (number === undefined || number === -100 || number === 0) return number;
-  return Math.round((number / 100) * 1000) / 1000;
+  if (number === undefined || number === -100) return undefined;
+  if (number === 0 && zeroAsUnavailable) return undefined;
+  if (number === 0) return 0;
+  return Math.round((number / divisor) * 1000) / 1000;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -47,6 +47,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       company,
     });
 
+    if (hasSecEvidence(evidence.facts)) {
+      emit({
+        type: "progress",
+        stage: "us_sec_fallback",
+        label: "美股财报来源切换",
+        detail: "Yahoo 或东方财富美股财务数据不可用时，已使用 SEC EDGAR/官方财报补充财务证据。",
+        percent: 44,
+        evidenceCount: evidence.evidence.length,
+      });
+    }
+
     emit({
       type: "progress",
       stage: "evidence_ready",
@@ -154,4 +165,9 @@ function errorEvent(error: unknown): ErrorEvent {
     code: typeof record.code === "string" ? record.code : undefined,
     retryable: typeof record.retryable === "boolean" ? record.retryable : undefined,
   };
+}
+
+function hasSecEvidence(facts: Record<string, unknown>) {
+  const sec = facts.sec;
+  return typeof sec === "object" && sec !== null;
 }
