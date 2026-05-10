@@ -64,7 +64,7 @@ export async function callDeepSeekReport({
   }
 
   const parsed = parseJsonObject(content);
-  const report = validateReportPayload(parsed);
+  const report = validateReportPayload(prepareReportPayload(parsed, evidence));
   return {
     ...report,
     evidence: mergeEvidence(evidence.evidence, report.evidence),
@@ -85,6 +85,8 @@ Rules:
 - Use only the evidence bundle and clearly mark missing data. Do not invent facts.
 - This is research, not investment advice.
 - Score harshly: ordinary companies should not easily exceed 70.
+- Return the report object at the JSON top level. Do not nest it under "report" or "data".
+- Include top-level company: { name, ticker, market, industry, sector }. company.name is mandatory.
 - Calculate CQS from company quality modules. Calculate IAS after valuation and risk caps.
 - Use these exact section keys: companyOverview, industry, businessModel, moat, governance, financialQuality, growth, valuation, risks, finalConclusion.
 - Include all 10 moduleScores with ids matching the provided moduleWeights.
@@ -171,6 +173,28 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
 }
 
+function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
+  const unwrapped = unwrapReportPayload(parsed);
+  if (!isRecord(unwrapped)) return unwrapped;
+  const modelCompany = isRecord(unwrapped.company) ? unwrapped.company : {};
+
+  return {
+    ...unwrapped,
+    company: {
+      ...evidence.company,
+      ...modelCompany,
+      name: isNonEmptyString(modelCompany.name) ? modelCompany.name : evidence.company.name,
+    },
+  };
+}
+
+function unwrapReportPayload(value: unknown) {
+  if (!isRecord(value)) return value;
+  if (isRecord(value.report)) return value.report;
+  if (isRecord(value.data) && isRecord(value.data.report)) return value.data.report;
+  return value;
+}
+
 function parseJsonObject(content: string) {
   try {
     return JSON.parse(content);
@@ -190,4 +214,12 @@ function mergeEvidence(providerEvidence: InvestmentReport["evidence"], modelEvid
     return true;
   });
   return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
