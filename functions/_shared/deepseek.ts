@@ -1,4 +1,11 @@
-import { emptyReport, validateReportPayload, type InvestmentReport, MODULE_WEIGHTS } from "../../src/shared/report";
+import {
+  emptyReport,
+  validateReportPayload,
+  type InvestmentReport,
+  MODULE_WEIGHTS,
+  REQUIRED_SECTION_KEYS,
+  type ReportSections,
+} from "../../src/shared/report";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
@@ -42,6 +49,7 @@ export async function callDeepSeekReport({
             {
               task: "Generate a complete company scoring report from this evidence bundle.",
               moduleWeights: MODULE_WEIGHTS,
+              expectedOutputShape: buildExpectedOutputShape(evidence),
               evidence: compactEvidenceForPrompt(evidence),
             },
             null,
@@ -177,6 +185,7 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
   const unwrapped = unwrapReportPayload(parsed);
   if (!isRecord(unwrapped)) return unwrapped;
   const modelCompany = isRecord(unwrapped.company) ? unwrapped.company : {};
+  const sections = normalizeSections(unwrapped.sections, unwrapped, evidence);
 
   return {
     ...unwrapped,
@@ -185,7 +194,65 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
       ...modelCompany,
       name: isNonEmptyString(modelCompany.name) ? modelCompany.name : evidence.company.name,
     },
+    sections,
   };
+}
+
+function buildExpectedOutputShape(evidence: EvidenceBundle) {
+  return {
+    company: {
+      name: evidence.company.name,
+      ticker: evidence.company.ticker ?? "",
+      market: evidence.company.market ?? "",
+      industry: evidence.company.industry ?? "",
+      sector: evidence.company.sector ?? "",
+    },
+    asOf: evidence.retrievedAt,
+    conclusion: "观察",
+    oneSentence: "",
+    cqs: 0,
+    ias: 0,
+    moduleScores: MODULE_WEIGHTS.map((module) => ({
+      id: module.id,
+      name: module.name,
+      weight: module.weight,
+      score: 0,
+      weightedScore: 0,
+      summary: "",
+      evidence: [],
+      concerns: [],
+    })),
+    redFlags: [],
+    evidence: evidence.evidence,
+    sections: Object.fromEntries(REQUIRED_SECTION_KEYS.map((key) => [key, ""])) as ReportSections,
+    disclaimer: "本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。",
+  };
+}
+
+function normalizeSections(rawSections: unknown, topLevel: Record<string, unknown>, evidence: EvidenceBundle) {
+  const sections = isRecord(rawSections) ? rawSections : {};
+  return Object.fromEntries(
+    REQUIRED_SECTION_KEYS.map((key) => {
+      const value = sections[key] ?? topLevel[key];
+      return [key, isNonEmptyString(value) ? value : fallbackSection(key, evidence)];
+    }),
+  ) as ReportSections;
+}
+
+function fallbackSection(key: keyof ReportSections, evidence: EvidenceBundle) {
+  const label: Record<keyof ReportSections, string> = {
+    companyOverview: "公司概况",
+    industry: "行业与细分赛道",
+    businessModel: "商业模式与价值链",
+    moat: "竞争优势与护城河",
+    governance: "管理层、治理结构与股东文化",
+    financialQuality: "财务质量与现金流",
+    growth: "成长空间与重大转折",
+    valuation: "估值与安全边际",
+    risks: "风险清单与反证条件",
+    finalConclusion: "最终投资结论",
+  };
+  return `${evidence.company.name} 的「${label[key]}」章节未由模型按模板提供完整段落；当前仅能依据已列示的公开证据继续人工复核。`;
 }
 
 function unwrapReportPayload(value: unknown) {

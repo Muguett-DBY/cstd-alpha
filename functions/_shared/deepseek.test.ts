@@ -97,4 +97,35 @@ describe("DeepSeek report client", () => {
     expect(report.company.name).toBe("Example Inc.");
     expect(report.company.ticker).toBe("EXM");
   });
+
+  test("fills missing template sections with traceable fallback text", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                company: { name: "Example Inc." },
+                asOf: "2026-05-10T00:00:00.000Z",
+                conclusion: "观察",
+                oneSentence: "A test company.",
+                cqs: 60,
+                ias: 55,
+                moduleScores: [],
+                redFlags: [],
+                evidence: [],
+                disclaimer: "Research only.",
+              }),
+            },
+          },
+        ],
+      }),
+    });
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(report.sections.companyOverview).toContain("未由模型按模板提供完整段落");
+    expect(report.sections.finalConclusion).toContain("Example Inc.");
+  });
 });
