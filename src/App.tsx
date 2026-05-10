@@ -290,8 +290,8 @@ function ReportView({ report }: { report: InvestmentReport }) {
       </header>
 
       <section className="score-strip">
-        <ScoreTile label="公司质量分 CQS" value={report.cqs} />
-        <ScoreTile label="综合吸引力 IAS" value={report.ias} />
+        <ScoreTile label="公司质量评分（CQS）" value={report.cqs} />
+        <ScoreTile label="投资吸引力评分（IAS）" value={report.ias} />
         <div className="decision">
           <span>最终动作</span>
           <strong>{report.conclusion}</strong>

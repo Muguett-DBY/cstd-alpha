@@ -43,7 +43,7 @@ function buildSection(report: InvestmentReport, docx: Docx) {
     },
     children: [
       title(`${report.company.name} 公司分析报告`, docx),
-      subtitle("CSTD Alpha / 公司质量分 CQS + 综合投资吸引力分 IAS", docx),
+      subtitle("CSTD Alpha / 公司质量评分（CQS）+ 投资吸引力评分（IAS）", docx),
       paragraph(`报告日期：${formatDate(report.asOf)}`, docx),
       paragraph(`股票代码 / 市场：${[report.company.ticker, report.company.market].filter(Boolean).join(" / ") || "未识别"}`, docx),
       scoreTable(report, docx),
@@ -99,8 +99,8 @@ function scoreTable(report: InvestmentReport, docx: Docx) {
     width: { size: 100, type: docx.WidthType.PERCENTAGE },
     borders: tableBorders(docx),
     rows: [
-      tableRow(["投资结论", report.conclusion, "公司质量分 CQS", `${report.cqs} / 100`], docx, true),
-      tableRow(["综合投资吸引力 IAS", `${report.ias} / 100`, "评级说明", report.qualitativeBand || scoreLabel(report.ias)], docx),
+      tableRow(["投资结论", report.conclusion, "公司质量评分（CQS）", `${report.cqs} / 100`], docx, true),
+      tableRow(["投资吸引力评分（IAS）", `${report.ias} / 100`, "评级说明", report.qualitativeBand || scoreLabel(report.ias)], docx),
       tableRow(["估值判断", report.summaryDashboard.valuationView, "建议仓位", report.summaryDashboard.positionAdvice], docx),
     ],
   });
@@ -144,7 +144,7 @@ function financialRowsTable(rows: FinancialRow[], docx: Docx) {
 function riskParagraphs(report: InvestmentReport, docx: Docx) {
   if (!report.redFlags.length) return [paragraph("未发现触发红线封顶的事项；仍需持续跟踪后续公告和财务变化。", docx)];
   return report.redFlags.map((flag) =>
-    paragraph(`${flag.severity.toUpperCase()} / ${flag.label} / IAS 封顶 ${flag.cap}: ${flag.evidence ?? ""}`, docx),
+    paragraph(`${flag.severity.toUpperCase()} / ${flag.label} / 投资吸引力评分（IAS）封顶 ${flag.cap}: ${flag.evidence ?? ""}`, docx),
   );
 }
 

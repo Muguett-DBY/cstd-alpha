@@ -103,7 +103,7 @@ Rules:
 - Every score must be specific, evidence-based, and non-ambiguous. Use labels 极好 / 好 / 一般 / 差.
 - Return the report object at the JSON top level. Do not nest it under "report" or "data".
 - Include top-level company: { name, ticker, market, industry, sector }. company.name is mandatory.
-- Calculate CQS from company quality modules. Calculate IAS after valuation and risk caps.
+- Calculate 公司质量评分（CQS）from company quality modules. Calculate 投资吸引力评分（IAS）after valuation and risk caps. In all human-readable report text, use the Chinese names first, with abbreviations only in parentheses.
 - Use these exact section keys: companyOverview, industry, businessModel, moat, governance, financialQuality, growth, valuation, risks, finalConclusion.
 - Include all 10 moduleScores with ids matching the provided moduleWeights.
 - Include all 20 scoreItems20 with ids matching the provided scoreItems20 definitions. Each item needs score, label, evidence, deductions, recentChange, reason.
