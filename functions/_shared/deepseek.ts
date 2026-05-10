@@ -38,7 +38,7 @@ export async function callDeepSeekReport({
       thinking: { type: "enabled" },
       response_format: { type: "json_object" },
       stream: false,
-      max_tokens: 5200,
+      max_tokens: 18000,
       messages: [
         {
           role: "system",
@@ -66,10 +66,13 @@ export async function callDeepSeekReport({
     throw new Error(`DeepSeek request failed: ${response.status} ${text.slice(0, 500)}`);
   }
 
-  const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = json.choices?.[0]?.message?.content;
+  const json = (await response.json()) as {
+    choices?: Array<{ finish_reason?: string; message?: { content?: string; reasoning_content?: string } }>;
+  };
+  const choice = json.choices?.[0];
+  const content = choice?.message?.content;
   if (!content) {
-    return emptyReport(evidence.company.name, "DeepSeek returned an empty response.");
+    return emptyReport(evidence.company.name, `DeepSeek returned an empty final response. finish_reason=${choice?.finish_reason ?? "unknown"}`);
   }
 
   const parsed = parseJsonObject(content);
