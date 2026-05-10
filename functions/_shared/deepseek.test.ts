@@ -128,4 +128,42 @@ describe("DeepSeek report client", () => {
     expect(report.sections.companyOverview).toContain("未由模型按模板提供完整段落");
     expect(report.sections.finalConclusion).toContain("Example Inc.");
   });
+
+  test("repairs malformed JSON before schema validation", async () => {
+    const malformed = `{
+      "company": {"name": "Example Inc."}
+      "asOf": "2026-05-10T00:00:00.000Z",
+      "conclusion": "观察",
+      "oneSentence": "A test company.",
+      "cqs": 60,
+      "ias": 55,
+      "moduleScores": [],
+      "redFlags": [],
+      "evidence": [],
+      "sections": {
+        "companyOverview": "overview",
+        "industry": "industry",
+        "businessModel": "model",
+        "moat": "moat",
+        "governance": "governance",
+        "financialQuality": "financials",
+        "growth": "growth",
+        "valuation": "valuation",
+        "risks": "risks",
+        "finalConclusion": "final"
+      },
+      "disclaimer": "Research only."
+    }`;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: malformed } }],
+      }),
+    });
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(report.company.name).toBe("Example Inc.");
+    expect(report.sections.finalConclusion).toBe("final");
+  });
 });

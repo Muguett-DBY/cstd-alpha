@@ -6,6 +6,7 @@ import {
   REQUIRED_SECTION_KEYS,
   type ReportSections,
 } from "../../src/shared/report";
+import { jsonrepair } from "jsonrepair";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
@@ -278,7 +279,13 @@ function parseJsonObject(content: string) {
   } catch {
     const match = content.match(/\{[\s\S]*\}/);
     if (!match) throw new Error("DeepSeek response did not contain JSON");
-    return JSON.parse(match[0]);
+    try {
+      return JSON.parse(jsonrepair(match[0]));
+    } catch (error) {
+      throw new Error(`DeepSeek response did not contain valid JSON: ${error instanceof Error ? error.message : "parse failed"}`, {
+        cause: error,
+      });
+    }
   }
 }
 
