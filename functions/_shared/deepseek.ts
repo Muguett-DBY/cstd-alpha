@@ -276,6 +276,18 @@ type ScoreItemDetail = {
   reason: string;
 };
 
+function fallbackScoreItemDetail(item: InvestmentReport["scoreItems20"][number]): ScoreItemDetail {
+  const evidence = stringArray(item.evidence);
+  const deductions = stringArray(item.deductions);
+  return {
+    id: item.id,
+    evidence: evidence.length ? evidence : ["沿用评分阶段的公开证据；本项详细补全因模型输出过长未完成。"],
+    deductions: deductions.length ? deductions : ["需在后续复核中补充更细的扣分依据。"],
+    recentChange: isNonEmptyString(item.recentChange) ? item.recentChange : "最近 12 个月变化沿用评分阶段判断，待后续补充细节。",
+    reason: isNonEmptyString(item.reason) ? item.reason : "该项沿用结构化评分阶段的结论；详细证据补全过程被截断，未作为额外事实来源。",
+  };
+}
+
 async function requestScoreItemDetailBatch({
   apiKey,
   fetchImpl,
@@ -295,8 +307,59 @@ async function requestScoreItemDetailBatch({
     return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
-    return requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true });
+    try {
+      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true });
+    } catch (retryError) {
+      if (!isRetryableModelOutputError(retryError) || itemIds.length <= 1) throw retryError;
+      return requestScoreItemDetailsIndividually({
+        apiKey,
+        fetchImpl,
+        language,
+        scoringReport,
+        evidence,
+        itemIds,
+      });
+    }
   }
+}
+
+async function requestScoreItemDetailsIndividually({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  itemIds,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  itemIds: string[];
+}): Promise<ScoreItemDetail[]> {
+  const details: ScoreItemDetail[] = [];
+  for (const id of itemIds) {
+    try {
+      details.push(
+        ...(await requestScoreItemDetailBatchOnce({
+          apiKey,
+          fetchImpl,
+          language,
+          scoringReport,
+          evidence,
+          itemIds: [id],
+          strictLength: true,
+        })),
+      );
+    } catch (error) {
+      if (!isRetryableModelOutputError(error)) throw error;
+      const existingItem = scoringReport.scoreItems20.find((item) => item.id === id);
+      if (!existingItem) throw error;
+      details.push(fallbackScoreItemDetail(existingItem));
+    }
+  }
+  return details;
 }
 
 async function requestScoreItemDetailBatchOnce({
@@ -319,7 +382,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    maxTokens: strictLength ? 4200 : 6500,
+    maxTokens: strictLength ? 7000 : 9500,
     messages: [
       {
         role: "system",

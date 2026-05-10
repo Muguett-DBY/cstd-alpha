@@ -300,4 +300,36 @@ describe("DeepSeek report client", () => {
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
     expect(report.fullSections.accountRules).toBe("完整仓位规则");
   });
+
+  test("splits score detail enrichment into single items when a five-item detail batch is truncated", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(modelResponse(reportPayload()))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ finish_reason: "length", message: { content: "" } }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ finish_reason: "length", message: { content: "" } }],
+        }),
+      });
+    for (const item of detailBatches[0]) {
+      fetchMock.mockResolvedValueOnce(modelResponse(detailPayload([item])));
+    }
+    for (const batch of detailBatches.slice(1)) {
+      fetchMock.mockResolvedValueOnce(modelResponse(detailPayload(batch)));
+    }
+    mockNarrativeBatches(fetchMock);
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledTimes(15);
+    expect(report.scoreItems20[0].evidence).toHaveLength(3);
+    expect(report.scoreItems20[4].reason).toContain("不能因为公司知名度而给出模糊高分");
+    expect(report.fullSections.finalConclusion).toBe("完整最终结论");
+  });
 });
