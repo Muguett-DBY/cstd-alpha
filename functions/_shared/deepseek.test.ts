@@ -102,6 +102,12 @@ describe("DeepSeek report client", () => {
     expect(body.reasoning_effort).toBe("max");
     expect(body.thinking).toEqual({ type: "enabled" });
     expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.max_tokens).toBe(18000);
+    const userPayload = JSON.parse(body.messages[1].content);
+    expect(userPayload.expectedOutputShape.scoreItems20[0]).not.toHaveProperty("question");
+    expect(userPayload.expectedOutputShape.scoreItems20[0]).toEqual(
+      expect.objectContaining({ id: "industryLifecycle", score: 0, label: "一般" }),
+    );
   });
 
   test("throws a user-facing error instead of returning a zero-score report when DeepSeek output is truncated", async () => {

@@ -68,7 +68,7 @@ export async function callDeepSeekReport({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    maxTokens: 12000,
+    maxTokens: 18000,
     messages: [
       {
         role: "system",
@@ -266,15 +266,18 @@ Rules:
 - Score harshly: ordinary companies should not easily exceed 70.
 - Bad companies must receive low scores. Do not give a polite high score when cash flow, leverage, governance, growth, or valuation evidence is poor.
 - Every score must be specific, evidence-based, and non-ambiguous. Use labels 极好 / 好 / 一般 / 差.
+- This is a compact scoring pass. Do not write long paragraphs. The full narrative is generated later in smaller batches.
 - Return the report object at the JSON top level. Do not nest it under "report" or "data".
 - Include top-level company: { name, ticker, market, industry, sector }. company.name is mandatory.
 - Calculate 公司质量评分（CQS）from company quality modules. Calculate 投资吸引力评分（IAS）after valuation and risk caps. In all human-readable report text, use the Chinese names first, with abbreviations only in parentheses.
 - Use these exact section keys: companyOverview, industry, businessModel, moat, governance, financialQuality, growth, valuation, risks, finalConclusion.
-- Include all 10 moduleScores with ids matching the provided moduleWeights.
-- Include all 20 scoreItems20 with ids matching the provided scoreItems20 definitions. Each item needs score, label, evidence, deductions, recentChange, reason.
-- Do not include fullSections in this pass. Keep regular sections concise; the full narrative is generated in a separate pass.
-- Include financialTenYear.rows for available years and metrics. If a value is unavailable, write 数据不足, not a fake number.
+- moduleScores may be concise because the server recalculates final module weighted scores from scoreItems20.
+- Include all 20 scoreItems20 with ids matching the provided scoreItems20 definitions. Each item needs only id, score, label, evidence, deductions, recentChange, reason. Do not repeat title, question, moduleName or weight.
+- Keep each scoreItems20 evidence/deductions array to at most 2 short strings. Keep reason under 80 Chinese characters and recentChange under 50 Chinese characters.
+- Do not include fullSections in this pass. Keep regular sections under 120 Chinese characters each; the full narrative is generated in separate batches.
+- Include financialTenYear.rows for available years and metrics, maximum 8 metrics. If a value is unavailable, write 数据不足, not a fake number.
 - Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
+- Include riskMatrix with at most 6 risks.
 - Include evidence with source URLs and retrievedAt timestamps, maximum 8 items.
 - Conclusions must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
 `;
@@ -418,18 +421,16 @@ function buildScoringOutputShape(evidence: EvidenceBundle) {
     oneSentence: "",
     cqs: 0,
     ias: 0,
-    moduleScores: MODULE_WEIGHTS.map((module) => ({
-      id: module.id,
-      name: module.name,
-      weight: module.weight,
+    moduleScores: MODULE_WEIGHTS.map(({ id }) => ({
+      id,
       score: 0,
-      weightedScore: 0,
+      label: "一般",
       summary: "",
       evidence: [],
       concerns: [],
     })),
-    scoreItems20: SCORE_ITEMS_20.map((item) => ({
-      ...item,
+    scoreItems20: SCORE_ITEMS_20.map(({ id }) => ({
+      id,
       score: 0,
       label: "一般",
       evidence: [],
