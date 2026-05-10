@@ -203,9 +203,18 @@ export async function fetchPublicCompanyEvidence({
 export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }: FetchChartInput): Promise<ChartBundle> {
   const asOf = new Date().toISOString();
   const useEastmoney = Boolean(company.quoteId && (company.listingPlace.includes("A") || company.listingPlace.includes("港") || company.quoteId.startsWith("0.") || company.quoteId.startsWith("1.") || company.quoteId.startsWith("116.")));
-  const url = useEastmoney ? eastmoneyKlineUrl(company.quoteId || company.secid || company.code, priceMode) : yahooTenYearChartUrl(company.yahooSymbol || company.code);
-  const json = await fetchJson(url, fetchImpl);
-  const priceSeries = useEastmoney ? normalizeEastmoneyKlines(json, priceMode) : normalizeYahooChart(json, priceMode);
+  let url = useEastmoney ? eastmoneyKlineUrl(company.quoteId || company.secid || company.code, priceMode) : yahooTenYearChartUrl(company.yahooSymbol || company.code);
+  let sourceName = useEastmoney ? "Eastmoney" : "Yahoo Finance";
+  let json = await fetchJson(url, fetchImpl);
+  let priceSeries = useEastmoney ? normalizeEastmoneyKlines(json, priceMode) : normalizeYahooChart(json, priceMode);
+
+  if (useEastmoney && priceSeries.length === 0 && company.yahooSymbol) {
+    url = yahooTenYearChartUrl(company.yahooSymbol);
+    sourceName = "Yahoo Finance fallback";
+    json = await fetchJson(url, fetchImpl);
+    priceSeries = normalizeYahooChart(json, priceMode);
+  }
+
   const drawdownSeries = buildDrawdownSeries(priceSeries);
   const latest = priceSeries.at(-1);
   const meta = isRecord(firstArrayItem(recordPath(json, ["chart", "result"]))?.meta)
@@ -228,12 +237,12 @@ export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }
       latestDate: latest?.date,
       currency: stringValue(meta?.currency),
       exchangeName: company.exchange || stringValue(meta?.exchangeName),
-      source: useEastmoney ? "Eastmoney" : "Yahoo Finance",
+      source: sourceName,
     },
     evidence: [
       {
         title: `${company.code} 十年股价数据`,
-        source: useEastmoney ? "Eastmoney public kline endpoint" : "Yahoo Finance public chart endpoint",
+        source: sourceName === "Eastmoney" ? "Eastmoney public kline endpoint" : `${sourceName} public chart endpoint`,
         url,
         retrievedAt: asOf,
         freshness: priceSeries.length ? "latest-public" : "unavailable",

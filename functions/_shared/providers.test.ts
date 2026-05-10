@@ -175,6 +175,49 @@ describe("public data providers", () => {
     ]);
   });
 
+  test("falls back to Yahoo history when Eastmoney kline returns no usable price points", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { name: "万科A", code: "000002", klines: [] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: { symbol: "000002.SZ", currency: "CNY", exchangeName: "SHZ" },
+                timestamp: [1464753600, 1496289600],
+                indicators: { quote: [{ close: [20, 10], volume: [1000, 1200] }] },
+              },
+            ],
+          },
+        }),
+      });
+
+    const result = await fetchChartBundle({
+      company: {
+        id: "eastmoney:0.000002",
+        name: "万科A",
+        code: "000002",
+        exchange: "深圳证券交易所",
+        listingPlace: "深A",
+        marketType: "AStock",
+        quoteId: "0.000002",
+        yahooSymbol: "000002.SZ",
+        source: "eastmoney",
+      },
+      priceMode: "raw",
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.priceSeries).toHaveLength(2);
+    expect(result.evidence[0].source).toContain("Yahoo");
+  });
+
   test("records unavailable chart evidence instead of fabricating price points", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 
