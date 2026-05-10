@@ -297,6 +297,7 @@ export function validateReportPayload(value: unknown): InvestmentReport {
   const conclusion = normalizeConclusion(value.conclusion, ias);
   const sections = normalizeSections(value.sections, value.fullSections, value.company.name);
   const fullSections = normalizeFullSections(value.fullSections, sections, value.company.name);
+  const valuationAnalysis = normalizeValuationAnalysis(value.valuationAnalysis);
 
   return {
     company: {
@@ -312,7 +313,7 @@ export function validateReportPayload(value: unknown): InvestmentReport {
     cqs,
     ias,
     qualitativeBand: qualitativeBand(ias),
-    summaryDashboard: normalizeSummaryDashboard(value.summaryDashboard),
+    summaryDashboard: normalizeSummaryDashboard(value.summaryDashboard, valuationAnalysis),
     moduleScores: Array.isArray(value.scoreItems20) ? computed.modules : normalizeModuleScores(value.moduleScores),
     scoreItems20,
     redFlags,
@@ -320,7 +321,7 @@ export function validateReportPayload(value: unknown): InvestmentReport {
     sections,
     qualitativeAnalysis: normalizeQualitativeAnalysis(value.qualitativeAnalysis, value.company.name),
     financialTenYear: normalizeFinancialTenYear(value.financialTenYear),
-    valuationAnalysis: normalizeValuationAnalysis(value.valuationAnalysis),
+    valuationAnalysis,
     riskMatrix: normalizeRiskMatrix(value.riskMatrix),
     accountRules: normalizeAccountRules(value.accountRules),
     fullSections,
@@ -497,10 +498,10 @@ function normalizeFullSections(value: unknown, sections: ReportSections, company
   };
 }
 
-function normalizeSummaryDashboard(value: unknown): SummaryDashboard {
+function normalizeSummaryDashboard(value: unknown, valuationAnalysis?: ValuationAnalysis): SummaryDashboard {
   const raw = isRecord(value) ? value : {};
   return {
-    valuationView: optionalString(raw.valuationView) ?? "待验证",
+    valuationView: meaningfulValuationView(raw.valuationView) ?? deriveValuationView(valuationAnalysis) ?? "待验证",
     positionAdvice: optionalString(raw.positionAdvice) ?? "观察仓",
     investmentHorizon: optionalString(raw.investmentHorizon) ?? "至少 5 年",
     keyReasons: stringArray(raw.keyReasons),
@@ -523,17 +524,58 @@ function normalizeQualitativeAnalysis(value: unknown, companyName: unknown): Qua
 function normalizeFinancialTenYear(value: unknown): FinancialTenYear {
   const raw = isRecord(value) ? value : {};
   const rows = Array.isArray(raw.rows)
-    ? raw.rows.filter(isRecord).map((row) => ({
-        metric: optionalString(row.metric) ?? "未命名指标",
-        values: isRecord(row.values) ? Object.fromEntries(Object.entries(row.values).map(([key, item]) => [key, String(item ?? "")])) : {},
-        trend: optionalString(row.trend) ?? "待验证",
-        interpretation: optionalString(row.interpretation) ?? "数据不足：该指标需要人工复核。",
-      }))
+    ? raw.rows
+        .filter(isRecord)
+        .map((row) => ({
+          metric: optionalString(row.metric),
+          values: isRecord(row.values)
+            ? Object.fromEntries(Object.entries(row.values).flatMap(([key, item]) => (item === undefined || item === null || String(item).trim() === "" ? [] : [[key, String(item)]])))
+            : {},
+          trend: optionalString(row.trend) ?? "待验证",
+          interpretation: optionalString(row.interpretation) ?? "数据不足：该指标需要人工复核。",
+        }))
+        .filter((row): row is FinancialRow => Boolean(row.metric && Object.keys(row.values).length))
     : [];
   return {
     rows,
     interpretation: optionalString(raw.interpretation) ?? "数据不足：模型未提供完整十年财务解读。",
   };
+}
+
+function meaningfulValuationView(value: unknown) {
+  const text = optionalString(value);
+  return text && text !== "待验证" ? text : undefined;
+}
+
+function deriveValuationView(valuation: ValuationAnalysis | undefined) {
+  if (!valuation) return undefined;
+  const current = parseFirstNumber(valuation.currentPrice);
+  const fair = parseNumbers(valuation.fairValueRange);
+  const buy = parseNumbers(valuation.buyRange);
+  const sell = parseNumbers(valuation.sellReduceRange);
+  if (current !== undefined && buy.length && current <= Math.min(...buy)) return "低估";
+  if (current !== undefined && sell.length && current >= Math.min(...sell)) return "高估";
+  if (current !== undefined && fair.length >= 2) {
+    const [low, high] = [Math.min(...fair), Math.max(...fair)];
+    if (current < low) return "合理偏低";
+    if (current > high) return "偏高";
+    return "合理";
+  }
+  const conclusion = valuation.conclusion;
+  if (conclusion.includes("低估")) return "低估";
+  if (conclusion.includes("高估") || conclusion.includes("偏高")) return "偏高";
+  if (conclusion.includes("合理")) return "合理";
+  return undefined;
+}
+
+function parseFirstNumber(value: string) {
+  return parseNumbers(value)[0];
+}
+
+function parseNumbers(value: string) {
+  return Array.from(value.replace(/[,，]/g, "").replace(/(\d)\s*[-–—~至到]\s*(\d)/g, "$1 $2").matchAll(/-?\d+(?:\.\d+)?/g))
+    .map((match) => Number(match[0]))
+    .filter((number) => Number.isFinite(number));
 }
 
 function normalizeValuationAnalysis(value: unknown): ValuationAnalysis {

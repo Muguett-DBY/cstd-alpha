@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
+import { buildFinancialTenYearFromEastmoney, fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
 
 describe("public data providers", () => {
   test("prioritizes Eastmoney Chinese market candidates before Yahoo fallback", async () => {
@@ -238,6 +238,68 @@ describe("public data providers", () => {
 
     expect(result.priceSeries).toEqual([]);
     expect(result.evidence[0].freshness).toBe("unavailable");
+  });
+
+  test("normalizes Eastmoney statement rows into named ten-year financial metrics", () => {
+    const financialTenYear = buildFinancialTenYearFromEastmoney(
+      [
+        {
+          REPORT_DATE: "2025-12-31 00:00:00",
+          REPORT_DATE_NAME: "2025年报",
+          TOTAL_OPERATE_INCOME: 170000000000,
+          PARENT_NETPROFIT: 85000000000,
+          DEDUCT_PARENT_NETPROFIT: 83000000000,
+          TOTAL_OPERATE_COST: 18000000000,
+        },
+        {
+          REPORT_DATE: "2024-12-31 00:00:00",
+          REPORT_DATE_NAME: "2024年报",
+          TOTAL_OPERATE_INCOME: 160000000000,
+          PARENT_NETPROFIT: 80000000000,
+          DEDUCT_PARENT_NETPROFIT: 79000000000,
+          TOTAL_OPERATE_COST: 17000000000,
+        },
+        {
+          REPORT_DATE: "2026-03-31 00:00:00",
+          REPORT_DATE_NAME: "2026一季度",
+          TOTAL_OPERATE_INCOME: 54000000000,
+          PARENT_NETPROFIT: 27000000000,
+        },
+      ],
+      [
+        { REPORT_DATE: "2025-12-31 00:00:00", REPORT_DATE_NAME: "2025年报", NETCASH_OPERATE: 61000000000, END_CCE: 126000000000 },
+        { REPORT_DATE: "2024-12-31 00:00:00", REPORT_DATE_NAME: "2024年报", NETCASH_OPERATE: 82000000000, END_CCE: 120000000000 },
+      ],
+      [
+        {
+          REPORT_DATE: "2025-12-31 00:00:00",
+          REPORT_DATE_NAME: "2025年报",
+          TOTAL_ASSETS: 300000000000,
+          TOTAL_LIABILITIES: 50000000000,
+          TOTAL_EQUITY: 250000000000,
+          MONETARYFUNDS: 126000000000,
+        },
+        {
+          REPORT_DATE: "2024-12-31 00:00:00",
+          REPORT_DATE_NAME: "2024年报",
+          TOTAL_ASSETS: 280000000000,
+          TOTAL_LIABILITIES: 45000000000,
+          TOTAL_EQUITY: 235000000000,
+          MONETARYFUNDS: 120000000000,
+        },
+      ],
+    );
+
+    expect(financialTenYear.rows.map((row) => row.metric)).toEqual(
+      expect.arrayContaining(["营业收入", "归母净利润", "扣非归母净利润", "经营现金流", "货币资金", "总资产", "总负债", "资产负债率", "净利率"]),
+    );
+    expect(financialTenYear.rows.some((row) => row.metric === "未命名指标")).toBe(false);
+    expect(financialTenYear.rows.find((row) => row.metric === "营业收入")?.values).toMatchObject({
+      "2024": "1600.00亿",
+      "2025": "1700.00亿",
+    });
+    expect(financialTenYear.rows.find((row) => row.metric === "资产负债率")?.values["2025"]).toBe("16.67%");
+    expect(financialTenYear.latestPeriod).toContain("2026一季度");
   });
 
   test("falls back to chart and fundamentals when quoteSummary endpoints are unavailable", async () => {

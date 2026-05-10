@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { loadLastReport, saveLastReport } from "./storage";
+import { buildChartCacheKey, buildReportCacheKey, loadCachedChart, loadCachedReport, loadLastReport, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { emptyReport, validateReportPayload } from "./shared/report";
+import type { ChartBundle } from "./shared/chart";
 
 describe("report storage", () => {
   afterEach(() => {
@@ -31,6 +32,62 @@ describe("report storage", () => {
     saveLastReport(report);
 
     expect(loadLastReport()?.company).toMatchObject({ name: "贵州茅台", ticker: "600519" });
+  });
+
+  test("loads a cached report for the same company within the TTL", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const report = validateReportPayload({
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "缓存报告",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    });
+
+    saveCachedReport(company, report, 1000);
+
+    expect(buildReportCacheKey(company)).toContain("eastmoney:1.600519");
+    expect(loadCachedReport(company, 1000 + 60_000)?.report.company.name).toBe("贵州茅台");
+    expect(loadCachedReport(company, 1000 + 25 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  test("loads cached chart data by company and price mode within the TTL", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const chart: ChartBundle = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      priceMode: "adjusted",
+      priceSeries: [{ date: "2026-05-08", close: 1372.99, adjustedClose: 1372.99, volume: 100 }],
+      drawdownSeries: [{ date: "2026-05-08", price: 1372.99, peak: 1372.99, drawdown: 0 }],
+      marketSnapshot: { currentPrice: 1372.99 },
+      evidence: [],
+    };
+
+    saveCachedChart(company, "adjusted", chart, 1000);
+
+    expect(buildChartCacheKey(company, "adjusted")).toContain("adjusted");
+    expect(loadCachedChart(company, "adjusted", 2000)?.chart.marketSnapshot.currentPrice).toBe(1372.99);
+    expect(loadCachedChart(company, "raw", 2000)).toBeNull();
   });
 });
 

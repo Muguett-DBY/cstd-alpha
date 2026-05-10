@@ -177,4 +177,59 @@ describe("report validation", () => {
     expect(report.ias).toBeLessThanOrEqual(50);
     expect(report.conclusion).toBe("观察");
   });
+
+  test("derives valuation view from valuation ranges when dashboard value is missing", () => {
+    const report = validateReportPayload({
+      company: { name: "Range Co." },
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      redFlags: [],
+      scoreItems20,
+      summaryDashboard: {
+        positionAdvice: "观察仓",
+      },
+      valuationAnalysis: {
+        currentPrice: "1372.99",
+        fairValueRange: "1300-1600",
+        buyRange: "低于1100",
+        sellReduceRange: "高于1800",
+        conclusion: "当前价格位于合理价值区间内，但安全边际不厚。",
+      },
+    });
+
+    expect(report.summaryDashboard.valuationView).toBe("合理");
+  });
+
+  test("drops structurally empty financial rows instead of showing unnamed metrics", () => {
+    const report = validateReportPayload({
+      company: { name: "Financial Co." },
+      evidence: [],
+      redFlags: [],
+      financialTenYear: {
+        rows: [
+          { values: {}, trend: "" },
+          { metric: "营业收入", values: { "2025": "100亿" }, trend: "上升", interpretation: "增长" },
+        ],
+      },
+    });
+
+    expect(report.financialTenYear.rows).toHaveLength(1);
+    expect(report.financialTenYear.rows[0].metric).toBe("营业收入");
+  });
 });

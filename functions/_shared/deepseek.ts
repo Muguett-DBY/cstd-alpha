@@ -23,6 +23,13 @@ const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["risks", "finalConclusion", "accountRules"],
 ];
 
+const SCORE_ITEM_DETAIL_BATCHES = [
+  SCORE_ITEMS_20.slice(0, 5).map((item) => item.id),
+  SCORE_ITEMS_20.slice(5, 10).map((item) => item.id),
+  SCORE_ITEMS_20.slice(10, 15).map((item) => item.id),
+  SCORE_ITEMS_20.slice(15, 20).map((item) => item.id),
+];
+
 const FULL_SECTION_LABELS: Record<FullSectionKey, string> = {
   onePageConclusion: "一页结论",
   companyOverview: "公司概况",
@@ -76,16 +83,32 @@ export async function callDeepSeekReport({
   });
 
   const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
+  const enrichedReport = validateReportPayload(
+    prepareReportPayload(
+      {
+        ...scoringReport,
+        scoreItems20: await requestScoreItemDetails({
+          apiKey,
+          fetchImpl,
+          language,
+          scoringReport,
+          evidence,
+          onProgress,
+        }),
+      },
+      evidence,
+    ),
+  );
   const fullSections = await requestNarrativeSections({
     apiKey,
     fetchImpl,
     language,
-    scoringReport,
+    scoringReport: enrichedReport,
     evidence,
     onProgress,
   });
 
-  const report = validateReportPayload(mergeNarrativePayload(scoringReport, { fullSections }, evidence));
+  const report = validateReportPayload(mergeNarrativePayload(enrichedReport, { fullSections }, evidence));
   return withProviderContext(report, evidence);
 }
 
@@ -196,6 +219,152 @@ async function requestNarrativeSections({
     );
   }
   return fullSections;
+}
+
+async function requestScoreItemDetails({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  onProgress,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  onProgress?: DeepSeekInput["onProgress"];
+}) {
+  const details: Record<string, ScoreItemDetail> = {};
+  for (const [index, itemIds] of SCORE_ITEM_DETAIL_BATCHES.entries()) {
+    onProgress?.({
+      stage: `deepseek_score_detail_${index + 1}`,
+      label: "补全评分证据",
+      detail: `正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
+      percent: 64 + index,
+    });
+    const batchDetails = await requestScoreItemDetailBatch({
+      apiKey,
+      fetchImpl,
+      language,
+      scoringReport,
+      evidence,
+      itemIds,
+    });
+    for (const detail of batchDetails) details[detail.id] = detail;
+  }
+
+  return scoringReport.scoreItems20.map((item) => {
+    const detail = details[item.id];
+    if (!detail) return item;
+    return {
+      ...item,
+      evidence: detail.evidence,
+      deductions: detail.deductions,
+      recentChange: detail.recentChange,
+      reason: detail.reason,
+    };
+  });
+}
+
+type ScoreItemDetail = {
+  id: string;
+  evidence: string[];
+  deductions: string[];
+  recentChange: string;
+  reason: string;
+};
+
+async function requestScoreItemDetailBatch({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  itemIds,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  itemIds: string[];
+}): Promise<ScoreItemDetail[]> {
+  try {
+    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false });
+  } catch (error) {
+    if (!isRetryableModelOutputError(error)) throw error;
+    return requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true });
+  }
+}
+
+async function requestScoreItemDetailBatchOnce({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  itemIds,
+  strictLength,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  itemIds: string[];
+  strictLength: boolean;
+}): Promise<ScoreItemDetail[]> {
+  const detailJson = await requestDeepSeekJson({
+    apiKey,
+    fetchImpl,
+    maxTokens: strictLength ? 4200 : 6500,
+    messages: [
+      {
+        role: "system",
+        content: buildScoreItemDetailSystemPrompt(language, strictLength),
+      },
+      {
+        role: "user",
+        content: JSON.stringify(
+          {
+            task: "Enrich only the requested score item text. Do not change numeric scores.",
+            requestedItemIds: itemIds,
+            expectedOutputShape: {
+              scoreItemDetails: itemIds.map((id) => ({
+                id,
+                evidence: ["2-4 条最新公开证据，写明财报期/行情时间/数据来源"],
+                deductions: ["1-3 条明确扣分点"],
+                recentChange: "最近 12 个月变化及对分数影响",
+                reason: "120-220 字中文评分理由",
+              })),
+            },
+            scoreItems: scoringReport.scoreItems20
+              .filter((item) => itemIds.includes(item.id))
+              .map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
+                id,
+                title,
+                moduleName,
+                weight,
+                score,
+                label,
+                evidence,
+                deductions,
+                recentChange,
+                reason,
+              })),
+            financialTenYear: scoringReport.financialTenYear,
+            valuationAnalysis: scoringReport.valuationAnalysis,
+            evidence: compactEvidenceForPrompt(evidence),
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  });
+  return normalizeScoreItemDetails(detailJson, itemIds);
 }
 
 async function requestNarrativeBatch({
@@ -336,10 +505,28 @@ Rules:
 - Keep each scoreItems20 evidence/deductions array to at most 2 short strings. Keep reason under 80 Chinese characters and recentChange under 50 Chinese characters.
 - Do not include fullSections in this pass. Keep regular sections under 120 Chinese characters each; the full narrative is generated in separate batches.
 - Include financialTenYear.rows for available years and metrics, maximum 8 metrics. If a value is unavailable, write 数据不足, not a fake number.
+- If the evidence bundle contains a normalized financialTenYear table, use those metric names and values as authoritative.
 - Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
 - Include riskMatrix with at most 6 risks.
 - Include evidence with source URLs and retrievedAt timestamps, maximum 8 items.
 - Conclusions must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
+`;
+}
+
+function buildScoreItemDetailSystemPrompt(language: "zh-CN" | "en", strictLength: boolean) {
+  return `
+You are CSTD Alpha, strengthening the evidence text for an already scored company report.
+Return ONLY one valid JSON object. Do not wrap it in Markdown.
+Language: ${language === "zh-CN" ? "Simplified Chinese" : "English"}.
+
+Rules:
+- Return only { "scoreItemDetails": [...] } at the JSON top level.
+- Do not change numeric scores, labels, item ids, item titles, or weights.
+- Use only the provided scoring report, normalized financial table, valuation data, and evidence bundle. Do not invent facts.
+- Each requested item must include 2-4 concrete evidence bullets, 1-3 direct deduction bullets, a recentChange sentence, and a reason.
+- Evidence bullets should mention the latest available period, source freshness, metric name, or valuation snapshot when possible.
+- Reasons must be direct and non-ambiguous: bad evidence means low score; do not write polite neutral language for weak companies.
+- ${strictLength ? "Strict retry mode: reason 80-140 Chinese characters; evidence bullets short." : "Reason should be 120-220 Chinese characters, with enough detail for a deep report."}
 `;
 }
 
@@ -437,6 +624,7 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
       calendarEvents: pick(asRecord(summary?.calendarEvents), ["earnings", "exDividendDate", "dividendDate"]),
       earnings: pick(asRecord(summary?.earnings), ["financialsChart", "earningsChart"]),
       eastmoney: pick(asRecord(evidence.facts.eastmoney), ["quote", "incomeRows", "cashflowRows", "balanceRows"]),
+      financialTenYear: evidence.facts.financialTenYear,
     },
   };
 }
@@ -455,6 +643,16 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
   if (!isRecord(unwrapped)) return unwrapped;
   const modelCompany = isRecord(unwrapped.company) ? unwrapped.company : {};
   const sections = normalizeSections(unwrapped.sections, unwrapped, evidence);
+  const providerFinancialTenYear = providerFinancialTenYearFromEvidence(evidence);
+  const modelFinancialTenYear = isRecord(unwrapped.financialTenYear) ? unwrapped.financialTenYear : undefined;
+  const financialTenYear = providerFinancialTenYear
+    ? {
+        ...providerFinancialTenYear,
+        interpretation: isNonEmptyString(modelFinancialTenYear?.interpretation)
+          ? modelFinancialTenYear.interpretation
+          : providerFinancialTenYear.interpretation,
+      }
+    : unwrapped.financialTenYear;
 
   return {
     ...unwrapped,
@@ -464,6 +662,7 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
       name: isNonEmptyString(modelCompany.name) ? modelCompany.name : evidence.company.name,
     },
     sections,
+    financialTenYear,
   };
 }
 
@@ -616,6 +815,26 @@ function pickFullSectionKeys(record: Record<string, unknown>, keys: readonly Ful
   return Object.fromEntries(keys.flatMap((key) => (record[key] === undefined ? [] : [[key, record[key]]])));
 }
 
+function normalizeScoreItemDetails(value: unknown, expectedIds: string[]): ScoreItemDetail[] {
+  const record = isRecord(value) ? value : {};
+  const rawItems = Array.isArray(record.scoreItemDetails) ? record.scoreItemDetails.filter(isRecord) : [];
+  const details = expectedIds.map((id) => {
+    const raw = rawItems.find((item) => item.id === id);
+    if (!raw) {
+      throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true);
+    }
+    const evidence = stringArray(raw.evidence).slice(0, 4);
+    const deductions = stringArray(raw.deductions).slice(0, 3);
+    const recentChange = isNonEmptyString(raw.recentChange) ? raw.recentChange : "";
+    const reason = isNonEmptyString(raw.reason) ? raw.reason : "";
+    if (!evidence.length || !deductions.length || !recentChange || !reason) {
+      throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true);
+    }
+    return { id, evidence, deductions, recentChange, reason };
+  });
+  return details;
+}
+
 function sectionsFromFullSections(fullSections: Record<string, unknown>) {
   return {
     companyOverview: fullSections.companyOverview,
@@ -640,6 +859,12 @@ function withProviderContext(report: InvestmentReport, evidence: EvidenceBundle)
       ...report.company,
     },
   };
+}
+
+function providerFinancialTenYearFromEvidence(evidence: EvidenceBundle) {
+  const value = evidence.facts.financialTenYear;
+  if (!isRecord(value) || !Array.isArray(value.rows) || value.rows.length === 0) return undefined;
+  return value;
 }
 
 function isRetryableModelOutputError(error: unknown) {
@@ -728,4 +953,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter(isNonEmptyString).map(String) : [];
 }

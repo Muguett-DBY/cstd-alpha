@@ -83,6 +83,13 @@ const narrativeBatches = [
   ["risks", "finalConclusion", "accountRules"],
 ] as const;
 
+const detailBatches = [
+  SCORE_ITEMS_20.slice(0, 5),
+  SCORE_ITEMS_20.slice(5, 10),
+  SCORE_ITEMS_20.slice(10, 15),
+  SCORE_ITEMS_20.slice(15, 20),
+] as const;
+
 function narrativePayload(keys: readonly string[] = Object.keys(narrativeSections)) {
   return {
     fullSections: Object.fromEntries(keys.map((key) => [key, narrativeSections[key as keyof typeof narrativeSections]])),
@@ -96,8 +103,29 @@ function mockNarrativeBatches(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock;
 }
 
+function detailPayload(items = SCORE_ITEMS_20) {
+  return {
+    scoreItemDetails: items.map((item) => ({
+      id: item.id,
+      evidence: [`${item.title} 最新财报证据一`, `${item.title} 最新行情证据二`, `${item.title} 行业对比证据三`],
+      deductions: [`${item.title} 主要扣分点`],
+      recentChange: `${item.title} 最近 12 个月变化已纳入评分。`,
+      reason:
+        `${item.title} 的评分基于最新公开财报、行情估值和可验证经营线索综合判断。该项既考虑绝对水平，也考虑趋势变化和潜在反证条件；若关键指标继续恶化，分数应继续下调，不能因为公司知名度而给出模糊高分。`,
+    })),
+  };
+}
+
+function mockDetailBatches(fetchMock: ReturnType<typeof vi.fn>) {
+  for (const batch of detailBatches) {
+    fetchMock.mockResolvedValueOnce(modelResponse(detailPayload(batch)));
+  }
+  return fetchMock;
+}
+
 function mockSuccessfulReport(scoringPayload = reportPayload()) {
   const fetchMock = vi.fn().mockResolvedValueOnce(modelResponse(scoringPayload));
+  mockDetailBatches(fetchMock);
   return mockNarrativeBatches(fetchMock);
 }
 
@@ -118,6 +146,19 @@ describe("DeepSeek report client", () => {
     expect(userPayload.expectedOutputShape.scoreItems20[0]).toEqual(
       expect.objectContaining({ id: "industryLifecycle", score: 0, label: "一般" }),
     );
+  });
+
+  test("enriches score item evidence and reasons in four small batches before narrative sections", async () => {
+    const fetchMock = mockSuccessfulReport();
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledTimes(9);
+    const firstDetailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(firstDetailBody.messages[1].content).toContain("industryLifecycle");
+    expect(report.scoreItems20[0].evidence).toHaveLength(3);
+    expect(report.scoreItems20[0].deductions).toEqual(["行业生命周期与产业状态 主要扣分点"]);
+    expect(report.scoreItems20[0].reason).toContain("不能因为公司知名度而给出模糊高分");
   });
 
   test("throws a user-facing error instead of returning a zero-score report when DeepSeek output is truncated", async () => {
@@ -144,11 +185,12 @@ describe("DeepSeek report client", () => {
         }),
       })
       .mockResolvedValueOnce(modelResponse(reportPayload()));
+    mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
     expect(report.company.name).toBe("Example Inc.");
     expect(report.scoreItems20).toHaveLength(20);
   });
@@ -186,11 +228,12 @@ describe("DeepSeek report client", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(modelResponse(reportPayload({ company: { name: "贵州茅台" } })));
+    mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence: maotaiEvidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(9);
     expect(report.company).toMatchObject({ name: "贵州茅台", ticker: "600519", market: "沪A" });
     expect(report.scoreItems20).toHaveLength(20);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
@@ -223,6 +266,7 @@ describe("DeepSeek report client", () => {
         choices: [{ finish_reason: "stop", message: { content: malformed } }],
       }),
     });
+    mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
@@ -235,6 +279,10 @@ describe("DeepSeek report client", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(modelResponse(reportPayload()))
+      .mockResolvedValueOnce(modelResponse(detailPayload(detailBatches[0])))
+      .mockResolvedValueOnce(modelResponse(detailPayload(detailBatches[1])))
+      .mockResolvedValueOnce(modelResponse(detailPayload(detailBatches[2])))
+      .mockResolvedValueOnce(modelResponse(detailPayload(detailBatches[3])))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -248,7 +296,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
     expect(report.fullSections.accountRules).toBe("完整仓位规则");
   });

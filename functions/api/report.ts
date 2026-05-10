@@ -14,6 +14,8 @@ type ReportRequest = {
   ticker?: string;
   market?: string;
   language?: "zh-CN" | "en";
+  forceRefresh?: boolean;
+  cacheMode?: "prefer-cache" | "refresh";
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -27,6 +29,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.DEEPSEEK_API_KEY) return json({ error: "DEEPSEEK_API_KEY is not configured." }, 500);
 
   return streamNdjson(async (emit) => {
+    emit({
+      type: "progress",
+      stage: body?.forceRefresh || body?.cacheMode === "refresh" ? "cache_refresh" : "cache_miss",
+      label: body?.forceRefresh || body?.cacheMode === "refresh" ? "刷新最新数据" : "未命中本地缓存",
+      detail: body?.forceRefresh || body?.cacheMode === "refresh" ? "正在绕过本地缓存，重新读取公开数据。" : "本次需要重新读取公开数据并调用模型。",
+      percent: 3,
+    });
     emit({ type: "progress", stage: "confirmed", label: "已确认公司", detail: company ? `${company.name} / ${company.code} / ${company.listingPlace}` : companyName, percent: 5 });
     emit({ type: "progress", stage: "market_data", label: "读取行情数据", detail: "正在读取公开行情、交易所与估值快照。", percent: 18 });
     emit({ type: "progress", stage: "financial_data", label: "读取财务数据", detail: "正在读取利润表、现金流量表、资产负债表与公开财务时间序列。", percent: 32 });

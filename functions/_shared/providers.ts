@@ -1,4 +1,4 @@
-import type { CompanyCandidate, CompanyIdentity, EvidenceItem } from "../../src/shared/report";
+import type { CompanyCandidate, CompanyIdentity, EvidenceItem, FinancialTenYear } from "../../src/shared/report";
 import { buildDrawdownSeries, normalizeChartBundle, type ChartBundle, type PriceMode, type PricePoint } from "../../src/shared/chart";
 
 export type EvidenceBundle = {
@@ -6,6 +6,11 @@ export type EvidenceBundle = {
   retrievedAt: string;
   evidence: EvidenceItem[];
   facts: Record<string, unknown>;
+};
+
+export type NormalizedFinancialTenYear = FinancialTenYear & {
+  latestPeriod?: string;
+  latestUpdate?: string;
 };
 
 type FetchLike = typeof fetch;
@@ -52,9 +57,9 @@ export async function fetchPublicCompanyEvidence({
       )}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`
     : "";
   const secucode = selectedCompany ? eastmoneySecucode(selectedCompany) : undefined;
-  const incomeUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GINCOMEQC", "APP_F10_GINCOMEQC", secucode) : "";
+  const incomeUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GINCOME", "APP_F10_GINCOME", secucode) : "";
   const cashflowUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GCASHFLOW", "APP_F10_GCASHFLOW", secucode) : "";
-  const balanceUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GBALANCE", "APP_F10_GBALANCE", secucode) : "";
+  const balanceUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GBALANCE", "F10_FINANCE_GBALANCE", secucode) : "";
 
   const eastmoneyQuoteJson = eastmoneyQuoteUrl ? await fetchJson(eastmoneyQuoteUrl, fetchImpl) : null;
   const eastmoneyQuote = isRecord(recordPath(eastmoneyQuoteJson, ["data"])) ? (recordPath(eastmoneyQuoteJson, ["data"]) as Record<string, unknown>) : undefined;
@@ -64,6 +69,7 @@ export async function fetchPublicCompanyEvidence({
   const incomeRows = arrayPath(incomeJson, ["result", "data"]);
   const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
+  const financialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
 
   const quoteJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(quoteUrl, fetchImpl);
   const quote = firstArrayItem(recordPath(quoteJson, ["quoteResponse", "result"]));
@@ -139,7 +145,9 @@ export async function fetchPublicCompanyEvidence({
         url: incomeUrl || cashflowUrl || balanceUrl,
         retrievedAt,
         freshness: hasEastmoneyFinancials ? "latest-public" : "unavailable",
-        notes: "Income statement, cash flow statement and balance sheet rows where available.",
+        notes: financialTenYear.rows.length
+          ? `Normalized ${financialTenYear.rows.length} named financial metrics from public statements. Latest period: ${financialTenYear.latestPeriod ?? "unknown"}.`
+          : "Income statement, cash flow statement and balance sheet rows where available.",
       },
       {
         title: `${symbol} latest quote`,
@@ -193,10 +201,117 @@ export async function fetchPublicCompanyEvidence({
         cashflowRows,
         balanceRows,
       },
+      financialTenYear: financialTenYear.rows.length ? financialTenYear : undefined,
       search: searchQuote ?? undefined,
       chart: chart ?? undefined,
       fundamentals: normalizeFundamentals(fundamentals),
     },
+  };
+}
+
+export function buildFinancialTenYearFromEastmoney(incomeRows: unknown[], cashflowRows: unknown[], balanceRows: unknown[]): NormalizedFinancialTenYear {
+  const incomeAnnual = annualRows(incomeRows);
+  const cashflowAnnual = annualRows(cashflowRows);
+  const balanceAnnual = annualRows(balanceRows);
+  const years = Array.from(new Set([...incomeAnnual.keys(), ...cashflowAnnual.keys(), ...balanceAnnual.keys()]))
+    .sort()
+    .slice(-10);
+  const latest = latestStatementRow([...incomeRows, ...cashflowRows, ...balanceRows]);
+  const metricSpecs: Array<{
+    metric: string;
+    kind: "amount" | "ratio";
+    value: (year: string) => number | undefined;
+    interpretation: string;
+  }> = [
+    {
+      metric: "营业收入",
+      kind: "amount",
+      value: (year) => statementNumber(incomeAnnual.get(year), ["TOTAL_OPERATE_INCOME", "OPERATE_INCOME"]),
+      interpretation: "观察收入规模和增长中枢，判断行业需求、份额和提价是否仍在兑现。",
+    },
+    {
+      metric: "归母净利润",
+      kind: "amount",
+      value: (year) => statementNumber(incomeAnnual.get(year), ["PARENT_NETPROFIT", "NETPROFIT"]),
+      interpretation: "观察归属普通股东的盈利能力，避免只看收入增长而忽略利润含金量。",
+    },
+    {
+      metric: "扣非归母净利润",
+      kind: "amount",
+      value: (year) => statementNumber(incomeAnnual.get(year), ["DEDUCT_PARENT_NETPROFIT"]),
+      interpretation: "剔除非经常性损益后检验主业盈利质量。",
+    },
+    {
+      metric: "经营现金流",
+      kind: "amount",
+      value: (year) => statementNumber(cashflowAnnual.get(year), ["NETCASH_OPERATE"]),
+      interpretation: "检验利润是否真正转化为经营现金流，是财务质量评分的核心证据。",
+    },
+    {
+      metric: "货币资金",
+      kind: "amount",
+      value: (year) => statementNumber(balanceAnnual.get(year), ["MONETARYFUNDS", "CURRENCY_FUNDS"]) ?? statementNumber(cashflowAnnual.get(year), ["END_CCE"]),
+      interpretation: "观察现金储备和流动性安全垫。",
+    },
+    {
+      metric: "总资产",
+      kind: "amount",
+      value: (year) => statementNumber(balanceAnnual.get(year), ["TOTAL_ASSETS", "ASSET_BALANCE"]),
+      interpretation: "观察资产规模扩张是否与收入和利润增长匹配。",
+    },
+    {
+      metric: "总负债",
+      kind: "amount",
+      value: (year) => statementNumber(balanceAnnual.get(year), ["TOTAL_LIABILITIES", "LIAB_BALANCE"]),
+      interpretation: "观察杠杆扩张和偿债压力。",
+    },
+    {
+      metric: "资产负债率",
+      kind: "ratio",
+      value: (year) => ratio(statementNumber(balanceAnnual.get(year), ["TOTAL_LIABILITIES", "LIAB_BALANCE"]), statementNumber(balanceAnnual.get(year), ["TOTAL_ASSETS", "ASSET_BALANCE"])),
+      interpretation: "负债率用于判断财务安全边际，持续上升需降低财务质量评分。",
+    },
+    {
+      metric: "毛利率",
+      kind: "ratio",
+      value: (year) => {
+        const row = incomeAnnual.get(year);
+        const revenue = statementNumber(row, ["TOTAL_OPERATE_INCOME", "OPERATE_INCOME"]);
+        const cost = statementNumber(row, ["OPERATE_COST", "TOTAL_OPERATE_COST"]);
+        return revenue !== undefined && cost !== undefined ? ratio(revenue - cost, revenue) : undefined;
+      },
+      interpretation: "毛利率反映定价权和成本压力，是商业模式质量的重要证据。",
+    },
+    {
+      metric: "净利率",
+      kind: "ratio",
+      value: (year) => ratio(statementNumber(incomeAnnual.get(year), ["PARENT_NETPROFIT", "NETPROFIT"]), statementNumber(incomeAnnual.get(year), ["TOTAL_OPERATE_INCOME", "OPERATE_INCOME"])),
+      interpretation: "净利率反映最终盈利留存能力，持续下滑会拖累公司质量评分。",
+    },
+  ];
+
+  const rows = metricSpecs
+    .map((spec) => {
+      const numericValues = years
+        .map((year) => ({ year, value: spec.value(year) }))
+        .filter((item): item is { year: string; value: number } => item.value !== undefined);
+      if (!numericValues.length) return undefined;
+      return {
+        metric: spec.metric,
+        values: Object.fromEntries(numericValues.map((item) => [item.year, spec.kind === "ratio" ? formatRatio(item.value) : formatAmount(item.value)])),
+        trend: trendText(numericValues.map((item) => item.value), spec.kind),
+        interpretation: spec.interpretation,
+      };
+    })
+    .filter((row): row is FinancialTenYear["rows"][number] => Boolean(row));
+
+  return {
+    rows,
+    interpretation: rows.length
+      ? `已从东方财富公开财务报表整理 ${years.length} 个年度的具名财务指标；最新可见期间为 ${latest?.period ?? "待验证"}。`
+      : "公开接口未返回可直接整理为十年表的年度财务数据。",
+    latestPeriod: latest?.period,
+    latestUpdate: latest?.update,
   };
 }
 
@@ -323,7 +438,7 @@ function yahooTenYearChartUrl(symbol: string) {
 function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
   return `https://datacenter.eastmoney.com/securities/api/data/get?type=${type}&sty=${style}&filter=(SECUCODE%3D%22${encodeURIComponent(
     secucode,
-  )}%22)&p=1&ps=10&sr=-1&st=REPORT_DATE`;
+  )}%22)&p=1&ps=60&sr=-1&st=REPORT_DATE`;
 }
 
 function eastmoneySecucode(candidate: CompanyCandidate) {
@@ -471,6 +586,77 @@ function normalizeFundamentals(items: unknown[] | undefined) {
     result[type] = item[type];
   }
   return Object.keys(result).length ? result : undefined;
+}
+
+function annualRows(rows: unknown[]) {
+  const annual = new Map<string, Record<string, unknown>>();
+  for (const item of rows) {
+    if (!isRecord(item)) continue;
+    const year = statementYear(item);
+    if (!year || !isAnnualStatement(item)) continue;
+    annual.set(year, item);
+  }
+  return annual;
+}
+
+function statementYear(row: Record<string, unknown>) {
+  const rawDate = stringValue(row.REPORT_DATE);
+  const match = rawDate?.match(/^(\d{4})-/) ?? stringValue(row.REPORT_DATE_NAME)?.match(/^(\d{4})/);
+  return match?.[1];
+}
+
+function isAnnualStatement(row: Record<string, unknown>) {
+  const name = stringValue(row.REPORT_DATE_NAME) ?? "";
+  const date = stringValue(row.REPORT_DATE) ?? "";
+  return name.includes("年报") || date.includes("-12-31");
+}
+
+function latestStatementRow(rows: unknown[]) {
+  const sorted = rows
+    .filter(isRecord)
+    .map((row) => {
+      const period = stringValue(row.REPORT_DATE_NAME) ?? stringValue(row.REPORT_DATE);
+      const date = stringValue(row.REPORT_DATE);
+      const update = stringValue(row.UPDATE_DATE) ?? stringValue(row.NOTICE_DATE);
+      return period && date ? { period, date, update } : undefined;
+    })
+    .filter((item): item is { period: string; date: string; update: string | undefined } => Boolean(item))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return sorted.at(-1);
+}
+
+function statementNumber(row: Record<string, unknown> | undefined, keys: string[]) {
+  if (!row) return undefined;
+  for (const key of keys) {
+    const value = numberValue(row[key]) ?? numberFromString(String(row[key] ?? ""));
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function ratio(numerator: number | undefined, denominator: number | undefined) {
+  if (numerator === undefined || denominator === undefined || denominator === 0) return undefined;
+  return (numerator / denominator) * 100;
+}
+
+function formatAmount(value: number) {
+  return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿`;
+}
+
+function formatRatio(value: number) {
+  return `${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function trendText(values: number[], kind: "amount" | "ratio") {
+  if (values.length < 2) return "待继续观察";
+  const first = values[0];
+  const last = values.at(-1) ?? first;
+  if (first === 0) return last > 0 ? "由低位改善" : "待继续观察";
+  const change = (last - first) / Math.abs(first);
+  const threshold = kind === "ratio" ? 0.02 : 0.03;
+  if (change > threshold) return "上升";
+  if (change < -threshold) return "下降";
+  return "基本稳定";
 }
 
 function pickDefined(record: Record<string, unknown>) {

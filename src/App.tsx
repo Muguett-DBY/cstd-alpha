@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { downloadReportDocx } from "./docx/export-report";
-import { loadLastReport, saveLastReport } from "./storage";
+import { loadCachedChart, loadCachedReport, loadLastReport, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ScoreItem } from "./shared/report";
 
@@ -27,6 +27,7 @@ function App() {
   const [chartPhase, setChartPhase] = useState<ChartPhase>("idle");
   const [chartError, setChartError] = useState("");
   const [priceMode, setPriceMode] = useState<PriceMode>("adjusted");
+  const [cacheNotice, setCacheNotice] = useState("");
 
   useEffect(() => {
     void checkSession()
@@ -55,6 +56,7 @@ function App() {
     event.preventDefault();
     if (!query.trim()) return;
     setError("");
+    setCacheNotice("");
     setChartError("");
     setPhase("searching");
     setSelectedCompany(null);
@@ -70,7 +72,7 @@ function App() {
     }
   }
 
-  async function submitReport() {
+  async function submitReport(forceRefresh = false) {
     if (!selectedCompany) {
       setError("请先从候选列表中选择具体公司。");
       setPhase("selecting");
@@ -78,19 +80,45 @@ function App() {
     }
 
     setError("");
+    setCacheNotice("");
     setProgress([]);
     setEvidenceCount(0);
     setReport(null);
+
+    if (!forceRefresh) {
+      const cached = loadCachedReport(selectedCompany);
+      if (cached) {
+        setReport(cached.report);
+        saveLastReport(cached.report);
+        setEvidenceCount(cached.report.evidence.length);
+        setProgress([
+          {
+            type: "progress",
+            stage: "cache_hit",
+            label: "使用本地缓存",
+            detail: `已复用 ${formatCacheTime(cached.cachedAt)} 生成的报告，可点击“刷新最新数据”重新生成。`,
+            percent: 100,
+            at: new Date().toISOString(),
+            evidenceCount: cached.report.evidence.length,
+          },
+        ]);
+        setPhase("ready");
+        setCacheNotice(`正在显示 ${formatCacheTime(cached.cachedAt)} 的缓存报告。`);
+        return;
+      }
+    }
+
     setStartedAt(Date.now());
     setPhase("generating");
 
     try {
-      const nextReport = await generateReport({ company: selectedCompany }, (item) => {
+      const nextReport = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache" }, (item) => {
         if (typeof item.evidenceCount === "number") setEvidenceCount(item.evidenceCount);
         setProgress((current) => [...current.slice(-12), item]);
       });
       setReport(nextReport);
       saveLastReport(nextReport);
+      saveCachedReport(selectedCompany, nextReport);
       setPhase("ready");
     } catch (err) {
       setPhase("error");
@@ -100,7 +128,7 @@ function App() {
     }
   }
 
-  async function submitChart(nextPriceMode = priceMode) {
+  async function submitChart(nextPriceMode = priceMode, forceRefresh = false) {
     if (!selectedCompany) {
       setChartError("请先从候选列表中选择具体公司。");
       setPhase("selecting");
@@ -109,10 +137,19 @@ function App() {
 
     setChartError("");
     setPriceMode(nextPriceMode);
+    if (!forceRefresh) {
+      const cached = loadCachedChart(selectedCompany, nextPriceMode);
+      if (cached) {
+        setChartBundle(cached.chart);
+        setChartPhase("ready");
+        return;
+      }
+    }
     setChartPhase("loading");
     try {
       const bundle = await fetchChartData({ company: selectedCompany, priceMode: nextPriceMode });
       setChartBundle(bundle);
+      saveCachedChart(selectedCompany, nextPriceMode, bundle);
       setChartPhase("ready");
     } catch (err) {
       setChartPhase("error");
@@ -187,9 +224,13 @@ function App() {
           </section>
         ) : null}
 
-        <button className="generate-button" type="button" disabled={!selectedCompany || phase === "generating"} onClick={submitReport}>
+        <button className="generate-button" type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void submitReport(false)}>
           {phase === "generating" ? "正在生成深度报告..." : "生成完整评分报告"}
         </button>
+        <button className="secondary-button refresh-button" type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void submitReport(true)}>
+          刷新最新数据
+        </button>
+        {cacheNotice ? <p className="cache-notice">{cacheNotice}</p> : null}
 
         <section className="chart-controls">
           <span>股价口径</span>
@@ -203,6 +244,9 @@ function App() {
           </div>
           <button className="secondary-button" type="button" disabled={!selectedCompany || chartPhase === "loading"} onClick={() => void submitChart()}>
             {chartPhase === "loading" ? "正在生成图表..." : "生成图表"}
+          </button>
+          <button className="secondary-button" type="button" disabled={!selectedCompany || chartPhase === "loading"} onClick={() => void submitChart(priceMode, true)}>
+            刷新图表数据
           </button>
           {chartError ? <p className="error-text">{chartError}</p> : null}
         </section>
@@ -458,11 +502,15 @@ function ValuationRange({ report, currentPrice }: { report: InvestmentReport; cu
   const max = Math.max(...values);
   const span = max - min || 1;
   const position = (value: number) => ((value - min) / span) * 100;
+  const buyLow = buy.length >= 2 ? Math.min(...buy) : min;
+  const buyHigh = buy.length >= 2 ? Math.max(...buy) : buy[0];
+  const fairLow = fair.length >= 2 ? Math.min(...fair) : undefined;
+  const fairHigh = fair.length >= 2 ? Math.max(...fair) : undefined;
   return (
     <div className="valuation-range">
       <div className="range-track">
-        {buy.length >= 2 ? <span className="buy-range" style={{ left: `${position(buy[0])}%`, width: `${position(buy[1]) - position(buy[0])}%` }} /> : null}
-        {fair.length >= 2 ? <span className="fair-range" style={{ left: `${position(fair[0])}%`, width: `${position(fair[1]) - position(fair[0])}%` }} /> : null}
+        {buyHigh !== undefined ? <span className="buy-range" style={{ left: `${position(buyLow)}%`, width: `${Math.max(2, position(buyHigh) - position(buyLow))}%` }} /> : null}
+        {fairLow !== undefined && fairHigh !== undefined ? <span className="fair-range" style={{ left: `${position(fairLow)}%`, width: `${Math.max(2, position(fairHigh) - position(fairLow))}%` }} /> : null}
         {sell[0] !== undefined ? <span className="sell-marker" style={{ left: `${position(sell[0])}%` }} /> : null}
         {current !== undefined ? <span className="current-marker" style={{ left: `${position(current)}%` }} /> : null}
       </div>
@@ -621,12 +669,14 @@ function ScoreItemCard({ item, index }: { item: ScoreItem; index: number }) {
 
 function FinancialTable({ report }: { report: InvestmentReport }) {
   const years = Array.from(new Set(report.financialTenYear.rows.flatMap((row) => Object.keys(row.values)))).slice(-10);
+  const gridTemplateColumns = `150px repeat(${years.length}, minmax(84px, 1fr)) 104px`;
+  const minWidth = `${150 + years.length * 84 + 104}px`;
   return (
     <section className="wide-section">
       <h3>十年财务数据总表</h3>
-      {report.financialTenYear.rows.length ? (
+      {report.financialTenYear.rows.length && years.length ? (
         <div className="financial-table">
-          <div className="financial-row financial-head">
+          <div className="financial-row financial-head" style={{ gridTemplateColumns, minWidth }}>
             <span>指标</span>
             {years.map((year) => (
               <span key={year}>{year}</span>
@@ -634,7 +684,7 @@ function FinancialTable({ report }: { report: InvestmentReport }) {
             <span>趋势</span>
           </div>
           {report.financialTenYear.rows.map((row) => (
-            <div key={row.metric} className="financial-row">
+            <div key={row.metric} className="financial-row" style={{ gridTemplateColumns, minWidth }}>
               <span>{row.metric}</span>
               {years.map((year) => (
                 <span key={year}>{row.values[year] || "-"}</span>
@@ -708,7 +758,9 @@ function ReportBlock({ title, body }: { title: string; body: string }) {
   return (
     <section className="report-section">
       <h3>{title}</h3>
-      <p>{body}</p>
+      {splitReportParagraphs(body).map((paragraph, index) => (
+        <p key={`${title}-${index}`}>{paragraph}</p>
+      ))}
     </section>
   );
 }
@@ -753,8 +805,36 @@ function formatPercent(value: number | undefined) {
   return value === undefined ? "待验证" : `${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`;
 }
 
+function formatCacheTime(value: number) {
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function splitReportParagraphs(body: string) {
+  const blocks = body
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const source = blocks.length ? blocks : [body.trim()].filter(Boolean);
+  return source.flatMap((paragraph) => {
+    if (paragraph.length <= 360) return [paragraph];
+    const sentences = paragraph.match(/[^。！？；]+[。！？；]?/g) ?? [paragraph];
+    const result: string[] = [];
+    let current = "";
+    for (const sentence of sentences) {
+      if ((current + sentence).length > 300 && current) {
+        result.push(current);
+        current = sentence;
+      } else {
+        current += sentence;
+      }
+    }
+    if (current) result.push(current);
+    return result;
+  });
+}
+
 function parseNumbers(value: string) {
-  return Array.from(value.matchAll(/-?\d+(?:\.\d+)?/g))
+  return Array.from(value.replace(/[,，]/g, "").replace(/(\d)\s*[-–—~至到]\s*(\d)/g, "$1 $2").matchAll(/-?\d+(?:\.\d+)?/g))
     .map((match) => Number(match[0]))
     .filter((number) => Number.isFinite(number));
 }

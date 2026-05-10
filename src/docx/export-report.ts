@@ -149,8 +149,20 @@ function scoreItemsTable(items: ScoreItem[], docx: Docx) {
     width: { size: 100, type: docx.WidthType.PERCENTAGE },
     borders: tableBorders(docx),
     rows: [
-      tableRow(["序号", "评分项", "权重", "得分", "标签", "理由"], docx, true),
-      ...items.map((item, index) => tableRow([String(index + 1), item.title, `${item.weight}%`, `${item.score}`, item.label, item.reason], docx)),
+      tableRow(["序号", "评分项", "权重", "得分", "标签", "理由与证据"], docx, true),
+      ...items.map((item, index) =>
+        tableRow(
+          [
+            String(index + 1),
+            item.title,
+            `${item.weight}%`,
+            `${item.score}`,
+            item.label,
+            `${item.reason}\n核心证据：${item.evidence.join("；") || "数据不足"}\n扣分点：${item.deductions.join("；") || "待继续核验"}\n最近变化：${item.recentChange}`,
+          ],
+          docx,
+        ),
+      ),
     ],
   });
 }

@@ -3,6 +3,8 @@ import type { CompanyCandidate, InvestmentReport } from "./shared/report";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
+  forceRefresh?: boolean;
+  cacheMode?: "prefer-cache" | "refresh";
 };
 
 export type FetchChartDataInput = {

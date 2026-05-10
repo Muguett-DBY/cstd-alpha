@@ -70,6 +70,39 @@ describe("API client", () => {
     await expect(searchCompanies("万科A")).resolves.toMatchObject([{ name: "万科A", code: "000002", listingPlace: "深A" }]);
   });
 
+  test("sends cache mode and force refresh flags when generating reports", async () => {
+    const report = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`${JSON.stringify({ type: "final", report })}\n`, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      quoteId: "1.600519",
+      source: "eastmoney" as const,
+    };
+
+    await generateReport({ company, forceRefresh: true, cacheMode: "refresh" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/report",
+      expect.objectContaining({
+        body: JSON.stringify({ company, forceRefresh: true, cacheMode: "refresh" }),
+      }),
+    );
+  });
+
   test("requests chart data with selected company and price mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
