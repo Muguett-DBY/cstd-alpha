@@ -11,8 +11,31 @@ import { jsonrepair } from "jsonrepair";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
+type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
+
+const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
+  ["onePageConclusion", "companyOverview", "industryTrack"],
+  ["businessModel", "moat", "governance"],
+  ["financialQuality", "growthInflection", "valuation"],
+  ["risks", "finalConclusion", "accountRules"],
+];
+
+const FULL_SECTION_LABELS: Record<FullSectionKey, string> = {
+  onePageConclusion: "一页结论",
+  companyOverview: "公司概况",
+  industryTrack: "行业赛道",
+  businessModel: "商业模式",
+  moat: "护城河",
+  governance: "治理结构",
+  financialQuality: "财务质量",
+  growthInflection: "成长转折",
+  valuation: "估值分析",
+  risks: "风险反证",
+  finalConclusion: "最终结论",
+  accountRules: "仓位规则",
+};
 
 export class DeepSeekReportError extends Error {
   constructor(
@@ -69,27 +92,113 @@ export async function callDeepSeekReport({
   });
 
   const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
-  onProgress?.({
-    stage: "deepseek_narrative",
-    label: "生成完整正文",
-    detail: "结构化评分已完成，正在生成一页结论和完整中文报告章节。",
-    percent: 76,
+  const fullSections = await requestNarrativeSections({
+    apiKey,
+    fetchImpl,
+    language,
+    scoringReport,
+    evidence,
+    onProgress,
   });
+
+  const report = validateReportPayload(mergeNarrativePayload(scoringReport, { fullSections }, evidence));
+  return withProviderContext(report, evidence);
+}
+
+async function requestNarrativeSections({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  onProgress,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  onProgress?: DeepSeekInput["onProgress"];
+}) {
+  const fullSections: Record<string, unknown> = {};
+  for (const [index, keys] of NARRATIVE_SECTION_BATCHES.entries()) {
+    onProgress?.({
+      stage: `deepseek_narrative_${index + 1}`,
+      label: "生成完整正文",
+      detail: `正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
+      percent: 70 + index * 5,
+    });
+    Object.assign(
+      fullSections,
+      await requestNarrativeBatch({
+        apiKey,
+        fetchImpl,
+        language,
+        scoringReport,
+        evidence,
+        keys,
+      }),
+    );
+  }
+  return fullSections;
+}
+
+async function requestNarrativeBatch({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  keys,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  keys: FullSectionKey[];
+}) {
+  try {
+    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false });
+  } catch (error) {
+    if (!isModelOutputLengthError(error)) throw error;
+    return requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true });
+  }
+}
+
+async function requestNarrativeBatchOnce({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  keys,
+  strictLength,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  keys: FullSectionKey[];
+  strictLength: boolean;
+}) {
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    maxTokens: 10000,
+    maxTokens: strictLength ? 3500 : 5000,
     messages: [
       {
         role: "system",
-        content: buildNarrativeSystemPrompt(language),
+        content: buildNarrativeSystemPrompt(language, keys, strictLength),
       },
       {
         role: "user",
         content: JSON.stringify(
           {
-            task: "Generate the complete Chinese narrative sections for the already validated scoring report.",
-            expectedOutputShape: buildNarrativeOutputShape(),
+            task: "Generate only the requested fullSections keys for the already validated scoring report.",
+            requestedFullSectionKeys: keys,
+            expectedOutputShape: buildNarrativeOutputShape(keys),
             scoringReport: compactReportForNarrative(scoringReport),
             evidence: compactEvidenceForPrompt(evidence),
           },
@@ -99,9 +208,7 @@ export async function callDeepSeekReport({
       },
     ],
   });
-
-  const report = validateReportPayload(mergeNarrativePayload(scoringReport, narrativeJson, evidence));
-  return withProviderContext(report, evidence);
+  return pickFullSectionKeys(extractFullSections(narrativeJson), keys);
 }
 
 async function requestDeepSeekJson({
@@ -173,7 +280,7 @@ Rules:
 `;
 }
 
-function buildNarrativeSystemPrompt(language: "zh-CN" | "en") {
+function buildNarrativeSystemPrompt(language: "zh-CN" | "en", keys: FullSectionKey[], strictLength: boolean) {
   return `
 You are CSTD Alpha, writing the final narrative section of a Chinese company research report.
 Return ONLY one valid JSON object. Do not wrap it in Markdown.
@@ -181,10 +288,11 @@ Language: ${language === "zh-CN" ? "Simplified Chinese" : "English"}.
 
 Rules:
 - Return only { "fullSections": { ... } } at the JSON top level.
-- Use these exact fullSections keys: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
+- Use only these fullSections keys in this batch: ${keys.join(", ")}.
 - Base the writing only on the validated scoring report and evidence bundle. Do not invent facts.
 - Write direct conclusions. If evidence is weak, say 数据不足 and explain the impact.
 - Each section should be complete enough for a Word report, but avoid unnecessary repetition so the JSON response is not truncated.
+- ${strictLength ? "Strict retry mode: each section must be 220-420 Chinese characters and should prioritize conclusion, evidence, deduction logic, and tracking metrics." : "Each section should usually be 350-650 Chinese characters, with concrete evidence and deduction logic."}
 - Keep the disclaimer out of fullSections.
 `;
 }
@@ -363,9 +471,9 @@ function buildScoringOutputShape(evidence: EvidenceBundle) {
   };
 }
 
-function buildNarrativeOutputShape() {
+function buildNarrativeOutputShape(keys: FullSectionKey[]) {
   return {
-    fullSections: Object.fromEntries(REQUIRED_FULL_SECTION_KEYS.map((key) => [key, ""])),
+    fullSections: Object.fromEntries(keys.map((key) => [key, ""])),
   };
 }
 
@@ -412,7 +520,7 @@ function compactReportForNarrative(report: InvestmentReport) {
 function mergeNarrativePayload(scoringReport: InvestmentReport, narrativeJson: unknown, evidence: EvidenceBundle) {
   const unwrapped = unwrapReportPayload(narrativeJson);
   const narrative = isRecord(unwrapped) ? unwrapped : {};
-  const fullSections = isRecord(narrative.fullSections) ? narrative.fullSections : pickFullSectionKeys(narrative);
+  const fullSections = extractFullSections(narrative);
   const sections = isRecord(narrative.sections) ? narrative.sections : {};
 
   return prepareReportPayload(
@@ -432,8 +540,13 @@ function mergeNarrativePayload(scoringReport: InvestmentReport, narrativeJson: u
   );
 }
 
-function pickFullSectionKeys(record: Record<string, unknown>) {
-  return Object.fromEntries(REQUIRED_FULL_SECTION_KEYS.flatMap((key) => (record[key] === undefined ? [] : [[key, record[key]]])));
+function extractFullSections(value: unknown) {
+  const record = isRecord(value) ? value : {};
+  return isRecord(record.fullSections) ? record.fullSections : pickFullSectionKeys(record, REQUIRED_FULL_SECTION_KEYS);
+}
+
+function pickFullSectionKeys(record: Record<string, unknown>, keys: readonly FullSectionKey[]) {
+  return Object.fromEntries(keys.flatMap((key) => (record[key] === undefined ? [] : [[key, record[key]]])));
 }
 
 function sectionsFromFullSections(fullSections: Record<string, unknown>) {
@@ -460,6 +573,10 @@ function withProviderContext(report: InvestmentReport, evidence: EvidenceBundle)
       ...report.company,
     },
   };
+}
+
+function isModelOutputLengthError(error: unknown) {
+  return typeof error === "object" && error !== null && (error as Record<string, unknown>).code === "MODEL_OUTPUT_LENGTH";
 }
 
 function normalizeSections(rawSections: unknown, topLevel: Record<string, unknown>, evidence: EvidenceBundle) {
