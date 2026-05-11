@@ -172,6 +172,18 @@ describe("DeepSeek report client", () => {
     );
   });
 
+  test("retries transient DeepSeek network errors before failing the report", async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network error")).mockResolvedValueOnce(modelResponse(reportPayload()));
+    mockDetailBatches(fetchMock);
+    mockNarrativeBatches(fetchMock);
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledTimes(12);
+    expect(report.company.name).toBe("Example Inc.");
+    expect(report.scoreItems20).toHaveLength(20);
+  });
+
   test("uses V4 Pro for scoring and V4 Flash for detail and narrative generation", async () => {
     const fetchMock = mockSuccessfulReport();
 

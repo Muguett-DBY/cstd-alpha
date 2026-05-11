@@ -99,9 +99,113 @@ describe("report API stream", () => {
 
     expect(fetchPublicCompanyEvidence).toHaveBeenCalledTimes(1);
     expect(callDeepSeekReport).toHaveBeenCalledTimes(1);
-    expect(cache.get).not.toHaveBeenCalled();
+    expect(cache.get.mock.calls.some(([key]) => typeof key === "string" && key.startsWith("report:"))).toBe(false);
     expect(cache.put).toHaveBeenCalledWith(expect.stringMatching(/^report:/), expect.any(String), expect.objectContaining({ expirationTtl: 2_592_000 }));
     expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
+  test("returns a retryable lock error when the same report is already generating", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cache = mockKvCacheByKey((key) => {
+      if (key.startsWith("report-lock:")) {
+        return {
+          owner: "other-request",
+          companyName: "贵州茅台",
+          startedAt: "2026-05-10T00:00:00.000Z",
+          expiresAt: "2099-05-10T00:30:00.000Z",
+        };
+      }
+      return null;
+    });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(cache.put).not.toHaveBeenCalled();
+    expect(events.find((event) => event.stage === "generation_locked")).toMatchObject({
+      type: "progress",
+      label: "同公司报告正在生成",
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: "同一家公司报告正在生成中，请稍后再试。生成完成后再次点击会优先复用共享缓存。",
+      code: "REPORT_GENERATION_IN_PROGRESS",
+      retryable: true,
+    });
+  });
+
+  test("creates and releases a shared generation lock around uncached generation", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const cache = mockKvCacheByKey(() => null);
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    const lockPut = cache.put.mock.calls.find(([key]) => typeof key === "string" && key.startsWith("report-lock:"));
+    expect(lockPut).toEqual([expect.stringMatching(/^report-lock:/), expect.any(String), expect.objectContaining({ expirationTtl: 1800 })]);
+    expect(cache.delete).toHaveBeenCalledWith(expect.stringMatching(/^report-lock:/));
+    expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
+  test("releases the shared generation lock when report generation fails", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockRejectedValue(Object.assign(new Error("模型临时失败"), { code: "MODEL_TEMPORARY_FAILURE", retryable: true }));
+    const cache = mockKvCacheByKey(() => null);
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(cache.put).toHaveBeenCalledWith(expect.stringMatching(/^report-lock:/), expect.any(String), expect.objectContaining({ expirationTtl: 1800 }));
+    expect(cache.delete).toHaveBeenCalledWith(expect.stringMatching(/^report-lock:/));
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: "模型临时失败",
+      code: "MODEL_TEMPORARY_FAILURE",
+      retryable: true,
+    });
+  });
+
+  test("keeps a successful report final when releasing the shared generation lock fails", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const cache = mockKvCacheByKey(() => null, { failDelete: true });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
+  test("does not acquire the shared generation lock when another request overwrites ownership", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cache = mockKvCacheByKey(() => null, {
+      afterPut: (key, stored) => {
+        if (key.startsWith("report-lock:")) {
+          stored.set(
+            key,
+            JSON.stringify({
+              owner: "other-request",
+              companyName: "贵州茅台",
+              startedAt: "2026-05-10T00:00:00.000Z",
+              expiresAt: "2099-05-10T00:30:00.000Z",
+            }),
+          );
+        }
+      },
+    });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "REPORT_GENERATION_IN_PROGRESS",
+      retryable: true,
+    });
   });
 
   test("emits a structured evidence count before model generation", async () => {
@@ -189,12 +293,33 @@ describe("report API stream", () => {
 type TestKvCache = {
   get: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
 };
 
 function mockKvCache(value: unknown): TestKvCache {
+  return mockKvCacheByKey((key) => (key.startsWith("report:") ? value : null));
+}
+
+function mockKvCacheByKey(
+  resolve: (key: string) => unknown,
+  options: { afterPut?: (key: string, stored: Map<string, string>) => void; failDelete?: boolean } = {},
+): TestKvCache {
+  const stored = new Map<string, string>();
   return {
-    get: vi.fn().mockResolvedValue(value),
-    put: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockImplementation((key: string) => {
+      if (stored.has(key)) return Promise.resolve(JSON.parse(stored.get(key) ?? "null"));
+      return Promise.resolve(resolve(key));
+    }),
+    put: vi.fn().mockImplementation((key: string, value: string) => {
+      stored.set(key, value);
+      options.afterPut?.(key, stored);
+      return Promise.resolve();
+    }),
+    delete: vi.fn().mockImplementation((key: string) => {
+      if (options.failDelete) return Promise.reject(new Error("KV delete failed"));
+      stored.delete(key);
+      return Promise.resolve();
+    }),
   };
 }
 

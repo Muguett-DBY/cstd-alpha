@@ -53,24 +53,34 @@ export async function searchCompanies(query: string): Promise<CompanyCandidate[]
 }
 
 export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<ReportGenerationResult> {
-  const response = await fetch("/api/report", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(input),
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api/report", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    throw reportConnectionError(error);
+  }
 
   if (!response.ok) throw new Error((await readError(response)) || "报告生成失败。");
 
   let finalReport: InvestmentReport | undefined;
   let finalMetrics: ReportGenerationMetrics | undefined;
-  for await (const event of readNdjson(response)) {
-    if (event.type === "progress") onProgress?.(event as ReportProgress);
-    if (event.type === "error") throw new Error(String(event.error || "报告生成失败。"));
-    if (event.type === "final") {
-      finalReport = event.report as InvestmentReport;
-      finalMetrics = normalizeMetrics(event.metrics);
+  try {
+    for await (const event of readNdjson(response)) {
+      if (event.type === "progress") onProgress?.(event as ReportProgress);
+      if (event.type === "error") throw new Error(String(event.error || "报告生成失败。"));
+      if (event.type === "final") {
+        finalReport = event.report as InvestmentReport;
+        finalMetrics = normalizeMetrics(event.metrics);
+      }
     }
+  } catch (error) {
+    if (isNetworkLikeError(error)) throw reportConnectionError(error);
+    throw error;
   }
 
   if (!finalReport) throw new Error("报告响应没有包含最终报告。");
@@ -101,7 +111,13 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
   let buffer = "";
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      throw reportConnectionError(error);
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
@@ -115,6 +131,16 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
 
   buffer += decoder.decode();
   if (buffer.trim()) yield parseNdjsonLine(buffer.trim());
+}
+
+function reportConnectionError(cause?: unknown) {
+  return new Error("报告连接中断，请重试。", { cause });
+}
+
+function isNetworkLikeError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return error instanceof TypeError || message.includes("network") || message.includes("failed to fetch") || message.includes("load failed");
 }
 
 function parseNdjsonLine(line: string): Record<string, unknown> {

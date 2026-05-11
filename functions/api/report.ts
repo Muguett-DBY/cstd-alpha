@@ -21,6 +21,8 @@ type ReportRequest = {
 
 const SERVER_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SERVER_REPORT_CACHE_VERSION = "v2-report-cleanup";
+const REPORT_GENERATION_LOCK_TTL_SECONDS = 30 * 60;
+const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，请稍后再试。生成完成后再次点击会优先复用共享缓存。";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
@@ -37,6 +39,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const cacheKey = await buildReportCacheKey({ company, companyName, ticker: body?.ticker, market: body?.market });
 
   return streamNdjson(async (emit) => {
+    let lock: ReportGenerationLock | null = null;
+    try {
     if (cacheMode === "prefer-cache") {
       const cached = await readReportCache(env, cacheKey);
       if (cached) {
@@ -56,6 +60,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         });
         return;
       }
+    }
+
+    lock = await acquireReportGenerationLock(env, cacheKey, companyName, startedAt);
+    if (!lock.acquired) {
+      if (cacheMode === "prefer-cache") {
+        const cached = await readReportCache(env, cacheKey);
+        if (cached) {
+          emit({
+            type: "progress",
+            stage: "server_cache_hit",
+            label: "命中共享缓存",
+            detail: "同公司生成任务已完成，已复用共享缓存，本次不会调用 DeepSeek。",
+            percent: 100,
+            evidenceCount: cachedEvidenceCount(cached),
+          });
+          emit({
+            type: "final",
+            report: cached.report,
+            evidence: cached.evidence,
+            metrics: buildCacheHitMetrics(startedAtMs, startedAt, cached.metrics, cached.cachedAt),
+          });
+          return;
+        }
+      }
+      emit({
+        type: "progress",
+        stage: "generation_locked",
+        label: "同公司报告正在生成",
+        detail: REPORT_GENERATION_LOCK_MESSAGE,
+        percent: 3,
+      });
+      emit({
+        type: "error",
+        error: REPORT_GENERATION_LOCK_MESSAGE,
+        code: "REPORT_GENERATION_IN_PROGRESS",
+        retryable: true,
+      });
+      return;
     }
 
     emit({
@@ -123,6 +165,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       evidence,
       metrics,
     });
+    } finally {
+      await lock?.release();
+    }
   }, { startedAtMs, startedAt });
 };
 
@@ -177,6 +222,18 @@ type ReportCachePayload = {
   metrics?: ReportGenerationMetrics;
   cachedAt: string;
   expiresAt: string;
+};
+
+type ReportLockPayload = {
+  owner: string;
+  companyName: string;
+  startedAt: string;
+  expiresAt: string;
+};
+
+type ReportGenerationLock = {
+  acquired: boolean;
+  release: () => Promise<void>;
 };
 
 function streamNdjson(task: (emit: StreamEmit) => Promise<void>, options: { startedAtMs: number; startedAt: string }) {
@@ -317,6 +374,73 @@ async function writeEdgeReportCache(cacheKey: string, text: string) {
       },
     }),
   );
+}
+
+async function acquireReportGenerationLock(env: Env, cacheKey: string, companyName: string, startedAt: string): Promise<ReportGenerationLock> {
+  const cache = env.REPORT_CACHE;
+  if (!cache) return { acquired: true, release: async () => undefined };
+
+  try {
+    const lockKey = reportLockKey(cacheKey);
+    const existing = await readReportLock(cache, lockKey);
+    if (existing && Date.parse(existing.expiresAt) > Date.now()) {
+      return { acquired: false, release: async () => undefined };
+    }
+
+    const owner = buildLockOwner();
+    const payload: ReportLockPayload = {
+      owner,
+      companyName,
+      startedAt,
+      expiresAt: new Date(Date.now() + REPORT_GENERATION_LOCK_TTL_SECONDS * 1000).toISOString(),
+    };
+    await cache.put(lockKey, JSON.stringify(payload), { expirationTtl: REPORT_GENERATION_LOCK_TTL_SECONDS });
+    const confirmed = await readReportLock(cache, lockKey);
+    if (confirmed && confirmed.owner !== owner) {
+      return { acquired: false, release: async () => undefined };
+    }
+
+    return {
+      acquired: true,
+      release: () => releaseReportGenerationLock(cache, lockKey, owner),
+    };
+  } catch {
+    return { acquired: true, release: async () => undefined };
+  }
+}
+
+async function readReportLock(cache: KVNamespace, lockKey: string): Promise<ReportLockPayload | null> {
+  try {
+    const value = await cache.get<ReportLockPayload>(lockKey, "json");
+    if (!isRecord(value)) return null;
+    const owner = typeof value.owner === "string" ? value.owner : "";
+    const companyName = typeof value.companyName === "string" ? value.companyName : "";
+    const startedAt = typeof value.startedAt === "string" ? value.startedAt : "";
+    const expiresAt = typeof value.expiresAt === "string" ? value.expiresAt : "";
+    if (!owner || !companyName || !startedAt || !expiresAt) return null;
+    return { owner, companyName, startedAt, expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+async function releaseReportGenerationLock(cache: KVNamespace, lockKey: string, owner: string) {
+  try {
+    const current = await readReportLock(cache, lockKey);
+    if (current?.owner === owner) {
+      await cache.delete(lockKey);
+    }
+  } catch {
+    // Lock release is best-effort; the TTL prevents a stale lock from persisting.
+  }
+}
+
+function reportLockKey(cacheKey: string) {
+  return cacheKey.replace(/^report:/, "report-lock:");
+}
+
+function buildLockOwner() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function normalizeCachedPayload(value: unknown): ReportCachePayload | null {

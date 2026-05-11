@@ -17,6 +17,7 @@ type DeepSeekModel = "deepseek-v4-pro" | "deepseek-v4-flash";
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
+export const DEEPSEEK_NETWORK_MESSAGE = "DeepSeek 网络连接不稳定，本次报告未完成，请重试。";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["accountRules"],
@@ -680,7 +681,7 @@ async function requestDeepSeekJson({
   maxTokens: number;
   usageTracker: DeepSeekUsageTracker;
 }) {
-  const response = await fetchImpl("https://api.deepseek.com/chat/completions", {
+  const requestInit = {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -695,7 +696,8 @@ async function requestDeepSeekJson({
       max_tokens: maxTokens,
       messages,
     }),
-  });
+  };
+  const response = await fetchDeepSeekWithRetry(fetchImpl, requestInit);
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -716,6 +718,25 @@ async function requestDeepSeekJson({
   } catch (error) {
     throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true, { cause: error });
   }
+}
+
+async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, init: RequestInit) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetchImpl("https://api.deepseek.com/chat/completions", init);
+      if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
+      lastError = new Error(`DeepSeek request failed: ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) break;
+    }
+  }
+  throw new DeepSeekReportError(DEEPSEEK_NETWORK_MESSAGE, "DEEPSEEK_NETWORK", true, { cause: lastError });
+}
+
+function isRetryableHttpStatus(status: number) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
 function recordTokenUsage(tracker: DeepSeekUsageTracker, model: DeepSeekModel, rawUsage: Record<string, unknown> | undefined) {
@@ -1201,7 +1222,7 @@ function providerCurrentPriceFromEvidence(evidence: EvidenceBundle) {
 function isRetryableModelOutputError(error: unknown) {
   if (typeof error !== "object" || error === null) return false;
   const code = (error as Record<string, unknown>).code;
-  return code === "MODEL_OUTPUT_LENGTH" || code === "MODEL_OUTPUT_INVALID_JSON";
+  return code === "MODEL_OUTPUT_LENGTH" || code === "MODEL_OUTPUT_INVALID_JSON" || code === "DEEPSEEK_NETWORK";
 }
 
 function normalizeSections(rawSections: unknown, topLevel: Record<string, unknown>, evidence: EvidenceBundle) {

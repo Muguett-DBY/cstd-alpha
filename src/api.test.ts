@@ -55,6 +55,50 @@ describe("API client", () => {
     ).rejects.toThrow("报告响应不完整，请重试。");
   });
 
+  test("maps interrupted report streams to a Chinese network error", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "处理中", percent: 62, at: "2026-05-10T00:00:00.000Z" })}\n`));
+        controller.error(new TypeError("network error"));
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+
+    await expect(
+      generateReport({
+        company: {
+          id: "eastmoney:0.000002",
+          name: "万科A",
+          code: "000002",
+          exchange: "深圳证券交易所",
+          listingPlace: "深A",
+          marketType: "AStock",
+          quoteId: "0.000002",
+          source: "eastmoney",
+        },
+      }),
+    ).rejects.toThrow("报告连接中断，请重试。");
+  });
+
+  test("maps failed report fetches to a Chinese network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network error")));
+
+    await expect(
+      generateReport({
+        company: {
+          id: "eastmoney:0.000002",
+          name: "万科A",
+          code: "000002",
+          exchange: "深圳证券交易所",
+          listingPlace: "深A",
+          marketType: "AStock",
+          quoteId: "0.000002",
+          source: "eastmoney",
+        },
+      }),
+    ).rejects.toThrow("报告连接中断，请重试。");
+  });
+
   test("returns candidates from company search API", async () => {
     vi.stubGlobal(
       "fetch",
