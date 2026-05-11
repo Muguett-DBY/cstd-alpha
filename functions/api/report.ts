@@ -273,43 +273,53 @@ function streamNdjson(
   options: { startedAtMs: number; startedAt: string; waitUntil?: (promise: Promise<unknown>) => void },
 ) {
   const encoder = new TextEncoder();
-  let keepalive: ReturnType<typeof setInterval> | undefined;
   const abortController = new AbortController();
   let closed = false;
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const emit: StreamEmit = (event) => {
-        if (closed) return;
-        const payload =
-          event.type === "progress" || event.type === "heartbeat"
-            ? {
-                ...event,
-                at: event.at ?? new Date().toISOString(),
-                startedAt: event.startedAt ?? options.startedAt,
-                elapsedMs: event.elapsedMs ?? Date.now() - options.startedAtMs,
-              }
-            : event;
-        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
-      };
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const buffered: Uint8Array[] = [];
 
-      keepalive = setInterval(() => {
-        emit({ type: "heartbeat", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
-      }, 10_000);
-
-      const taskPromise = task(emit, abortController.signal)
-        .catch((error) => {
-          if (!isAbortError(error)) emit(errorEvent(error));
-        })
-        .finally(() => {
-          if (keepalive) clearInterval(keepalive);
-          closed = true;
-          try {
-            controller.close();
-          } catch {
-            // The client may have already canceled the stream.
+  const emit: StreamEmit = (event) => {
+    if (closed) return;
+    const payload =
+      event.type === "progress" || event.type === "heartbeat"
+        ? {
+            ...event,
+            at: event.at ?? new Date().toISOString(),
+            startedAt: event.startedAt ?? options.startedAt,
+            elapsedMs: event.elapsedMs ?? Date.now() - options.startedAtMs,
           }
-        });
-      options.waitUntil?.(taskPromise);
+        : event;
+    const chunk = encoder.encode(`${JSON.stringify(payload)}\n`);
+    if (controller) {
+      controller.enqueue(chunk);
+    } else {
+      buffered.push(chunk);
+    }
+  };
+
+  const keepalive = setInterval(() => {
+    emit({ type: "heartbeat", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
+  }, 10_000);
+
+  const taskPromise = task(emit, abortController.signal)
+    .catch((error) => {
+      if (!isAbortError(error)) emit(errorEvent(error));
+    })
+    .finally(() => {
+      if (keepalive) clearInterval(keepalive);
+      closed = true;
+      try {
+        controller?.close();
+      } catch {
+        // The client may have already canceled the stream.
+      }
+    });
+  options.waitUntil?.(taskPromise);
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(streamController) {
+      controller = streamController;
+      for (const chunk of buffered.splice(0)) streamController.enqueue(chunk);
     },
     cancel() {
       closed = true;
