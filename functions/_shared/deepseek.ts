@@ -360,8 +360,10 @@ async function requestScoreItemDetails({
 async function runWarmFirstThenParallel<T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R>) {
   if (items.length === 0) return [];
   const first = await worker(items[0], 0);
-  const rest = await Promise.all(items.slice(1).map((item, index) => worker(item, index + 1)));
-  return [first, ...rest];
+  if (items.length === 1) return [first];
+  const second = await worker(items[1], 1);
+  const rest = await Promise.all(items.slice(2).map((item, index) => worker(item, index + 2)));
+  return [first, second, ...rest];
 }
 
 type ScoreItemDetail = {

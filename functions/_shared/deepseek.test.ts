@@ -316,7 +316,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20[0].reason).toContain("不能因为公司知名度而给出模糊高分");
   });
 
-  test("warms the first score detail and narrative batch before parallel follow-up batches", async () => {
+  test("warms the first two score detail and narrative batches before parallel follow-up batches", async () => {
     const detailDeferreds = detailBatches.map((batch) => deferredModelResponse(detailPayload(batch)));
     const narrativeDeferreds = narrativeBatches.map((batch) => deferredModelResponse(narrativePayload(batch)));
     let detailIndex = 0;
@@ -342,8 +342,13 @@ describe("DeepSeek report client", () => {
     await nextTick();
     await nextTick();
 
+    expect(detailIndex).toBe(2);
+    detailDeferreds[1].resolve();
+    await nextTick();
+    await nextTick();
+
     expect(detailIndex).toBe(4);
-    detailDeferreds.slice(1).forEach((item) => item.resolve());
+    detailDeferreds.slice(2).forEach((item) => item.resolve());
     await nextTick();
     await nextTick();
 
@@ -352,9 +357,14 @@ describe("DeepSeek report client", () => {
     await nextTick();
     await nextTick();
 
+    expect(narrativeIndex).toBe(2);
+    narrativeDeferreds[1].resolve();
+    await nextTick();
+    await nextTick();
+
     expect(narrativeIndex).toBe(6);
 
-    narrativeDeferreds.slice(1).forEach((item) => item.resolve());
+    narrativeDeferreds.slice(2).forEach((item) => item.resolve());
     const report = await reportPromise;
 
     expect(report.scoreItems20).toHaveLength(20);
