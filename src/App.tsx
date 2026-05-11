@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
-import { downloadReportDocx } from "./docx/export-report";
 import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
@@ -285,7 +284,7 @@ function App() {
         {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
           <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
         ) : null}
-        {report ? <ReportView report={report} chartBundle={chartBundle ?? undefined} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
+        {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
       </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
@@ -567,14 +566,8 @@ function ValuationRange({ report, currentPrice }: { report: InvestmentReport; cu
   );
 }
 
-function ReportView({ report, chartBundle, metrics }: { report: InvestmentReport; chartBundle?: ChartBundle; metrics?: ReportGenerationMetrics }) {
-  const jsonUrl = useMemo(() => {
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
-    return URL.createObjectURL(blob);
-  }, [report]);
+function ReportView({ report, metrics }: { report: InvestmentReport; metrics?: ReportGenerationMetrics }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
-
-  useEffect(() => () => URL.revokeObjectURL(jsonUrl), [jsonUrl]);
 
   return (
     <article className="report">
@@ -598,14 +591,6 @@ function ReportView({ report, chartBundle, metrics }: { report: InvestmentReport
               {formatTokens(tokenSummary.completionTokens)}
             </p>
           ) : null}
-        </div>
-        <div className="actions">
-          <button type="button" onClick={() => downloadReportDocx(report, chartBundle)}>
-            导出 DOCX
-          </button>
-          <a href={jsonUrl} download={`${report.company.name}-cstd-alpha.json`}>
-            导出 JSON
-          </a>
         </div>
       </header>
 
