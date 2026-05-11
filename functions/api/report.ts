@@ -22,7 +22,9 @@ type ReportRequest = {
 const SERVER_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SERVER_REPORT_CACHE_VERSION = "v2-report-cleanup";
 const REPORT_GENERATION_LOCK_TTL_SECONDS = 30 * 60;
-const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，请稍后再试。生成完成后再次点击会优先复用共享缓存。";
+const REPORT_GENERATION_LOCK_WAIT_TIMEOUT_MS = 28 * 60 * 1000;
+const REPORT_GENERATION_LOCK_POLL_MS = 5 * 1000;
+const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，正在等待共享缓存写入，本次不会重复调用 DeepSeek。";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
@@ -91,13 +93,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         detail: REPORT_GENERATION_LOCK_MESSAGE,
         percent: 3,
       });
-      emit({
-        type: "error",
-        error: REPORT_GENERATION_LOCK_MESSAGE,
-        code: "REPORT_GENERATION_IN_PROGRESS",
+      const cached = await waitForLockedReportCache(env, cacheKey, emit);
+      if (cached) {
+        emit({
+          type: "progress",
+          stage: "server_cache_hit",
+          label: "命中共享缓存",
+          detail: "已有生成任务完成，已自动复用共享缓存，本次不会调用 DeepSeek。",
+          percent: 100,
+          evidenceCount: cachedEvidenceCount(cached),
+        });
+        emit({
+          type: "final",
+          report: cached.report,
+          evidence: cached.evidence,
+          metrics: buildCacheHitMetrics(startedAtMs, startedAt, cached.metrics, cached.cachedAt),
+        });
+        return;
+      }
+      throw Object.assign(new Error("已有报告生成任务尚未完成，请稍后再点生成。"), {
+        code: "REPORT_GENERATION_WAIT_TIMEOUT",
         retryable: true,
       });
-      return;
     }
 
     emit({
@@ -374,6 +391,33 @@ async function writeEdgeReportCache(cacheKey: string, text: string) {
       },
     }),
   );
+}
+
+async function waitForLockedReportCache(env: Env, cacheKey: string, emit: StreamEmit) {
+  const deadline = Date.now() + REPORT_GENERATION_LOCK_WAIT_TIMEOUT_MS;
+  let attempts = 0;
+  while (Date.now() < deadline) {
+    const cached = await readReportCache(env, cacheKey);
+    if (cached) return cached;
+
+    const lock = env.REPORT_CACHE ? await readReportLock(env.REPORT_CACHE, reportLockKey(cacheKey)) : null;
+    if (!lock || Date.parse(lock.expiresAt) <= Date.now()) return null;
+
+    attempts += 1;
+    emit({
+      type: "progress",
+      stage: "generation_locked_wait",
+      label: "等待共享缓存",
+      detail: "已有用户正在生成同一家公司报告，系统会在完成后自动复用结果。",
+      percent: Math.min(95, 5 + attempts),
+    });
+    await delay(REPORT_GENERATION_LOCK_POLL_MS);
+  }
+  return null;
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 async function acquireReportGenerationLock(env: Env, cacheKey: string, companyName: string, startedAt: string): Promise<ReportGenerationLock> {

@@ -104,9 +104,22 @@ describe("report API stream", () => {
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
-  test("returns a retryable lock error when the same report is already generating", async () => {
+  test("waits for a shared cached report when the same report is already generating", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "等待后命中缓存" };
+    let reportReads = 0;
     const cache = mockKvCacheByKey((key) => {
+      if (key.startsWith("report:")) {
+        reportReads += 1;
+        return reportReads >= 3
+          ? {
+              report: cachedReport,
+              evidence,
+              cachedAt: "2026-05-10T00:00:00.000Z",
+              expiresAt: "2099-05-11T00:00:00.000Z",
+            }
+          : null;
+      }
       if (key.startsWith("report-lock:")) {
         return {
           owner: "other-request",
@@ -128,10 +141,9 @@ describe("report API stream", () => {
       label: "同公司报告正在生成",
     });
     expect(events.at(-1)).toMatchObject({
-      type: "error",
-      error: "同一家公司报告正在生成中，请稍后再试。生成完成后再次点击会优先复用共享缓存。",
-      code: "REPORT_GENERATION_IN_PROGRESS",
-      retryable: true,
+      type: "final",
+      report: cachedReport,
+      metrics: { cacheHit: true },
     });
   });
 
@@ -181,7 +193,21 @@ describe("report API stream", () => {
 
   test("does not acquire the shared generation lock when another request overwrites ownership", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "竞态后命中缓存" };
+    let reportReads = 0;
     const cache = mockKvCacheByKey(() => null, {
+      resolve: (key) => {
+        if (!key.startsWith("report:")) return null;
+        reportReads += 1;
+        return reportReads >= 3
+          ? {
+              report: cachedReport,
+              evidence,
+              cachedAt: "2026-05-10T00:00:00.000Z",
+              expiresAt: "2099-05-11T00:00:00.000Z",
+            }
+          : null;
+      },
       afterPut: (key, stored) => {
         if (key.startsWith("report-lock:")) {
           stored.set(
@@ -202,9 +228,9 @@ describe("report API stream", () => {
     expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
     expect(callDeepSeekReport).not.toHaveBeenCalled();
     expect(events.at(-1)).toMatchObject({
-      type: "error",
-      code: "REPORT_GENERATION_IN_PROGRESS",
-      retryable: true,
+      type: "final",
+      report: cachedReport,
+      metrics: { cacheHit: true },
     });
   });
 
@@ -302,13 +328,13 @@ function mockKvCache(value: unknown): TestKvCache {
 
 function mockKvCacheByKey(
   resolve: (key: string) => unknown,
-  options: { afterPut?: (key: string, stored: Map<string, string>) => void; failDelete?: boolean } = {},
+  options: { resolve?: (key: string) => unknown; afterPut?: (key: string, stored: Map<string, string>) => void; failDelete?: boolean } = {},
 ): TestKvCache {
   const stored = new Map<string, string>();
   return {
     get: vi.fn().mockImplementation((key: string) => {
       if (stored.has(key)) return Promise.resolve(JSON.parse(stored.get(key) ?? "null"));
-      return Promise.resolve(resolve(key));
+      return Promise.resolve((options.resolve ?? resolve)(key));
     }),
     put: vi.fn().mockImplementation((key: string, value: string) => {
       stored.set(key, value);
