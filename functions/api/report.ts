@@ -179,8 +179,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       metrics: modelMetrics,
     });
 
-    emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶、模板章节和导出结构。", percent: 90 });
-    emit({ type: "progress", stage: "done", label: "报告完成", detail: "深度报告已生成，可在网页查看或导出 DOCX。", percent: 100 });
+    emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶和模板章节结构。", percent: 90 });
+    emit({ type: "progress", stage: "done", label: "报告完成", detail: "深度报告已生成，可在网页查看完整报告。", percent: 100 });
     const metrics = buildMetrics(startedAtMs, startedAt, modelMetrics.modelCalls ?? 0, cacheMode, modelMetrics.tokenUsage);
     await writeReportCache(env, cacheKey, {
       version: SERVER_REPORT_CACHE_VERSION,
