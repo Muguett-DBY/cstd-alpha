@@ -262,16 +262,20 @@ describe("DeepSeek report client", () => {
     expect(Object.keys(narrativePayload).indexOf("sharedContext")).toBeLessThan(Object.keys(narrativePayload).indexOf("requestedFullSectionKeys"));
   });
 
-  test("sends only section-relevant score items and evidence references to narrative batches", async () => {
+  test("keeps narrative prompt prefixes stable and sends section-specific score items after shared context", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    const firstNarrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[5][1].body).messages[1].content);
-    const secondNarrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[6][1].body).messages[1].content);
-    expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20.length).toBeLessThan(20);
-    expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20.map((item: { id: string }) => item.id)).toContain("industryLifecycle");
-    expect(secondNarrativePayload.sharedContext.scoringReport.scoreItems20.map((item: { id: string }) => item.id)).toContain("businessModelQuality");
+    const firstNarrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
+    const secondNarrativeBody = JSON.parse(fetchMock.mock.calls[6][1].body);
+    const firstNarrativePayload = JSON.parse(firstNarrativeBody.messages[1].content);
+    const secondNarrativePayload = JSON.parse(secondNarrativeBody.messages[1].content);
+    expect(firstNarrativeBody.messages[0].content).toBe(secondNarrativeBody.messages[0].content);
+    expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20).toBeUndefined();
+    expect(firstNarrativePayload.requestedScoreItems.length).toBeLessThan(20);
+    expect(firstNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("industryLifecycle");
+    expect(secondNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("businessModelQuality");
     expect(firstNarrativePayload.sharedContext.evidence.facts).toBeUndefined();
   });
 
@@ -288,7 +292,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20[0].reason).toContain("不能因为公司知名度而给出模糊高分");
   });
 
-  test("starts score detail batches concurrently, then starts narrative batches concurrently after details finish", async () => {
+  test("warms the first score detail and narrative batch before parallel follow-up batches", async () => {
     const detailDeferreds = detailBatches.map((batch) => deferredModelResponse(detailPayload(batch)));
     const narrativeDeferreds = narrativeBatches.map((batch) => deferredModelResponse(narrativePayload(batch)));
     let detailIndex = 0;
@@ -307,16 +311,26 @@ describe("DeepSeek report client", () => {
     await nextTick();
     await nextTick();
 
-    expect(detailIndex).toBe(4);
+    expect(detailIndex).toBe(1);
     expect(narrativeIndex).toBe(0);
 
-    detailDeferreds.forEach((item) => item.resolve());
+    detailDeferreds[0].resolve();
+    await nextTick();
+    await nextTick();
+
+    expect(detailIndex).toBe(4);
+    detailDeferreds.slice(1).forEach((item) => item.resolve());
+    await nextTick();
+    await nextTick();
+
+    expect(narrativeIndex).toBe(1);
+    narrativeDeferreds[0].resolve();
     await nextTick();
     await nextTick();
 
     expect(narrativeIndex).toBe(4);
 
-    narrativeDeferreds.forEach((item) => item.resolve());
+    narrativeDeferreds.slice(1).forEach((item) => item.resolve());
     const report = await reportPromise;
 
     expect(report.scoreItems20).toHaveLength(20);

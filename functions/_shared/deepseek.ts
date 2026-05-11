@@ -279,7 +279,7 @@ async function requestNarrativeSections({
   usageTracker: DeepSeekUsageTracker;
 }) {
   const fullSections: Record<string, unknown> = {};
-  const batches = await Promise.all(NARRATIVE_SECTION_BATCHES.map(async (keys, index) => {
+  const batches = await runWarmFirstThenParallel(NARRATIVE_SECTION_BATCHES, async (keys, index) => {
     onProgress?.({
       stage: `deepseek_narrative_${index + 1}`,
       label: "生成完整正文",
@@ -295,7 +295,7 @@ async function requestNarrativeSections({
       keys,
       usageTracker,
     });
-  }));
+  });
   for (const batch of batches) Object.assign(fullSections, batch);
   return fullSections;
 }
@@ -318,7 +318,7 @@ async function requestScoreItemDetails({
   usageTracker: DeepSeekUsageTracker;
 }) {
   const details: Record<string, ScoreItemDetail> = {};
-  const batches = await Promise.all(SCORE_ITEM_DETAIL_BATCHES.map(async (itemIds, index) => {
+  const batches = await runWarmFirstThenParallel(SCORE_ITEM_DETAIL_BATCHES, async (itemIds, index) => {
     onProgress?.({
       stage: `deepseek_score_detail_${index + 1}`,
       label: "补全评分证据",
@@ -334,7 +334,7 @@ async function requestScoreItemDetails({
       itemIds,
       usageTracker,
     });
-  }));
+  });
   for (const batchDetails of batches) {
     for (const detail of batchDetails) details[detail.id] = detail;
   }
@@ -350,6 +350,13 @@ async function requestScoreItemDetails({
       reason: detail.reason,
     };
   });
+}
+
+async function runWarmFirstThenParallel<T, R>(items: readonly T[], worker: (item: T, index: number) => Promise<R>) {
+  if (items.length === 0) return [];
+  const first = await worker(items[0], 0);
+  const rest = await Promise.all(items.slice(1).map((item, index) => worker(item, index + 1)));
+  return [first, ...rest];
 }
 
 type ScoreItemDetail = {
@@ -582,19 +589,20 @@ async function requestNarrativeBatchOnce({
     messages: [
       {
         role: "system",
-        content: buildNarrativeSystemPrompt(language, keys, strictLength),
+        content: buildNarrativeSystemPrompt(language, strictLength),
       },
       {
         role: "user",
         content: JSON.stringify(
           {
             sharedContext: {
-              version: "cstd-alpha-shared-v1",
-              scoringReport: compactReportForNarrative(scoringReport, keys),
+              version: "cstd-alpha-shared-v2",
+              scoringReport: compactReportForNarrative(scoringReport),
               evidence: compactEvidenceReferences(evidence),
             },
             task: "Generate only the requested fullSections keys for the already validated scoring report.",
             requestedFullSectionKeys: keys,
+            requestedScoreItems: compactScoreItemsForNarrative(scoringReport, keys),
             expectedOutputShape: buildNarrativeOutputShape(keys),
           },
           null,
@@ -748,7 +756,7 @@ Rules:
 `;
 }
 
-function buildNarrativeSystemPrompt(language: "zh-CN" | "en", keys: FullSectionKey[], strictLength: boolean) {
+function buildNarrativeSystemPrompt(language: "zh-CN" | "en", strictLength: boolean) {
   return `
 You are CSTD Alpha, writing the final narrative section of a Chinese company research report.
 Return ONLY one valid JSON object. Do not wrap it in Markdown.
@@ -756,7 +764,7 @@ Language: ${language === "zh-CN" ? "Simplified Chinese" : "English"}.
 
 Rules:
 - Return only { "fullSections": { ... } } at the JSON top level.
-- Use only these fullSections keys in this batch: ${keys.join(", ")}.
+- Use only the fullSections keys listed in the user payload for this batch.
 - Base the writing only on the validated scoring report and evidence bundle. Do not invent facts.
 - Distinguish provider failures from company weakness. For US companies, SEC EDGAR and official investor-relations financial evidence should override Yahoo/Eastmoney financial endpoint failures.
 - Write direct conclusions. If evidence is weak, say 数据不足 and explain the impact.
@@ -992,8 +1000,7 @@ function compactEvidenceReferences(evidence: EvidenceBundle) {
   };
 }
 
-function compactReportForNarrative(report: InvestmentReport, keys?: FullSectionKey[]) {
-  const relevantItemIds = keys ? relevantScoreItemIdsForSections(keys) : new Set(SCORE_ITEMS_20.map((item) => item.id));
+function compactReportForNarrative(report: InvestmentReport) {
   return {
     company: report.company,
     asOf: report.asOf,
@@ -1011,21 +1018,7 @@ function compactReportForNarrative(report: InvestmentReport, keys?: FullSectionK
       label,
       summary,
       evidence,
-      concerns,
-    })),
-    scoreItems20: report.scoreItems20
-      .filter((item) => relevantItemIds.has(item.id))
-      .map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
-        id,
-        title,
-        moduleName,
-        weight,
-        score,
-        label,
-        evidence,
-        deductions,
-        recentChange,
-        reason,
+        concerns,
       })),
     redFlags: report.redFlags,
     financialTenYear: report.financialTenYear,
@@ -1033,6 +1026,24 @@ function compactReportForNarrative(report: InvestmentReport, keys?: FullSectionK
     riskMatrix: report.riskMatrix,
     accountRules: report.accountRules,
   };
+}
+
+function compactScoreItemsForNarrative(report: InvestmentReport, keys: FullSectionKey[]) {
+  const relevantItemIds = relevantScoreItemIdsForSections(keys);
+  return report.scoreItems20
+    .filter((item) => relevantItemIds.has(item.id))
+    .map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
+      id,
+      title,
+      moduleName,
+      weight,
+      score,
+      label,
+      evidence,
+      deductions,
+      recentChange,
+      reason,
+    }));
 }
 
 function relevantScoreItemIdsForSections(keys: FullSectionKey[]) {
