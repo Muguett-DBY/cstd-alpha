@@ -99,10 +99,12 @@ const narrativeSections = {
 };
 
 const narrativeBatches = [
+  ["accountRules"],
   ["onePageConclusion", "companyOverview", "industryTrack"],
   ["businessModel", "moat", "governance"],
   ["financialQuality", "growthInflection", "valuation"],
-  ["risks", "finalConclusion", "accountRules"],
+  ["risks"],
+  ["finalConclusion"],
 ] as const;
 
 const detailBatches = [
@@ -193,7 +195,7 @@ describe("DeepSeek report client", () => {
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock, metrics });
 
-    expect(metrics.modelCalls).toBe(9);
+    expect(metrics.modelCalls).toBe(11);
     expect(metrics.tokenUsage).toEqual([
       {
         model: "deepseek-v4-pro",
@@ -206,12 +208,12 @@ describe("DeepSeek report client", () => {
       },
       {
         model: "deepseek-v4-flash",
-        calls: 8,
-        promptTokens: 8000,
-        promptCacheHitTokens: 800,
-        promptCacheMissTokens: 7200,
-        completionTokens: 1600,
-        totalTokens: 9600,
+        calls: 10,
+        promptTokens: 10000,
+        promptCacheHitTokens: 1000,
+        promptCacheMissTokens: 9000,
+        completionTokens: 2000,
+        totalTokens: 12000,
       },
     ]);
   });
@@ -273,9 +275,10 @@ describe("DeepSeek report client", () => {
     const secondNarrativePayload = JSON.parse(secondNarrativeBody.messages[1].content);
     expect(firstNarrativeBody.messages[0].content).toBe(secondNarrativeBody.messages[0].content);
     expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20).toBeUndefined();
+    expect(firstNarrativePayload.requestedFullSectionKeys).toEqual(["accountRules"]);
     expect(firstNarrativePayload.requestedScoreItems.length).toBeLessThan(20);
-    expect(firstNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("industryLifecycle");
-    expect(secondNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("businessModelQuality");
+    expect(firstNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("capitalReturn");
+    expect(secondNarrativePayload.requestedScoreItems.map((item: { id: string }) => item.id)).toContain("industryLifecycle");
     expect(firstNarrativePayload.sharedContext.evidence.facts).toBeUndefined();
   });
 
@@ -284,7 +287,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(fetchMock).toHaveBeenCalledTimes(11);
     const firstDetailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(firstDetailBody.messages[1].content).toContain("industryLifecycle");
     expect(report.scoreItems20[0].evidence).toHaveLength(3);
@@ -328,7 +331,7 @@ describe("DeepSeek report client", () => {
     await nextTick();
     await nextTick();
 
-    expect(narrativeIndex).toBe(4);
+    expect(narrativeIndex).toBe(6);
 
     narrativeDeferreds.slice(1).forEach((item) => item.resolve());
     const report = await reportPromise;
@@ -366,7 +369,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
     expect(report.company.name).toBe("Example Inc.");
     expect(report.scoreItems20).toHaveLength(20);
   });
@@ -409,7 +412,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence: maotaiEvidence, fetchImpl: fetchMock });
 
-    expect(fetchMock).toHaveBeenCalledTimes(9);
+    expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(report.company).toMatchObject({ name: "贵州茅台", ticker: "600519", market: "沪A" });
     expect(report.scoreItems20).toHaveLength(20);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
@@ -477,7 +480,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
     expect(report.fullSections.accountRules).toBe("完整仓位规则");
   });
@@ -493,7 +496,7 @@ describe("DeepSeek report client", () => {
       }
       if (Array.isArray(userPayload.requestedFullSectionKeys)) {
         const keys = userPayload.requestedFullSectionKeys as string[];
-        if (keys.includes("risks") && keys.length > 1 && finalBatchAttempts++ < 2) {
+        if (keys.includes("onePageConclusion") && keys.length > 1 && finalBatchAttempts++ < 2) {
           return Promise.resolve({
             ok: true,
             json: async () => ({
@@ -508,10 +511,10 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
-    expect(fetchMock).toHaveBeenCalledTimes(13);
-    expect(report.fullSections.risks).toBe("完整风险分析");
-    expect(report.fullSections.finalConclusion).toBe("完整最终结论");
-    expect(report.fullSections.accountRules).toBe("完整仓位规则");
+    expect(fetchMock).toHaveBeenCalledTimes(15);
+    expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
+    expect(report.fullSections.companyOverview).toBe("完整公司概况");
+    expect(report.fullSections.industryTrack).toBe("完整行业分析");
   });
 
   test("splits score detail enrichment into single items when a five-item detail batch is truncated", async () => {
@@ -541,7 +544,7 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
-    expect(fetchMock).toHaveBeenCalledTimes(15);
+    expect(fetchMock).toHaveBeenCalledTimes(17);
     expect(report.scoreItems20[0].evidence).toHaveLength(3);
     expect(report.scoreItems20[4].reason).toContain("不能因为公司知名度而给出模糊高分");
     expect(report.fullSections.finalConclusion).toBe("完整最终结论");

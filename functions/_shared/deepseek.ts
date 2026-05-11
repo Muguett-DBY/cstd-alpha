@@ -19,10 +19,12 @@ export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
+  ["accountRules"],
   ["onePageConclusion", "companyOverview", "industryTrack"],
   ["businessModel", "moat", "governance"],
   ["financialQuality", "growthInflection", "valuation"],
-  ["risks", "finalConclusion", "accountRules"],
+  ["risks"],
+  ["finalConclusion"],
 ];
 
 const SCORE_ITEM_DETAIL_BATCHES = [
@@ -284,7 +286,7 @@ async function requestNarrativeSections({
       stage: `deepseek_narrative_${index + 1}`,
       label: "生成完整正文",
       detail: `V4 Flash max thinking 正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
-      percent: 70 + index * 5,
+      percent: 70 + Math.round((index * 15) / Math.max(1, NARRATIVE_SECTION_BATCHES.length - 1)),
     });
     return requestNarrativeBatch({
       apiKey,
