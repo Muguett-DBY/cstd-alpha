@@ -187,7 +187,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     } finally {
       await lock?.release();
     }
-  }, { startedAtMs, startedAt, signal: request.signal });
+  }, { startedAtMs, startedAt });
 };
 
 function json(data: unknown, status = 200) {
@@ -255,13 +255,10 @@ type ReportGenerationLock = {
   release: () => Promise<void>;
 };
 
-function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<void>, options: { startedAtMs: number; startedAt: string; signal?: AbortSignal }) {
+function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<void>, options: { startedAtMs: number; startedAt: string }) {
   const encoder = new TextEncoder();
   let keepalive: ReturnType<typeof setInterval> | undefined;
   const abortController = new AbortController();
-  const abortTask = () => abortController.abort(options.signal?.reason);
-  if (options.signal?.aborted) abortTask();
-  else options.signal?.addEventListener("abort", abortTask, { once: true });
   let closed = false;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -290,7 +287,6 @@ function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<v
         .finally(() => {
           if (keepalive) clearInterval(keepalive);
           closed = true;
-          options.signal?.removeEventListener("abort", abortTask);
           try {
             controller.close();
           } catch {
@@ -302,7 +298,6 @@ function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<v
       closed = true;
       if (keepalive) clearInterval(keepalive);
       abortController.abort();
-      options.signal?.removeEventListener("abort", abortTask);
     },
   });
 

@@ -248,7 +248,7 @@ describe("report API stream", () => {
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
-  test("passes the request abort signal to providers and DeepSeek", async () => {
+  test("uses a stream-owned abort signal for providers and DeepSeek", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
     vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
@@ -260,6 +260,24 @@ describe("report API stream", () => {
     const deepSeekSignal = vi.mocked(callDeepSeekReport).mock.calls[0][0].signal;
     expect(providerSignal).toBeInstanceOf(AbortSignal);
     expect(deepSeekSignal).toBe(providerSignal);
+    expect(providerSignal).not.toBe(controller.signal);
+    expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
+  test("does not abort report work when the incoming request signal aborts after streaming starts", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const requestController = new AbortController();
+    let modelSignal: AbortSignal | undefined;
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockImplementation(({ signal }) => {
+      modelSignal = signal;
+      requestController.abort();
+      return Promise.resolve({ company: evidence.company, evidence: evidence.evidence });
+    });
+
+    const events = await postReportEvents({ signal: requestController.signal });
+
+    expect(modelSignal?.aborted).toBe(false);
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
