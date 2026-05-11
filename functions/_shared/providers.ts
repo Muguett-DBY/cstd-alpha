@@ -65,6 +65,21 @@ const SEC_TICKER_OVERRIDES: Record<string, { cik_str: number; ticker: string; ti
   MSFT: { cik_str: 789019, ticker: "MSFT", title: "Microsoft Corporation" },
 };
 
+const YAHOO_FUNDAMENTAL_TYPES = [
+  "trailingTotalRevenue",
+  "trailingNetIncome",
+  "trailingOperatingIncome",
+  "trailingGrossProfit",
+  "trailingOperatingCashFlow",
+  "trailingFreeCashFlow",
+  "trailingDilutedEPS",
+  "quarterlyTotalAssets",
+  "quarterlyTotalDebt",
+  "quarterlyStockholdersEquity",
+] as const;
+
+const YAHOO_FUNDAMENTAL_TYPE_SET = new Set<string>(YAHOO_FUNDAMENTAL_TYPES);
+
 export async function fetchPublicCompanyEvidence({
   companyName,
   ticker,
@@ -77,9 +92,9 @@ export async function fetchPublicCompanyEvidence({
   const retrievedAt = new Date().toISOString();
   const selectedCompany = company;
   const searchQuote = selectedCompany ? undefined : await searchYahooQuote(ticker || companyName, fetchImpl);
-  const symbol = selectedCompany?.yahooSymbol || selectedCompany?.code || ticker || stringValue(searchQuote?.symbol);
   const isUsSelected = selectedCompany ? isUsListedCompany(selectedCompany) : false;
   const isHkSelected = selectedCompany ? isHongKongListedCompany(selectedCompany) : false;
+  const symbol = selectedCompany ? companyYahooSymbol(selectedCompany) : ticker || stringValue(searchQuote?.symbol);
 
   if (!symbol) {
     return unavailableBundle(companyName, market, retrievedAt, "Could not resolve a public market ticker.");
@@ -124,7 +139,8 @@ export async function fetchPublicCompanyEvidence({
   const stooqQuote = isUsSelected && !eastmoneyQuote && !quote && !chartMeta ? await fetchStooqQuote(stooqQuoteUrl, symbol, fetchImpl) : undefined;
 
   const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
-  const providerFinancialData = normalizeFundamentals(fundamentals) ?? secData?.summaryFinancialData;
+  const normalizedFundamentals = normalizeFundamentals(fundamentals);
+  const providerFinancialData = normalizedFundamentals ?? secData?.summaryFinancialData;
   const yahooFinancialTenYear = buildFinancialTenYearFromYahooFundamentals(providerFinancialData, isHkSelected ? "港元" : undefined);
   const financialTenYear = eastmoneyFinancialTenYear.rows.length
     ? eastmoneyFinancialTenYear
@@ -135,7 +151,7 @@ export async function fetchPublicCompanyEvidence({
         : eastmoneyFinancialTenYear;
   const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length) || yahooFinancialTenYear.rows.length > 0;
 
-  if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals && !eastmoneyQuote && !hasPublicFinancials) {
+  if (!quote && !summary && !chartMeta && !searchQuote && !normalizedFundamentals && !eastmoneyQuote && !hasPublicFinancials) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
   }
 
@@ -259,8 +275,8 @@ export async function fetchPublicCompanyEvidence({
         source: "Yahoo Finance public fundamentals-timeseries endpoint",
         url: fundamentalsUrl,
         retrievedAt,
-        freshness: fundamentals ? "latest-public" : "unavailable",
-        notes: fundamentals ? "Trailing and quarterly public financial statement metrics." : "Fundamentals time series unavailable.",
+        freshness: normalizedFundamentals ? "latest-public" : "unavailable",
+        notes: normalizedFundamentals ? "Trailing and quarterly public financial statement metrics." : "Fundamentals time series unavailable.",
       },
       ...(isUsSelected
         ? [
@@ -597,21 +613,9 @@ function findSecTickerEntry(value: unknown, symbol: string) {
 function buildFundamentalsUrl(symbol: string) {
   const now = Math.floor(Date.now() / 1000);
   const fiveYearsAgo = now - 60 * 60 * 24 * 365 * 5;
-  const types = [
-    "trailingTotalRevenue",
-    "trailingNetIncome",
-    "trailingOperatingIncome",
-    "trailingGrossProfit",
-    "trailingOperatingCashFlow",
-    "trailingFreeCashFlow",
-    "trailingDilutedEPS",
-    "quarterlyTotalAssets",
-    "quarterlyTotalDebt",
-    "quarterlyStockholdersEquity",
-  ];
   return `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(
     symbol,
-  )}?type=${types.join(",")}&merge=false&period1=${fiveYearsAgo}&period2=${now}`;
+  )}?type=${YAHOO_FUNDAMENTAL_TYPES.join(",")}&merge=false&period1=${fiveYearsAgo}&period2=${now}`;
 }
 
 function eastmoneyKlineUrl(secid: string, priceMode: PriceMode) {
@@ -733,8 +737,18 @@ function normalizeYahooCandidate(value: unknown): CompanyCandidate | undefined {
 function eastmoneyYahooSymbol(code: string, listingPlace: string) {
   if (listingPlace.includes("深")) return `${code}.SZ`;
   if (listingPlace.includes("沪")) return `${code}.SS`;
-  if (listingPlace.includes("港")) return `${code}.HK`;
+  if (listingPlace.includes("港")) return `${normalizeHongKongYahooCode(code)}.HK`;
   return code;
+}
+
+function companyYahooSymbol(candidate: CompanyCandidate) {
+  if (isHongKongListedCompany(candidate)) return `${normalizeHongKongYahooCode(candidate.code)}.HK`;
+  return candidate.yahooSymbol || candidate.code;
+}
+
+function normalizeHongKongYahooCode(code: string) {
+  const trimmed = code.trim();
+  return /^\d+$/.test(trimmed) ? trimmed.slice(-4).padStart(4, "0") : trimmed;
 }
 
 function isUsListedCompany(candidate: CompanyCandidate) {
@@ -838,8 +852,9 @@ function normalizeFundamentals(items: unknown[] | undefined) {
   for (const item of items) {
     if (!isRecord(item) || !isRecord(item.meta) || !Array.isArray(item.meta.type)) continue;
     const type = item.meta.type.find(stringValue);
-    if (!type) continue;
-    result[type] = item[type];
+    const rows = type ? item[type] : undefined;
+    if (!type || !YAHOO_FUNDAMENTAL_TYPE_SET.has(type) || !Array.isArray(rows) || rows.length === 0) continue;
+    result[type] = rows;
   }
   return Object.keys(result).length ? result : undefined;
 }

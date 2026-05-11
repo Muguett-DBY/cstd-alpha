@@ -64,7 +64,7 @@ describe("public data providers", () => {
     });
 
     await expect(searchCompanyCandidates("苹果", fetchMock)).resolves.toMatchObject([{ code: "AAPL", listingPlace: "美股" }]);
-    await expect(searchCompanyCandidates("腾讯", fetchMock)).resolves.toMatchObject([{ code: "00700", listingPlace: "港股" }]);
+    await expect(searchCompanyCandidates("腾讯", fetchMock)).resolves.toMatchObject([{ code: "00700", listingPlace: "港股", yahooSymbol: "0700.HK" }]);
     await expect(searchCompanyCandidates("贵州茅台", fetchMock)).resolves.toMatchObject([{ code: "600519", listingPlace: "沪A" }]);
   });
 
@@ -608,6 +608,47 @@ describe("public data providers", () => {
       rows: expect.arrayContaining([expect.objectContaining({ metric: "营业收入" }), expect.objectContaining({ metric: "总资产" })]),
     });
     expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public fundamentals-timeseries endpoint", freshness: "latest-public" })]));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("0700.HK"))).toBe(true);
+    expect(
+      fetchMock.mock.calls
+        .filter(([url]) => String(url).includes("yahoo.com"))
+        .some(([url]) => String(url).includes("00700.HK")),
+    ).toBe(false);
+  });
+
+  test("marks Yahoo fundamentals unavailable when the response has no usable financial metrics", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          quotes: [{ symbol: "0700.HK", longname: "Tencent Holdings Limited", exchDisp: "HKSE" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          quoteResponse: { result: [{ symbol: "0700.HK", regularMarketPrice: 464.4, currency: "HKD" }] },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ chart: { result: [{ meta: { symbol: "0700.HK", regularMarketPrice: 464.4, currency: "HKD", exchangeName: "HKG" } }] } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          timeseries: {
+            result: [{ meta: { symbol: ["0700.HK"], type: ["unrequestedMetric"] }, unrequestedMetric: [] }],
+          },
+        }),
+      });
+
+    const result = await fetchPublicCompanyEvidence({ companyName: "Tencent", ticker: "0700.HK", fetchImpl: fetchMock });
+
+    expect(result.facts.fundamentals).toBeUndefined();
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public fundamentals-timeseries endpoint", freshness: "unavailable" })]));
   });
 
   test("falls back to Yahoo chart quote and SEC override for MSFT selected from Eastmoney", async () => {
