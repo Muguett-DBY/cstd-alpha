@@ -514,6 +514,102 @@ describe("public data providers", () => {
     expect(result.evidence.find((item) => item.source === "Eastmoney public financial statement endpoints")?.notes).toContain("SEC fallback");
   });
 
+  test("uses Hong Kong quote scaling and Yahoo fundamentals fallback for HK stocks", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: {
+              f57: "00700",
+              f58: "腾讯控股",
+              f43: 464400,
+              f44: 471200,
+              f45: 463600,
+              f46: 465000,
+              f47: 27814648,
+              f60: 471400,
+              f116: 4234395315758.4,
+              f167: 331,
+              f169: -7000,
+              f170: -148,
+            },
+          }),
+        });
+      }
+      if (url.includes("datacenter.eastmoney.com")) {
+        return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+      }
+      if (url.includes("/v7/finance/quote")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            quoteResponse: {
+              result: [{ symbol: "0700.HK", regularMarketPrice: 464.4, currency: "HKD", marketCap: 4234395315758 }],
+            },
+          }),
+        });
+      }
+      if (url.includes("/v10/finance/quoteSummary")) {
+        return Promise.resolve({ ok: true, json: async () => ({ quoteSummary: { result: [{ assetProfile: { industry: "Internet Content", sector: "Communication Services" } }] } }) });
+      }
+      if (url.includes("/v8/finance/chart")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ chart: { result: [{ meta: { symbol: "0700.HK", regularMarketPrice: 464.4, currency: "HKD", exchangeName: "HKG" } }] } }),
+        });
+      }
+      if (url.includes("fundamentals-timeseries")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            timeseries: {
+              result: [
+                { meta: { type: ["trailingTotalRevenue"] }, trailingTotalRevenue: [{ raw: 660257000000, asOfDate: "2025-12-31" }] },
+                { meta: { type: ["trailingNetIncome"] }, trailingNetIncome: [{ raw: 194073000000, asOfDate: "2025-12-31" }] },
+                { meta: { type: ["trailingOperatingCashFlow"] }, trailingOperatingCashFlow: [{ raw: 260000000000, asOfDate: "2025-12-31" }] },
+                { meta: { type: ["quarterlyTotalAssets"] }, quarterlyTotalAssets: [{ raw: 1830000000000, asOfDate: "2025-12-31" }] },
+                { meta: { type: ["quarterlyTotalDebt"] }, quarterlyTotalDebt: [{ raw: 380000000000, asOfDate: "2025-12-31" }] },
+                { meta: { type: ["quarterlyStockholdersEquity"] }, quarterlyStockholdersEquity: [{ raw: 980000000000, asOfDate: "2025-12-31" }] },
+              ],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "腾讯控股",
+      company: {
+        id: "eastmoney:116.00700",
+        name: "腾讯控股",
+        code: "00700",
+        exchange: "香港交易所",
+        listingPlace: "港股",
+        marketType: "HK",
+        quoteId: "116.00700",
+        secid: "116.00700",
+        yahooSymbol: "00700.HK",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock,
+    });
+
+    expect(result.facts.quote).toMatchObject({
+      regularMarketPrice: 464.4,
+      regularMarketDayHigh: 471.2,
+      regularMarketPreviousClose: 471.4,
+      regularMarketChange: -7,
+      priceToBook: 3.31,
+    });
+    expect(result.facts.financialTenYear).toMatchObject({
+      latestPeriod: "2025",
+      rows: expect.arrayContaining([expect.objectContaining({ metric: "营业收入" }), expect.objectContaining({ metric: "总资产" })]),
+    });
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public fundamentals-timeseries endpoint", freshness: "latest-public" })]));
+  });
+
   test("falls back to Yahoo chart quote and SEC override for MSFT selected from Eastmoney", async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.includes("push2.eastmoney.com") || url.includes("datacenter.eastmoney.com")) {

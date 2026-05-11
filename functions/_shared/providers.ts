@@ -79,6 +79,7 @@ export async function fetchPublicCompanyEvidence({
   const searchQuote = selectedCompany ? undefined : await searchYahooQuote(ticker || companyName, fetchImpl);
   const symbol = selectedCompany?.yahooSymbol || selectedCompany?.code || ticker || stringValue(searchQuote?.symbol);
   const isUsSelected = selectedCompany ? isUsListedCompany(selectedCompany) : false;
+  const isHkSelected = selectedCompany ? isHongKongListedCompany(selectedCompany) : false;
 
   if (!symbol) {
     return unavailableBundle(companyName, market, retrievedAt, "Could not resolve a public market ticker.");
@@ -107,9 +108,8 @@ export async function fetchPublicCompanyEvidence({
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
   const eastmoneyFinancialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
   const secData = isUsSelected ? await fetchSecCompanyData(symbol, fetchImpl) : undefined;
-  const financialTenYear = eastmoneyFinancialTenYear.rows.length ? eastmoneyFinancialTenYear : secData?.normalizedFinancialTenYear ?? eastmoneyFinancialTenYear;
 
-  const shouldFetchYahoo = !selectedCompany || selectedCompany.source !== "eastmoney" || isUsSelected;
+  const shouldFetchYahoo = !selectedCompany || selectedCompany.source !== "eastmoney" || isUsSelected || isHkSelected;
   const quoteJson = shouldFetchYahoo ? await fetchJson(quoteUrl, fetchImpl) : null;
   const quote = firstArrayItem(recordPath(quoteJson, ["quoteResponse", "result"]));
   const summaryJson = shouldFetchYahoo ? await fetchJson(summaryUrl, fetchImpl) : null;
@@ -124,7 +124,16 @@ export async function fetchPublicCompanyEvidence({
   const stooqQuote = isUsSelected && !eastmoneyQuote && !quote && !chartMeta ? await fetchStooqQuote(stooqQuoteUrl, symbol, fetchImpl) : undefined;
 
   const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
-  const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length);
+  const providerFinancialData = normalizeFundamentals(fundamentals) ?? secData?.summaryFinancialData;
+  const yahooFinancialTenYear = buildFinancialTenYearFromYahooFundamentals(providerFinancialData, isHkSelected ? "港元" : undefined);
+  const financialTenYear = eastmoneyFinancialTenYear.rows.length
+    ? eastmoneyFinancialTenYear
+    : secData?.normalizedFinancialTenYear.rows.length
+      ? secData.normalizedFinancialTenYear
+      : yahooFinancialTenYear.rows.length
+        ? yahooFinancialTenYear
+        : eastmoneyFinancialTenYear;
+  const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length) || yahooFinancialTenYear.rows.length > 0;
 
   if (!quote && !summary && !chartMeta && !searchQuote && !fundamentals && !eastmoneyQuote && !hasPublicFinancials) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
@@ -132,7 +141,6 @@ export async function fetchPublicCompanyEvidence({
 
   const profile = isRecord(summary?.assetProfile) ? summary.assetProfile : undefined;
   const price = isRecord(summary?.price) ? summary.price : undefined;
-  const providerFinancialData = normalizeFundamentals(fundamentals) ?? secData?.summaryFinancialData;
   const mergedQuote = {
     ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote, selectedCompany) : {}),
     ...(searchQuote ?? {}),
@@ -741,25 +749,31 @@ function isUsListedCompany(candidate: CompanyCandidate) {
   );
 }
 
+function isHongKongListedCompany(candidate: CompanyCandidate) {
+  return Boolean(candidate.listingPlace.includes("港") || candidate.marketType.toLowerCase() === "hk" || candidate.quoteId?.startsWith("116."));
+}
+
 function isAppleSymbol(symbol: string) {
   return symbol.trim().toUpperCase() === "AAPL";
 }
 
 function normalizeEastmoneyQuote(quote: Record<string, unknown>, company: CompanyCandidate | undefined) {
   const isUs = company ? isUsListedCompany(company) : false;
+  const isHk = company ? isHongKongListedCompany(company) : false;
+  const priceScale = isUs || isHk ? 1000 : 100;
   return pickDefined({
     symbol: stringValue(quote.f57),
     longName: stringValue(quote.f58),
-    regularMarketPrice: eastmoneyPriceNumber(quote.f43, isUs),
-    regularMarketDayHigh: eastmoneyPriceNumber(quote.f44, isUs),
-    regularMarketDayLow: eastmoneyPriceNumber(quote.f45, isUs),
-    regularMarketOpen: eastmoneyPriceNumber(quote.f46, isUs),
+    regularMarketPrice: eastmoneyPriceNumber(quote.f43, priceScale),
+    regularMarketDayHigh: eastmoneyPriceNumber(quote.f44, priceScale),
+    regularMarketDayLow: eastmoneyPriceNumber(quote.f45, priceScale),
+    regularMarketOpen: eastmoneyPriceNumber(quote.f46, priceScale),
     regularMarketVolume: numberValue(quote.f47),
-    regularMarketPreviousClose: eastmoneyPriceNumber(quote.f60, isUs),
+    regularMarketPreviousClose: eastmoneyPriceNumber(quote.f60, priceScale),
     marketCap: numberValue(quote.f116),
     trailingPE: eastmoneyRatioField(quote.f162, true),
     priceToBook: eastmoneyRatioField(quote.f167, true),
-    regularMarketChange: eastmoneyPriceNumber(quote.f169, isUs),
+    regularMarketChange: eastmoneyPriceNumber(quote.f169, priceScale),
     regularMarketChangePercent: eastmoneyPercentNumber(quote.f170),
   });
 }
@@ -828,6 +842,110 @@ function normalizeFundamentals(items: unknown[] | undefined) {
     result[type] = item[type];
   }
   return Object.keys(result).length ? result : undefined;
+}
+
+function buildFinancialTenYearFromYahooFundamentals(fundamentals: Record<string, unknown> | undefined, currencyUnit?: string): NormalizedFinancialTenYear {
+  if (!fundamentals) return { rows: [], interpretation: "Yahoo fundamentals time series unavailable." };
+
+  const revenue = yahooFundamentalValueMap(fundamentals.trailingTotalRevenue);
+  const netIncome = yahooFundamentalValueMap(fundamentals.trailingNetIncome);
+  const operatingIncome = yahooFundamentalValueMap(fundamentals.trailingOperatingIncome);
+  const grossProfit = yahooFundamentalValueMap(fundamentals.trailingGrossProfit);
+  const operatingCashFlow = yahooFundamentalValueMap(fundamentals.trailingOperatingCashFlow);
+  const freeCashFlow = yahooFundamentalValueMap(fundamentals.trailingFreeCashFlow);
+  const eps = yahooFundamentalValueMap(fundamentals.trailingDilutedEPS);
+  const assets = yahooFundamentalValueMap(fundamentals.quarterlyTotalAssets);
+  const debt = yahooFundamentalValueMap(fundamentals.quarterlyTotalDebt);
+  const equity = yahooFundamentalValueMap(fundamentals.quarterlyStockholdersEquity);
+  const years = Array.from(
+    new Set([
+      ...revenue.keys(),
+      ...netIncome.keys(),
+      ...operatingIncome.keys(),
+      ...grossProfit.keys(),
+      ...operatingCashFlow.keys(),
+      ...freeCashFlow.keys(),
+      ...eps.keys(),
+      ...assets.keys(),
+      ...debt.keys(),
+      ...equity.keys(),
+    ]),
+  )
+    .sort()
+    .slice(-10);
+
+  const rows = [
+    yahooMetricRow("营业收入", years, revenue, "amount", currencyUnit, "Yahoo fundamentals trailing revenue time series."),
+    yahooMetricRow("净利润", years, netIncome, "amount", currencyUnit, "Yahoo fundamentals trailing net income time series."),
+    yahooMetricRow("经营利润", years, operatingIncome, "amount", currencyUnit, "Yahoo fundamentals trailing operating income time series."),
+    yahooMetricRow("毛利润", years, grossProfit, "amount", currencyUnit, "Yahoo fundamentals trailing gross profit time series."),
+    yahooMetricRow("经营现金流", years, operatingCashFlow, "amount", currencyUnit, "Yahoo fundamentals trailing operating cash flow time series."),
+    yahooMetricRow("自由现金流", years, freeCashFlow, "amount", currencyUnit, "Yahoo fundamentals trailing free cash flow time series."),
+    yahooMetricRow("摊薄每股收益", years, eps, "perShare", currencyUnit, "Yahoo fundamentals trailing diluted EPS time series."),
+    yahooMetricRow("总资产", years, assets, "amount", currencyUnit, "Yahoo fundamentals quarterly total assets time series."),
+    yahooMetricRow("总债务", years, debt, "amount", currencyUnit, "Yahoo fundamentals quarterly total debt time series."),
+    yahooMetricRow("股东权益", years, equity, "amount", currencyUnit, "Yahoo fundamentals quarterly stockholders equity time series."),
+    yahooDerivedMetricRow("净利率", years, netIncome, revenue, "用净利润除以收入衡量最终利润留存能力。"),
+  ].filter((row): row is FinancialTenYear["rows"][number] => Boolean(row));
+
+  return {
+    rows,
+    interpretation: rows.length ? "已基于 Yahoo fundamentals time series 归一化关键财务指标；港股需结合公司公告继续复核会计口径。" : "Yahoo fundamentals time series unavailable.",
+    latestPeriod: years.at(-1),
+  };
+}
+
+function yahooFundamentalValueMap(value: unknown) {
+  const rows = Array.isArray(value) ? value.filter(isRecord) : [];
+  const result = new Map<string, number>();
+  for (const row of rows) {
+    const year = stringValue(row.asOfDate)?.match(/^(\d{4})-/)?.[1];
+    const raw = yahooRawNumber(row);
+    if (!year || raw === undefined) continue;
+    result.set(year, raw);
+  }
+  return result;
+}
+
+function yahooRawNumber(row: Record<string, unknown>) {
+  const direct = numberValue(row.raw);
+  if (direct !== undefined) return direct;
+  const reportedValue = isRecord(row.reportedValue) ? row.reportedValue : undefined;
+  return numberValue(reportedValue?.raw) ?? numberFromString(String(reportedValue?.fmt ?? row.fmt ?? ""));
+}
+
+function yahooMetricRow(
+  metric: string,
+  years: string[],
+  values: Map<string, number>,
+  kind: "amount" | "perShare" | "ratio",
+  currencyUnit: string | undefined,
+  interpretation: string,
+) {
+  const numericValues = years
+    .map((year) => ({ year, value: values.get(year) }))
+    .filter((item): item is { year: string; value: number } => item.value !== undefined);
+  if (!numericValues.length) return undefined;
+  return {
+    metric,
+    values: Object.fromEntries(
+      numericValues.map((item) => [
+        item.year,
+        kind === "amount" ? formatAmountWithUnit(item.value, currencyUnit) : kind === "ratio" ? formatRatio(item.value) : formatPerShare(item.value, currencyUnit),
+      ]),
+    ),
+    trend: trendText(numericValues.map((item) => item.value), kind === "ratio" ? "ratio" : "amount"),
+    interpretation,
+  };
+}
+
+function yahooDerivedMetricRow(metric: string, years: string[], numerator: Map<string, number>, denominator: Map<string, number>, interpretation: string) {
+  const values = new Map<string, number>();
+  for (const year of years) {
+    const value = ratio(numerator.get(year), denominator.get(year));
+    if (value !== undefined) values.set(year, value);
+  }
+  return yahooMetricRow(metric, years, values, "ratio", undefined, interpretation);
 }
 
 function normalizeStooqQuote(text: string | undefined, symbol: string) {
@@ -1072,8 +1190,16 @@ function formatAmount(value: number) {
   return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿`;
 }
 
+function formatAmountWithUnit(value: number, unit: string | undefined) {
+  return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿${unit ?? ""}`;
+}
+
 function formatUsdAmount(value: number) {
   return `${(value / 100_000_000).toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}亿美元`;
+}
+
+function formatPerShare(value: number, unit: string | undefined) {
+  return `${value.toLocaleString("zh-CN", { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit ? ` ${unit}/股` : ""}`;
 }
 
 function formatUsdPerShare(value: number) {
@@ -1209,8 +1335,8 @@ function metricRawNumber(value: unknown) {
   return undefined;
 }
 
-function eastmoneyPriceNumber(value: unknown, isUs: boolean) {
-  return eastmoneyScaledNumber(value, isUs ? 1000 : 100);
+function eastmoneyPriceNumber(value: unknown, scale: number) {
+  return eastmoneyScaledNumber(value, scale);
 }
 
 function eastmoneyRatioField(value: unknown, zeroAsUnavailable: boolean) {
