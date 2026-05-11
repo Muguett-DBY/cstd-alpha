@@ -56,6 +56,33 @@ describe("report API stream", () => {
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
+  test("adds elapsed timing fields to progress and final stream events", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+
+    const events = await postReportEvents();
+    const progress = events.find((event) => event.type === "progress");
+    const final = events.at(-1);
+
+    expect(progress).toEqual(
+      expect.objectContaining({
+        startedAt: expect.any(String),
+        elapsedMs: expect.any(Number),
+      }),
+    );
+    expect(final).toMatchObject({
+      type: "final",
+      metrics: {
+        startedAt: expect.any(String),
+        completedAt: expect.any(String),
+        elapsedMs: expect.any(Number),
+        modelCalls: expect.any(Number),
+        cacheMode: "prefer-cache",
+      },
+    });
+  });
+
   test("streams model length failures as errors instead of final reports", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);

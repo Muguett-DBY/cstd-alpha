@@ -1,4 +1,4 @@
-import { validateReportPayload, type InvestmentReport } from "./shared/report";
+import { validateReportPayload, type InvestmentReport, type ReportGenerationMetrics } from "./shared/report";
 import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate } from "./shared/report";
 
@@ -12,6 +12,7 @@ export type CachedReport = {
   report: InvestmentReport;
   cachedAt: number;
   expiresAt: number;
+  metrics?: ReportGenerationMetrics;
 };
 
 export type CachedChart = {
@@ -20,20 +21,31 @@ export type CachedChart = {
   expiresAt: number;
 };
 
-export function saveLastReport(report: InvestmentReport) {
-  localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(report));
+export type StoredReportEntry = {
+  report: InvestmentReport;
+  metrics?: ReportGenerationMetrics;
+};
+
+export function saveLastReport(report: InvestmentReport, metrics?: ReportGenerationMetrics) {
+  localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
 }
 
 export function loadLastReport() {
+  return loadLastReportEntry()?.report ?? null;
+}
+
+export function loadLastReportEntry(): StoredReportEntry | null {
   try {
     const raw = localStorage.getItem(LAST_REPORT_KEY);
     if (!raw) return null;
-    const report = validateReportPayload(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const entry = unwrapStoredReport(parsed);
+    const report = validateReportPayload(entry.report);
     if (isLegacyModelFailureReport(report)) {
       localStorage.removeItem(LAST_REPORT_KEY);
       return null;
     }
-    return report;
+    return { report, metrics: normalizeGenerationMetrics(entry.metrics) };
   } catch {
     return null;
   }
@@ -47,11 +59,12 @@ export function buildChartCacheKey(company: CompanyCandidate, priceMode: PriceMo
   return `${CHART_CACHE_PREFIX}${REPORT_CACHE_VERSION}:${stableCompanyId(company)}:${priceMode}`;
 }
 
-export function saveCachedReport(company: CompanyCandidate, report: InvestmentReport, now = Date.now()) {
+export function saveCachedReport(company: CompanyCandidate, report: InvestmentReport, now = Date.now(), metrics?: ReportGenerationMetrics) {
   const payload: CachedReport = {
     report,
     cachedAt: now,
     expiresAt: now + CACHE_TTL_MS,
+    metrics,
   };
   localStorage.setItem(buildReportCacheKey(company), JSON.stringify(payload));
 }
@@ -70,7 +83,7 @@ export function loadCachedReport(company: CompanyCandidate, now = Date.now()): C
       localStorage.removeItem(buildReportCacheKey(company));
       return null;
     }
-    return { report, cachedAt: Number(parsed.cachedAt) || now, expiresAt: parsed.expiresAt };
+    return { report, cachedAt: Number(parsed.cachedAt) || now, expiresAt: parsed.expiresAt, metrics: normalizeGenerationMetrics(parsed.metrics) };
   } catch {
     return null;
   }
@@ -113,6 +126,37 @@ function isLegacyModelFailureReport(report: InvestmentReport) {
   );
 }
 
+function unwrapStoredReport(value: unknown): StoredReportEntry {
+  if (isRecord(value) && isRecord(value.report)) {
+    return { report: value.report as InvestmentReport, metrics: normalizeGenerationMetrics(value.metrics) };
+  }
+  return { report: value as InvestmentReport };
+}
+
+function normalizeGenerationMetrics(value: unknown): ReportGenerationMetrics | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    typeof value.startedAt !== "string" ||
+    typeof value.completedAt !== "string" ||
+    typeof value.elapsedMs !== "number" ||
+    typeof value.modelCalls !== "number" ||
+    (value.cacheMode !== "prefer-cache" && value.cacheMode !== "refresh")
+  ) {
+    return undefined;
+  }
+  return {
+    startedAt: value.startedAt,
+    completedAt: value.completedAt,
+    elapsedMs: value.elapsedMs,
+    modelCalls: value.modelCalls,
+    cacheMode: value.cacheMode,
+  };
+}
+
 function stableCompanyId(company: CompanyCandidate) {
   return [company.id, company.code, company.listingPlace].filter(Boolean).join(":");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

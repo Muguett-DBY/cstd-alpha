@@ -64,6 +64,7 @@ type DeepSeekInput = {
   language?: "zh-CN" | "en";
   fetchImpl?: FetchLike;
   onProgress?: (progress: { stage: string; label: string; detail: string; percent: number }) => void;
+  metrics?: { modelCalls?: number };
 };
 
 export async function callDeepSeekReport({
@@ -72,45 +73,64 @@ export async function callDeepSeekReport({
   language = "zh-CN",
   fetchImpl = fetch,
   onProgress,
+  metrics,
 }: DeepSeekInput): Promise<InvestmentReport> {
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
+  let modelCalls = 0;
+  const countedFetch = ((...args: Parameters<FetchLike>) => {
+    const resource = args[0];
+    const url =
+      typeof resource === "string"
+        ? resource
+        : resource instanceof URL
+          ? resource.toString()
+          : "url" in resource
+            ? resource.url
+            : "";
+    if (url.includes("api.deepseek.com/chat/completions")) modelCalls += 1;
+    return fetchImpl(...args);
+  }) as FetchLike;
 
-  const scoringJson = await requestScoringJson({
-    apiKey,
-    fetchImpl,
-    language,
-    evidence,
-    onProgress,
-  });
-
-  const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
-  const enrichedReport = validateReportPayload(
-    prepareReportPayload(
-      {
-        ...scoringReport,
-        scoreItems20: await requestScoreItemDetails({
-          apiKey,
-          fetchImpl,
-          language,
-          scoringReport,
-          evidence,
-          onProgress,
-        }),
-      },
+  try {
+    const scoringJson = await requestScoringJson({
+      apiKey,
+      fetchImpl: countedFetch,
+      language,
       evidence,
-    ),
-  );
-  const fullSections = await requestNarrativeSections({
-    apiKey,
-    fetchImpl,
-    language,
-    scoringReport: enrichedReport,
-    evidence,
-    onProgress,
-  });
+      onProgress,
+    });
 
-  const report = validateReportPayload(mergeNarrativePayload(enrichedReport, { fullSections }, evidence));
-  return withProviderContext(report, evidence);
+    const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
+    const enrichedReport = validateReportPayload(
+      prepareReportPayload(
+        {
+          ...scoringReport,
+          scoreItems20: await requestScoreItemDetails({
+            apiKey,
+            fetchImpl: countedFetch,
+            language,
+            scoringReport,
+            evidence,
+            onProgress,
+          }),
+        },
+        evidence,
+      ),
+    );
+    const fullSections = await requestNarrativeSections({
+      apiKey,
+      fetchImpl: countedFetch,
+      language,
+      scoringReport: enrichedReport,
+      evidence,
+      onProgress,
+    });
+
+    const report = validateReportPayload(mergeNarrativePayload(enrichedReport, { fullSections }, evidence));
+    return withProviderContext(report, evidence);
+  } finally {
+    if (metrics) metrics.modelCalls = modelCalls;
+  }
 }
 
 async function requestScoringJson({
@@ -201,25 +221,23 @@ async function requestNarrativeSections({
   onProgress?: DeepSeekInput["onProgress"];
 }) {
   const fullSections: Record<string, unknown> = {};
-  for (const [index, keys] of NARRATIVE_SECTION_BATCHES.entries()) {
+  const batches = await Promise.all(NARRATIVE_SECTION_BATCHES.map(async (keys, index) => {
     onProgress?.({
       stage: `deepseek_narrative_${index + 1}`,
       label: "生成完整正文",
       detail: `V4 Flash max thinking 正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
       percent: 70 + index * 5,
     });
-    Object.assign(
-      fullSections,
-      await requestNarrativeBatch({
-        apiKey,
-        fetchImpl,
-        language,
-        scoringReport,
-        evidence,
-        keys,
-      }),
-    );
-  }
+    return requestNarrativeBatch({
+      apiKey,
+      fetchImpl,
+      language,
+      scoringReport,
+      evidence,
+      keys,
+    });
+  }));
+  for (const batch of batches) Object.assign(fullSections, batch);
   return fullSections;
 }
 
@@ -239,14 +257,14 @@ async function requestScoreItemDetails({
   onProgress?: DeepSeekInput["onProgress"];
 }) {
   const details: Record<string, ScoreItemDetail> = {};
-  for (const [index, itemIds] of SCORE_ITEM_DETAIL_BATCHES.entries()) {
+  const batches = await Promise.all(SCORE_ITEM_DETAIL_BATCHES.map(async (itemIds, index) => {
     onProgress?.({
       stage: `deepseek_score_detail_${index + 1}`,
       label: "补全评分证据",
       detail: `V4 Flash max thinking 正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
       percent: 64 + index,
     });
-    const batchDetails = await requestScoreItemDetailBatch({
+    return requestScoreItemDetailBatch({
       apiKey,
       fetchImpl,
       language,
@@ -254,6 +272,8 @@ async function requestScoreItemDetails({
       evidence,
       itemIds,
     });
+  }));
+  for (const batchDetails of batches) {
     for (const detail of batchDetails) details[detail.id] = detail;
   }
 
@@ -729,6 +749,14 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
           : providerFinancialTenYear.interpretation,
       }
     : unwrapped.financialTenYear;
+  const providerCurrentPrice = providerCurrentPriceFromEvidence(evidence);
+  const modelValuationAnalysis = isRecord(unwrapped.valuationAnalysis) ? unwrapped.valuationAnalysis : {};
+  const valuationAnalysis = providerCurrentPrice
+    ? {
+        ...modelValuationAnalysis,
+        currentPrice: providerCurrentPrice,
+      }
+    : unwrapped.valuationAnalysis;
 
   return {
     ...unwrapped,
@@ -739,6 +767,7 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
     },
     sections,
     financialTenYear,
+    valuationAnalysis,
   };
 }
 
@@ -943,6 +972,15 @@ function providerFinancialTenYearFromEvidence(evidence: EvidenceBundle) {
   return value;
 }
 
+function providerCurrentPriceFromEvidence(evidence: EvidenceBundle) {
+  const quote = asRecord(evidence.facts.quote);
+  const price = numericValue(quote?.regularMarketPrice);
+  if (price === undefined) return undefined;
+  const currency = isNonEmptyString(quote?.currency) ? quote.currency : undefined;
+  const date = evidence.retrievedAt.slice(0, 10);
+  return `${formatProviderNumber(price)}${currency ? ` ${currency}` : ""}（公开报价，${date}）`;
+}
+
 function isRetryableModelOutputError(error: unknown) {
   if (typeof error !== "object" || error === null) return false;
   const code = (error as Record<string, unknown>).code;
@@ -1033,4 +1071,12 @@ function isNonEmptyString(value: unknown): value is string {
 
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.filter(isNonEmptyString).map(String) : [];
+}
+
+function numericValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatProviderNumber(value: number) {
+  return value.toLocaleString("zh-CN", { maximumFractionDigits: 3 });
 }

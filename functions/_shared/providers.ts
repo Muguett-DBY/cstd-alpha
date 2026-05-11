@@ -60,6 +60,7 @@ type SecCompanyData = {
 
 const SEC_TICKER_OVERRIDES: Record<string, { cik_str: number; ticker: string; title: string }> = {
   AAPL: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." },
+  MSFT: { cik_str: 789019, ticker: "MSFT", title: "Microsoft Corporation" },
 };
 
 export async function fetchPublicCompanyEvidence({
@@ -73,6 +74,7 @@ export async function fetchPublicCompanyEvidence({
   const selectedCompany = company;
   const searchQuote = selectedCompany ? undefined : await searchYahooQuote(ticker || companyName, fetchImpl);
   const symbol = selectedCompany?.yahooSymbol || selectedCompany?.code || ticker || stringValue(searchQuote?.symbol);
+  const isUsSelected = selectedCompany ? isUsListedCompany(selectedCompany) : false;
 
   if (!symbol) {
     return unavailableBundle(companyName, market, retrievedAt, "Could not resolve a public market ticker.");
@@ -84,6 +86,7 @@ export async function fetchPublicCompanyEvidence({
   )}?modules=assetProfile,summaryDetail,financialData,defaultKeyStatistics,price,calendarEvents,earnings`;
   const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
   const fundamentalsUrl = buildFundamentalsUrl(symbol);
+  const stooqQuoteUrl = isUsSelected ? stooqQuoteUrlForSymbol(symbol) : "";
   const eastmoneyQuoteUrl = selectedCompany?.quoteId
     ? `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(
         selectedCompany.quoteId,
@@ -103,20 +106,22 @@ export async function fetchPublicCompanyEvidence({
   const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
   const eastmoneyFinancialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
-  const secData = selectedCompany && isUsListedCompany(selectedCompany) ? await fetchSecCompanyData(symbol, fetchImpl) : undefined;
+  const secData = isUsSelected ? await fetchSecCompanyData(symbol, fetchImpl) : undefined;
   const financialTenYear = eastmoneyFinancialTenYear.rows.length ? eastmoneyFinancialTenYear : secData?.normalizedFinancialTenYear ?? eastmoneyFinancialTenYear;
 
-  const quoteJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(quoteUrl, fetchImpl);
+  const shouldFetchYahoo = !selectedCompany || selectedCompany.source !== "eastmoney" || isUsSelected;
+  const quoteJson = shouldFetchYahoo ? await fetchJson(quoteUrl, fetchImpl) : null;
   const quote = firstArrayItem(recordPath(quoteJson, ["quoteResponse", "result"]));
-  const summaryJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(summaryUrl, fetchImpl);
+  const summaryJson = shouldFetchYahoo ? await fetchJson(summaryUrl, fetchImpl) : null;
   const summary = firstArrayItem(recordPath(summaryJson, ["quoteSummary", "result"]));
-  const chartJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(chartUrl, fetchImpl);
+  const chartJson = shouldFetchYahoo ? await fetchJson(chartUrl, fetchImpl) : null;
   const chart = firstArrayItem(recordPath(chartJson, ["chart", "result"]));
   const chartMeta = isRecord(chart?.meta) ? chart.meta : undefined;
-  const fundamentalsJson = selectedCompany?.source === "eastmoney" ? null : await fetchJson(fundamentalsUrl, fetchImpl);
+  const fundamentalsJson = shouldFetchYahoo ? await fetchJson(fundamentalsUrl, fetchImpl) : null;
   const fundamentals = Array.isArray(recordPath(fundamentalsJson, ["timeseries", "result"]))
     ? (recordPath(fundamentalsJson, ["timeseries", "result"]) as unknown[])
     : undefined;
+  const stooqQuote = isUsSelected && !eastmoneyQuote && !quote && !chartMeta ? await fetchStooqQuote(stooqQuoteUrl, symbol, fetchImpl) : undefined;
 
   const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
   const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length);
@@ -131,6 +136,7 @@ export async function fetchPublicCompanyEvidence({
   const mergedQuote = {
     ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote, selectedCompany) : {}),
     ...(searchQuote ?? {}),
+    ...(stooqQuote ?? {}),
     ...(chartMeta ?? {}),
     ...(quote ?? {}),
   };
@@ -184,13 +190,13 @@ export async function fetchPublicCompanyEvidence({
         url: incomeUrl || cashflowUrl || balanceUrl,
         retrievedAt,
         freshness: hasEastmoneyFinancials ? "latest-public" : "unavailable",
-        notes: financialTenYear.rows.length
-          ? `Normalized ${financialTenYear.rows.length} named financial metrics from public statements. Latest period: ${financialTenYear.latestPeriod ?? "unknown"}.`
-          : selectedCompany && isUsListedCompany(selectedCompany)
+        notes: hasEastmoneyFinancials
+          ? `Normalized ${eastmoneyFinancialTenYear.rows.length} named financial metrics from Eastmoney statements. Latest period: ${eastmoneyFinancialTenYear.latestPeriod ?? "unknown"}.`
+          : selectedCompany && isUsSelected
             ? "Eastmoney does not expose usable US financial statements here; SEC fallback was attempted."
             : "Income statement, cash flow statement and balance sheet rows where available.",
       },
-      ...(selectedCompany && isUsListedCompany(selectedCompany)
+      ...(isUsSelected
         ? [
             {
               title: `${symbol} SEC company facts`,
@@ -204,7 +210,7 @@ export async function fetchPublicCompanyEvidence({
             } satisfies EvidenceItem,
           ]
         : []),
-      ...(isAppleSymbol(symbol) && selectedCompany && isUsListedCompany(selectedCompany)
+      ...(isAppleSymbol(symbol) && isUsSelected
         ? [
             {
               title: "Apple latest official financial statements",
@@ -248,6 +254,18 @@ export async function fetchPublicCompanyEvidence({
         freshness: fundamentals ? "latest-public" : "unavailable",
         notes: fundamentals ? "Trailing and quarterly public financial statement metrics." : "Fundamentals time series unavailable.",
       },
+      ...(isUsSelected
+        ? [
+            {
+              title: `${symbol} Stooq quote fallback`,
+              source: "Stooq public quote CSV endpoint",
+              url: stooqQuoteUrl,
+              retrievedAt,
+              freshness: stooqQuote ? "latest-public" : "unavailable",
+              notes: stooqQuote ? "No-key fallback quote snapshot for US-listed stocks." : "Stooq quote fallback returned no data.",
+            } satisfies EvidenceItem,
+          ]
+        : []),
     ],
     facts: {
       quote: Object.keys(mergedQuote).length ? mergedQuote : undefined,
@@ -599,6 +617,11 @@ function yahooTenYearChartUrl(symbol: string) {
   return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1mo&events=history&includeAdjustedClose=true`;
 }
 
+function stooqQuoteUrlForSymbol(symbol: string) {
+  const base = symbol.split(".")[0]?.replace("-", ".").toLowerCase() || symbol.toLowerCase();
+  return `https://stooq.com/q/l/?s=${encodeURIComponent(`${base}.us`)}&f=sd2t2ohlcv&h&e=csv`;
+}
+
 function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
   return `https://datacenter.eastmoney.com/securities/api/data/get?type=${type}&sty=${style}&filter=(SECUCODE%3D%22${encodeURIComponent(
     secucode,
@@ -767,6 +790,28 @@ function normalizeFundamentals(items: unknown[] | undefined) {
     result[type] = item[type];
   }
   return Object.keys(result).length ? result : undefined;
+}
+
+function normalizeStooqQuote(text: string | undefined, symbol: string) {
+  if (!text) return undefined;
+  const [headerLine, valueLine] = text.trim().split(/\r?\n/);
+  if (!headerLine || !valueLine) return undefined;
+  const headers = headerLine.split(",").map((item) => item.trim());
+  const values = valueLine.split(",").map((item) => item.trim());
+  const row = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+  const close = numberFromString(row.Close);
+  if (close === undefined) return undefined;
+  return pickDefined({
+    symbol,
+    currency: "USD",
+    regularMarketPrice: close,
+    regularMarketOpen: numberFromString(row.Open),
+    regularMarketDayHigh: numberFromString(row.High),
+    regularMarketDayLow: numberFromString(row.Low),
+    regularMarketVolume: numberFromString(row.Volume),
+    regularMarketTime: row.Date && row.Time ? `${row.Date} ${row.Time}` : row.Date,
+    quoteSourceName: "Stooq",
+  });
 }
 
 function annualRows(rows: unknown[]) {
@@ -1040,6 +1085,27 @@ async function fetchJson(url: string, fetchImpl: FetchLike): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+async function fetchText(url: string, fetchImpl: FetchLike): Promise<string | undefined> {
+  try {
+    const response = await fetchImpl(url, {
+      headers: {
+        accept: "text/csv,text/plain,*/*",
+        "user-agent": "CSTD Alpha/1.0",
+      },
+    });
+    if (!response.ok) return undefined;
+    return response.text();
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchStooqQuote(url: string, symbol: string, fetchImpl: FetchLike) {
+  if (!url) return undefined;
+  const text = await fetchText(url, fetchImpl);
+  return normalizeStooqQuote(text, symbol);
 }
 
 function unavailableBundle(companyName: string, market: string | undefined, retrievedAt: string, notes: string): EvidenceBundle {

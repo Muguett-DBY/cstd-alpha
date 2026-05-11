@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { downloadReportDocx } from "./docx/export-report";
-import { loadCachedChart, loadCachedReport, loadLastReport, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
-import type { CompanyCandidate, InvestmentReport, ModuleScore, ScoreItem } from "./shared/report";
+import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
@@ -22,7 +22,9 @@ function App() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
-  const [report, setReport] = useState<InvestmentReport | null>(() => loadLastReport());
+  const [initialReportEntry] = useState(() => loadLastReportEntry());
+  const [report, setReport] = useState<InvestmentReport | null>(() => initialReportEntry?.report ?? null);
+  const [reportMetrics, setReportMetrics] = useState<ReportGenerationMetrics | null>(() => initialReportEntry?.metrics ?? null);
   const [chartBundle, setChartBundle] = useState<ChartBundle | null>(null);
   const [chartPhase, setChartPhase] = useState<ChartPhase>("idle");
   const [chartError, setChartError] = useState("");
@@ -84,12 +86,14 @@ function App() {
     setProgress([]);
     setEvidenceCount(0);
     setReport(null);
+    setReportMetrics(null);
 
     if (!forceRefresh) {
       const cached = loadCachedReport(selectedCompany);
       if (cached) {
         setReport(cached.report);
-        saveLastReport(cached.report);
+        setReportMetrics(cached.metrics ?? null);
+        saveLastReport(cached.report, cached.metrics);
         setEvidenceCount(cached.report.evidence.length);
         setProgress([
           {
@@ -112,13 +116,15 @@ function App() {
     setPhase("generating");
 
     try {
-      const nextReport = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache" }, (item) => {
+      const result = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache" }, (item) => {
         if (typeof item.evidenceCount === "number") setEvidenceCount(item.evidenceCount);
         setProgress((current) => [...current.slice(-12), item]);
       });
+      const nextReport = result.report;
       setReport(nextReport);
-      saveLastReport(nextReport);
-      saveCachedReport(selectedCompany, nextReport);
+      setReportMetrics(result.metrics ?? null);
+      saveLastReport(nextReport, result.metrics);
+      saveCachedReport(selectedCompany, nextReport, Date.now(), result.metrics);
       setPhase("ready");
     } catch (err) {
       setPhase("error");
@@ -251,7 +257,13 @@ function App() {
           {chartError ? <p className="error-text">{chartError}</p> : null}
         </section>
 
-        <ProgressPanel progress={progress} phase={phase} elapsedSeconds={elapsedSeconds} evidenceCount={evidenceCount || report?.evidence.length || 0} />
+        <ProgressPanel
+          progress={progress}
+          phase={phase}
+          elapsedSeconds={elapsedSeconds}
+          completedElapsedMs={reportMetrics?.elapsedMs}
+          evidenceCount={evidenceCount || report?.evidence.length || 0}
+        />
         {error ? <p className="error-text">{error}</p> : null}
       </aside>
 
@@ -259,7 +271,7 @@ function App() {
         {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
           <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
         ) : null}
-        {report ? <ReportView report={report} chartBundle={chartBundle ?? undefined} /> : <EmptyState />}
+        {report ? <ReportView report={report} chartBundle={chartBundle ?? undefined} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
       </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
@@ -321,22 +333,35 @@ function ProgressPanel({
   progress,
   phase,
   elapsedSeconds,
+  completedElapsedMs,
   evidenceCount,
 }: {
   progress: ReportProgress[];
   phase: Phase;
   elapsedSeconds: number;
+  completedElapsedMs?: number;
   evidenceCount: number;
 }) {
   const latest = progress.at(-1);
+  const statusText =
+    phase === "generating"
+      ? formatDuration(elapsedSeconds * 1000)
+      : phase === "ready"
+        ? completedElapsedMs !== undefined
+          ? `完成 / ${formatDuration(completedElapsedMs)}`
+          : "完成"
+        : phase === "error"
+          ? "失败"
+          : "待开始";
   return (
     <section className="progress-panel">
       <div className="progress-head">
         <span>生成状态</span>
-        <strong>{phase === "generating" ? `${elapsedSeconds}s` : phase === "ready" ? "完成" : phase === "error" ? "失败" : "待开始"}</strong>
+        <strong>{statusText}</strong>
       </div>
       <meter min="0" max="100" value={latest?.percent ?? (phase === "ready" ? 100 : 0)} />
       <p>{latest ? `${latest.label}：${latest.detail}` : "选择公司后开始读取公开数据并生成报告。"}</p>
+      {completedElapsedMs !== undefined ? <small>生成耗时：{formatDuration(completedElapsedMs)}</small> : null}
       <small>当前证据数量：{evidenceCount}</small>
       <ol>
         {progress.map((item, index) => (
@@ -524,7 +549,7 @@ function ValuationRange({ report, currentPrice }: { report: InvestmentReport; cu
   );
 }
 
-function ReportView({ report, chartBundle }: { report: InvestmentReport; chartBundle?: ChartBundle }) {
+function ReportView({ report, chartBundle, metrics }: { report: InvestmentReport; chartBundle?: ChartBundle; metrics?: ReportGenerationMetrics }) {
   const jsonUrl = useMemo(() => {
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     return URL.createObjectURL(blob);
@@ -541,6 +566,11 @@ function ReportView({ report, chartBundle }: { report: InvestmentReport; chartBu
           </p>
           <h2>{report.company.name}</h2>
           <p className="muted">{report.oneSentence}</p>
+          {metrics ? (
+            <p className="muted">
+              生成耗时：{formatDuration(metrics.elapsedMs)} / 模型调用 {metrics.modelCalls} 次 / {metrics.cacheMode === "refresh" ? "刷新生成" : "常规生成"}
+            </p>
+          ) : null}
         </div>
         <div className="actions">
           <button type="button" onClick={() => downloadReportDocx(report, chartBundle)}>
@@ -807,6 +837,14 @@ function formatPercent(value: number | undefined) {
 
 function formatCacheTime(value: number) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds} 秒`;
+  return `${minutes} 分 ${seconds} 秒`;
 }
 
 function splitReportParagraphs(body: string) {

@@ -62,6 +62,38 @@ describe("report storage", () => {
     expect(loadCachedReport(company, 1000 + 25 * 60 * 60 * 1000)).toBeNull();
   });
 
+  test("preserves generation metrics with cached reports", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const company = {
+      id: "eastmoney:105.MSFT",
+      name: "微软",
+      code: "MSFT",
+      exchange: "美国市场",
+      listingPlace: "美股",
+      marketType: "UsStock",
+      source: "eastmoney" as const,
+    };
+    const report = validateReportPayload({
+      company: { name: "微软", ticker: "MSFT", market: "美股" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "缓存报告",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    });
+
+    saveCachedReport(company, report, 1000, {
+      startedAt: "2026-05-10T00:00:00.000Z",
+      completedAt: "2026-05-10T00:05:00.000Z",
+      elapsedMs: 300000,
+      modelCalls: 9,
+      cacheMode: "refresh",
+    });
+
+    expect(loadCachedReport(company, 2000)?.metrics).toMatchObject({ elapsedMs: 300000, modelCalls: 9 });
+  });
+
   test("loads cached chart data by company and price mode within the TTL", () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const company = {

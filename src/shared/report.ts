@@ -186,6 +186,14 @@ export type InvestmentReport = {
   disclaimer: string;
 };
 
+export type ReportGenerationMetrics = {
+  startedAt: string;
+  completedAt: string;
+  elapsedMs: number;
+  modelCalls: number;
+  cacheMode: "prefer-cache" | "refresh";
+};
+
 type ScoreScale = 1 | 10;
 
 export const MODULE_WEIGHTS: ModuleWeight[] = [
@@ -297,10 +305,10 @@ export function validateReportPayload(value: unknown): InvestmentReport {
   const computed = computeScores(scoreItems20, redFlags, evidence);
   const cqs = Array.isArray(value.scoreItems20) ? computed.cqs : clampScore(value.cqs);
   const ias = Array.isArray(value.scoreItems20) ? computed.ias : applyEvidenceCaps(clampScore(value.ias), evidence, redFlags);
-  const conclusion = normalizeConclusion(value.conclusion, ias);
   const sections = normalizeSections(value.sections, value.fullSections, value.company.name);
   const fullSections = normalizeFullSections(value.fullSections, sections, value.company.name);
   const valuationAnalysis = normalizeValuationAnalysis(value.valuationAnalysis);
+  const decision = deriveInvestmentDecision(value.conclusion, cqs, ias, redFlags, valuationAnalysis);
 
   return {
     company: {
@@ -311,12 +319,12 @@ export function validateReportPayload(value: unknown): InvestmentReport {
       sector: optionalString(value.company.sector),
     },
     asOf: isNonEmptyString(value.asOf) ? value.asOf : new Date().toISOString(),
-    conclusion,
+    conclusion: decision.conclusion,
     oneSentence: isNonEmptyString(value.oneSentence) ? value.oneSentence : fallbackText(value.company.name, "核心一句话"),
     cqs,
     ias,
     qualitativeBand: qualitativeBand(ias),
-    summaryDashboard: normalizeSummaryDashboard(value.summaryDashboard, valuationAnalysis),
+    summaryDashboard: normalizeSummaryDashboard(value.summaryDashboard, valuationAnalysis, decision),
     moduleScores: Array.isArray(value.scoreItems20) ? computed.modules : normalizeModuleScores(value.moduleScores),
     scoreItems20,
     redFlags,
@@ -326,7 +334,7 @@ export function validateReportPayload(value: unknown): InvestmentReport {
     financialTenYear: normalizeFinancialTenYear(value.financialTenYear),
     valuationAnalysis,
     riskMatrix: normalizeRiskMatrix(value.riskMatrix),
-    accountRules: normalizeAccountRules(value.accountRules, cqs),
+    accountRules: normalizeAccountRules(value.accountRules, cqs, decision),
     fullSections,
     disclaimer: isNonEmptyString(value.disclaimer)
       ? value.disclaimer
@@ -538,11 +546,16 @@ function normalizeFullSections(value: unknown, sections: ReportSections, company
   };
 }
 
-function normalizeSummaryDashboard(value: unknown, valuationAnalysis?: ValuationAnalysis): SummaryDashboard {
+type DerivedInvestmentDecision = {
+  conclusion: InvestmentReport["conclusion"];
+  positionAdvice: string;
+};
+
+function normalizeSummaryDashboard(value: unknown, valuationAnalysis: ValuationAnalysis | undefined, decision: DerivedInvestmentDecision): SummaryDashboard {
   const raw = isRecord(value) ? value : {};
   return {
     valuationView: meaningfulValuationView(raw.valuationView) ?? deriveValuationView(valuationAnalysis) ?? "待验证",
-    positionAdvice: optionalString(raw.positionAdvice) ?? "观察仓",
+    positionAdvice: decision.positionAdvice,
     investmentHorizon: optionalString(raw.investmentHorizon) ?? "至少 5 年",
     keyReasons: stringArray(raw.keyReasons),
     keyRisks: stringArray(raw.keyRisks),
@@ -651,23 +664,53 @@ function normalizeRiskMatrix(value: unknown): RiskMatrixItem[] {
   }));
 }
 
-function normalizeAccountRules(value: unknown, cqs: number): AccountRules {
+function normalizeAccountRules(value: unknown, cqs: number, decision: DerivedInvestmentDecision): AccountRules {
   const raw = isRecord(value) ? value : {};
   return {
     companyGrade: companyGradeFromCqs(cqs),
-    maxPosition: optionalString(raw.maxPosition) ?? "观察仓",
+    maxPosition: decision.positionAdvice,
     addCondition: optionalString(raw.addCondition) ?? "基本面未恶化且估值更有吸引力时再考虑。",
     reduceCondition: optionalString(raw.reduceCondition) ?? "估值明显偏高、基本面恶化或风险暴露时减仓。",
     reviewTiming: optionalString(raw.reviewTiming) ?? "下一次财报或重大公告后复盘。",
   };
 }
 
-function normalizeConclusion(value: unknown, ias: number): InvestmentReport["conclusion"] {
+function deriveInvestmentDecision(
+  value: unknown,
+  cqs: number,
+  ias: number,
+  redFlags: RedFlag[],
+  valuationAnalysis: ValuationAnalysis,
+): DerivedInvestmentDecision {
+  const criticalRedFlag = redFlags.some((flag) => flag.severity === "critical" || flag.cap <= 30);
+  if (criticalRedFlag || ias <= 30) return { conclusion: "回避", positionAdvice: "0%" };
+  if (ias <= 40) return { conclusion: "回避", positionAdvice: "0-3% 观察上限" };
+  if (ias <= 50) return { conclusion: "观察", positionAdvice: "0-3% 观察上限" };
+
+  const valuationView = deriveValuationView(valuationAnalysis);
+  const priceAvailable = hasReliableCurrentPrice(valuationAnalysis.currentPrice);
+  if (!priceAvailable) return { conclusion: "观察", positionAdvice: "观察仓（报价缺失，暂不建仓）" };
+
+  if (ias > 85 && cqs > 85 && valuationView === "低估") return { conclusion: "加仓", positionAdvice: "15-20% 上限" };
+  if (ias >= 76 && cqs >= 70 && (valuationView === "低估" || valuationView === "合理偏低")) {
+    return { conclusion: "买入", positionAdvice: "标准仓 8-15%" };
+  }
+  if (ias >= 66 && cqs >= 70 && (valuationView === "低估" || valuationView === "合理偏低" || valuationView === "合理")) {
+    return { conclusion: "持有", positionAdvice: "小仓 3-8%" };
+  }
+  if (ias >= 51) return { conclusion: "观察", positionAdvice: "观察仓" };
+
+  return { conclusion: normalizeModelConclusion(value), positionAdvice: "观察仓" };
+}
+
+function normalizeModelConclusion(value: unknown): InvestmentReport["conclusion"] {
   const allowed: InvestmentReport["conclusion"][] = ["买入", "加仓", "持有", "观察", "减仓", "卖出", "回避"];
-  const conclusion = allowed.includes(value as InvestmentReport["conclusion"]) ? (value as InvestmentReport["conclusion"]) : "观察";
-  if (ias <= 30) return "回避";
-  if (ias <= 50 && (conclusion === "买入" || conclusion === "加仓" || conclusion === "持有")) return "观察";
-  return conclusion;
+  return allowed.includes(value as InvestmentReport["conclusion"]) ? (value as InvestmentReport["conclusion"]) : "观察";
+}
+
+function hasReliableCurrentPrice(value: string) {
+  if (parseFirstNumber(value) === undefined) return false;
+  return !/数据不足|待验证|不可用|缺失|无法|未获取|假设|估算|推算/.test(value);
 }
 
 function summarizeItems(items: ScoreItem[]) {

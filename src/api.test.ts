@@ -103,6 +103,66 @@ describe("API client", () => {
     );
   });
 
+  test("returns report generation metrics from the final stream event", async () => {
+    const report = {
+      company: { name: "微软", ticker: "MSFT", market: "美股" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          `${JSON.stringify({
+            type: "progress",
+            stage: "done",
+            label: "报告完成",
+            detail: "完成",
+            percent: 100,
+            at: "2026-05-10T00:00:02.000Z",
+            startedAt: "2026-05-10T00:00:00.000Z",
+            elapsedMs: 2000,
+          })}\n${JSON.stringify({
+            type: "final",
+            report,
+            metrics: {
+              startedAt: "2026-05-10T00:00:00.000Z",
+              completedAt: "2026-05-10T00:00:02.000Z",
+              elapsedMs: 2000,
+              modelCalls: 9,
+              cacheMode: "refresh",
+            },
+          })}\n`,
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const result = await generateReport({
+      company: {
+        id: "eastmoney:105.MSFT",
+        name: "微软",
+        code: "MSFT",
+        exchange: "美国市场",
+        listingPlace: "美股",
+        marketType: "UsStock",
+        quoteId: "105.MSFT",
+        source: "eastmoney",
+      },
+      forceRefresh: true,
+      cacheMode: "refresh",
+    });
+
+    expect(result).toMatchObject({
+      report: { company: { name: "微软" } },
+      metrics: { elapsedMs: 2000, modelCalls: 9, cacheMode: "refresh" },
+    });
+  });
+
   test("requests chart data with selected company and price mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

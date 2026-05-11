@@ -1,7 +1,7 @@
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
-import type { CompanyCandidate } from "../../src/shared/report";
+import type { CompanyCandidate, ReportGenerationMetrics } from "../../src/shared/report";
 
 type Env = {
   AUTH_SECRET: string;
@@ -27,13 +27,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const companyName = company?.name?.trim() || body?.companyName?.trim();
   if (!companyName) return json({ error: "请先搜索并选择一个候选公司。" }, 400);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "DEEPSEEK_API_KEY is not configured." }, 500);
+  const cacheMode = body?.forceRefresh || body?.cacheMode === "refresh" ? "refresh" : "prefer-cache";
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
 
   return streamNdjson(async (emit) => {
     emit({
       type: "progress",
-      stage: body?.forceRefresh || body?.cacheMode === "refresh" ? "cache_refresh" : "cache_miss",
-      label: body?.forceRefresh || body?.cacheMode === "refresh" ? "刷新最新数据" : "未命中本地缓存",
-      detail: body?.forceRefresh || body?.cacheMode === "refresh" ? "正在绕过本地缓存，重新读取公开数据。" : "本次需要重新读取公开数据并调用模型。",
+      stage: cacheMode === "refresh" ? "cache_refresh" : "cache_miss",
+      label: cacheMode === "refresh" ? "刷新最新数据" : "未命中本地缓存",
+      detail: cacheMode === "refresh" ? "正在绕过本地缓存，重新读取公开数据。" : "本次需要重新读取公开数据并调用模型。",
       percent: 3,
     });
     emit({ type: "progress", stage: "confirmed", label: "已确认公司", detail: company ? `${company.name} / ${company.code} / ${company.listingPlace}` : companyName, percent: 5 });
@@ -68,17 +71,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
     emit({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "V4 Pro max thinking 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
 
+    const modelMetrics = { modelCalls: 0 };
     const report = await callDeepSeekReport({
       apiKey: env.DEEPSEEK_API_KEY,
       evidence,
       language: "zh-CN",
       onProgress: (progress) => emit({ type: "progress", ...progress }),
+      metrics: modelMetrics,
     });
 
     emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶、模板章节和导出结构。", percent: 90 });
     emit({ type: "progress", stage: "done", label: "报告完成", detail: "深度报告已生成，可在网页查看或导出 DOCX。", percent: 100 });
-    emit({ type: "final", report, evidence });
-  });
+    emit({
+      type: "final",
+      report,
+      evidence,
+      metrics: buildMetrics(startedAtMs, startedAt, modelMetrics.modelCalls, cacheMode),
+    });
+  }, { startedAtMs, startedAt });
 };
 
 function json(data: unknown, status = 200) {
@@ -98,6 +108,8 @@ type ProgressEvent = {
   detail: string;
   percent: number;
   at?: string;
+  startedAt?: string;
+  elapsedMs?: number;
   evidenceCount?: number;
 };
 
@@ -108,6 +120,8 @@ type HeartbeatEvent = {
   detail: string;
   percent: number;
   at?: string;
+  startedAt?: string;
+  elapsedMs?: number;
 };
 
 type ErrorEvent = {
@@ -117,15 +131,25 @@ type ErrorEvent = {
   retryable?: boolean;
 };
 
-type StreamEmit = (event: ProgressEvent | HeartbeatEvent | { type: "final"; report: unknown; evidence: unknown } | ErrorEvent) => void;
+type FinalEvent = { type: "final"; report: unknown; evidence: unknown; metrics: ReportGenerationMetrics };
 
-function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
+type StreamEmit = (event: ProgressEvent | HeartbeatEvent | FinalEvent | ErrorEvent) => void;
+
+function streamNdjson(task: (emit: StreamEmit) => Promise<void>, options: { startedAtMs: number; startedAt: string }) {
   const encoder = new TextEncoder();
   let keepalive: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const emit: StreamEmit = (event) => {
-        const payload = event.type === "progress" || event.type === "heartbeat" ? { ...event, at: event.at ?? new Date().toISOString() } : event;
+        const payload =
+          event.type === "progress" || event.type === "heartbeat"
+            ? {
+                ...event,
+                at: event.at ?? new Date().toISOString(),
+                startedAt: event.startedAt ?? options.startedAt,
+                elapsedMs: event.elapsedMs ?? Date.now() - options.startedAtMs,
+              }
+            : event;
         controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
       };
 
@@ -155,6 +179,17 @@ function streamNdjson(task: (emit: StreamEmit) => Promise<void>) {
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+function buildMetrics(startedAtMs: number, startedAt: string, modelCalls: number, cacheMode: "prefer-cache" | "refresh"): ReportGenerationMetrics {
+  const completedAt = new Date();
+  return {
+    startedAt,
+    completedAt: completedAt.toISOString(),
+    elapsedMs: Math.max(0, completedAt.getTime() - startedAtMs),
+    modelCalls,
+    cacheMode,
+  };
 }
 
 function errorEvent(error: unknown): ErrorEvent {

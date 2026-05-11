@@ -1,5 +1,5 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
-import type { CompanyCandidate, InvestmentReport } from "./shared/report";
+import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "./shared/report";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -19,7 +19,14 @@ export type ReportProgress = {
   detail: string;
   percent: number;
   at: string;
+  startedAt?: string;
+  elapsedMs?: number;
   evidenceCount?: number;
+};
+
+export type ReportGenerationResult = {
+  report: InvestmentReport;
+  metrics?: ReportGenerationMetrics;
 };
 
 export async function checkSession() {
@@ -45,7 +52,7 @@ export async function searchCompanies(query: string): Promise<CompanyCandidate[]
   return data.candidates ?? [];
 }
 
-export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<InvestmentReport> {
+export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<ReportGenerationResult> {
   const response = await fetch("/api/report", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -56,14 +63,18 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
   if (!response.ok) throw new Error((await readError(response)) || "报告生成失败。");
 
   let finalReport: InvestmentReport | undefined;
+  let finalMetrics: ReportGenerationMetrics | undefined;
   for await (const event of readNdjson(response)) {
     if (event.type === "progress") onProgress?.(event as ReportProgress);
     if (event.type === "error") throw new Error(String(event.error || "报告生成失败。"));
-    if (event.type === "final") finalReport = event.report as InvestmentReport;
+    if (event.type === "final") {
+      finalReport = event.report as InvestmentReport;
+      finalMetrics = normalizeMetrics(event.metrics);
+    }
   }
 
   if (!finalReport) throw new Error("报告响应没有包含最终报告。");
-  return finalReport;
+  return { report: finalReport, metrics: finalMetrics };
 }
 
 export async function fetchChartData(input: FetchChartDataInput): Promise<ChartBundle> {
@@ -121,4 +132,25 @@ async function readError(response: Response) {
   } catch {
     return response.statusText;
   }
+}
+
+function normalizeMetrics(value: unknown): ReportGenerationMetrics | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Partial<ReportGenerationMetrics>;
+  if (
+    typeof record.startedAt !== "string" ||
+    typeof record.completedAt !== "string" ||
+    typeof record.elapsedMs !== "number" ||
+    typeof record.modelCalls !== "number" ||
+    (record.cacheMode !== "prefer-cache" && record.cacheMode !== "refresh")
+  ) {
+    return undefined;
+  }
+  return {
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+    elapsedMs: record.elapsedMs,
+    modelCalls: record.modelCalls,
+    cacheMode: record.cacheMode,
+  };
 }

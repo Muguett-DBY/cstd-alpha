@@ -310,6 +310,152 @@ describe("report validation", () => {
     expect(report.summaryDashboard.valuationView).toBe("合理");
   });
 
+  test("derives buy action and standard position for high scores with reasonable-low valuation", () => {
+    const report = validateReportPayload({
+      company: { name: "Quality Co." },
+      conclusion: "观察",
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 82,
+        label: "好",
+        evidence: ["最新财报和估值证据支持较高评分"],
+        deductions: ["安全边际仍需跟踪"],
+        recentChange: "最近 12 个月基本面稳定。",
+        reason: "公司质量和投资吸引力较高，估值处于合理偏低区间。",
+      })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      summaryDashboard: { positionAdvice: "观察仓" },
+      accountRules: { maxPosition: "观察仓" },
+      valuationAnalysis: {
+        currentPrice: "90",
+        fairValueRange: "100-120",
+        buyRange: "80-95",
+        sellReduceRange: "150 以上",
+        conclusion: "当前价格低于合理价值区间，具备一定安全边际。",
+      },
+    });
+
+    expect(report.cqs).toBeGreaterThan(80);
+    expect(report.ias).toBeGreaterThan(80);
+    expect(report.summaryDashboard.valuationView).toBe("合理偏低");
+    expect(report.conclusion).toBe("买入");
+    expect(report.summaryDashboard.positionAdvice).toBe("标准仓 8-15%");
+    expect(report.accountRules.maxPosition).toBe("标准仓 8-15%");
+  });
+
+  test("caps action at observation when real-time price is unavailable without lowering company quality", () => {
+    const report = validateReportPayload({
+      company: { name: "Great Co." },
+      conclusion: "买入",
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 88,
+        label: "极好",
+        evidence: ["最新财报显示质量很高"],
+        deductions: ["需要确认买入价格"],
+        recentChange: "最近 12 个月质量稳定。",
+        reason: "基本面很强，但实时价格缺失导致无法判断安全边际。",
+      })),
+      evidence: [
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "SEC",
+          source: "SEC EDGAR",
+          url: "https://data.sec.gov",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      summaryDashboard: { valuationView: "低估", positionAdvice: "标准仓 8-15%" },
+      valuationAnalysis: {
+        currentPrice: "数据不足（实时报价服务不可用）",
+        fairValueRange: "100-130",
+        buyRange: "90 以下",
+        sellReduceRange: "160 以上",
+        conclusion: "公司质量高，但当前价格缺失。",
+      },
+    });
+
+    expect(report.cqs).toBeGreaterThan(85);
+    expect(report.ias).toBeGreaterThan(85);
+    expect(report.qualitativeBand).toBe("卓越复合成长股");
+    expect(report.conclusion).toBe("观察");
+    expect(report.summaryDashboard.positionAdvice).toContain("报价缺失");
+    expect(report.accountRules.companyGrade).toContain("A+");
+  });
+
+  test("forces avoid action and zero position for critical red flags", () => {
+    const report = validateReportPayload({
+      company: { name: "Risk Co." },
+      conclusion: "买入",
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 78,
+        label: "好",
+        evidence: ["表面数据尚可"],
+        deductions: ["存在重大红线"],
+        recentChange: "最近 12 个月风险暴露。",
+        reason: "红线风险应压倒普通评分。",
+      })),
+      redFlags: [{ label: "重大财务造假风险", cap: 25, severity: "critical", evidence: "审计意见异常" }],
+      evidence: [
+        {
+          title: "Risk filing",
+          source: "Exchange filing",
+          url: "https://example.com/risk",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      valuationAnalysis: {
+        currentPrice: "10",
+        fairValueRange: "15-20",
+        buyRange: "12 以下",
+        sellReduceRange: "25 以上",
+        conclusion: "看似低估但存在红线。",
+      },
+    });
+
+    expect(report.ias).toBe(25);
+    expect(report.conclusion).toBe("回避");
+    expect(report.summaryDashboard.positionAdvice).toBe("0%");
+    expect(report.accountRules.maxPosition).toBe("0%");
+  });
+
   test("drops structurally empty financial rows instead of showing unnamed metrics", () => {
     const report = validateReportPayload({
       company: { name: "Financial Co." },

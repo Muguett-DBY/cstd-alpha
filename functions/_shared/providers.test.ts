@@ -449,6 +449,104 @@ describe("public data providers", () => {
     });
     expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "SEC EDGAR companyfacts endpoint", freshness: "latest-public" })]));
     expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Apple Investor Relations", freshness: "latest-public" })]));
+    expect(result.evidence.find((item) => item.source === "Eastmoney public financial statement endpoints")?.notes).toContain("SEC fallback");
+  });
+
+  test("falls back to Yahoo chart quote and SEC override for MSFT selected from Eastmoney", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com") || url.includes("datacenter.eastmoney.com")) {
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+      }
+      if (url.includes("company_tickers.json")) {
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+      }
+      if (url.includes("companyfacts/CIK0000789019.json")) {
+        return Promise.resolve({ ok: true, json: async () => secMicrosoftFacts() });
+      }
+      if (url.includes("/v8/finance/chart/MSFT")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            chart: {
+              result: [
+                {
+                  meta: {
+                    symbol: "MSFT",
+                    longName: "Microsoft Corporation",
+                    currency: "USD",
+                    exchangeName: "NMS",
+                    regularMarketPrice: 415.06,
+                    fiftyTwoWeekHigh: 555.45,
+                    fiftyTwoWeekLow: 356.28,
+                  },
+                },
+              ],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 401, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "微软",
+      company: {
+        id: "eastmoney:105.MSFT",
+        name: "微软",
+        code: "MSFT",
+        exchange: "美国市场",
+        listingPlace: "美股",
+        marketType: "UsStock",
+        quoteId: "105.MSFT",
+        secid: "105.MSFT",
+        yahooSymbol: "MSFT",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock,
+    });
+
+    expect(result.company).toMatchObject({ name: "微软", ticker: "MSFT", market: "美股" });
+    expect(result.facts.quote).toMatchObject({ regularMarketPrice: 415.06, currency: "USD" });
+    expect(result.facts.financialTenYear).toMatchObject({
+      latestPeriod: "FY2025 10-K",
+      rows: expect.arrayContaining([expect.objectContaining({ metric: "营业收入" }), expect.objectContaining({ metric: "摊薄每股收益" })]),
+    });
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public chart endpoint", freshness: "latest-public" })]));
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "SEC EDGAR companyfacts endpoint", freshness: "latest-public" })]));
+  });
+
+  test("falls back to Stooq quote when Eastmoney and Yahoo quote sources are unavailable for US stocks", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("companyfacts/CIK0000789019.json")) {
+        return Promise.resolve({ ok: true, json: async () => secMicrosoftFacts() });
+      }
+      if (url.includes("stooq.com")) {
+        return Promise.resolve({
+          ok: true,
+          text: async () => "Symbol,Date,Time,Open,High,Low,Close,Volume\nMSFT.US,2026-05-08,22:00:21,417.385,418.63,414,415.12,33383790\n",
+        });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "微软",
+      company: {
+        id: "eastmoney:105.MSFT",
+        name: "微软",
+        code: "MSFT",
+        exchange: "美国市场",
+        listingPlace: "美股",
+        marketType: "UsStock",
+        quoteId: "105.MSFT",
+        yahooSymbol: "MSFT",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(result.facts.quote).toMatchObject({ regularMarketPrice: 415.12, currency: "USD" });
+    expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Stooq public quote CSV endpoint", freshness: "latest-public" })]));
   });
 });
 
@@ -527,6 +625,73 @@ function secAppleFacts() {
             USD: [
               { fy: 2024, fp: "FY", form: "10-K", filed: "2024-11-01", end: "2024-09-28", val: 15_234_000_000 },
               { fy: 2025, fp: "FY", form: "10-K", filed: "2025-10-31", end: "2025-09-27", val: 15_638_000_000 },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+function secMicrosoftFacts() {
+  return {
+    cik: 789019,
+    entityName: "Microsoft Corporation",
+    facts: {
+      "us-gaap": {
+        RevenueFromContractWithCustomerExcludingAssessedTax: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 245_122_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 281_724_000_000 },
+            ],
+          },
+        },
+        NetIncomeLoss: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 88_136_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 101_832_000_000 },
+            ],
+          },
+        },
+        NetCashProvidedByUsedInOperatingActivities: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 118_548_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 136_214_000_000 },
+            ],
+          },
+        },
+        Assets: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 512_163_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 619_003_000_000 },
+            ],
+          },
+        },
+        Liabilities: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 243_686_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 285_421_000_000 },
+            ],
+          },
+        },
+        StockholdersEquity: {
+          units: {
+            USD: [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 268_477_000_000 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 333_582_000_000 },
+            ],
+          },
+        },
+        EarningsPerShareDiluted: {
+          units: {
+            "USD/shares": [
+              { fy: 2024, fp: "FY", form: "10-K", filed: "2024-07-30", end: "2024-06-30", val: 11.8 },
+              { fy: 2025, fp: "FY", form: "10-K", filed: "2025-07-30", end: "2025-06-30", val: 13.64 },
             ],
           },
         },
