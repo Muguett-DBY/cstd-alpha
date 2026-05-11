@@ -131,7 +131,7 @@ function App() {
     } catch (err) {
       if (isReportCancelled(err)) {
         setPhase("idle");
-        setError("已取消生成。");
+        setError("已停止等待，后台仍会继续生成；稍后再次点击生成会自动复用共享缓存。");
       } else {
         setPhase("error");
         setError(err instanceof Error ? err.message : "报告生成失败。");
@@ -246,7 +246,7 @@ function App() {
         </button>
         {phase === "generating" ? (
           <button className="secondary-button cancel-button" type="button" onClick={() => reportAbortController?.abort()}>
-            取消生成
+            停止等待
           </button>
         ) : null}
         {cacheNotice ? <p className="cache-notice">{cacheNotice}</p> : null}
@@ -343,7 +343,7 @@ function displayExchange(candidate: CompanyCandidate) {
 }
 
 function isReportCancelled(error: unknown) {
-  return error instanceof Error && error.message === "已取消生成。";
+  return error instanceof Error && error.message === "已停止等待，后台仍会继续生成。";
 }
 
 function ProgressPanel({

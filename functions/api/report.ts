@@ -310,7 +310,9 @@ function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<v
     cancel() {
       closed = true;
       if (keepalive) clearInterval(keepalive);
-      abortController.abort();
+      // Do not abort the expensive report task on passive stream cancellation.
+      // Browsers and edge connections can drop long responses even while the user
+      // still expects the shared cache to be written for reuse.
     },
   });
 

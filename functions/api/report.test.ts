@@ -307,21 +307,27 @@ describe("report API stream", () => {
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
-  test("aborts in-flight report work when the response stream is canceled", async () => {
+  test("keeps report work alive when the response stream is passively canceled", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     let providerSignal: AbortSignal | undefined;
+    let resolveEvidence: ((value: EvidenceBundle) => void) | undefined;
     vi.mocked(fetchPublicCompanyEvidence).mockImplementation(({ signal }) => {
       providerSignal = signal;
-      return new Promise(() => undefined);
+      return new Promise((resolve) => {
+        resolveEvidence = resolve;
+      });
     });
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
     const response = await postReportResponse();
     const reader = response.body?.getReader();
 
     await reader?.read();
     await reader?.cancel();
+    resolveEvidence?.(evidence);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(providerSignal?.aborted).toBe(true);
-    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(providerSignal?.aborted).toBe(false);
+    expect(callDeepSeekReport).toHaveBeenCalled();
   });
 
   test("adds elapsed timing fields to progress and final stream events", async () => {

@@ -77,7 +77,7 @@ describe("API client", () => {
           source: "eastmoney",
         },
       }),
-    ).rejects.toThrow("报告连接中断，请重试。");
+    ).rejects.toThrow("报告连接中断，后台会继续生成");
   });
 
   test("maps failed report fetches to a Chinese network error", async () => {
@@ -96,7 +96,7 @@ describe("API client", () => {
           source: "eastmoney",
         },
       }),
-    ).rejects.toThrow("报告连接中断，请重试。");
+    ).rejects.toThrow("报告连接中断，后台会继续生成");
   });
 
   test("returns candidates from company search API", async () => {

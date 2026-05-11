@@ -88,7 +88,7 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
     throw error;
   }
 
-  if (!finalReport) throw new Error("报告响应没有包含最终报告。");
+  if (!finalReport) throw new Error("报告连接提前结束，后台会继续生成；稍后再次点击生成会自动复用共享缓存。");
   return { report: finalReport, metrics: finalMetrics };
 }
 
@@ -139,11 +139,11 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
 }
 
 function reportConnectionError(cause?: unknown) {
-  return new Error("报告连接中断，请重试。", { cause });
+  return new Error("报告连接中断，后台会继续生成；稍后再次点击生成会自动复用共享缓存。", { cause });
 }
 
 function reportCancelledError(cause?: unknown) {
-  return new Error("已取消生成。", { cause });
+  return new Error("已停止等待，后台仍会继续生成。", { cause });
 }
 
 function isAbortLikeError(error: unknown) {
