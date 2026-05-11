@@ -148,6 +148,23 @@ describe("DeepSeek report client", () => {
     );
   });
 
+  test("uses V4 Pro for scoring and V4 Flash for detail and narrative generation", async () => {
+    const fetchMock = mockSuccessfulReport();
+
+    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    const scoringBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const detailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const narrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
+    expect(scoringBody.model).toBe("deepseek-v4-pro");
+    expect(detailBody.model).toBe("deepseek-v4-flash");
+    expect(narrativeBody.model).toBe("deepseek-v4-flash");
+    for (const body of [scoringBody, detailBody, narrativeBody]) {
+      expect(body.reasoning_effort).toBe("max");
+      expect(body.thinking).toEqual({ type: "enabled" });
+    }
+  });
+
   test("enriches score item evidence and reasons in four small batches before narrative sections", async () => {
     const fetchMock = mockSuccessfulReport();
 

@@ -178,6 +178,100 @@ describe("report validation", () => {
     expect(report.conclusion).toBe("观察");
   });
 
+  test("rescales 0-10 model score output when high-score signals show the model intended tenths", () => {
+    const report = validateReportPayload({
+      company: { name: "Apple" },
+      conclusion: "观察",
+      oneSentence: "优质公司但估值需观察。",
+      cqs: 77,
+      ias: 74,
+      scoreItems20: SCORE_ITEMS_20.map((item, index) => ({
+        ...item,
+        score: index % 5 === 0 ? 10 : 7,
+        label: "好",
+        evidence: ["SEC 年报显示现金流充足"],
+        deductions: ["估值安全边际待验证"],
+        recentChange: "最近 12 个月基本面稳定。",
+        reason: "公司质量较高，但估值需要确认。",
+      })),
+      redFlags: [],
+      evidence: [
+        {
+          title: "SEC",
+          source: "SEC EDGAR",
+          url: "https://data.sec.gov",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      accountRules: {
+        companyGrade: "A（优质公司，CQS约77）",
+      },
+    });
+
+    expect(report.scoreItems20[0]).toMatchObject({ score: 100, label: "极好" });
+    expect(report.scoreItems20[1]).toMatchObject({ score: 70, label: "好" });
+    expect(report.moduleScores[0].score).toBeGreaterThanOrEqual(80);
+    expect(report.cqs).toBeGreaterThan(70);
+    expect(report.ias).toBeGreaterThan(70);
+    expect(report.qualitativeBand).toBe("优质");
+    expect(report.accountRules.companyGrade).toContain("A");
+  });
+
+  test("keeps true 0-10 bad-company scores low and derives labels from final score", () => {
+    const report = validateReportPayload({
+      company: { name: "Bad Co." },
+      conclusion: "回避",
+      cqs: 7,
+      ias: 7,
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 7,
+        label: "差",
+        evidence: ["证据显示经营恶化"],
+        deductions: ["现金流差"],
+        recentChange: "最近 12 个月继续恶化。",
+        reason: "财务质量和经营趋势都很差。",
+      })),
+      redFlags: [],
+      evidence: [
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      accountRules: { companyGrade: "A（优质公司，CQS约77）" },
+    });
+
+    expect(report.scoreItems20[0]).toMatchObject({ score: 7, label: "差" });
+    expect(report.cqs).toBe(7);
+    expect(report.ias).toBe(7);
+    expect(report.qualitativeBand).toBe("高风险垃圾股");
+    expect(report.conclusion).toBe("回避");
+    expect(report.accountRules.companyGrade).toContain("D");
+  });
+
   test("derives valuation view from valuation ranges when dashboard value is missing", () => {
     const report = validateReportPayload({
       company: { name: "Range Co." },

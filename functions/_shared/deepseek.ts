@@ -12,6 +12,7 @@ import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
+type DeepSeekModel = "deepseek-v4-pro" | "deepseek-v4-flash";
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
@@ -155,6 +156,7 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
+    model: "deepseek-v4-pro",
     maxTokens: 18000,
     messages: [
       {
@@ -203,7 +205,7 @@ async function requestNarrativeSections({
     onProgress?.({
       stage: `deepseek_narrative_${index + 1}`,
       label: "生成完整正文",
-      detail: `正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
+      detail: `V4 Flash max thinking 正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
       percent: 70 + index * 5,
     });
     Object.assign(
@@ -241,7 +243,7 @@ async function requestScoreItemDetails({
     onProgress?.({
       stage: `deepseek_score_detail_${index + 1}`,
       label: "补全评分证据",
-      detail: `正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
+      detail: `V4 Flash max thinking 正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
       percent: 64 + index,
     });
     const batchDetails = await requestScoreItemDetailBatch({
@@ -382,6 +384,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
+    model: "deepseek-v4-flash",
     maxTokens: strictLength ? 7000 : 9500,
     messages: [
       {
@@ -473,6 +476,7 @@ async function requestNarrativeBatchOnce({
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
+    model: "deepseek-v4-flash",
     maxTokens: strictLength ? 3500 : 5000,
     messages: [
       {
@@ -501,11 +505,13 @@ async function requestNarrativeBatchOnce({
 async function requestDeepSeekJson({
   apiKey,
   fetchImpl,
+  model,
   messages,
   maxTokens,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
+  model: DeepSeekModel;
   messages: Array<{ role: "system" | "user"; content: string }>;
   maxTokens: number;
 }) {
@@ -516,7 +522,7 @@ async function requestDeepSeekJson({
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "deepseek-v4-pro",
+      model,
       reasoning_effort: "max",
       thinking: { type: "enabled" },
       response_format: { type: "json_object" },
@@ -560,6 +566,7 @@ Rules:
 - Score harshly: ordinary companies should not easily exceed 70.
 - Bad companies must receive low scores. Do not give a polite high score when cash flow, leverage, governance, growth, or valuation evidence is poor.
 - Every score must be specific, evidence-based, and non-ambiguous. Use labels 极好 / 好 / 一般 / 差.
+- All numeric scores must use a 0-100 scale. Do not use a 0-10 scale: 7 means terrible, 70 means good, and 90 means excellent.
 - This is a compact scoring pass. Do not write long paragraphs. The full narrative is generated later in smaller batches.
 - ${strictLength ? "Strict retry mode: output only required scalar fields, 20 scoreItems20, short valuation/risk/account fields, and evidence references. No optional prose." : "Normal mode: compact but complete structured scoring output."}
 - Return the report object at the JSON top level. Do not nest it under "report" or "data".

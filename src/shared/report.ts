@@ -186,6 +186,8 @@ export type InvestmentReport = {
   disclaimer: string;
 };
 
+type ScoreScale = 1 | 10;
+
 export const MODULE_WEIGHTS: ModuleWeight[] = [
   { id: "industry", name: "行业与生命周期", weight: 10 },
   { id: "businessModel", name: "商业模式与价值链", weight: 12 },
@@ -290,7 +292,8 @@ export function validateReportPayload(value: unknown): InvestmentReport {
 
   const evidence = normalizeEvidence(value.evidence);
   const redFlags = normalizeRedFlags(value.redFlags);
-  const scoreItems20 = normalizeScoreItems(value.scoreItems20);
+  const scoreScale = detectScoreScale(value);
+  const scoreItems20 = normalizeScoreItems(value.scoreItems20, scoreScale);
   const computed = computeScores(scoreItems20, redFlags, evidence);
   const cqs = Array.isArray(value.scoreItems20) ? computed.cqs : clampScore(value.cqs);
   const ias = Array.isArray(value.scoreItems20) ? computed.ias : applyEvidenceCaps(clampScore(value.ias), evidence, redFlags);
@@ -323,7 +326,7 @@ export function validateReportPayload(value: unknown): InvestmentReport {
     financialTenYear: normalizeFinancialTenYear(value.financialTenYear),
     valuationAnalysis,
     riskMatrix: normalizeRiskMatrix(value.riskMatrix),
-    accountRules: normalizeAccountRules(value.accountRules),
+    accountRules: normalizeAccountRules(value.accountRules, cqs),
     fullSections,
     disclaimer: isNonEmptyString(value.disclaimer)
       ? value.disclaimer
@@ -387,15 +390,15 @@ function applyEvidenceCaps(score: number, evidence: EvidenceItem[], redFlags: Re
   return applyRiskCaps(score, caps);
 }
 
-function normalizeScoreItems(value: unknown): ScoreItem[] {
+function normalizeScoreItems(value: unknown, scoreScale: ScoreScale = 1): ScoreItem[] {
   const rawItems = Array.isArray(value) ? value.filter(isRecord) : [];
   return SCORE_ITEMS_20.map((definition) => {
     const raw = rawItems.find((item) => item.id === definition.id || item.title === definition.title);
-    const score = clampScore(raw?.score);
+    const score = normalizeModelScore(raw?.score, scoreScale);
     return {
       ...definition,
       score,
-      label: normalizeScoreLabel(raw?.label, score),
+      label: scoreLabel(score),
       evidence: stringArray(raw?.evidence),
       deductions: stringArray(raw?.deductions),
       recentChange: isNonEmptyString(raw?.recentChange) ? raw.recentChange : "未提供最近 12 个月变化判断；对分数影响：0",
@@ -426,7 +429,7 @@ function normalizeModuleScores(value: unknown): ModuleScore[] {
       ...weight,
       score,
       weightedScore: 0,
-      label: normalizeScoreLabel(isRecord(raw) ? raw.label : undefined, score),
+      label: scoreLabel(score),
       summary: isRecord(raw) && isNonEmptyString(raw.summary) ? raw.summary : "暂无摘要。",
       evidence: isRecord(raw) ? stringArray(raw.evidence) : [],
       concerns: isRecord(raw) ? stringArray(raw.concerns) : [],
@@ -434,6 +437,43 @@ function normalizeModuleScores(value: unknown): ModuleScore[] {
   });
 
   return calculateWeightedScore(normalized).modules;
+}
+
+function detectScoreScale(value: Record<string, unknown>): ScoreScale {
+  const rawItems = Array.isArray(value.scoreItems20) ? value.scoreItems20.filter(isRecord) : [];
+  const scores = rawItems
+    .map((item) => (typeof item.score === "number" && Number.isFinite(item.score) ? item.score : undefined))
+    .filter((score): score is number => score !== undefined);
+  if (!scores.length) return 1;
+
+  const withinTenths = scores.filter((score) => score >= 0 && score <= 10).length;
+  const looksLikeTenths = withinTenths >= Math.max(10, Math.ceil(scores.length * 0.7)) && Math.max(...scores) <= 10;
+  if (!looksLikeTenths) return 1;
+
+  const topLevelHighSignal = [numberValue(value.cqs), numberValue(value.ias)].some((score) => score !== undefined && score >= 50);
+  const labels = rawItems.map((item) => optionalString(item.label));
+  const badLabels = labels.filter((label) => label === "差").length;
+  const mostlyBadLabels = badLabels >= Math.max(10, Math.ceil(rawItems.length * 0.7));
+  const qualityTextSignal = hasQualityScaleSignal(value);
+
+  return topLevelHighSignal || (qualityTextSignal && !mostlyBadLabels) ? 10 : 1;
+}
+
+function hasQualityScaleSignal(value: Record<string, unknown>) {
+  const accountRules = isRecord(value.accountRules) ? value.accountRules : {};
+  const summaryDashboard = isRecord(value.summaryDashboard) ? value.summaryDashboard : {};
+  const fullSections = isRecord(value.fullSections) ? value.fullSections : {};
+  const text = [
+    value.oneSentence,
+    value.conclusion,
+    accountRules.companyGrade,
+    summaryDashboard.companyGrade,
+    fullSections.onePageConclusion,
+    fullSections.finalConclusion,
+  ]
+    .filter((item) => typeof item === "string")
+    .join(" ");
+  return /CQS\s*[约≈:]?\s*[5-9]\d|公司等级\s*[：:]?\s*A|A级|优质公司|优质|极好|卓越|顶级/.test(text);
 }
 
 function normalizeRedFlags(value: unknown): RedFlag[] {
@@ -611,10 +651,10 @@ function normalizeRiskMatrix(value: unknown): RiskMatrixItem[] {
   }));
 }
 
-function normalizeAccountRules(value: unknown): AccountRules {
+function normalizeAccountRules(value: unknown, cqs: number): AccountRules {
   const raw = isRecord(value) ? value : {};
   return {
-    companyGrade: optionalString(raw.companyGrade) ?? "待定",
+    companyGrade: companyGradeFromCqs(cqs),
     maxPosition: optionalString(raw.maxPosition) ?? "观察仓",
     addCondition: optionalString(raw.addCondition) ?? "基本面未恶化且估值更有吸引力时再考虑。",
     reduceCondition: optionalString(raw.reduceCondition) ?? "估值明显偏高、基本面恶化或风险暴露时减仓。",
@@ -628,10 +668,6 @@ function normalizeConclusion(value: unknown, ias: number): InvestmentReport["con
   if (ias <= 30) return "回避";
   if (ias <= 50 && (conclusion === "买入" || conclusion === "加仓" || conclusion === "持有")) return "观察";
   return conclusion;
-}
-
-function normalizeScoreLabel(value: unknown, score: number): ScoreLabel {
-  return value === "极好" || value === "好" || value === "一般" || value === "差" ? value : scoreLabel(score);
 }
 
 function summarizeItems(items: ScoreItem[]) {
@@ -664,8 +700,29 @@ function clampScore(value: unknown) {
   return roundScore(Math.max(0, Math.min(100, number)));
 }
 
+function normalizeModelScore(value: unknown, scoreScale: ScoreScale) {
+  const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return clampScore(number * scoreScale);
+}
+
 function roundScore(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function companyGradeFromCqs(cqs: number) {
+  if (cqs >= 86) return `A+（卓越复合成长股，CQS ${formatScoreForGrade(cqs)}）`;
+  if (cqs >= 70) return `A（优质公司，CQS ${formatScoreForGrade(cqs)}）`;
+  if (cqs >= 50) return `B（中规中矩，CQS ${formatScoreForGrade(cqs)}）`;
+  if (cqs >= 31) return `C（平庸，CQS ${formatScoreForGrade(cqs)}）`;
+  return `D（高风险，CQS ${formatScoreForGrade(cqs)}）`;
+}
+
+function formatScoreForGrade(score: number) {
+  return score.toLocaleString("zh-CN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function optionalString(value: unknown) {
