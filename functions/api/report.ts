@@ -28,7 +28,7 @@ const REPORT_GENERATION_LOCK_HEARTBEAT_MS = 30 * 1000;
 const REPORT_GENERATION_LOCK_STALE_MS = 90 * 1000;
 const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，正在等待共享缓存写入，本次不会重复调用 DeepSeek。";
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
@@ -199,7 +199,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     } finally {
       await lock?.release();
     }
-  }, { startedAtMs, startedAt });
+  }, { startedAtMs, startedAt, waitUntil });
 };
 
 function json(data: unknown, status = 200) {
@@ -268,7 +268,10 @@ type ReportGenerationLock = {
   release: () => Promise<void>;
 };
 
-function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<void>, options: { startedAtMs: number; startedAt: string }) {
+function streamNdjson(
+  task: (emit: StreamEmit, signal: AbortSignal) => Promise<void>,
+  options: { startedAtMs: number; startedAt: string; waitUntil?: (promise: Promise<unknown>) => void },
+) {
   const encoder = new TextEncoder();
   let keepalive: ReturnType<typeof setInterval> | undefined;
   const abortController = new AbortController();
@@ -293,7 +296,7 @@ function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<v
         emit({ type: "heartbeat", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
       }, 10_000);
 
-      task(emit, abortController.signal)
+      const taskPromise = task(emit, abortController.signal)
         .catch((error) => {
           if (!isAbortError(error)) emit(errorEvent(error));
         })
@@ -306,6 +309,7 @@ function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<v
             // The client may have already canceled the stream.
           }
         });
+      options.waitUntil?.(taskPromise);
     },
     cancel() {
       closed = true;

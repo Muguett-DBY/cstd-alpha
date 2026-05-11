@@ -311,6 +311,7 @@ describe("report API stream", () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     let providerSignal: AbortSignal | undefined;
     let resolveEvidence: ((value: EvidenceBundle) => void) | undefined;
+    const waitUntil = vi.fn();
     vi.mocked(fetchPublicCompanyEvidence).mockImplementation(({ signal }) => {
       providerSignal = signal;
       return new Promise((resolve) => {
@@ -318,7 +319,7 @@ describe("report API stream", () => {
       });
     });
     vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
-    const response = await postReportResponse();
+    const response = await postReportResponse({ waitUntil });
     const reader = response.body?.getReader();
 
     await reader?.read();
@@ -326,6 +327,7 @@ describe("report API stream", () => {
     resolveEvidence?.(evidence);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise));
     expect(providerSignal?.aborted).toBe(false);
     expect(callDeepSeekReport).toHaveBeenCalled();
   });
@@ -431,7 +433,7 @@ function mockKvCacheByKey(
   };
 }
 
-async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal } = {}) {
+async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
   const response = await postReportResponse(options);
 
   return (await response.text())
@@ -441,7 +443,7 @@ async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-async function postReportResponse(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal } = {}) {
+async function postReportResponse(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
   return onRequestPost({
     request: new Request("https://alpha.custard.top/api/report", {
       method: "POST",
@@ -462,5 +464,6 @@ async function postReportResponse(options: { forceRefresh?: boolean; env?: Recor
       }),
     }),
     env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key", ...options.env },
+    waitUntil: options.waitUntil ?? vi.fn(),
   } as Parameters<typeof onRequestPost>[0]);
 }
