@@ -125,6 +125,7 @@ describe("report API stream", () => {
           owner: "other-request",
           companyName: "贵州茅台",
           startedAt: "2026-05-10T00:00:00.000Z",
+          refreshedAt: "2099-05-10T00:10:00.000Z",
           expiresAt: "2099-05-10T00:30:00.000Z",
         };
       }
@@ -145,6 +146,30 @@ describe("report API stream", () => {
       report: cachedReport,
       metrics: { cacheHit: true },
     });
+  });
+
+  test("takes over a stale legacy generation lock instead of waiting for the full lock TTL", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const cache = mockKvCacheByKey((key) => {
+      if (key.startsWith("report-lock:")) {
+        return {
+          owner: "stale-legacy-request",
+          companyName: "贵州茅台",
+          startedAt: "2026-05-10T00:00:00.000Z",
+          expiresAt: "2099-05-10T00:30:00.000Z",
+        };
+      }
+      return null;
+    });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).toHaveBeenCalledTimes(1);
+    expect(callDeepSeekReport).toHaveBeenCalledTimes(1);
+    expect(events.find((event) => event.stage === "generation_locked")).toBeUndefined();
+    expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
   test("creates and releases a shared generation lock around uncached generation", async () => {
@@ -216,6 +241,7 @@ describe("report API stream", () => {
               owner: "other-request",
               companyName: "贵州茅台",
               startedAt: "2026-05-10T00:00:00.000Z",
+              refreshedAt: "2099-05-10T00:10:00.000Z",
               expiresAt: "2099-05-10T00:30:00.000Z",
             }),
           );

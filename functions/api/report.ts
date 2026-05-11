@@ -24,6 +24,8 @@ const SERVER_REPORT_CACHE_VERSION = "v3-quote-fallback";
 const REPORT_GENERATION_LOCK_TTL_SECONDS = 30 * 60;
 const REPORT_GENERATION_LOCK_WAIT_TIMEOUT_MS = 28 * 60 * 1000;
 const REPORT_GENERATION_LOCK_POLL_MS = 5 * 1000;
+const REPORT_GENERATION_LOCK_HEARTBEAT_MS = 30 * 1000;
+const REPORT_GENERATION_LOCK_STALE_MS = 90 * 1000;
 const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，正在等待共享缓存写入，本次不会重复调用 DeepSeek。";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -111,9 +113,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         });
         return;
       }
-      throw Object.assign(new Error("已有报告生成任务尚未完成，请稍后再点生成。"), {
-        code: "REPORT_GENERATION_WAIT_TIMEOUT",
-        retryable: true,
+      lock = await acquireReportGenerationLock(env, cacheKey, companyName, startedAt);
+      if (!lock.acquired) {
+        throw Object.assign(new Error("已有报告生成任务尚未完成，请稍后再点生成。"), {
+          code: "REPORT_GENERATION_WAIT_TIMEOUT",
+          retryable: true,
+        });
+      }
+      emit({
+        type: "progress",
+        stage: "generation_lock_takeover",
+        label: "接管生成任务",
+        detail: "上一轮生成锁已无心跳，本次将重新读取公开数据并生成报告。",
+        percent: 4,
       });
     }
 
@@ -247,6 +259,7 @@ type ReportLockPayload = {
   owner: string;
   companyName: string;
   startedAt: string;
+  refreshedAt?: string;
   expiresAt: string;
 };
 
@@ -417,7 +430,7 @@ async function waitForLockedReportCache(env: Env, cacheKey: string, emit: Stream
     if (cached) return cached;
 
     const lock = env.REPORT_CACHE ? await readReportLock(env.REPORT_CACHE, reportLockKey(cacheKey)) : null;
-    if (!lock || Date.parse(lock.expiresAt) <= Date.now()) return null;
+    if (!lock || !isActiveReportLock(lock)) return null;
 
     attempts += 1;
     emit({
@@ -443,7 +456,7 @@ async function acquireReportGenerationLock(env: Env, cacheKey: string, companyNa
   try {
     const lockKey = reportLockKey(cacheKey);
     const existing = await readReportLock(cache, lockKey);
-    if (existing && Date.parse(existing.expiresAt) > Date.now()) {
+    if (existing && isActiveReportLock(existing)) {
       return { acquired: false, release: async () => undefined };
     }
 
@@ -452,17 +465,22 @@ async function acquireReportGenerationLock(env: Env, cacheKey: string, companyNa
       owner,
       companyName,
       startedAt,
+      refreshedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + REPORT_GENERATION_LOCK_TTL_SECONDS * 1000).toISOString(),
     };
     await cache.put(lockKey, JSON.stringify(payload), { expirationTtl: REPORT_GENERATION_LOCK_TTL_SECONDS });
     const confirmed = await readReportLock(cache, lockKey);
-    if (confirmed && confirmed.owner !== owner) {
+    if (confirmed && confirmed.owner !== owner && isActiveReportLock(confirmed)) {
       return { acquired: false, release: async () => undefined };
     }
 
+    const stopHeartbeat = startReportLockHeartbeat(cache, lockKey, payload);
     return {
       acquired: true,
-      release: () => releaseReportGenerationLock(cache, lockKey, owner),
+      release: async () => {
+        stopHeartbeat();
+        await releaseReportGenerationLock(cache, lockKey, owner);
+      },
     };
   } catch {
     return { acquired: true, release: async () => undefined };
@@ -476,12 +494,36 @@ async function readReportLock(cache: KVNamespace, lockKey: string): Promise<Repo
     const owner = typeof value.owner === "string" ? value.owner : "";
     const companyName = typeof value.companyName === "string" ? value.companyName : "";
     const startedAt = typeof value.startedAt === "string" ? value.startedAt : "";
+    const refreshedAt = typeof value.refreshedAt === "string" ? value.refreshedAt : undefined;
     const expiresAt = typeof value.expiresAt === "string" ? value.expiresAt : "";
     if (!owner || !companyName || !startedAt || !expiresAt) return null;
-    return { owner, companyName, startedAt, expiresAt };
+    return { owner, companyName, startedAt, refreshedAt, expiresAt };
   } catch {
     return null;
   }
+}
+
+function isActiveReportLock(lock: ReportLockPayload) {
+  if (Date.parse(lock.expiresAt) <= Date.now()) return false;
+  if (!lock.refreshedAt) return false;
+  return Date.parse(lock.refreshedAt) + REPORT_GENERATION_LOCK_STALE_MS > Date.now();
+}
+
+function startReportLockHeartbeat(cache: KVNamespace, lockKey: string, initial: ReportLockPayload) {
+  const refresh = async () => {
+    const current = await readReportLock(cache, lockKey);
+    if (current?.owner !== initial.owner) return;
+    const payload: ReportLockPayload = {
+      ...initial,
+      refreshedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + REPORT_GENERATION_LOCK_TTL_SECONDS * 1000).toISOString(),
+    };
+    await cache.put(lockKey, JSON.stringify(payload), { expirationTtl: REPORT_GENERATION_LOCK_TTL_SECONDS });
+  };
+  const id = setInterval(() => {
+    void refresh().catch(() => undefined);
+  }, REPORT_GENERATION_LOCK_HEARTBEAT_MS);
+  return () => clearInterval(id);
 }
 
 async function releaseReportGenerationLock(cache: KVNamespace, lockKey: string, owner: string) {
