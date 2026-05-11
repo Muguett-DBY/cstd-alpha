@@ -21,12 +21,14 @@ type FetchEvidenceInput = {
   market?: string;
   company?: CompanyCandidate;
   fetchImpl?: FetchLike;
+  signal?: AbortSignal;
 };
 
 type FetchChartInput = {
   company: CompanyCandidate;
   priceMode: PriceMode;
   fetchImpl?: FetchLike;
+  signal?: AbortSignal;
 };
 
 type SecFactEntry = {
@@ -69,7 +71,9 @@ export async function fetchPublicCompanyEvidence({
   market,
   company,
   fetchImpl = fetch,
+  signal,
 }: FetchEvidenceInput): Promise<EvidenceBundle> {
+  fetchImpl = withAbortSignal(fetchImpl, signal);
   const retrievedAt = new Date().toISOString();
   const selectedCompany = company;
   const searchQuote = selectedCompany ? undefined : await searchYahooQuote(ticker || companyName, fetchImpl);
@@ -455,7 +459,8 @@ export function buildFinancialTenYearFromSecFacts(companyFacts: unknown): Normal
   };
 }
 
-export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }: FetchChartInput): Promise<ChartBundle> {
+export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch, signal }: FetchChartInput): Promise<ChartBundle> {
+  fetchImpl = withAbortSignal(fetchImpl, signal);
   const asOf = new Date().toISOString();
   const useEastmoney = Boolean(company.quoteId && (company.listingPlace.includes("A") || company.listingPlace.includes("港") || company.quoteId.startsWith("0.") || company.quoteId.startsWith("1.") || company.quoteId.startsWith("116.")));
   let url = useEastmoney ? eastmoneyKlineUrl(company.quoteId || company.secid || company.code, priceMode) : yahooTenYearChartUrl(company.yahooSymbol || company.code);
@@ -509,7 +514,8 @@ export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch }
   });
 }
 
-export async function searchCompanyCandidates(query: string, fetchImpl: FetchLike = fetch): Promise<CompanyCandidate[]> {
+export async function searchCompanyCandidates(query: string, fetchImpl: FetchLike = fetch, signal?: AbortSignal): Promise<CompanyCandidate[]> {
+  fetchImpl = withAbortSignal(fetchImpl, signal);
   const trimmed = query.trim();
   if (!trimmed) return [];
 
@@ -1102,6 +1108,11 @@ function dedupeCandidates(candidates: CompanyCandidate[]) {
     seen.add(key);
     return true;
   });
+}
+
+function withAbortSignal(fetchImpl: FetchLike, signal?: AbortSignal): FetchLike {
+  if (!signal) return fetchImpl;
+  return ((resource: Parameters<FetchLike>[0], init?: Parameters<FetchLike>[1]) => fetchImpl(resource, { ...init, signal })) as FetchLike;
 }
 
 async function fetchJson(url: string, fetchImpl: FetchLike): Promise<unknown> {

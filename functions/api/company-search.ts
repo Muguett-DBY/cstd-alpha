@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const query = url.searchParams.get("q")?.trim();
   if (!query) return json({ candidates: [] });
 
-  const candidates = await searchCompanyCandidates(query);
+  const candidates = await searchCompanyCandidates(query, fetch, request.signal);
   return json({ candidates });
 };
 

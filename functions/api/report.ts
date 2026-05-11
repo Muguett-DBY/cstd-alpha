@@ -40,7 +40,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const startedAt = new Date(startedAtMs).toISOString();
   const cacheKey = await buildReportCacheKey({ company, companyName, ticker: body?.ticker, market: body?.market });
 
-  return streamNdjson(async (emit) => {
+  return streamNdjson(async (emit, signal) => {
     let lock: ReportGenerationLock | null = null;
     try {
     if (cacheMode === "prefer-cache") {
@@ -133,6 +133,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ticker: company?.code || body?.ticker?.trim() || undefined,
       market: company?.listingPlace || body?.market?.trim() || undefined,
       company,
+      signal,
     });
 
     if (hasSecEvidence(evidence.facts)) {
@@ -161,6 +162,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       apiKey: env.DEEPSEEK_API_KEY,
       evidence,
       language: "zh-CN",
+      signal,
       onProgress: (progress) => emit({ type: "progress", ...progress }),
       metrics: modelMetrics,
     });
@@ -185,7 +187,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     } finally {
       await lock?.release();
     }
-  }, { startedAtMs, startedAt });
+  }, { startedAtMs, startedAt, signal: request.signal });
 };
 
 function json(data: unknown, status = 200) {
@@ -253,12 +255,18 @@ type ReportGenerationLock = {
   release: () => Promise<void>;
 };
 
-function streamNdjson(task: (emit: StreamEmit) => Promise<void>, options: { startedAtMs: number; startedAt: string }) {
+function streamNdjson(task: (emit: StreamEmit, signal: AbortSignal) => Promise<void>, options: { startedAtMs: number; startedAt: string; signal?: AbortSignal }) {
   const encoder = new TextEncoder();
   let keepalive: ReturnType<typeof setInterval> | undefined;
+  const abortController = new AbortController();
+  const abortTask = () => abortController.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortTask();
+  else options.signal?.addEventListener("abort", abortTask, { once: true });
+  let closed = false;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const emit: StreamEmit = (event) => {
+        if (closed) return;
         const payload =
           event.type === "progress" || event.type === "heartbeat"
             ? {
@@ -275,17 +283,26 @@ function streamNdjson(task: (emit: StreamEmit) => Promise<void>, options: { star
         emit({ type: "heartbeat", stage: "working", label: "仍在生成", detail: "模型仍在分析，连接保持中。", percent: 75 });
       }, 10_000);
 
-      task(emit)
+      task(emit, abortController.signal)
         .catch((error) => {
-          emit(errorEvent(error));
+          if (!isAbortError(error)) emit(errorEvent(error));
         })
         .finally(() => {
           if (keepalive) clearInterval(keepalive);
-          controller.close();
+          closed = true;
+          options.signal?.removeEventListener("abort", abortTask);
+          try {
+            controller.close();
+          } catch {
+            // The client may have already canceled the stream.
+          }
         });
     },
     cancel() {
+      closed = true;
       if (keepalive) clearInterval(keepalive);
+      abortController.abort();
+      options.signal?.removeEventListener("abort", abortTask);
     },
   });
 
@@ -297,6 +314,10 @@ function streamNdjson(task: (emit: StreamEmit) => Promise<void>, options: { star
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException ? error.name === "AbortError" : error instanceof Error && error.name === "AbortError";
 }
 
 function buildMetrics(

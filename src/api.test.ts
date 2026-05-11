@@ -147,6 +147,40 @@ describe("API client", () => {
     );
   });
 
+  test("passes an abort signal to report generation fetches", async () => {
+    const report = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`${JSON.stringify({ type: "final", report })}\n`, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      quoteId: "1.600519",
+      source: "eastmoney" as const,
+    };
+
+    await generateReport({ company, signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/report",
+      expect.objectContaining({
+        signal: controller.signal,
+      }),
+    );
+  });
+
   test("returns report generation metrics from the final stream event", async () => {
     const report = {
       company: { name: "微软", ticker: "MSFT", market: "美股" },

@@ -248,6 +248,38 @@ describe("report API stream", () => {
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });
 
+  test("passes the request abort signal to providers and DeepSeek", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const controller = new AbortController();
+
+    const events = await postReportEvents({ signal: controller.signal });
+
+    const providerSignal = vi.mocked(fetchPublicCompanyEvidence).mock.calls[0][0].signal;
+    const deepSeekSignal = vi.mocked(callDeepSeekReport).mock.calls[0][0].signal;
+    expect(providerSignal).toBeInstanceOf(AbortSignal);
+    expect(deepSeekSignal).toBe(providerSignal);
+    expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
+  test("aborts in-flight report work when the response stream is canceled", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    let providerSignal: AbortSignal | undefined;
+    vi.mocked(fetchPublicCompanyEvidence).mockImplementation(({ signal }) => {
+      providerSignal = signal;
+      return new Promise(() => undefined);
+    });
+    const response = await postReportResponse();
+    const reader = response.body?.getReader();
+
+    await reader?.read();
+    await reader?.cancel();
+
+    expect(providerSignal?.aborted).toBe(true);
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+  });
+
   test("adds elapsed timing fields to progress and final stream events", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
@@ -349,11 +381,22 @@ function mockKvCacheByKey(
   };
 }
 
-async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown> } = {}) {
-  const response = await onRequestPost({
+async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal } = {}) {
+  const response = await postReportResponse(options);
+
+  return (await response.text())
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+async function postReportResponse(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal } = {}) {
+  return onRequestPost({
     request: new Request("https://alpha.custard.top/api/report", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: "session=ok" },
+      signal: options.signal,
       body: JSON.stringify({
         forceRefresh: options.forceRefresh,
         company: {
@@ -370,10 +413,4 @@ async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<
     }),
     env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key", ...options.env },
   } as Parameters<typeof onRequestPost>[0]);
-
-  return (await response.text())
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }

@@ -106,6 +106,7 @@ type DeepSeekInput = {
   evidence: EvidenceBundle;
   language?: "zh-CN" | "en";
   fetchImpl?: FetchLike;
+  signal?: AbortSignal;
   onProgress?: (progress: { stage: string; label: string; detail: string; percent: number }) => void;
   metrics?: { modelCalls?: number; tokenUsage?: ReportTokenUsage[] };
 };
@@ -119,6 +120,7 @@ export async function callDeepSeekReport({
   evidence,
   language = "zh-CN",
   fetchImpl = fetch,
+  signal,
   onProgress,
   metrics,
 }: DeepSeekInput): Promise<InvestmentReport> {
@@ -136,7 +138,7 @@ export async function callDeepSeekReport({
             ? resource.url
             : "";
     if (url.includes("api.deepseek.com/chat/completions")) modelCalls += 1;
-    return fetchImpl(...args);
+    return fetchImpl(args[0], { ...args[1], signal: args[1]?.signal ?? signal });
   }) as FetchLike;
 
   try {

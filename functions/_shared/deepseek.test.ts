@@ -172,6 +172,15 @@ describe("DeepSeek report client", () => {
     );
   });
 
+  test("passes an abort signal to DeepSeek fetch requests", async () => {
+    const fetchMock = mockSuccessfulReport();
+    const controller = new AbortController();
+
+    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock, signal: controller.signal });
+
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: controller.signal }));
+  });
+
   test("retries transient DeepSeek network errors before failing the report", async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network error")).mockResolvedValueOnce(modelResponse(reportPayload()));
     mockDetailBatches(fetchMock);

@@ -20,7 +20,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!body?.company?.name || !body.company.code) return json({ error: "请先搜索并选择一个候选公司。" }, 400);
   const priceMode = body.priceMode === "raw" ? "raw" : "adjusted";
 
-  const bundle = await fetchChartBundle({ company: body.company, priceMode });
+  const bundle = await fetchChartBundle({ company: body.company, priceMode, signal: request.signal });
   return json(bundle);
 };
 

@@ -5,6 +5,7 @@ export type GenerateReportInput = {
   company: CompanyCandidate;
   forceRefresh?: boolean;
   cacheMode?: "prefer-cache" | "refresh";
+  signal?: AbortSignal;
 };
 
 export type FetchChartDataInput = {
@@ -53,15 +54,18 @@ export async function searchCompanies(query: string): Promise<CompanyCandidate[]
 }
 
 export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<ReportGenerationResult> {
+  const { signal, ...body } = input;
   let response: Response;
   try {
     response = await fetch("/api/report", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(input),
+      signal,
+      body: JSON.stringify(body),
     });
   } catch (error) {
+    if (isAbortLikeError(error)) throw reportCancelledError(error);
     throw reportConnectionError(error);
   }
 
@@ -79,6 +83,7 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
       }
     }
   } catch (error) {
+    if (isAbortLikeError(error)) throw reportCancelledError(error);
     if (isNetworkLikeError(error)) throw reportConnectionError(error);
     throw error;
   }
@@ -135,6 +140,14 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
 
 function reportConnectionError(cause?: unknown) {
   return new Error("报告连接中断，请重试。", { cause });
+}
+
+function reportCancelledError(cause?: unknown) {
+  return new Error("已取消生成。", { cause });
+}
+
+function isAbortLikeError(error: unknown) {
+  return error instanceof DOMException ? error.name === "AbortError" : error instanceof Error && error.name === "AbortError";
 }
 
 function isNetworkLikeError(error: unknown) {

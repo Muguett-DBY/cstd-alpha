@@ -30,6 +30,7 @@ function App() {
   const [chartError, setChartError] = useState("");
   const [priceMode, setPriceMode] = useState<PriceMode>("adjusted");
   const [cacheNotice, setCacheNotice] = useState("");
+  const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
 
   useEffect(() => {
     void checkSession()
@@ -114,9 +115,11 @@ function App() {
 
     setStartedAt(Date.now());
     setPhase("generating");
+    const controller = new AbortController();
+    setReportAbortController(controller);
 
     try {
-      const result = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache" }, (item) => {
+      const result = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache", signal: controller.signal }, (item) => {
         if (typeof item.evidenceCount === "number") setEvidenceCount(item.evidenceCount);
         setProgress((current) => [...current.slice(-12), item]);
       });
@@ -127,10 +130,16 @@ function App() {
       saveCachedReport(selectedCompany, nextReport, Date.now(), result.metrics);
       setPhase("ready");
     } catch (err) {
-      setPhase("error");
-      setError(err instanceof Error ? err.message : "报告生成失败。");
+      if (isReportCancelled(err)) {
+        setPhase("idle");
+        setError("已取消生成。");
+      } else {
+        setPhase("error");
+        setError(err instanceof Error ? err.message : "报告生成失败。");
+      }
     } finally {
       setStartedAt(null);
+      setReportAbortController(null);
     }
   }
 
@@ -236,6 +245,11 @@ function App() {
         <button className="secondary-button refresh-button" type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void submitReport(true)}>
           刷新最新数据
         </button>
+        {phase === "generating" ? (
+          <button className="secondary-button cancel-button" type="button" onClick={() => reportAbortController?.abort()}>
+            取消生成
+          </button>
+        ) : null}
         {cacheNotice ? <p className="cache-notice">{cacheNotice}</p> : null}
 
         <section className="chart-controls">
@@ -327,6 +341,10 @@ function CandidateModal({
 function displayExchange(candidate: CompanyCandidate) {
   if (!candidate.exchange || /^\d+$/.test(candidate.exchange)) return candidate.source === "eastmoney" ? "东方财富" : "Yahoo";
   return candidate.exchange;
+}
+
+function isReportCancelled(error: unknown) {
+  return error instanceof Error && error.message === "已取消生成。";
 }
 
 function ProgressPanel({

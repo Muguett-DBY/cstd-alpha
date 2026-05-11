@@ -33,6 +33,22 @@ describe("public data providers", () => {
     expect(result[0].name).not.toContain("Agilent");
   });
 
+  test("passes an abort signal to provider fetch requests", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        QuotationCodeTable: {
+          Data: [{ Code: "000002", Name: "万科A", JYS: "6", Classify: "AStock", SecurityTypeName: "深A", QuoteID: "0.000002" }],
+        },
+      }),
+    });
+
+    await searchCompanyCandidates("万科A", fetchMock, controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+
   test("normalizes common Chinese company searches across A/H/US markets", async () => {
     const responses = [
       [{ Code: "AAPL", Name: "苹果", JYS: "NASDAQ", Classify: "UsStock", SecurityTypeName: "美股", QuoteID: "105.AAPL" }],
