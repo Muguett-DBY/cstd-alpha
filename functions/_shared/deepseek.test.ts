@@ -482,6 +482,38 @@ describe("DeepSeek report client", () => {
     expect(report.fullSections.accountRules).toBe("完整仓位规则");
   });
 
+  test("splits narrative sections into single-section retries when a compact batch is still truncated", async () => {
+    let finalBatchAttempts = 0;
+    const fetchMock = vi.fn((_: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.model === "deepseek-v4-pro") return Promise.resolve(modelResponse(reportPayload()));
+      const userPayload = JSON.parse(body.messages[1].content);
+      if (Array.isArray(userPayload.requestedItemIds)) {
+        return Promise.resolve(modelResponse(detailPayload(detailBatches.find((batch) => batch[0].id === userPayload.requestedItemIds[0]) ?? detailBatches[0])));
+      }
+      if (Array.isArray(userPayload.requestedFullSectionKeys)) {
+        const keys = userPayload.requestedFullSectionKeys as string[];
+        if (keys.includes("risks") && keys.length > 1 && finalBatchAttempts++ < 2) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              choices: [{ finish_reason: "length", message: { content: "" } }],
+            }),
+          });
+        }
+        return Promise.resolve(modelResponse(narrativePayload(keys)));
+      }
+      throw new Error("Unexpected DeepSeek request");
+    });
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
+
+    expect(fetchMock).toHaveBeenCalledTimes(13);
+    expect(report.fullSections.risks).toBe("完整风险分析");
+    expect(report.fullSections.finalConclusion).toBe("完整最终结论");
+    expect(report.fullSections.accountRules).toBe("完整仓位规则");
+  });
+
   test("splits score detail enrichment into single items when a five-item detail batch is truncated", async () => {
     let firstDetailBatchAttempts = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {

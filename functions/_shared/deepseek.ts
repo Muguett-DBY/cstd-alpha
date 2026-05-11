@@ -557,8 +557,57 @@ async function requestNarrativeBatch({
     return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
-    return requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
+    try {
+      return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
+    } catch (retryError) {
+      if (!isRetryableModelOutputError(retryError) || keys.length <= 1) throw retryError;
+      return requestNarrativeSectionsIndividually({
+        apiKey,
+        fetchImpl,
+        language,
+        scoringReport,
+        evidence,
+        keys,
+        usageTracker,
+      });
+    }
   }
+}
+
+async function requestNarrativeSectionsIndividually({
+  apiKey,
+  fetchImpl,
+  language,
+  scoringReport,
+  evidence,
+  keys,
+  usageTracker,
+}: {
+  apiKey: string;
+  fetchImpl: FetchLike;
+  language: "zh-CN" | "en";
+  scoringReport: InvestmentReport;
+  evidence: EvidenceBundle;
+  keys: FullSectionKey[];
+  usageTracker: DeepSeekUsageTracker;
+}) {
+  const fullSections: Record<string, unknown> = {};
+  for (const key of keys) {
+    Object.assign(
+      fullSections,
+      await requestNarrativeBatchOnce({
+        apiKey,
+        fetchImpl,
+        language,
+        scoringReport,
+        evidence,
+        keys: [key],
+        strictLength: true,
+        usageTracker,
+      }),
+    );
+  }
+  return fullSections;
 }
 
 async function requestNarrativeBatchOnce({
