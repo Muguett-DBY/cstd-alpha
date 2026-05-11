@@ -20,7 +20,7 @@ type ReportRequest = {
 };
 
 const SERVER_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const SERVER_REPORT_CACHE_VERSION = "v1-cost-cache";
+const SERVER_REPORT_CACHE_VERSION = "v2-report-cleanup";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);

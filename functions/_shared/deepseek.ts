@@ -47,6 +47,45 @@ const FULL_SECTION_LABELS: Record<FullSectionKey, string> = {
   accountRules: "仓位规则",
 };
 
+const NARRATIVE_SECTION_ITEM_IDS: Record<FullSectionKey, string[]> = {
+  onePageConclusion: [
+    "businessModelQuality",
+    "durableMoat",
+    "marketPosition",
+    "revenueGrowthQuality",
+    "profitAndFcfGrowth",
+    "roeRoicMargins",
+    "cashFlowConsistency",
+    "balanceSheetHealth",
+    "relativeValuation",
+    "tenYearReturnSafety",
+    "riskAndDisconfirmingEvidence",
+    "ownerPerspective",
+  ],
+  companyOverview: ["businessModelQuality", "managementExecution", "governanceFairness", "capitalReturn"],
+  industryTrack: ["industryLifecycle", "industryCyclicality", "marketPosition", "innovationRisk"],
+  businessModel: ["businessModelQuality", "bargainingAndCashConversion", "assetAndCostStructure"],
+  moat: ["durableMoat", "marketPosition", "innovationRisk"],
+  governance: ["managementExecution", "governanceFairness", "capitalReturn"],
+  financialQuality: ["roeRoicMargins", "cashFlowConsistency", "balanceSheetHealth", "profitAndFcfGrowth"],
+  growthInflection: ["revenueGrowthQuality", "profitAndFcfGrowth", "industryLifecycle"],
+  valuation: ["relativeValuation", "tenYearReturnSafety", "ownerPerspective"],
+  risks: ["riskAndDisconfirmingEvidence", "balanceSheetHealth", "innovationRisk", "industryCyclicality"],
+  finalConclusion: [
+    "industryLifecycle",
+    "businessModelQuality",
+    "durableMoat",
+    "revenueGrowthQuality",
+    "roeRoicMargins",
+    "cashFlowConsistency",
+    "relativeValuation",
+    "tenYearReturnSafety",
+    "riskAndDisconfirmingEvidence",
+    "ownerPerspective",
+  ],
+  accountRules: ["relativeValuation", "tenYearReturnSafety", "riskAndDisconfirmingEvidence", "ownerPerspective", "capitalReturn"],
+};
+
 export class DeepSeekReportError extends Error {
   constructor(
     message: string,
@@ -551,8 +590,8 @@ async function requestNarrativeBatchOnce({
           {
             sharedContext: {
               version: "cstd-alpha-shared-v1",
-              scoringReport: compactReportForNarrative(scoringReport),
-              evidence: compactEvidenceForPrompt(evidence),
+              scoringReport: compactReportForNarrative(scoringReport, keys),
+              evidence: compactEvidenceReferences(evidence),
             },
             task: "Generate only the requested fullSections keys for the already validated scoring report.",
             requestedFullSectionKeys: keys,
@@ -684,8 +723,8 @@ Rules:
 - Do not include fullSections in this pass. Keep regular sections under 120 Chinese characters each; the full narrative is generated in separate batches.
 - Include financialTenYear.rows for available years and metrics, maximum 8 metrics. If a value is unavailable, write 数据不足, not a fake number.
 - If the evidence bundle contains a normalized financialTenYear table, use those metric names and values as authoritative.
-- Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
-- Include riskMatrix with at most 6 risks.
+- Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion. If there is no concrete named scenario, return scenarios: [].
+- Include riskMatrix with at most 6 concrete risks. Never output placeholder risks such as 未分类风险/待验证.
 - Include evidence with source URLs and retrievedAt timestamps, maximum 8 items.
 - Conclusions must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
 `;
@@ -945,7 +984,16 @@ function buildNarrativeOutputShape(keys: FullSectionKey[]) {
   };
 }
 
-function compactReportForNarrative(report: InvestmentReport) {
+function compactEvidenceReferences(evidence: EvidenceBundle) {
+  return {
+    company: evidence.company,
+    retrievedAt: evidence.retrievedAt,
+    evidence: evidence.evidence,
+  };
+}
+
+function compactReportForNarrative(report: InvestmentReport, keys?: FullSectionKey[]) {
+  const relevantItemIds = keys ? relevantScoreItemIdsForSections(keys) : new Set(SCORE_ITEMS_20.map((item) => item.id));
   return {
     company: report.company,
     asOf: report.asOf,
@@ -965,24 +1013,34 @@ function compactReportForNarrative(report: InvestmentReport) {
       evidence,
       concerns,
     })),
-    scoreItems20: report.scoreItems20.map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
-      id,
-      title,
-      moduleName,
-      weight,
-      score,
-      label,
-      evidence,
-      deductions,
-      recentChange,
-      reason,
-    })),
+    scoreItems20: report.scoreItems20
+      .filter((item) => relevantItemIds.has(item.id))
+      .map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
+        id,
+        title,
+        moduleName,
+        weight,
+        score,
+        label,
+        evidence,
+        deductions,
+        recentChange,
+        reason,
+      })),
     redFlags: report.redFlags,
     financialTenYear: report.financialTenYear,
     valuationAnalysis: report.valuationAnalysis,
     riskMatrix: report.riskMatrix,
     accountRules: report.accountRules,
   };
+}
+
+function relevantScoreItemIdsForSections(keys: FullSectionKey[]) {
+  const ids = new Set<string>();
+  for (const key of keys) {
+    for (const id of NARRATIVE_SECTION_ITEM_IDS[key]) ids.add(id);
+  }
+  return ids;
 }
 
 function mergeNarrativePayload(scoringReport: InvestmentReport, narrativeJson: unknown, evidence: EvidenceBundle) {

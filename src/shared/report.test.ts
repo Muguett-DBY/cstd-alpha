@@ -310,6 +310,54 @@ describe("report validation", () => {
     expect(report.summaryDashboard.valuationView).toBe("合理");
   });
 
+  test("drops placeholder valuation scenarios and risk rows instead of rendering unnamed empty items", () => {
+    const report = validateReportPayload({
+      company: { name: "五粮液" },
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-11T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-11T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      scoreItems20,
+      valuationAnalysis: {
+        currentPrice: "91.8",
+        fairValueRange: "120-160",
+        buyRange: "80-110",
+        sellReduceRange: "190 以上",
+        scenarios: [
+          { name: "", assumptions: "", value: "", expectedReturn: "", probability: "" },
+          { assumptions: "待验证", value: "待验证", expectedReturn: "待验证", probability: "待验证" },
+          { name: "保守情景", assumptions: "利润零增长，PE 10 倍", value: "90", expectedReturn: "4%", probability: "30%" },
+        ],
+      },
+      riskMatrix: [
+        { type: "", risk: "", probability: "", impact: "", warningMetric: "", response: "" },
+        { type: "未分类风险", risk: "待验证", probability: "待验证", impact: "待验证", warningMetric: "待验证观察", response: "观察" },
+        { type: "行业风险", risk: "库存去化慢于预期", probability: "中", impact: "高", warningMetric: "批价与合同负债", response: "降低仓位" },
+      ],
+    });
+
+    expect(report.valuationAnalysis.scenarios).toEqual([
+      { name: "保守情景", assumptions: "利润零增长，PE 10 倍", value: "90", expectedReturn: "4%", probability: "30%" },
+    ]);
+    expect(report.riskMatrix).toEqual([
+      { type: "行业风险", risk: "库存去化慢于预期", probability: "中", impact: "高", warningMetric: "批价与合同负债", response: "降低仓位" },
+    ]);
+  });
+
   test("derives buy action and standard position for high scores with reasonable-low valuation", () => {
     const report = validateReportPayload({
       company: { name: "Quality Co." },

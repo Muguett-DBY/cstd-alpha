@@ -647,35 +647,71 @@ function parseNumbers(value: string) {
 
 function normalizeValuationAnalysis(value: unknown): ValuationAnalysis {
   const raw = isRecord(value) ? value : {};
+  const scenarios = Array.isArray(raw.scenarios)
+    ? raw.scenarios
+        .filter(isRecord)
+        .filter(isMeaningfulValuationScenario)
+        .map((item, index) => ({
+          name: optionalString(item.name) ?? `估值情景 ${index + 1}`,
+          assumptions: optionalString(item.assumptions) ?? "待验证",
+          value: optionalString(item.value) ?? "待验证",
+          expectedReturn: optionalString(item.expectedReturn) ?? "待验证",
+          probability: optionalString(item.probability) ?? "待验证",
+        }))
+    : [];
   return {
     currentPrice: optionalString(raw.currentPrice) ?? "待验证",
     fairValueRange: optionalString(raw.fairValueRange) ?? "待验证",
     buyRange: optionalString(raw.buyRange) ?? "待验证",
     sellReduceRange: optionalString(raw.sellReduceRange) ?? "待验证",
     methods: stringArray(raw.methods),
-    scenarios: Array.isArray(raw.scenarios)
-      ? raw.scenarios.filter(isRecord).map((item) => ({
-          name: optionalString(item.name) ?? "未命名情景",
-          assumptions: optionalString(item.assumptions) ?? "待验证",
-          value: optionalString(item.value) ?? "待验证",
-          expectedReturn: optionalString(item.expectedReturn) ?? "待验证",
-          probability: optionalString(item.probability) ?? "待验证",
-        }))
-      : [],
+    scenarios,
     conclusion: optionalString(raw.conclusion) ?? "数据不足：模型未提供完整估值结论。",
   };
 }
 
 function normalizeRiskMatrix(value: unknown): RiskMatrixItem[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((item) => ({
-    type: optionalString(item.type) ?? "未分类风险",
-    risk: optionalString(item.risk) ?? "待验证",
-    probability: optionalString(item.probability) ?? "待验证",
-    impact: optionalString(item.impact) ?? "待验证",
-    warningMetric: optionalString(item.warningMetric) ?? "待验证",
-    response: optionalString(item.response) ?? "观察",
-  }));
+  return value
+    .filter(isRecord)
+    .filter(isMeaningfulRiskMatrixItem)
+    .map((item) => ({
+      type: meaningfulOptionalString(item.type) ?? "核心风险",
+      risk: optionalString(item.risk) ?? "待验证",
+      probability: meaningfulOptionalString(item.probability) ?? "待验证",
+      impact: meaningfulOptionalString(item.impact) ?? "待验证",
+      warningMetric: meaningfulOptionalString(item.warningMetric) ?? "待验证",
+      response: meaningfulOptionalString(item.response) ?? "观察",
+    }));
+}
+
+function isMeaningfulValuationScenario(item: Record<string, unknown>) {
+  return [item.name, item.assumptions, item.value, item.expectedReturn, item.probability].filter((value) => !isPlaceholderText(value)).length >= 2;
+}
+
+function isMeaningfulRiskMatrixItem(item: Record<string, unknown>) {
+  return !isPlaceholderText(item.risk);
+}
+
+function meaningfulOptionalString(value: unknown) {
+  return isPlaceholderText(value) ? undefined : optionalString(value);
+}
+
+function isPlaceholderText(value: unknown) {
+  const text = optionalString(value)?.trim();
+  if (!text) return true;
+  return (
+    text === "待验证" ||
+    text === "待验证观察" ||
+    text === "数据不足" ||
+    text === "无法计算" ||
+    text === "不可用" ||
+    text === "无" ||
+    text === "N/A" ||
+    text === "-" ||
+    text === "未分类风险" ||
+    text.startsWith("未命名")
+  );
 }
 
 function normalizeAccountRules(value: unknown, cqs: number, decision: DerivedInvestmentDecision): AccountRules {

@@ -262,6 +262,19 @@ describe("DeepSeek report client", () => {
     expect(Object.keys(narrativePayload).indexOf("sharedContext")).toBeLessThan(Object.keys(narrativePayload).indexOf("requestedFullSectionKeys"));
   });
 
+  test("sends only section-relevant score items and evidence references to narrative batches", async () => {
+    const fetchMock = mockSuccessfulReport();
+
+    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    const firstNarrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[5][1].body).messages[1].content);
+    const secondNarrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[6][1].body).messages[1].content);
+    expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20.length).toBeLessThan(20);
+    expect(firstNarrativePayload.sharedContext.scoringReport.scoreItems20.map((item: { id: string }) => item.id)).toContain("industryLifecycle");
+    expect(secondNarrativePayload.sharedContext.scoringReport.scoreItems20.map((item: { id: string }) => item.id)).toContain("businessModelQuality");
+    expect(firstNarrativePayload.sharedContext.evidence.facts).toBeUndefined();
+  });
+
   test("enriches score item evidence and reasons in four small batches before narrative sections", async () => {
     const fetchMock = mockSuccessfulReport();
 

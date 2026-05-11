@@ -5,7 +5,7 @@ import type { CompanyCandidate } from "./shared/report";
 const LAST_REPORT_KEY = "cstd-alpha:last-report";
 const REPORT_CACHE_PREFIX = "cstd-alpha:report-cache:";
 const CHART_CACHE_PREFIX = "cstd-alpha:chart-cache:";
-const REPORT_CACHE_VERSION = "v4-deep-financials";
+const REPORT_CACHE_VERSION = "v5-report-cleanup";
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type CachedReport = {
