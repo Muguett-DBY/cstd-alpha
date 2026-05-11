@@ -14,6 +14,13 @@ function modelResponse(payload: Record<string, unknown>, finishReason = "stop") 
   return {
     ok: true,
     json: async () => ({
+      usage: {
+        prompt_tokens: 1000,
+        prompt_cache_hit_tokens: 100,
+        prompt_cache_miss_tokens: 900,
+        completion_tokens: 200,
+        total_tokens: 1200,
+      },
       choices: [
         {
           finish_reason: finishReason,
@@ -178,6 +185,81 @@ describe("DeepSeek report client", () => {
       expect(body.reasoning_effort).toBe("max");
       expect(body.thinking).toEqual({ type: "enabled" });
     }
+  });
+
+  test("collects DeepSeek token usage including cache hit and miss tokens by model", async () => {
+    const fetchMock = mockSuccessfulReport();
+    const metrics = { modelCalls: 0 };
+
+    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock, metrics });
+
+    expect(metrics.modelCalls).toBe(9);
+    expect(metrics.tokenUsage).toEqual([
+      {
+        model: "deepseek-v4-pro",
+        calls: 1,
+        promptTokens: 1000,
+        promptCacheHitTokens: 100,
+        promptCacheMissTokens: 900,
+        completionTokens: 200,
+        totalTokens: 1200,
+      },
+      {
+        model: "deepseek-v4-flash",
+        calls: 8,
+        promptTokens: 8000,
+        promptCacheHitTokens: 800,
+        promptCacheMissTokens: 7200,
+        completionTokens: 1600,
+        totalTokens: 9600,
+      },
+    ]);
+  });
+
+  test("does not repeat raw provider financial rows in every DeepSeek prompt", async () => {
+    const rawHeavyEvidence: EvidenceBundle = {
+      ...evidence,
+      facts: {
+        quote: { regularMarketPrice: 10 },
+        eastmoney: {
+          quote: { code: "EXM" },
+          incomeRows: [{ REPORT_DATE: "2025", RAW_FIELD_SENTINEL: "SHOULD_NOT_BE_SENT" }],
+          cashflowRows: [{ REPORT_DATE: "2025", RAW_FIELD_SENTINEL: "SHOULD_NOT_BE_SENT" }],
+          balanceRows: [{ REPORT_DATE: "2025", RAW_FIELD_SENTINEL: "SHOULD_NOT_BE_SENT" }],
+        },
+        sec: {
+          cik: "0000000000",
+          companyFacts: { RAW_FIELD_SENTINEL: "SHOULD_NOT_BE_SENT" },
+          normalizedFinancialTenYear: {
+            rows: [{ metric: "营业收入", values: { "2025": "100 亿美元" }, trend: "上升", interpretation: "规范化数据" }],
+            interpretation: "SEC normalized table",
+          },
+        },
+        financialTenYear: {
+          rows: [{ metric: "营业收入", values: { "2025": "100 亿美元" }, trend: "上升", interpretation: "规范化数据" }],
+          interpretation: "normalized table",
+        },
+      },
+    };
+    const fetchMock = mockSuccessfulReport();
+
+    await callDeepSeekReport({ apiKey: "key", evidence: rawHeavyEvidence, fetchImpl: fetchMock });
+
+    const userPrompts = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).messages[1].content as string);
+    expect(userPrompts.join("\n")).not.toContain("SHOULD_NOT_BE_SENT");
+    expect(userPrompts[0]).toContain("normalized table");
+    expect(userPrompts[0]).toContain("statementRowCounts");
+  });
+
+  test("keeps long shared context before batch-specific detail and narrative keys to improve prefix caching", async () => {
+    const fetchMock = mockSuccessfulReport();
+
+    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    const detailPayload = JSON.parse(JSON.parse(fetchMock.mock.calls[1][1].body).messages[1].content);
+    const narrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[5][1].body).messages[1].content);
+    expect(Object.keys(detailPayload).indexOf("sharedContext")).toBeLessThan(Object.keys(detailPayload).indexOf("requestedItemIds"));
+    expect(Object.keys(narrativePayload).indexOf("sharedContext")).toBeLessThan(Object.keys(narrativePayload).indexOf("requestedFullSectionKeys"));
   });
 
   test("enriches score item evidence and reasons in four small batches before narrative sections", async () => {

@@ -192,6 +192,20 @@ export type ReportGenerationMetrics = {
   elapsedMs: number;
   modelCalls: number;
   cacheMode: "prefer-cache" | "refresh";
+  cacheHit?: boolean;
+  cachedAt?: string;
+  sourceElapsedMs?: number;
+  tokenUsage?: ReportTokenUsage[];
+};
+
+export type ReportTokenUsage = {
+  model: string;
+  calls: number;
+  promptTokens: number;
+  promptCacheHitTokens: number;
+  promptCacheMissTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 };
 
 type ScoreScale = 1 | 10;

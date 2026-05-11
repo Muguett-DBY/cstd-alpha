@@ -5,5 +5,11 @@
   "pages_build_output_dir": "dist",
   "observability": {
     "enabled": true
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "REPORT_CACHE",
+      "id": "d2c77bf9e7f14258af33e2efd3f59c60"
+    }
+  ]
 }

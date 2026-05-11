@@ -59,7 +59,8 @@ describe("report storage", () => {
 
     expect(buildReportCacheKey(company)).toContain("eastmoney:1.600519");
     expect(loadCachedReport(company, 1000 + 60_000)?.report.company.name).toBe("贵州茅台");
-    expect(loadCachedReport(company, 1000 + 25 * 60 * 60 * 1000)).toBeNull();
+    expect(loadCachedReport(company, 1000 + 29 * 24 * 60 * 60 * 1000)?.report.company.name).toBe("贵州茅台");
+    expect(loadCachedReport(company, 1000 + 31 * 24 * 60 * 60 * 1000)).toBeNull();
   });
 
   test("preserves generation metrics with cached reports", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { onRequestPost } from "./report";
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport, MODEL_OUTPUT_LENGTH_MESSAGE } from "../_shared/deepseek";
@@ -42,6 +42,68 @@ const evidence: EvidenceBundle = {
 };
 
 describe("report API stream", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("returns a shared server cached report without fetching providers or calling DeepSeek", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "缓存报告" };
+    const cache = mockKvCache({
+      report: cachedReport,
+      evidence,
+      cachedAt: "2026-05-10T00:00:00.000Z",
+      expiresAt: "2099-05-11T00:00:00.000Z",
+      metrics: {
+        startedAt: "2026-05-10T00:00:00.000Z",
+        completedAt: "2026-05-10T00:06:00.000Z",
+        elapsedMs: 360000,
+        modelCalls: 9,
+        cacheMode: "refresh",
+      },
+    });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(cache.get).toHaveBeenCalledWith(expect.stringMatching(/^report:/), "json");
+    expect(events.find((event) => event.stage === "server_cache_hit")).toMatchObject({
+      type: "progress",
+      label: "命中共享缓存",
+      evidenceCount: 2,
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      report: cachedReport,
+      metrics: {
+        cacheHit: true,
+        modelCalls: 0,
+        sourceElapsedMs: 360000,
+      },
+    });
+  });
+
+  test("refresh mode bypasses shared cache and stores the generated report", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const cache = mockKvCache({
+      report: { company: evidence.company, evidence: [], oneSentence: "旧缓存" },
+      evidence: { ...evidence, evidence: [] },
+      cachedAt: "2026-05-10T00:00:00.000Z",
+      expiresAt: "2099-05-11T00:00:00.000Z",
+    });
+
+    const events = await postReportEvents({ forceRefresh: true, env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).toHaveBeenCalledTimes(1);
+    expect(callDeepSeekReport).toHaveBeenCalledTimes(1);
+    expect(cache.get).not.toHaveBeenCalled();
+    expect(cache.put).toHaveBeenCalledWith(expect.stringMatching(/^report:/), expect.any(String), expect.objectContaining({ expirationTtl: 2_592_000 }));
+    expect(events.at(-1)).toMatchObject({ type: "final" });
+  });
+
   test("emits a structured evidence count before model generation", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
@@ -124,12 +186,25 @@ describe("report API stream", () => {
   });
 });
 
-async function postReportEvents() {
+type TestKvCache = {
+  get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
+};
+
+function mockKvCache(value: unknown): TestKvCache {
+  return {
+    get: vi.fn().mockResolvedValue(value),
+    put: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown> } = {}) {
   const response = await onRequestPost({
     request: new Request("https://alpha.custard.top/api/report", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: "session=ok" },
       body: JSON.stringify({
+        forceRefresh: options.forceRefresh,
         company: {
           id: "eastmoney:1.600519",
           name: "贵州茅台",
@@ -142,7 +217,7 @@ async function postReportEvents() {
         },
       }),
     }),
-    env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key" },
+    env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key", ...options.env },
   } as Parameters<typeof onRequestPost>[0]);
 
   return (await response.text())

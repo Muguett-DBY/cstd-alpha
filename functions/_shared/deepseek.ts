@@ -5,6 +5,7 @@ import {
   REQUIRED_SECTION_KEYS,
   REQUIRED_FULL_SECTION_KEYS,
   SCORE_ITEMS_20,
+  type ReportTokenUsage,
   type ReportSections,
 } from "../../src/shared/report";
 import { jsonrepair } from "jsonrepair";
@@ -64,7 +65,11 @@ type DeepSeekInput = {
   language?: "zh-CN" | "en";
   fetchImpl?: FetchLike;
   onProgress?: (progress: { stage: string; label: string; detail: string; percent: number }) => void;
-  metrics?: { modelCalls?: number };
+  metrics?: { modelCalls?: number; tokenUsage?: ReportTokenUsage[] };
+};
+
+type DeepSeekUsageTracker = {
+  byModel: Map<DeepSeekModel, ReportTokenUsage>;
 };
 
 export async function callDeepSeekReport({
@@ -77,6 +82,7 @@ export async function callDeepSeekReport({
 }: DeepSeekInput): Promise<InvestmentReport> {
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
   let modelCalls = 0;
+  const usageTracker: DeepSeekUsageTracker = { byModel: new Map() };
   const countedFetch = ((...args: Parameters<FetchLike>) => {
     const resource = args[0];
     const url =
@@ -98,6 +104,7 @@ export async function callDeepSeekReport({
       language,
       evidence,
       onProgress,
+      usageTracker,
     });
 
     const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
@@ -112,6 +119,7 @@ export async function callDeepSeekReport({
             scoringReport,
             evidence,
             onProgress,
+            usageTracker,
           }),
         },
         evidence,
@@ -124,12 +132,16 @@ export async function callDeepSeekReport({
       scoringReport: enrichedReport,
       evidence,
       onProgress,
+      usageTracker,
     });
 
     const report = validateReportPayload(mergeNarrativePayload(enrichedReport, { fullSections }, evidence));
     return withProviderContext(report, evidence);
   } finally {
-    if (metrics) metrics.modelCalls = modelCalls;
+    if (metrics) {
+      metrics.modelCalls = modelCalls;
+      metrics.tokenUsage = Array.from(usageTracker.byModel.values());
+    }
   }
 }
 
@@ -139,15 +151,17 @@ async function requestScoringJson({
   language,
   evidence,
   onProgress,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
   onProgress?: DeepSeekInput["onProgress"];
+  usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: false });
+    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: false, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     onProgress?.({
@@ -156,7 +170,7 @@ async function requestScoringJson({
       detail: "模型第一次返回的评分 JSON 不完整，正在用更紧凑结构重试。",
       percent: 64,
     });
-    return requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true });
+    return requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true, usageTracker });
   }
 }
 
@@ -166,18 +180,21 @@ async function requestScoringJsonOnce({
   language,
   evidence,
   strictLength,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
   strictLength: boolean;
+  usageTracker: DeepSeekUsageTracker;
 }) {
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-pro",
     maxTokens: 18000,
+    usageTracker,
     messages: [
       {
         role: "system",
@@ -212,6 +229,7 @@ async function requestNarrativeSections({
   scoringReport,
   evidence,
   onProgress,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -219,6 +237,7 @@ async function requestNarrativeSections({
   scoringReport: InvestmentReport;
   evidence: EvidenceBundle;
   onProgress?: DeepSeekInput["onProgress"];
+  usageTracker: DeepSeekUsageTracker;
 }) {
   const fullSections: Record<string, unknown> = {};
   const batches = await Promise.all(NARRATIVE_SECTION_BATCHES.map(async (keys, index) => {
@@ -235,6 +254,7 @@ async function requestNarrativeSections({
       scoringReport,
       evidence,
       keys,
+      usageTracker,
     });
   }));
   for (const batch of batches) Object.assign(fullSections, batch);
@@ -248,6 +268,7 @@ async function requestScoreItemDetails({
   scoringReport,
   evidence,
   onProgress,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -255,6 +276,7 @@ async function requestScoreItemDetails({
   scoringReport: InvestmentReport;
   evidence: EvidenceBundle;
   onProgress?: DeepSeekInput["onProgress"];
+  usageTracker: DeepSeekUsageTracker;
 }) {
   const details: Record<string, ScoreItemDetail> = {};
   const batches = await Promise.all(SCORE_ITEM_DETAIL_BATCHES.map(async (itemIds, index) => {
@@ -271,6 +293,7 @@ async function requestScoreItemDetails({
       scoringReport,
       evidence,
       itemIds,
+      usageTracker,
     });
   }));
   for (const batchDetails of batches) {
@@ -317,6 +340,7 @@ async function requestScoreItemDetailBatch({
   scoringReport,
   evidence,
   itemIds,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -324,13 +348,14 @@ async function requestScoreItemDetailBatch({
   scoringReport: InvestmentReport;
   evidence: EvidenceBundle;
   itemIds: string[];
+  usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   try {
-    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false });
+    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     try {
-      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true });
+      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
     } catch (retryError) {
       if (!isRetryableModelOutputError(retryError) || itemIds.length <= 1) throw retryError;
       return requestScoreItemDetailsIndividually({
@@ -340,6 +365,7 @@ async function requestScoreItemDetailBatch({
         scoringReport,
         evidence,
         itemIds,
+        usageTracker,
       });
     }
   }
@@ -352,6 +378,7 @@ async function requestScoreItemDetailsIndividually({
   scoringReport,
   evidence,
   itemIds,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -359,6 +386,7 @@ async function requestScoreItemDetailsIndividually({
   scoringReport: InvestmentReport;
   evidence: EvidenceBundle;
   itemIds: string[];
+  usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   const details: ScoreItemDetail[] = [];
   for (const id of itemIds) {
@@ -372,6 +400,7 @@ async function requestScoreItemDetailsIndividually({
           evidence,
           itemIds: [id],
           strictLength: true,
+          usageTracker,
         })),
       );
     } catch (error) {
@@ -392,6 +421,7 @@ async function requestScoreItemDetailBatchOnce({
   evidence,
   itemIds,
   strictLength,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -400,12 +430,14 @@ async function requestScoreItemDetailBatchOnce({
   evidence: EvidenceBundle;
   itemIds: string[];
   strictLength: boolean;
+  usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
     maxTokens: strictLength ? 7000 : 9500,
+    usageTracker,
     messages: [
       {
         role: "system",
@@ -415,18 +447,17 @@ async function requestScoreItemDetailBatchOnce({
         role: "user",
         content: JSON.stringify(
           {
+            sharedContext: {
+              version: "cstd-alpha-shared-v1",
+              company: scoringReport.company,
+              asOf: scoringReport.asOf,
+              financialTenYear: scoringReport.financialTenYear,
+              valuationAnalysis: scoringReport.valuationAnalysis,
+              evidence: compactEvidenceForPrompt(evidence),
+            },
             task: "Enrich only the requested score item text. Do not change numeric scores.",
             requestedItemIds: itemIds,
-            expectedOutputShape: {
-              scoreItemDetails: itemIds.map((id) => ({
-                id,
-                evidence: ["2-4 条最新公开证据，写明财报期/行情时间/数据来源"],
-                deductions: ["1-3 条明确扣分点"],
-                recentChange: "最近 12 个月变化及对分数影响",
-                reason: "120-220 字中文评分理由",
-              })),
-            },
-            scoreItems: scoringReport.scoreItems20
+            requestedScoreItems: scoringReport.scoreItems20
               .filter((item) => itemIds.includes(item.id))
               .map(({ id, title, moduleName, weight, score, label, evidence, deductions, recentChange, reason }) => ({
                 id,
@@ -440,9 +471,15 @@ async function requestScoreItemDetailBatchOnce({
                 recentChange,
                 reason,
               })),
-            financialTenYear: scoringReport.financialTenYear,
-            valuationAnalysis: scoringReport.valuationAnalysis,
-            evidence: compactEvidenceForPrompt(evidence),
+            expectedOutputShape: {
+              scoreItemDetails: itemIds.map((id) => ({
+                id,
+                evidence: ["2-4 条最新公开证据，写明财报期/行情时间/数据来源"],
+                deductions: ["1-3 条明确扣分点"],
+                recentChange: "最近 12 个月变化及对分数影响",
+                reason: "120-220 字中文评分理由",
+              })),
+            },
           },
           null,
           2,
@@ -460,6 +497,7 @@ async function requestNarrativeBatch({
   scoringReport,
   evidence,
   keys,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -467,12 +505,13 @@ async function requestNarrativeBatch({
   scoringReport: InvestmentReport;
   evidence: EvidenceBundle;
   keys: FullSectionKey[];
+  usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false });
+    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
-    return requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true });
+    return requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
   }
 }
 
@@ -484,6 +523,7 @@ async function requestNarrativeBatchOnce({
   evidence,
   keys,
   strictLength,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
@@ -492,12 +532,14 @@ async function requestNarrativeBatchOnce({
   evidence: EvidenceBundle;
   keys: FullSectionKey[];
   strictLength: boolean;
+  usageTracker: DeepSeekUsageTracker;
 }) {
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
     maxTokens: strictLength ? 3500 : 5000,
+    usageTracker,
     messages: [
       {
         role: "system",
@@ -507,11 +549,14 @@ async function requestNarrativeBatchOnce({
         role: "user",
         content: JSON.stringify(
           {
+            sharedContext: {
+              version: "cstd-alpha-shared-v1",
+              scoringReport: compactReportForNarrative(scoringReport),
+              evidence: compactEvidenceForPrompt(evidence),
+            },
             task: "Generate only the requested fullSections keys for the already validated scoring report.",
             requestedFullSectionKeys: keys,
             expectedOutputShape: buildNarrativeOutputShape(keys),
-            scoringReport: compactReportForNarrative(scoringReport),
-            evidence: compactEvidenceForPrompt(evidence),
           },
           null,
           2,
@@ -528,12 +573,14 @@ async function requestDeepSeekJson({
   model,
   messages,
   maxTokens,
+  usageTracker,
 }: {
   apiKey: string;
   fetchImpl: FetchLike;
   model: DeepSeekModel;
   messages: Array<{ role: "system" | "user"; content: string }>;
   maxTokens: number;
+  usageTracker: DeepSeekUsageTracker;
 }) {
   const response = await fetchImpl("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -559,7 +606,9 @@ async function requestDeepSeekJson({
 
   const json = (await response.json()) as {
     choices?: Array<{ finish_reason?: string; message?: { content?: string; reasoning_content?: string } }>;
+    usage?: Record<string, unknown>;
   };
+  recordTokenUsage(usageTracker, model, json.usage);
   const choice = json.choices?.[0];
   const content = choice?.message?.content;
   if (choice?.finish_reason === "length" || !content?.trim()) throw new DeepSeekReportError(MODEL_OUTPUT_LENGTH_MESSAGE, "MODEL_OUTPUT_LENGTH", true);
@@ -569,6 +618,42 @@ async function requestDeepSeekJson({
   } catch (error) {
     throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true, { cause: error });
   }
+}
+
+function recordTokenUsage(tracker: DeepSeekUsageTracker, model: DeepSeekModel, rawUsage: Record<string, unknown> | undefined) {
+  const usage = normalizeDeepSeekUsage(rawUsage);
+  const existing =
+    tracker.byModel.get(model) ??
+    {
+      model,
+      calls: 0,
+      promptTokens: 0,
+      promptCacheHitTokens: 0,
+      promptCacheMissTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    };
+  existing.calls += 1;
+  existing.promptTokens += usage.promptTokens;
+  existing.promptCacheHitTokens += usage.promptCacheHitTokens;
+  existing.promptCacheMissTokens += usage.promptCacheMissTokens;
+  existing.completionTokens += usage.completionTokens;
+  existing.totalTokens += usage.totalTokens;
+  tracker.byModel.set(model, existing);
+}
+
+function normalizeDeepSeekUsage(rawUsage: Record<string, unknown> | undefined) {
+  return {
+    promptTokens: numericUsage(rawUsage?.prompt_tokens),
+    promptCacheHitTokens: numericUsage(rawUsage?.prompt_cache_hit_tokens),
+    promptCacheMissTokens: numericUsage(rawUsage?.prompt_cache_miss_tokens),
+    completionTokens: numericUsage(rawUsage?.completion_tokens),
+    totalTokens: numericUsage(rawUsage?.total_tokens),
+  };
+}
+
+function numericUsage(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function buildScoringSystemPrompt(language: "zh-CN" | "en", strictLength: boolean) {
@@ -644,6 +729,8 @@ Rules:
 
 function compactEvidenceForPrompt(evidence: EvidenceBundle) {
   const summary = asRecord(evidence.facts.summary);
+  const eastmoney = asRecord(evidence.facts.eastmoney);
+  const sec = asRecord(evidence.facts.sec);
   return {
     company: evidence.company,
     retrievedAt: evidence.retrievedAt,
@@ -688,9 +775,6 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
         "quarterlyTotalAssets",
         "quarterlyTotalDebt",
         "quarterlyStockholdersEquity",
-        "incomeRows",
-        "cashflowRows",
-        "balanceRows",
       ]),
       summaryDetail: pick(asRecord(summary?.summaryDetail), [
         "marketCap",
@@ -718,11 +802,24 @@ function compactEvidenceForPrompt(evidence: EvidenceBundle) {
       price: pick(asRecord(summary?.price), ["longName", "shortName", "currency", "exchangeName", "quoteType"]),
       calendarEvents: pick(asRecord(summary?.calendarEvents), ["earnings", "exDividendDate", "dividendDate"]),
       earnings: pick(asRecord(summary?.earnings), ["financialsChart", "earningsChart"]),
-      eastmoney: pick(asRecord(evidence.facts.eastmoney), ["quote", "incomeRows", "cashflowRows", "balanceRows"]),
-      sec: pick(asRecord(evidence.facts.sec), ["cik", "title", "companyFacts", "latestAnnual", "latestQuarter", "normalizedFinancialTenYear", "summaryFinancialData"]),
+      eastmoney: eastmoney
+        ? {
+            quote: eastmoney.quote,
+            statementRowCounts: {
+              incomeRows: arrayLength(eastmoney.incomeRows),
+              cashflowRows: arrayLength(eastmoney.cashflowRows),
+              balanceRows: arrayLength(eastmoney.balanceRows),
+            },
+          }
+        : undefined,
+      sec: pick(sec, ["cik", "title", "latestAnnual", "latestQuarter", "normalizedFinancialTenYear", "summaryFinancialData"]),
       financialTenYear: evidence.facts.financialTenYear,
     },
   };
+}
+
+function arrayLength(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function pick(record: Record<string, unknown> | undefined, keys: string[]) {

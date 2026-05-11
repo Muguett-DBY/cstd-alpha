@@ -554,6 +554,7 @@ function ReportView({ report, chartBundle, metrics }: { report: InvestmentReport
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     return URL.createObjectURL(blob);
   }, [report]);
+  const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
 
   useEffect(() => () => URL.revokeObjectURL(jsonUrl), [jsonUrl]);
 
@@ -568,7 +569,15 @@ function ReportView({ report, chartBundle, metrics }: { report: InvestmentReport
           <p className="muted">{report.oneSentence}</p>
           {metrics ? (
             <p className="muted">
-              生成耗时：{formatDuration(metrics.elapsedMs)} / 模型调用 {metrics.modelCalls} 次 / {metrics.cacheMode === "refresh" ? "刷新生成" : "常规生成"}
+              {metrics.cacheHit
+                ? `共享缓存命中：本次响应 ${formatDuration(metrics.elapsedMs)} / 原生成耗时 ${metrics.sourceElapsedMs ? formatDuration(metrics.sourceElapsedMs) : "待验证"}`
+                : `生成耗时：${formatDuration(metrics.elapsedMs)} / 模型调用 ${metrics.modelCalls} 次 / ${metrics.cacheMode === "refresh" ? "刷新生成" : "常规生成"}`}
+            </p>
+          ) : null}
+          {tokenSummary ? (
+            <p className="muted">
+              Token：未命中输入 {formatTokens(tokenSummary.promptCacheMissTokens)} / 命中输入 {formatTokens(tokenSummary.promptCacheHitTokens)} / 输出{" "}
+              {formatTokens(tokenSummary.completionTokens)}
             </p>
           ) : null}
         </div>
@@ -845,6 +854,24 @@ function formatDuration(ms: number) {
   const seconds = totalSeconds % 60;
   if (minutes <= 0) return `${seconds} 秒`;
   return `${minutes} 分 ${seconds} 秒`;
+}
+
+function summarizeTokenUsage(usage: ReportGenerationMetrics["tokenUsage"] | undefined) {
+  if (!usage?.length) return undefined;
+  return usage.reduce(
+    (sum, item) => ({
+      promptCacheHitTokens: sum.promptCacheHitTokens + item.promptCacheHitTokens,
+      promptCacheMissTokens: sum.promptCacheMissTokens + item.promptCacheMissTokens,
+      completionTokens: sum.completionTokens + item.completionTokens,
+    }),
+    { promptCacheHitTokens: 0, promptCacheMissTokens: 0, completionTokens: 0 },
+  );
+}
+
+function formatTokens(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}M`;
+  if (value >= 1000) return `${(value / 1000).toLocaleString("zh-CN", { maximumFractionDigits: 1 })}K`;
+  return value.toLocaleString("zh-CN");
 }
 
 function splitReportParagraphs(body: string) {

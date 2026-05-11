@@ -1,5 +1,5 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
-import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "./shared/report";
+import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -152,5 +152,34 @@ function normalizeMetrics(value: unknown): ReportGenerationMetrics | undefined {
     elapsedMs: record.elapsedMs,
     modelCalls: record.modelCalls,
     cacheMode: record.cacheMode,
+    cacheHit: typeof record.cacheHit === "boolean" ? record.cacheHit : undefined,
+    cachedAt: typeof record.cachedAt === "string" ? record.cachedAt : undefined,
+    sourceElapsedMs: typeof record.sourceElapsedMs === "number" ? record.sourceElapsedMs : undefined,
+    tokenUsage: normalizeTokenUsage(record.tokenUsage),
   };
+}
+
+function normalizeTokenUsage(value: unknown): ReportTokenUsage[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const usage = value.flatMap((item) => {
+    if (typeof item !== "object" || item === null) return [];
+    const record = item as Partial<ReportTokenUsage>;
+    if (typeof record.model !== "string") return [];
+    return [
+      {
+        model: record.model,
+        calls: numberOrZero(record.calls),
+        promptTokens: numberOrZero(record.promptTokens),
+        promptCacheHitTokens: numberOrZero(record.promptCacheHitTokens),
+        promptCacheMissTokens: numberOrZero(record.promptCacheMissTokens),
+        completionTokens: numberOrZero(record.completionTokens),
+        totalTokens: numberOrZero(record.totalTokens),
+      },
+    ];
+  });
+  return usage.length ? usage : undefined;
+}
+
+function numberOrZero(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

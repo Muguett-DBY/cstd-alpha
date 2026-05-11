@@ -1,4 +1,4 @@
-import { validateReportPayload, type InvestmentReport, type ReportGenerationMetrics } from "./shared/report";
+import { validateReportPayload, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate } from "./shared/report";
 
@@ -6,7 +6,7 @@ const LAST_REPORT_KEY = "cstd-alpha:last-report";
 const REPORT_CACHE_PREFIX = "cstd-alpha:report-cache:";
 const CHART_CACHE_PREFIX = "cstd-alpha:chart-cache:";
 const REPORT_CACHE_VERSION = "v4-deep-financials";
-export const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type CachedReport = {
   report: InvestmentReport;
@@ -150,7 +150,34 @@ function normalizeGenerationMetrics(value: unknown): ReportGenerationMetrics | u
     elapsedMs: value.elapsedMs,
     modelCalls: value.modelCalls,
     cacheMode: value.cacheMode,
+    cacheHit: typeof value.cacheHit === "boolean" ? value.cacheHit : undefined,
+    cachedAt: typeof value.cachedAt === "string" ? value.cachedAt : undefined,
+    sourceElapsedMs: typeof value.sourceElapsedMs === "number" ? value.sourceElapsedMs : undefined,
+    tokenUsage: normalizeTokenUsage(value.tokenUsage),
   };
+}
+
+function normalizeTokenUsage(value: unknown): ReportTokenUsage[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const usage = value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.model !== "string") return [];
+    return [
+      {
+        model: item.model,
+        calls: numberOrZero(item.calls),
+        promptTokens: numberOrZero(item.promptTokens),
+        promptCacheHitTokens: numberOrZero(item.promptCacheHitTokens),
+        promptCacheMissTokens: numberOrZero(item.promptCacheMissTokens),
+        completionTokens: numberOrZero(item.completionTokens),
+        totalTokens: numberOrZero(item.totalTokens),
+      },
+    ];
+  });
+  return usage.length ? usage : undefined;
+}
+
+function numberOrZero(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function stableCompanyId(company: CompanyCandidate) {
