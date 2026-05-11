@@ -90,6 +90,52 @@ describe("public data providers", () => {
     expect(result.evidence.some((item) => item.freshness === "latest-public")).toBe(true);
   });
 
+  test("falls back to a derived Eastmoney quote id for A-share quote snapshots", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            f57: "601600",
+            f58: "中国铝业",
+            f43: 1178,
+            f116: 202085562232.06,
+            f162: 914,
+            f167: 251,
+          },
+        }),
+      })
+      .mockResolvedValue({ ok: true, json: async () => ({ result: { data: [] } }) });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "中国铝业",
+      company: {
+        id: "eastmoney:bad-601600",
+        name: "中国铝业",
+        code: "601600",
+        exchange: "上海证券交易所",
+        listingPlace: "沪A",
+        marketType: "AStock",
+        quoteId: "bad-601600",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining("secid=1.601600"), expect.any(Object));
+    expect(result.facts.quote).toMatchObject({
+      symbol: "601600",
+      regularMarketPrice: 11.78,
+      trailingPE: 9.14,
+      priceToBook: 2.51,
+    });
+    expect(result.evidence.find((item) => item.title.includes("Eastmoney quote snapshot"))).toMatchObject({
+      freshness: "latest-public",
+    });
+  });
+
   test("records unavailable evidence instead of inventing facts", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 

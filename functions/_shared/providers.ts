@@ -87,18 +87,14 @@ export async function fetchPublicCompanyEvidence({
   const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
   const fundamentalsUrl = buildFundamentalsUrl(symbol);
   const stooqQuoteUrl = isUsSelected ? stooqQuoteUrlForSymbol(symbol) : "";
-  const eastmoneyQuoteUrl = selectedCompany?.quoteId
-    ? `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(
-        selectedCompany.quoteId,
-      )}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`
-    : "";
   const secucode = selectedCompany ? eastmoneySecucode(selectedCompany) : undefined;
   const incomeUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GINCOME", "APP_F10_GINCOME", secucode) : "";
   const cashflowUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GCASHFLOW", "APP_F10_GCASHFLOW", secucode) : "";
   const balanceUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GBALANCE", "F10_FINANCE_GBALANCE", secucode) : "";
 
-  const eastmoneyQuoteJson = eastmoneyQuoteUrl ? await fetchJson(eastmoneyQuoteUrl, fetchImpl) : null;
-  const eastmoneyQuote = isRecord(recordPath(eastmoneyQuoteJson, ["data"])) ? (recordPath(eastmoneyQuoteJson, ["data"]) as Record<string, unknown>) : undefined;
+  const eastmoneyQuoteResult = selectedCompany ? await fetchEastmoneyQuote(selectedCompany, fetchImpl) : { url: "", quote: undefined };
+  const eastmoneyQuoteUrl = eastmoneyQuoteResult.url;
+  const eastmoneyQuote = eastmoneyQuoteResult.quote;
   const incomeJson = incomeUrl ? await fetchJson(incomeUrl, fetchImpl) : null;
   const cashflowJson = cashflowUrl ? await fetchJson(cashflowUrl, fetchImpl) : null;
   const balanceJson = balanceUrl ? await fetchJson(balanceUrl, fetchImpl) : null;
@@ -635,6 +631,42 @@ function eastmoneySecucode(candidate: CompanyCandidate) {
   }
   if (candidate.marketType === "HK" || candidate.listingPlace.includes("港")) return `${candidate.code}.HK`;
   return undefined;
+}
+
+async function fetchEastmoneyQuote(candidate: CompanyCandidate, fetchImpl: FetchLike) {
+  const urls = eastmoneyQuoteUrls(candidate);
+  for (const url of urls) {
+    const json = await fetchJson(url, fetchImpl);
+    const quote = isRecord(recordPath(json, ["data"])) ? (recordPath(json, ["data"]) as Record<string, unknown>) : undefined;
+    if (quote) return { url, quote };
+  }
+  return { url: urls[0] ?? "", quote: undefined };
+}
+
+function eastmoneyQuoteUrls(candidate: CompanyCandidate) {
+  return uniqueStrings(eastmoneyQuoteIds(candidate).map(eastmoneyQuoteUrl));
+}
+
+function eastmoneyQuoteIds(candidate: CompanyCandidate) {
+  return [candidate.quoteId, candidate.secid, derivedEastmoneyQuoteId(candidate)].filter((value): value is string => Boolean(value));
+}
+
+function derivedEastmoneyQuoteId(candidate: CompanyCandidate) {
+  if (candidate.marketType === "AStock" || candidate.listingPlace.includes("A")) {
+    const prefix = candidate.code.startsWith("6") || candidate.code.startsWith("9") || candidate.listingPlace.includes("沪") ? "1" : "0";
+    return `${prefix}.${candidate.code}`;
+  }
+  if (candidate.marketType === "HK" || candidate.listingPlace.includes("港")) return `116.${candidate.code}`;
+  if (candidate.listingPlace.includes("美")) return candidate.quoteId;
+  return undefined;
+}
+
+function eastmoneyQuoteUrl(secid: string) {
+  return `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid)}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values));
 }
 
 function normalizeEastmoneyCandidate(value: unknown): CompanyCandidate | undefined {

@@ -67,7 +67,7 @@ describe("report API stream", () => {
 
     expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
     expect(callDeepSeekReport).not.toHaveBeenCalled();
-    expect(cache.get).toHaveBeenCalledWith(expect.stringMatching(/^report:/), "json");
+    expect(cache.get).toHaveBeenCalledWith(expect.stringMatching(/^report:v3-quote-fallback:/), "json");
     expect(events.find((event) => event.stage === "server_cache_hit")).toMatchObject({
       type: "progress",
       label: "命中共享缓存",
