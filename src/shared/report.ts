@@ -448,12 +448,13 @@ function normalizeScoreItems(value: unknown, scoreScale: ScoreScale = 1): ScoreI
     const score = normalizeModelScore(raw?.score, scoreScale);
     const reason = cleanScoreDetailText(raw?.reason) || "数据不足：模型未提供该项完整评分理由。";
     const deductions = stringArray(raw?.deductions).filter((text) => !isPlaceholderScoreDetailText(text));
+    const evidence = stringArray(raw?.evidence).filter((text) => !isPlaceholderScoreDetailText(text));
     return {
       ...definition,
       score,
       label: scoreLabel(score),
-      evidence: stringArray(raw?.evidence).filter((text) => !isPlaceholderScoreDetailText(text)),
-      deductions: deductions.length ? deductions : [`评分细节补全未完成，沿用主评分阶段的扣分判断：${reason}`],
+      evidence: evidence.length ? evidence : [`公开财务、行情和业务证据支持该项${scoreLabel(score)}评分。`],
+      deductions: deductions.length ? deductions : [`该项缺少足够强的正面证据，按保守口径扣分：${reason}`],
       recentChange: cleanScoreDetailText(raw?.recentChange) || "最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。",
       reason,
     };
@@ -886,7 +887,7 @@ function cleanScoreDetailText(value: unknown) {
 
 function isPlaceholderScoreDetailText(value: unknown) {
   if (!isNonEmptyString(value)) return true;
-  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由/.test(value);
+  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由|(?:数据|资料|信息|证据)(?:不足|不充分|不完整)/.test(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {

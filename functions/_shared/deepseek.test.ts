@@ -607,7 +607,7 @@ describe("DeepSeek report client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(report.scoreItems20[0].evidence).toEqual(["公开证据"]);
-    expect(report.scoreItems20[0].deductions).toEqual(["评分细节补全未完成，沿用主评分阶段的扣分判断：基于公开证据给出中性评分。"]);
+    expect(report.scoreItems20[0].deductions).toEqual(["该项缺少足够强的正面证据，按保守口径扣分：基于公开证据给出中性评分。"]);
     expect(report.scoreItems20[0].recentChange).toBe("最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。");
     expect(report.scoreItems20[0].recentChange).not.toContain("未提供最近 12 个月变化判断");
     expect(report.scoreItems20[4].reason).toBe("基于公开证据给出中性评分。");

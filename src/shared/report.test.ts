@@ -232,8 +232,46 @@ describe("report validation", () => {
       ],
     });
 
-    expect(report.scoreItems20[0].deductions).toEqual(["评分细节补全未完成，沿用主评分阶段的扣分判断：基于公开证据给出中性评分。"]);
+    expect(report.scoreItems20[0].deductions).toEqual(["该项缺少足够强的正面证据，按保守口径扣分：基于公开证据给出中性评分。"]);
     expect(report.scoreItems20[0].recentChange).toBe("最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。");
+  });
+
+  test("rewrites score detail data-insufficient placeholders into conservative deductions", () => {
+    const report = validateReportPayload({
+      company: { name: "Tencent" },
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 70,
+        label: "好",
+        evidence: item.id === "industryCyclicality" ? ["互联网需求相对稳定但受宏观影响"] : ["公开证据"],
+        deductions: item.id === "industryCyclicality" ? ["周期性数据不足"] : ["扣分点"],
+        recentChange: item.id === "industryCyclicality" ? "无" : "最近 12 个月稳定。",
+        reason: item.id === "industryCyclicality" ? "游戏社交需求稳定，云业务增长" : "基于公开证据评分。",
+      })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-12T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-12T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+    });
+
+    const item = report.scoreItems20.find((scoreItem) => scoreItem.id === "industryCyclicality");
+
+    expect(item?.deductions).toEqual(["该项缺少足够强的正面证据，按保守口径扣分：游戏社交需求稳定，云业务增长"]);
+    expect(JSON.stringify(item)).not.toContain("数据不足");
   });
 
   test("caps low-evidence reports instead of allowing high investment scores", () => {
