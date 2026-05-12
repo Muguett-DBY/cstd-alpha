@@ -501,6 +501,36 @@ describe("report validation", () => {
     expect(JSON.stringify(report.riskMatrix)).not.toContain("待验证");
   });
 
+  test("rewrites score detail pending-verification placeholders into conservative deductions", () => {
+    const report = validateReportPayload({
+      company: { name: "Governance Co." },
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: item.id === "governanceFairness" ? 50 : 70,
+        label: item.id === "governanceFairness" ? "一般" : "好",
+        evidence: ["公开证据"],
+        deductions: item.id === "governanceFairness" ? ["大小股东利益一致性待验证"] : ["扣分点"],
+        recentChange: "无重大变化",
+        reason: item.id === "governanceFairness" ? "治理结构存在代理问题，评分保守" : "基于公开证据评分。",
+      })),
+      evidence: [
+        {
+          title: "Filing",
+          source: "Public filing",
+          url: "https://example.com/filing",
+          retrievedAt: "2026-05-12T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+    });
+
+    const item = report.scoreItems20.find((scoreItem) => scoreItem.id === "governanceFairness");
+
+    expect(item?.deductions).toEqual(["该项缺少足够强的正面证据，按保守口径扣分：治理结构存在代理问题，评分保守"]);
+    expect(JSON.stringify(item)).not.toContain("待验证");
+  });
+
   test("derives buy action and standard position for high scores with reasonable-low valuation", () => {
     const report = validateReportPayload({
       company: { name: "Quality Co." },

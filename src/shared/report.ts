@@ -887,7 +887,7 @@ function cleanScoreDetailText(value: unknown) {
 
 function isPlaceholderScoreDetailText(value: unknown) {
   if (!isNonEmptyString(value)) return true;
-  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由|(?:数据|资料|信息|证据)(?:不足|不充分|不完整)/.test(value);
+  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由|待验证|(?:数据|资料|信息|证据)(?:不足|不充分|不完整)/.test(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {
