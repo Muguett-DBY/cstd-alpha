@@ -972,10 +972,7 @@ function prepareReportPayload(parsed: unknown, evidence: EvidenceBundle) {
   const providerCurrentPrice = providerCurrentPriceFromEvidence(evidence);
   const modelValuationAnalysis = isRecord(unwrapped.valuationAnalysis) ? unwrapped.valuationAnalysis : {};
   const valuationAnalysis = providerCurrentPrice
-    ? {
-        ...modelValuationAnalysis,
-        currentPrice: providerCurrentPrice,
-      }
+    ? completeProviderValuationAnalysis(evidence, modelValuationAnalysis, providerCurrentPrice)
     : unwrapped.valuationAnalysis;
 
   return {
@@ -1221,6 +1218,65 @@ function providerCurrentPriceFromEvidence(evidence: EvidenceBundle) {
   const currency = isNonEmptyString(quote?.currency) ? quote.currency : undefined;
   const date = evidence.retrievedAt.slice(0, 10);
   return `${formatProviderNumber(price)}${currency ? ` ${currency}` : ""}（公开报价，${date}）`;
+}
+
+function completeProviderValuationAnalysis(
+  evidence: EvidenceBundle,
+  modelValuationAnalysis: Record<string, unknown>,
+  providerCurrentPrice: string,
+) {
+  const quote = asRecord(evidence.facts.quote);
+  const price = numericValue(quote?.regularMarketPrice);
+  if (price === undefined || price <= 0) {
+    return {
+      ...modelValuationAnalysis,
+      currentPrice: providerCurrentPrice,
+    };
+  }
+
+  const currency = isNonEmptyString(quote?.currency) ? quote.currency : currencyFromMarket(evidence.company.market);
+  const currencySuffix = currency ? ` ${currency}` : "";
+  const fairLow = price * 0.85;
+  const fairHigh = price * 1.15;
+  const buyHigh = price * 0.78;
+  const sellLow = price * 1.25;
+  const methods = stringArray(modelValuationAnalysis.methods);
+  const fallbackMethod = "公开报价锚定的安全边际观察区间";
+  const needsFallback =
+    !hasUsableValuationField(modelValuationAnalysis.fairValueRange) ||
+    !hasUsableValuationField(modelValuationAnalysis.buyRange) ||
+    !hasUsableValuationField(modelValuationAnalysis.sellReduceRange);
+
+  return {
+    ...modelValuationAnalysis,
+    currentPrice: providerCurrentPrice,
+    fairValueRange: hasUsableValuationField(modelValuationAnalysis.fairValueRange)
+      ? modelValuationAnalysis.fairValueRange
+      : `${formatProviderNumber(fairLow)}-${formatProviderNumber(fairHigh)}${currencySuffix}（公开报价锚定观察区间）`,
+    buyRange: hasUsableValuationField(modelValuationAnalysis.buyRange)
+      ? modelValuationAnalysis.buyRange
+      : `低于 ${formatProviderNumber(buyHigh)}${currencySuffix}（相对公开报价留出约 22% 安全边际）`,
+    sellReduceRange: hasUsableValuationField(modelValuationAnalysis.sellReduceRange)
+      ? modelValuationAnalysis.sellReduceRange
+      : `高于 ${formatProviderNumber(sellLow)}${currencySuffix}（相对公开报价溢价约 25%）`,
+    methods: needsFallback && !methods.includes(fallbackMethod) ? [...methods, fallbackMethod] : modelValuationAnalysis.methods,
+    conclusion: hasUsableValuationField(modelValuationAnalysis.conclusion)
+      ? modelValuationAnalysis.conclusion
+      : `公开报价为 ${providerCurrentPrice}；估值区间采用报价锚定观察口径，需结合后续财报、现金流和同业估值继续复核。`,
+  };
+}
+
+function hasUsableValuationField(value: unknown) {
+  if (!isNonEmptyString(value)) return false;
+  return !/数据不足|待验证|不可用|缺失|无法|未获取|未计算|N\/A/.test(value);
+}
+
+function currencyFromMarket(market: unknown) {
+  if (!isNonEmptyString(market)) return undefined;
+  if (market.includes("港")) return "HKD";
+  if (market.includes("沪") || market.includes("深") || market.includes("A")) return "CNY";
+  if (market.includes("美") || market.toUpperCase().includes("US")) return "USD";
+  return undefined;
 }
 
 function isRetryableModelOutputError(error: unknown) {

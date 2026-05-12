@@ -455,6 +455,32 @@ describe("DeepSeek report client", () => {
     expect(report.company.ticker).toBe("EXM");
   });
 
+  test("fills unusable valuation ranges from a reliable provider quote", async () => {
+    const fetchMock = mockSuccessfulReport(
+      reportPayload({
+        valuationAnalysis: {
+          currentPrice: "数据不足",
+          fairValueRange: "数据不足，未计算",
+          buyRange: "数据不足",
+          sellReduceRange: "数据不足",
+          methods: ["PE 对比"],
+          scenarios: [],
+          conclusion: "数据不足：模型未提供完整估值结论。",
+        },
+      }),
+    );
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(report.valuationAnalysis.currentPrice).toBe("10（公开报价，2026-05-10）");
+    expect(report.valuationAnalysis.fairValueRange).toBe("8.5-11.5 USD（公开报价锚定观察区间）");
+    expect(report.valuationAnalysis.buyRange).toBe("低于 7.8 USD（相对公开报价留出约 22% 安全边际）");
+    expect(report.valuationAnalysis.sellReduceRange).toBe("高于 12.5 USD（相对公开报价溢价约 25%）");
+    expect(report.valuationAnalysis.methods).toContain("PE 对比");
+    expect(report.valuationAnalysis.methods).toContain("公开报价锚定的安全边际观察区间");
+    expect(report.valuationAnalysis.conclusion).not.toContain("数据不足");
+  });
+
   test("fills missing template sections with traceable fallback text", async () => {
     const fetchMock = mockSuccessfulReport(reportPayload({ company: { name: "Example Inc." }, sections: undefined }));
 
