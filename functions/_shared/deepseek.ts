@@ -323,7 +323,7 @@ async function requestScoreItemDetails({
   usageTracker: DeepSeekUsageTracker;
 }) {
   const details: Record<string, ScoreItemDetail> = {};
-  const batches = await runWarmFirstThenParallel(SCORE_ITEM_DETAIL_BATCHES, async (itemIds, index) => {
+  const batches = await Promise.all(SCORE_ITEM_DETAIL_BATCHES.map(async (itemIds, index) => {
     onProgress?.({
       stage: `deepseek_score_detail_${index + 1}`,
       label: "补全评分证据",
@@ -339,7 +339,7 @@ async function requestScoreItemDetails({
       itemIds,
       usageTracker,
     });
-  });
+  }));
   for (const batchDetails of batches) {
     for (const detail of batchDetails) details[detail.id] = detail;
   }
@@ -407,63 +407,16 @@ async function requestScoreItemDetailBatch({
     return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
-    try {
-      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false, usageTracker });
-    } catch (retryError) {
-      if (!isRetryableModelOutputError(retryError) || itemIds.length <= 1) throw retryError;
-      return requestScoreItemDetailsIndividually({
-        apiKey,
-        fetchImpl,
-        language,
-        scoringReport,
-        evidence,
-        itemIds,
-        usageTracker,
-      });
-    }
+    return fallbackScoreItemDetails(scoringReport, itemIds);
   }
 }
 
-async function requestScoreItemDetailsIndividually({
-  apiKey,
-  fetchImpl,
-  language,
-  scoringReport,
-  evidence,
-  itemIds,
-  usageTracker,
-}: {
-  apiKey: string;
-  fetchImpl: FetchLike;
-  language: "zh-CN" | "en";
-  scoringReport: InvestmentReport;
-  evidence: EvidenceBundle;
-  itemIds: string[];
-  usageTracker: DeepSeekUsageTracker;
-}): Promise<ScoreItemDetail[]> {
-  const details: ScoreItemDetail[] = [];
-  for (const id of itemIds) {
-    try {
-      details.push(
-        ...(await requestScoreItemDetailBatchOnce({
-          apiKey,
-          fetchImpl,
-          language,
-          scoringReport,
-          evidence,
-          itemIds: [id],
-          strictLength: true,
-          usageTracker,
-        })),
-      );
-    } catch (error) {
-      if (!isRetryableModelOutputError(error)) throw error;
-      const existingItem = scoringReport.scoreItems20.find((item) => item.id === id);
-      if (!existingItem) throw error;
-      details.push(fallbackScoreItemDetail(existingItem));
-    }
-  }
-  return details;
+function fallbackScoreItemDetails(scoringReport: InvestmentReport, itemIds: string[]) {
+  return itemIds.map((id) => {
+    const existingItem = scoringReport.scoreItems20.find((item) => item.id === id);
+    if (!existingItem) throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true);
+    return fallbackScoreItemDetail(existingItem);
+  });
 }
 
 async function requestScoreItemDetailBatchOnce({
@@ -489,7 +442,8 @@ async function requestScoreItemDetailBatchOnce({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
-    maxTokens: strictLength ? 4500 : 7000,
+    maxTokens: strictLength ? 2400 : 3600,
+    timeoutMs: 90_000,
     usageTracker,
     messages: [
       {
@@ -506,7 +460,7 @@ async function requestScoreItemDetailBatchOnce({
               asOf: scoringReport.asOf,
               financialTenYear: scoringReport.financialTenYear,
               valuationAnalysis: scoringReport.valuationAnalysis,
-              evidence: compactEvidenceForPrompt(evidence),
+              evidence: compactEvidenceReferences(evidence),
             },
             task: "Enrich only the requested score item text. Do not change numeric scores.",
             requestedItemIds: itemIds,
@@ -527,10 +481,10 @@ async function requestScoreItemDetailBatchOnce({
             expectedOutputShape: {
               scoreItemDetails: itemIds.map((id) => ({
                 id,
-                evidence: ["2-4 条最新公开证据，写明财报期/行情时间/数据来源"],
-                deductions: ["1-3 条明确扣分点"],
+                evidence: ["1-2 条最新公开证据，写明财报期/行情时间/数据来源"],
+                deductions: ["1-2 条明确扣分点"],
                 recentChange: "最近 12 个月变化及对分数影响",
-                reason: strictLength ? "80-140 字中文评分理由" : "120-220 字中文评分理由",
+                reason: strictLength ? "60-100 字中文评分理由" : "90-140 字中文评分理由",
               })),
             },
           },
@@ -676,6 +630,7 @@ async function requestDeepSeekJson({
   model,
   messages,
   maxTokens,
+  timeoutMs,
   usageTracker,
 }: {
   apiKey: string;
@@ -683,14 +638,18 @@ async function requestDeepSeekJson({
   model: DeepSeekModel;
   messages: Array<{ role: "system" | "user"; content: string }>;
   maxTokens: number;
+  timeoutMs?: number;
   usageTracker: DeepSeekUsageTracker;
 }) {
-  const requestInit = {
+  const timeoutController = timeoutMs ? new AbortController() : undefined;
+  const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
+  const requestInit: RequestInit = {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
+    signal: timeoutController?.signal,
     body: JSON.stringify({
       model,
       reasoning_effort: "max",
@@ -701,7 +660,12 @@ async function requestDeepSeekJson({
       messages,
     }),
   };
-  const response = await fetchDeepSeekWithRetry(fetchImpl, requestInit);
+  let response: Response;
+  try {
+    response = await fetchDeepSeekWithRetry(fetchImpl, requestInit);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -829,10 +793,10 @@ Rules:
 - Do not change numeric scores, labels, item ids, item titles, or weights.
 - Use only the provided scoring report, normalized financial table, valuation data, and evidence bundle. Do not invent facts.
 - Distinguish data-provider failures from company weakness. If SEC/official financial data is present for a US company, use it and do not describe the company as financially unassessable merely because Yahoo failed.
-- Each requested item must include 2-4 concrete evidence bullets, 1-3 direct deduction bullets, a recentChange sentence, and a reason.
+- Each requested item must include 1-2 concrete evidence bullets, 1-2 direct deduction bullets, a recentChange sentence, and a reason.
 - Evidence bullets should mention the latest available period, source freshness, metric name, or valuation snapshot when possible.
 - Reasons must be direct and non-ambiguous: bad evidence means low score; do not write polite neutral language for weak companies.
-- ${strictLength ? "Strict retry mode: reason 80-140 Chinese characters; evidence bullets short." : "Reason should be 120-220 Chinese characters, with enough detail for a deep report."}
+- ${strictLength ? "Strict retry mode: reason 60-100 Chinese characters; evidence bullets short." : "Reason should be 90-140 Chinese characters, with enough detail for a deep report."}
 `;
 }
 

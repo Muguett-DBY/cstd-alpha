@@ -315,7 +315,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20[0].reason).toContain("不能因为公司知名度而给出模糊高分");
   });
 
-  test("warms the first two score detail and narrative batches before parallel follow-up batches", async () => {
+  test("runs score detail batches in parallel before narrative sections", async () => {
     const detailDeferreds = detailBatches.map((batch) => deferredModelResponse(detailPayload(batch)));
     const narrativeDeferreds = narrativeBatches.map((batch) => deferredModelResponse(narrativePayload(batch)));
     let detailIndex = 0;
@@ -334,20 +334,10 @@ describe("DeepSeek report client", () => {
     await nextTick();
     await nextTick();
 
-    expect(detailIndex).toBe(1);
+    expect(detailIndex).toBe(4);
     expect(narrativeIndex).toBe(0);
 
-    detailDeferreds[0].resolve();
-    await nextTick();
-    await nextTick();
-
-    expect(detailIndex).toBe(2);
-    detailDeferreds[1].resolve();
-    await nextTick();
-    await nextTick();
-
-    expect(detailIndex).toBe(4);
-    detailDeferreds.slice(2).forEach((item) => item.resolve());
+    detailDeferreds.forEach((item) => item.resolve());
     await nextTick();
     await nextTick();
 
@@ -579,7 +569,7 @@ describe("DeepSeek report client", () => {
     expect(report.fullSections.industryTrack).toBe("完整行业分析");
   });
 
-  test("splits score detail enrichment into single items when a five-item detail batch is truncated", async () => {
+  test("falls back to scoring-stage item text when a detail batch is truncated", async () => {
     let firstDetailBatchAttempts = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
@@ -606,9 +596,9 @@ describe("DeepSeek report client", () => {
 
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
-    expect(fetchMock).toHaveBeenCalledTimes(17);
-    expect(report.scoreItems20[0].evidence).toHaveLength(3);
-    expect(report.scoreItems20[4].reason).toContain("不能因为公司知名度而给出模糊高分");
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(report.scoreItems20[0].evidence).toEqual(["公开证据"]);
+    expect(report.scoreItems20[4].reason).toBe("基于公开证据给出中性评分。");
     expect(report.fullSections.finalConclusion).toBe("完整最终结论");
   });
 });
