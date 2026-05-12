@@ -571,9 +571,18 @@ describe("DeepSeek report client", () => {
 
   test("falls back to scoring-stage item text when a detail batch is truncated", async () => {
     let firstDetailBatchAttempts = 0;
+    const sparseScoreItems = SCORE_ITEMS_20.map((item, index) => ({
+      id: item.id,
+      score: 55 + (index % 10),
+      label: "一般",
+      evidence: ["公开证据"],
+      deductions: index === 0 ? [] : ["扣分点"],
+      recentChange: index === 0 ? "" : "最近 12 个月影响有限。",
+      reason: "基于公开证据给出中性评分。",
+    }));
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload()));
+      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload({ scoreItems20: sparseScoreItems })));
       const userPayload = JSON.parse(body.messages[1].content);
       if (Array.isArray(userPayload.requestedItemIds)) {
         const itemIds = userPayload.requestedItemIds as string[];
@@ -598,6 +607,9 @@ describe("DeepSeek report client", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(report.scoreItems20[0].evidence).toEqual(["公开证据"]);
+    expect(report.scoreItems20[0].deductions).toEqual(["评分细节补全未完成，沿用主评分阶段的扣分判断：基于公开证据给出中性评分。"]);
+    expect(report.scoreItems20[0].recentChange).toBe("最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。");
+    expect(report.scoreItems20[0].recentChange).not.toContain("未提供最近 12 个月变化判断");
     expect(report.scoreItems20[4].reason).toBe("基于公开证据给出中性评分。");
     expect(report.fullSections.finalConclusion).toBe("完整最终结论");
   });

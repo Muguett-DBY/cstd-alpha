@@ -446,14 +446,16 @@ function normalizeScoreItems(value: unknown, scoreScale: ScoreScale = 1): ScoreI
   return SCORE_ITEMS_20.map((definition) => {
     const raw = rawItems.find((item) => item.id === definition.id || item.title === definition.title);
     const score = normalizeModelScore(raw?.score, scoreScale);
+    const reason = cleanScoreDetailText(raw?.reason) || "数据不足：模型未提供该项完整评分理由。";
+    const deductions = stringArray(raw?.deductions).filter((text) => !isPlaceholderScoreDetailText(text));
     return {
       ...definition,
       score,
       label: scoreLabel(score),
-      evidence: stringArray(raw?.evidence),
-      deductions: stringArray(raw?.deductions),
-      recentChange: isNonEmptyString(raw?.recentChange) ? raw.recentChange : "未提供最近 12 个月变化判断；对分数影响：0",
-      reason: isNonEmptyString(raw?.reason) ? raw.reason : "数据不足：模型未提供该项完整评分理由。",
+      evidence: stringArray(raw?.evidence).filter((text) => !isPlaceholderScoreDetailText(text)),
+      deductions: deductions.length ? deductions : [`评分细节补全未完成，沿用主评分阶段的扣分判断：${reason}`],
+      recentChange: cleanScoreDetailText(raw?.recentChange) || "最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。",
+      reason,
     };
   });
 }
@@ -867,6 +869,15 @@ function optionalString(value: unknown) {
 
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.filter(isNonEmptyString).map(String) : [];
+}
+
+function cleanScoreDetailText(value: unknown) {
+  return isPlaceholderScoreDetailText(value) ? "" : String(value);
+}
+
+function isPlaceholderScoreDetailText(value: unknown) {
+  if (!isNonEmptyString(value)) return true;
+  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由/.test(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {

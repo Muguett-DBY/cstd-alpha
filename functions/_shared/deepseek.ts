@@ -378,15 +378,22 @@ type ScoreItemDetail = {
 };
 
 function fallbackScoreItemDetail(item: InvestmentReport["scoreItems20"][number]): ScoreItemDetail {
-  const evidence = stringArray(item.evidence);
-  const deductions = stringArray(item.deductions);
+  const evidence = stringArray(item.evidence).filter((text) => !isPlaceholderScoreDetailText(text));
+  const deductions = stringArray(item.deductions).filter((text) => !isPlaceholderScoreDetailText(text));
+  const reason = isPlaceholderScoreDetailText(item.reason) ? "" : item.reason;
+  const recentChange = isPlaceholderScoreDetailText(item.recentChange) ? "" : item.recentChange;
   return {
     id: item.id,
     evidence: evidence.length ? evidence : ["沿用评分阶段的公开证据；本项详细补全因模型输出过长未完成。"],
-    deductions: deductions.length ? deductions : ["需在后续复核中补充更细的扣分依据。"],
-    recentChange: isNonEmptyString(item.recentChange) ? item.recentChange : "最近 12 个月变化沿用评分阶段判断，待后续补充细节。",
-    reason: isNonEmptyString(item.reason) ? item.reason : "该项沿用结构化评分阶段的结论；详细证据补全过程被截断，未作为额外事实来源。",
+    deductions: deductions.length ? deductions : [`评分细节补全未完成，沿用主评分阶段的扣分判断：${reason || "暂无额外扣分描述。"}`],
+    recentChange: isNonEmptyString(recentChange) ? recentChange : "最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。",
+    reason: isNonEmptyString(reason) ? reason : "该项沿用结构化评分阶段的结论；详细证据补全过程被截断，未作为额外事实来源。",
   };
+}
+
+function isPlaceholderScoreDetailText(value: unknown) {
+  if (!isNonEmptyString(value)) return true;
+  return /未提供最近 12 个月变化判断|需在后续复核中补充更细的扣分依据|数据不足：模型未提供该项完整评分理由/.test(value);
 }
 
 async function requestScoreItemDetailBatch({

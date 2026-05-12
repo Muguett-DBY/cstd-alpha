@@ -201,6 +201,41 @@ describe("report validation", () => {
     expect(report.fullSections.finalConclusion).toContain("数据不足");
   });
 
+  test("cleans internal score detail placeholders when loading cached reports", () => {
+    const report = validateReportPayload({
+      company: { name: "Placeholder Co." },
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 55,
+        evidence: ["公开证据"],
+        deductions: ["需在后续复核中补充更细的扣分依据。"],
+        recentChange: "未提供最近 12 个月变化判断；对分数影响：0",
+        reason: "基于公开证据给出中性评分。",
+      })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+    });
+
+    expect(report.scoreItems20[0].deductions).toEqual(["评分细节补全未完成，沿用主评分阶段的扣分判断：基于公开证据给出中性评分。"]);
+    expect(report.scoreItems20[0].recentChange).toBe("最近 12 个月变化需结合公开财务和行情证据复核；本项暂不额外调整分数。");
+  });
+
   test("caps low-evidence reports instead of allowing high investment scores", () => {
     const report = validateReportPayload({
       company: { name: "Weak Evidence Co." },
