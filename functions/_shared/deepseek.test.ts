@@ -397,6 +397,12 @@ describe("DeepSeek report client", () => {
     const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(12);
+    const strictBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const strictPayload = JSON.parse(strictBody.messages[1].content);
+    expect(strictBody.max_tokens).toBe(12000);
+    expect(strictBody.messages[0].content).toContain("set financialTenYear.rows to [] and evidence to []");
+    expect(strictPayload.expectedOutputShape.evidence).toEqual([]);
+    expect(strictPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);
     expect(report.company.name).toBe("Example Inc.");
     expect(report.scoreItems20).toHaveLength(20);
   });

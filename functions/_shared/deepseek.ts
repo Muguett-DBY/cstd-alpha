@@ -237,7 +237,7 @@ async function requestScoringJsonOnce({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
-    maxTokens: strictLength ? 9000 : 12000,
+    maxTokens: 12000,
     usageTracker,
     messages: [
       {
@@ -805,11 +805,15 @@ Rules:
 - Include all 20 scoreItems20 with ids matching the provided scoreItems20 definitions. Each item needs only id, score, label, evidence, deductions, recentChange, reason. Do not repeat title, question, moduleName or weight.
 - Keep each scoreItems20 evidence/deductions array to at most 2 short strings. Keep reason under 80 Chinese characters and recentChange under 50 Chinese characters.
 - Do not include fullSections in this pass. Keep regular sections under 120 Chinese characters each; the full narrative is generated in separate batches.
-- Include financialTenYear.rows for available years and metrics, maximum 8 metrics. If a value is unavailable, write 数据不足, not a fake number.
+- ${
+    strictLength
+      ? "Strict retry mode: set financialTenYear.rows to [] and evidence to []; the server will restore provider financial tables and evidence references."
+      : "Include financialTenYear.rows for available years and metrics, maximum 8 metrics. If a value is unavailable, write 数据不足, not a fake number."
+  }
 - If the evidence bundle contains a normalized financialTenYear table, use those metric names and values as authoritative.
 - Include valuationAnalysis with currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion. If there is no concrete named scenario, return scenarios: [].
-- Include riskMatrix with at most 6 concrete risks. Never output placeholder risks such as 未分类风险/待验证.
-- Include evidence with source URLs and retrievedAt timestamps, maximum 8 items.
+- Include riskMatrix with ${strictLength ? "at most 3" : "at most 6"} concrete risks. Never output placeholder risks such as 未分类风险/待验证.
+- ${strictLength ? "Do not output source URL lists in strict retry mode." : "Include evidence with source URLs and retrievedAt timestamps, maximum 8 items."}
 - Conclusions must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
 `;
 }
@@ -1010,10 +1014,10 @@ function buildScoringOutputShape(evidence: EvidenceBundle, strictLength: boolean
       reason: "",
     })),
     redFlags: [],
-    evidence: evidence.evidence,
+    evidence: strictLength ? [] : evidence.evidence,
     financialTenYear: {
       rows: [],
-      interpretation: "",
+      interpretation: strictLength ? "使用服务端公开财务表。" : "",
     },
     valuationAnalysis: {
       currentPrice: "",
