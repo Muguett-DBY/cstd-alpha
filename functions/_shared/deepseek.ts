@@ -236,8 +236,8 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-pro",
-    maxTokens: 18000,
+    model: "deepseek-v4-flash",
+    maxTokens: strictLength ? 9000 : 12000,
     usageTracker,
     messages: [
       {

@@ -167,7 +167,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       percent: 48,
       evidenceCount: evidence.evidence.length,
     });
-    emit({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "V4 Pro max thinking 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
+    emit({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "V4 Flash max thinking 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
 
     const modelMetrics: { modelCalls?: number; tokenUsage?: ReportGenerationMetrics["tokenUsage"] } = { modelCalls: 0 };
     const report = await callDeepSeekReport({

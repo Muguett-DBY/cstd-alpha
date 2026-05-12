@@ -42,6 +42,11 @@ function deferredModelResponse(payload: Record<string, unknown>) {
   };
 }
 
+function isScoringRequestBody(body: { messages: Array<{ content: string }> }) {
+  const userPayload = JSON.parse(body.messages[1].content);
+  return !Array.isArray(userPayload.requestedItemIds) && !Array.isArray(userPayload.requestedFullSectionKeys);
+}
+
 function nextTick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -154,17 +159,17 @@ function mockSuccessfulReport(scoringPayload = reportPayload()) {
 }
 
 describe("DeepSeek report client", () => {
-  test("requests DeepSeek V4 Pro in max thinking mode with JSON output", async () => {
+  test("requests DeepSeek V4 Flash in max thinking mode with JSON output", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe("deepseek-v4-pro");
+    expect(body.model).toBe("deepseek-v4-flash");
     expect(body.reasoning_effort).toBe("max");
     expect(body.thinking).toEqual({ type: "enabled" });
     expect(body.response_format).toEqual({ type: "json_object" });
-    expect(body.max_tokens).toBe(18000);
+    expect(body.max_tokens).toBe(12000);
     const userPayload = JSON.parse(body.messages[1].content);
     expect(userPayload.expectedOutputShape.scoreItems20[0]).not.toHaveProperty("question");
     expect(userPayload.expectedOutputShape.scoreItems20[0]).toEqual(
@@ -193,7 +198,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20).toHaveLength(20);
   });
 
-  test("uses V4 Pro for scoring and V4 Flash for detail and narrative generation", async () => {
+  test("uses V4 Flash for scoring, detail and narrative generation", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
@@ -201,7 +206,7 @@ describe("DeepSeek report client", () => {
     const scoringBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     const detailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     const narrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
-    expect(scoringBody.model).toBe("deepseek-v4-pro");
+    expect(scoringBody.model).toBe("deepseek-v4-flash");
     expect(detailBody.model).toBe("deepseek-v4-flash");
     expect(narrativeBody.model).toBe("deepseek-v4-flash");
     for (const body of [scoringBody, detailBody, narrativeBody]) {
@@ -219,22 +224,13 @@ describe("DeepSeek report client", () => {
     expect(metrics.modelCalls).toBe(11);
     expect(metrics.tokenUsage).toEqual([
       {
-        model: "deepseek-v4-pro",
-        calls: 1,
-        promptTokens: 1000,
-        promptCacheHitTokens: 100,
-        promptCacheMissTokens: 900,
-        completionTokens: 200,
-        totalTokens: 1200,
-      },
-      {
         model: "deepseek-v4-flash",
-        calls: 10,
-        promptTokens: 10000,
-        promptCacheHitTokens: 1000,
-        promptCacheMissTokens: 9000,
-        completionTokens: 2000,
-        totalTokens: 12000,
+        calls: 11,
+        promptTokens: 11000,
+        promptCacheHitTokens: 1100,
+        promptCacheMissTokens: 9900,
+        completionTokens: 2200,
+        totalTokens: 13200,
       },
     ]);
   });
@@ -323,7 +319,7 @@ describe("DeepSeek report client", () => {
     let narrativeIndex = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.model === "deepseek-v4-pro") return Promise.resolve(modelResponse(reportPayload()));
+      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload()));
 
       const userPayload = JSON.parse(body.messages[1].content);
       if (Array.isArray(userPayload.requestedItemIds)) return detailDeferreds[detailIndex++].promise;
@@ -489,7 +485,7 @@ describe("DeepSeek report client", () => {
     let firstNarrativeAttempts = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.model === "deepseek-v4-pro") return Promise.resolve(modelResponse(reportPayload()));
+      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload()));
       const userPayload = JSON.parse(body.messages[1].content);
       if (Array.isArray(userPayload.requestedItemIds)) {
         return Promise.resolve(modelResponse(detailPayload(detailBatches.find((batch) => batch[0].id === userPayload.requestedItemIds[0]) ?? detailBatches[0])));
@@ -520,7 +516,7 @@ describe("DeepSeek report client", () => {
     let finalBatchAttempts = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.model === "deepseek-v4-pro") return Promise.resolve(modelResponse(reportPayload()));
+      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload()));
       const userPayload = JSON.parse(body.messages[1].content);
       if (Array.isArray(userPayload.requestedItemIds)) {
         return Promise.resolve(modelResponse(detailPayload(detailBatches.find((batch) => batch[0].id === userPayload.requestedItemIds[0]) ?? detailBatches[0])));
@@ -552,7 +548,7 @@ describe("DeepSeek report client", () => {
     let firstDetailBatchAttempts = 0;
     const fetchMock = vi.fn((_: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.model === "deepseek-v4-pro") return Promise.resolve(modelResponse(reportPayload()));
+      if (isScoringRequestBody(body)) return Promise.resolve(modelResponse(reportPayload()));
       const userPayload = JSON.parse(body.messages[1].content);
       if (Array.isArray(userPayload.requestedItemIds)) {
         const itemIds = userPayload.requestedItemIds as string[];
