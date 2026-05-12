@@ -175,6 +175,9 @@ describe("DeepSeek report client", () => {
     expect(userPayload.expectedOutputShape.scoreItems20[0]).toEqual(
       expect.objectContaining({ id: "industryLifecycle", score: 0, label: "一般" }),
     );
+    expect(userPayload.moduleWeights).toBeUndefined();
+    expect(userPayload.expectedOutputShape.evidence).toEqual([]);
+    expect(userPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);
   });
 
   test("passes an abort signal to DeepSeek fetch requests", async () => {

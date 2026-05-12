@@ -205,7 +205,7 @@ async function requestScoringJson({
   usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: false, usageTracker });
+    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     onProgress?.({
