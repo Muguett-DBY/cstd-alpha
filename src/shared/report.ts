@@ -298,6 +298,35 @@ export function scoreLabel(score: number): ScoreLabel {
   return "差";
 }
 
+const SAME_COMPANY_REFRESH_MAX_ITEM_DRIFT = 12;
+
+export function stabilizeReportScores(report: InvestmentReport, previousReport: InvestmentReport | undefined | null): InvestmentReport {
+  if (!previousReport || !isSameCompanyIdentity(report.company, previousReport.company)) return report;
+  if (report.redFlags.some((flag) => flag.severity === "critical")) return report;
+
+  const previousScores = new Map(previousReport.scoreItems20.map((item) => [item.id, item]));
+  const usablePreviousScores = previousReport.scoreItems20.filter((item) => item.score > 0).length;
+  if (usablePreviousScores < 15) return report;
+
+  let changed = false;
+  const scoreItems20 = report.scoreItems20.map((item) => {
+    const previous = previousScores.get(item.id);
+    if (!previous) return item;
+    const lower = previous.score - SAME_COMPANY_REFRESH_MAX_ITEM_DRIFT;
+    const upper = previous.score + SAME_COMPANY_REFRESH_MAX_ITEM_DRIFT;
+    const score = clampScore(Math.max(lower, Math.min(upper, item.score)));
+    if (score === item.score) return item;
+    changed = true;
+    return {
+      ...item,
+      score,
+      label: scoreLabel(score),
+    };
+  });
+
+  return changed ? validateReportPayload({ ...report, scoreItems20 }) : report;
+}
+
 export function qualitativeBand(score: number) {
   if (score <= 30) return "高风险垃圾股";
   if (score <= 50) return "平庸";
@@ -816,6 +845,20 @@ function companyGradeFromCqs(cqs: number) {
 
 function formatScoreForGrade(score: number) {
   return score.toLocaleString("zh-CN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function isSameCompanyIdentity(a: CompanyIdentity, b: CompanyIdentity) {
+  const aTicker = normalizeIdentityText(a.ticker);
+  const bTicker = normalizeIdentityText(b.ticker);
+  if (aTicker && bTicker && aTicker === bTicker) return true;
+
+  const aName = normalizeIdentityText(a.name);
+  const bName = normalizeIdentityText(b.name);
+  return Boolean(aName && bName && aName === bName);
+}
+
+function normalizeIdentityText(value: unknown) {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
 function optionalString(value: unknown) {

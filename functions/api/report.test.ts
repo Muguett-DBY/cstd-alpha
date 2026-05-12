@@ -88,8 +88,9 @@ describe("report API stream", () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
     vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const previousReport = { company: evidence.company, evidence: [], oneSentence: "旧缓存" };
     const cache = mockKvCache({
-      report: { company: evidence.company, evidence: [], oneSentence: "旧缓存" },
+      report: previousReport,
       evidence: { ...evidence, evidence: [] },
       cachedAt: "2026-05-10T00:00:00.000Z",
       expiresAt: "2099-05-11T00:00:00.000Z",
@@ -99,7 +100,8 @@ describe("report API stream", () => {
 
     expect(fetchPublicCompanyEvidence).toHaveBeenCalledTimes(1);
     expect(callDeepSeekReport).toHaveBeenCalledTimes(1);
-    expect(cache.get.mock.calls.some(([key]) => typeof key === "string" && key.startsWith("report:"))).toBe(false);
+    expect(callDeepSeekReport).toHaveBeenCalledWith(expect.objectContaining({ priorReport: previousReport }));
+    expect(cache.get.mock.calls.some(([key]) => typeof key === "string" && key.startsWith("report:"))).toBe(true);
     expect(cache.put).toHaveBeenCalledWith(expect.stringMatching(/^report:/), expect.any(String), expect.objectContaining({ expirationTtl: 2_592_000 }));
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });

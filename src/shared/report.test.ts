@@ -4,6 +4,7 @@ import {
   calculateWeightedScore,
   MODULE_WEIGHTS,
   SCORE_ITEMS_20,
+  stabilizeReportScores,
   validateReportPayload,
   type ModuleScore,
   type ScoreItem,
@@ -46,6 +47,47 @@ describe("report scoring", () => {
   test("risk caps override raw investment attractiveness", () => {
     expect(applyRiskCaps(88, [{ label: "重大财务造假", cap: 30, severity: "critical" }])).toBe(30);
     expect(applyRiskCaps(58, [{ label: "估值透支", cap: 65, severity: "warning" }])).toBe(58);
+  });
+
+  test("stabilizes same-company refresh scores against the previous report", () => {
+    const previous = validateReportPayload({
+      company: { name: "Stable Co.", ticker: "600000", market: "沪A" },
+      scoreItems20: scoreItems20.map((item) => ({ ...item, score: 60, reason: "上一版评分理由。" })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+    });
+    const volatileRefresh = validateReportPayload({
+      company: { name: "Stable Co.", ticker: "600000", market: "沪A" },
+      scoreItems20: scoreItems20.map((item) => ({ ...item, score: 20, reason: "本次模型评分理由。" })),
+      evidence: previous.evidence,
+    });
+
+    const stabilized = stabilizeReportScores(volatileRefresh, previous);
+
+    expect(stabilized.scoreItems20[0]).toMatchObject({
+      score: 48,
+      label: "差",
+      reason: "本次模型评分理由。",
+    });
+    expect(Math.abs(stabilized.cqs - previous.cqs)).toBeLessThanOrEqual(12);
+    expect(Math.abs(stabilized.ias - previous.ias)).toBeLessThanOrEqual(12);
+    expect(stabilized.moduleScores.every((module) => Math.abs(module.score - 48) <= 0.01)).toBe(true);
   });
 });
 

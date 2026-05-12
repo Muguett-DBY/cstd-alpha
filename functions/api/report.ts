@@ -1,7 +1,7 @@
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
-import type { CompanyCandidate, ReportGenerationMetrics } from "../../src/shared/report";
+import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "../../src/shared/report";
 
 type Env = {
   AUTH_SECRET: string;
@@ -41,12 +41,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const cacheKey = await buildReportCacheKey({ company, companyName, ticker: body?.ticker, market: body?.market });
+  const priorCached = await readReportCache(env, cacheKey);
 
   return streamNdjson(async (emit, signal) => {
     let lock: ReportGenerationLock | null = null;
     try {
     if (cacheMode === "prefer-cache") {
-      const cached = await readReportCache(env, cacheKey);
+      const cached = priorCached;
       if (cached) {
         emit({
           type: "progress",
@@ -177,6 +178,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       signal,
       onProgress: (progress) => emit({ type: "progress", ...progress }),
       metrics: modelMetrics,
+      priorReport: priorCached?.report ?? null,
     });
 
     emit({ type: "progress", stage: "validation", label: "结构校验", detail: "正在校验 20 项评分、红线封顶和模板章节结构。", percent: 90 });
@@ -248,7 +250,7 @@ type StreamEmit = (event: ProgressEvent | HeartbeatEvent | FinalEvent | ErrorEve
 
 type ReportCachePayload = {
   version?: string;
-  report: unknown;
+  report: InvestmentReport;
   evidence: unknown;
   metrics?: ReportGenerationMetrics;
   cachedAt: string;
@@ -568,7 +570,7 @@ function normalizeCachedPayload(value: unknown): ReportCachePayload | null {
   if (!cachedAt || !expiresAt || Date.parse(expiresAt) <= Date.now()) return null;
   return {
     version: typeof value.version === "string" ? value.version : undefined,
-    report: value.report,
+    report: value.report as InvestmentReport,
     evidence: value.evidence,
     metrics: isRecord(value.metrics) ? (value.metrics as ReportGenerationMetrics) : undefined,
     cachedAt,

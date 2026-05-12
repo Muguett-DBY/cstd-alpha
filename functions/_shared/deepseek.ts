@@ -1,4 +1,5 @@
 import {
+  stabilizeReportScores,
   validateReportPayload,
   type InvestmentReport,
   MODULE_WEIGHTS,
@@ -109,6 +110,7 @@ type DeepSeekInput = {
   signal?: AbortSignal;
   onProgress?: (progress: { stage: string; label: string; detail: string; percent: number }) => void;
   metrics?: { modelCalls?: number; tokenUsage?: ReportTokenUsage[] };
+  priorReport?: InvestmentReport | null;
 };
 
 type DeepSeekUsageTracker = {
@@ -123,6 +125,7 @@ export async function callDeepSeekReport({
   signal,
   onProgress,
   metrics,
+  priorReport,
 }: DeepSeekInput): Promise<InvestmentReport> {
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
   let modelCalls = 0;
@@ -151,7 +154,7 @@ export async function callDeepSeekReport({
       usageTracker,
     });
 
-    const scoringReport = validateReportPayload(prepareReportPayload(scoringJson, evidence));
+    const scoringReport = stabilizeReportScores(validateReportPayload(prepareReportPayload(scoringJson, evidence)), priorReport);
     const enrichedReport = validateReportPayload(
       prepareReportPayload(
         {
