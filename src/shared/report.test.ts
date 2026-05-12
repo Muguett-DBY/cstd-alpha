@@ -435,6 +435,34 @@ describe("report validation", () => {
     ]);
   });
 
+  test("replaces placeholder risk warning metrics with risk-specific tracking indicators", () => {
+    const report = validateReportPayload({
+      company: { name: "Risk Detail Co." },
+      evidence: [
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-12T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      riskMatrix: [
+        { type: "核心风险", risk: "财务杠杆过高，流动性危机", probability: "中", impact: "偿债能力不足", warningMetric: "待验证", response: "观察" },
+        { type: "核心风险", risk: "行业需求持续萎缩", probability: "高", impact: "收入利润进一步下滑", warningMetric: "待验证", response: "观察" },
+        { type: "核心风险", risk: "高估值回调", probability: "高", impact: "小股东损失", warningMetric: "待验证", response: "观察" },
+      ],
+    });
+
+    expect(report.riskMatrix.map((item) => item.warningMetric)).toEqual([
+      "资产负债率、货币资金/短期债务、经营现金流",
+      "营业收入同比、新签订单、毛利率",
+      "PE/PB、股价相对合理价值区间、成交量",
+    ]);
+    expect(JSON.stringify(report.riskMatrix)).not.toContain("待验证");
+  });
+
   test("derives buy action and standard position for high scores with reasonable-low valuation", () => {
     const report = validateReportPayload({
       company: { name: "Quality Co." },

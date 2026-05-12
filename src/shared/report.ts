@@ -709,11 +709,20 @@ function normalizeRiskMatrix(value: unknown): RiskMatrixItem[] {
     .map((item) => ({
       type: meaningfulOptionalString(item.type) ?? "核心风险",
       risk: optionalString(item.risk) ?? "待验证",
-      probability: meaningfulOptionalString(item.probability) ?? "待验证",
-      impact: meaningfulOptionalString(item.impact) ?? "待验证",
-      warningMetric: meaningfulOptionalString(item.warningMetric) ?? "待验证",
-      response: meaningfulOptionalString(item.response) ?? "观察",
+      probability: meaningfulOptionalString(item.probability) ?? "需结合财报和公告复核",
+      impact: meaningfulOptionalString(item.impact) ?? "可能压制估值、盈利或现金流",
+      warningMetric: meaningfulOptionalString(item.warningMetric) ?? fallbackWarningMetric(item.risk),
+      response: meaningfulOptionalString(item.response) ?? "暂不新增仓位，等待财报或公告确认。",
     }));
+}
+
+function fallbackWarningMetric(risk: unknown) {
+  const text = optionalString(risk) ?? "";
+  if (/负债|偿债|流动性|债务|杠杆/.test(text)) return "资产负债率、货币资金/短期债务、经营现金流";
+  if (/需求|行业|收入|订单|萎缩|下滑/.test(text)) return "营业收入同比、新签订单、毛利率";
+  if (/利润|亏损|盈利|减值/.test(text)) return "扣非净利润、净利率、资产减值损失";
+  if (/估值|股价|回调|高估|安全边际/.test(text)) return "PE/PB、股价相对合理价值区间、成交量";
+  return "营业收入同比、扣非净利润、经营现金流";
 }
 
 function isMeaningfulValuationScenario(item: Record<string, unknown>) {
