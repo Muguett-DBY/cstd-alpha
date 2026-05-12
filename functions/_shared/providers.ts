@@ -115,6 +115,7 @@ export async function fetchPublicCompanyEvidence({
   const eastmoneyQuoteResult = selectedCompany ? await fetchEastmoneyQuote(selectedCompany, fetchImpl) : { url: "", quote: undefined };
   const eastmoneyQuoteUrl = eastmoneyQuoteResult.url;
   const eastmoneyQuote = eastmoneyQuoteResult.quote;
+  const eastmoneyQuoteSource = eastmoneyQuoteResult.source;
   const incomeJson = incomeUrl ? await fetchJson(incomeUrl, fetchImpl) : null;
   const cashflowJson = cashflowUrl ? await fetchJson(cashflowUrl, fetchImpl) : null;
   const balanceJson = balanceUrl ? await fetchJson(balanceUrl, fetchImpl) : null;
@@ -206,7 +207,11 @@ export async function fetchPublicCompanyEvidence({
         url: eastmoneyQuoteUrl,
         retrievedAt,
         freshness: eastmoneyQuote ? "latest-public" : "unavailable",
-        notes: eastmoneyQuote ? "Latest public market price, volume, market cap and valuation snapshot." : "Eastmoney quote unavailable.",
+        notes: eastmoneyQuote
+          ? eastmoneyQuoteSource === "kline"
+            ? "Latest public market price recovered from Eastmoney kline fallback after the quote snapshot was unavailable."
+            : "Latest public market price, volume, market cap and valuation snapshot."
+          : "Eastmoney quote unavailable.",
       },
       {
         title: `${symbol} Eastmoney financial statements`,
@@ -246,38 +251,42 @@ export async function fetchPublicCompanyEvidence({
             } satisfies EvidenceItem,
           ]
         : []),
-      {
-        title: `${symbol} latest quote`,
-        source: "Yahoo Finance public quote endpoint",
-        url: quoteUrl,
-        retrievedAt,
-        freshness: quote ? "latest-public" : "unavailable",
-        notes: quote ? "Latest public quote snapshot returned by Yahoo Finance." : "Quote endpoint returned no data.",
-      },
-      {
-        title: `${symbol} company summary`,
-        source: "Yahoo Finance public quoteSummary endpoint",
-        url: summaryUrl,
-        retrievedAt,
-        freshness: summary ? "latest-public" : "unavailable",
-        notes: summary ? "Public profile, financialData, summaryDetail and key statistics modules." : "Summary unavailable.",
-      },
-      {
-        title: `${symbol} price chart snapshot`,
-        source: "Yahoo Finance public chart endpoint",
-        url: chartUrl,
-        retrievedAt,
-        freshness: chartMeta ? "latest-public" : "unavailable",
-        notes: chartMeta ? "Latest market price, volume, exchange, and 52-week range metadata." : "Chart endpoint returned no data.",
-      },
-      {
-        title: `${symbol} public fundamentals time series`,
-        source: "Yahoo Finance public fundamentals-timeseries endpoint",
-        url: fundamentalsUrl,
-        retrievedAt,
-        freshness: normalizedFundamentals ? "latest-public" : "unavailable",
-        notes: normalizedFundamentals ? "Trailing and quarterly public financial statement metrics." : "Fundamentals time series unavailable.",
-      },
+      ...(shouldFetchYahoo
+        ? [
+            {
+              title: `${symbol} latest quote`,
+              source: "Yahoo Finance public quote endpoint",
+              url: quoteUrl,
+              retrievedAt,
+              freshness: quote ? "latest-public" : "unavailable",
+              notes: quote ? "Latest public quote snapshot returned by Yahoo Finance." : "Quote endpoint returned no data.",
+            } satisfies EvidenceItem,
+            {
+              title: `${symbol} company summary`,
+              source: "Yahoo Finance public quoteSummary endpoint",
+              url: summaryUrl,
+              retrievedAt,
+              freshness: summary ? "latest-public" : "unavailable",
+              notes: summary ? "Public profile, financialData, summaryDetail and key statistics modules." : "Summary unavailable.",
+            } satisfies EvidenceItem,
+            {
+              title: `${symbol} price chart snapshot`,
+              source: "Yahoo Finance public chart endpoint",
+              url: chartUrl,
+              retrievedAt,
+              freshness: chartMeta ? "latest-public" : "unavailable",
+              notes: chartMeta ? "Latest market price, volume, exchange, and 52-week range metadata." : "Chart endpoint returned no data.",
+            } satisfies EvidenceItem,
+            {
+              title: `${symbol} public fundamentals time series`,
+              source: "Yahoo Finance public fundamentals-timeseries endpoint",
+              url: fundamentalsUrl,
+              retrievedAt,
+              freshness: normalizedFundamentals ? "latest-public" : "unavailable",
+              notes: normalizedFundamentals ? "Trailing and quarterly public financial statement metrics." : "Fundamentals time series unavailable.",
+            } satisfies EvidenceItem,
+          ]
+        : []),
       ...(isUsSelected
         ? [
             {
@@ -656,7 +665,13 @@ async function fetchEastmoneyQuote(candidate: CompanyCandidate, fetchImpl: Fetch
   for (const url of urls) {
     const json = await fetchJson(url, fetchImpl);
     const quote = isRecord(recordPath(json, ["data"])) ? (recordPath(json, ["data"]) as Record<string, unknown>) : undefined;
-    if (quote) return { url, quote };
+    if (quote) return { url, quote, source: "quote" as const };
+  }
+  for (const secid of eastmoneyQuoteIds(candidate)) {
+    const url = eastmoneyLatestKlineUrl(secid);
+    const json = await fetchJson(url, fetchImpl);
+    const quote = normalizeEastmoneyKlineQuote(json);
+    if (quote) return { url, quote, source: "kline" as const };
   }
   return { url: urls[0] ?? "", quote: undefined };
 }
@@ -681,6 +696,44 @@ function derivedEastmoneyQuoteId(candidate: CompanyCandidate) {
 
 function eastmoneyQuoteUrl(secid: string) {
   return `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid)}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`;
+}
+
+function eastmoneyLatestKlineUrl(secid: string) {
+  const now = new Date();
+  const begin = `${now.getUTCFullYear() - 1}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`;
+  return `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(
+    secid,
+  )}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=${begin}&end=20500101`;
+}
+
+function normalizeEastmoneyKlineQuote(value: unknown) {
+  const data = isRecord(recordPath(value, ["data"])) ? (recordPath(value, ["data"]) as Record<string, unknown>) : undefined;
+  const rows = Array.isArray(data?.klines) ? data.klines.filter((row): row is string => typeof row === "string") : [];
+  const latest = rows.at(-1);
+  if (!latest) return undefined;
+  const previous = rows.at(-2);
+  const [, open, close, high, low, volume, amount, , changePercent, changeAmount] = latest.split(",");
+  const [, , previousClose] = previous?.split(",") ?? [];
+  const closeValue = numberFromString(close);
+  if (closeValue === undefined) return undefined;
+  return pickDefined({
+    f57: stringValue(data?.code),
+    f58: stringValue(data?.name),
+    f43: closeValue * 100,
+    f44: scaledStringNumber(high, 100),
+    f45: scaledStringNumber(low, 100),
+    f46: scaledStringNumber(open, 100),
+    f47: numberFromString(volume),
+    f48: numberFromString(amount),
+    f60: scaledStringNumber(previousClose, 100),
+    f169: scaledStringNumber(changeAmount, 100),
+    f170: scaledStringNumber(changePercent, 100),
+  });
+}
+
+function scaledStringNumber(value: string | undefined, scale: number) {
+  const number = numberFromString(value);
+  return number === undefined ? undefined : number * scale;
 }
 
 function uniqueStrings(values: string[]) {

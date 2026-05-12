@@ -152,6 +152,63 @@ describe("public data providers", () => {
     });
   });
 
+  test("falls back to Eastmoney kline for A-share price when quote snapshot is unavailable", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+      }
+      if (url.includes("push2his.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: {
+              code: "605287",
+              name: "德才股份",
+              klines: [
+                "2026-05-11,63.77,62.26,66.21,60.35,119153,750558124.00,9.27,-1.49,-0.94,8.51",
+                "2026-05-12,61.14,56.03,62.30,56.03,78947,456639793.00,10.07,-10.01,-6.23,5.64",
+              ],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "德才股份",
+      company: {
+        id: "eastmoney:1.605287",
+        name: "德才股份",
+        code: "605287",
+        exchange: "上海证券交易所",
+        listingPlace: "沪A",
+        marketType: "AStock",
+        quoteId: "1.605287",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("push2his.eastmoney.com"), expect.any(Object));
+    expect(result.facts.quote).toMatchObject({
+      symbol: "605287",
+      longName: "德才股份",
+      regularMarketPrice: 56.03,
+      regularMarketDayHigh: 62.3,
+      regularMarketDayLow: 56.03,
+      regularMarketOpen: 61.14,
+      regularMarketPreviousClose: 62.26,
+      regularMarketChange: -6.23,
+      regularMarketChangePercent: -10.01,
+    });
+    expect(result.evidence.find((item) => item.title.includes("Eastmoney quote snapshot"))).toMatchObject({
+      freshness: "latest-public",
+      notes: expect.stringContaining("kline fallback"),
+    });
+    expect(result.evidence).not.toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public quote endpoint" })]));
+  });
+
   test("records unavailable evidence instead of inventing facts", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 

@@ -765,7 +765,7 @@ function deriveInvestmentDecision(
 ): DerivedInvestmentDecision {
   const criticalRedFlag = redFlags.some((flag) => flag.severity === "critical" || flag.cap <= 30);
   if (criticalRedFlag || ias <= 30) return { conclusion: "回避", positionAdvice: "0%" };
-  if (ias <= 40) return { conclusion: "回避", positionAdvice: "0-3% 观察上限" };
+  if (ias <= 40) return { conclusion: "回避", positionAdvice: "0%" };
   if (ias <= 50) return { conclusion: "观察", positionAdvice: "0-3% 观察上限" };
 
   const valuationView = deriveValuationView(valuationAnalysis);

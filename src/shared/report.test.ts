@@ -581,6 +581,55 @@ describe("report validation", () => {
     expect(report.accountRules.maxPosition).toBe("0%");
   });
 
+  test("keeps avoid action at zero position for very weak investment scores", () => {
+    const report = validateReportPayload({
+      company: { name: "Weak Co." },
+      conclusion: "回避",
+      cqs: 32,
+      ias: 35,
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 35,
+        label: "差",
+        evidence: ["公开财务数据和经营趋势显示基本面偏弱"],
+        deductions: ["盈利、现金流和安全边际不足"],
+        recentChange: "最近 12 个月未见明确改善。",
+        reason: "投资吸引力很低，应以回避为主。",
+      })),
+      redFlags: [],
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      valuationAnalysis: {
+        currentPrice: "10",
+        fairValueRange: "8-12",
+        buyRange: "6 以下",
+        sellReduceRange: "15 以上",
+        conclusion: "估值无法弥补基本面风险。",
+      },
+    });
+
+    expect(report.ias).toBeLessThanOrEqual(40);
+    expect(report.conclusion).toBe("回避");
+    expect(report.summaryDashboard.positionAdvice).toBe("0%");
+    expect(report.accountRules.maxPosition).toBe("0%");
+  });
+
   test("drops structurally empty financial rows instead of showing unnamed metrics", () => {
     const report = validateReportPayload({
       company: { name: "Financial Co." },
