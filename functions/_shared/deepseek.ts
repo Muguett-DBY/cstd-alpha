@@ -404,11 +404,11 @@ async function requestScoreItemDetailBatch({
   usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   try {
-    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false, usageTracker });
+    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     try {
-      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
+      return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: false, usageTracker });
     } catch (retryError) {
       if (!isRetryableModelOutputError(retryError) || itemIds.length <= 1) throw retryError;
       return requestScoreItemDetailsIndividually({
@@ -489,7 +489,7 @@ async function requestScoreItemDetailBatchOnce({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
-    maxTokens: strictLength ? 7000 : 9500,
+    maxTokens: strictLength ? 4500 : 7000,
     usageTracker,
     messages: [
       {
@@ -530,7 +530,7 @@ async function requestScoreItemDetailBatchOnce({
                 evidence: ["2-4 条最新公开证据，写明财报期/行情时间/数据来源"],
                 deductions: ["1-3 条明确扣分点"],
                 recentChange: "最近 12 个月变化及对分数影响",
-                reason: "120-220 字中文评分理由",
+                reason: strictLength ? "80-140 字中文评分理由" : "120-220 字中文评分理由",
               })),
             },
           },
@@ -561,11 +561,11 @@ async function requestNarrativeBatch({
   usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
+    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     try {
-      return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
+      return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
     } catch (retryError) {
       if (!isRetryableModelOutputError(retryError) || keys.length <= 1) throw retryError;
       return requestNarrativeSectionsIndividually({
@@ -640,7 +640,7 @@ async function requestNarrativeBatchOnce({
     apiKey,
     fetchImpl,
     model: "deepseek-v4-flash",
-    maxTokens: strictLength ? 3500 : 5000,
+    maxTokens: strictLength ? 2600 : 4200,
     usageTracker,
     messages: [
       {
