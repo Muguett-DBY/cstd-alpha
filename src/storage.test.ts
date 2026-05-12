@@ -57,10 +57,62 @@ describe("report storage", () => {
 
     saveCachedReport(company, report, 1000);
 
-    expect(buildReportCacheKey(company)).toContain("eastmoney:1.600519");
+    expect(buildReportCacheKey(company)).toContain("沪A:600519");
     expect(loadCachedReport(company, 1000 + 60_000)?.report.company.name).toBe("贵州茅台");
     expect(loadCachedReport(company, 1000 + 29 * 24 * 60 * 60 * 1000)?.report.company.name).toBe("贵州茅台");
     expect(loadCachedReport(company, 1000 + 31 * 24 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  test("uses a canonical local report cache key across equivalent candidates", () => {
+    const base = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const equivalent = {
+      ...base,
+      id: "alternate-provider:SH600519",
+      name: "贵州茅台股份有限公司",
+      exchange: "SSE",
+    };
+
+    expect(buildReportCacheKey(base)).toBe(buildReportCacheKey(equivalent));
+  });
+
+  test("loads reports from the legacy local cache key after canonical key migration", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const report = validateReportPayload({
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      oneSentence: "旧本地缓存报告",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    });
+    const legacyKey = "cstd-alpha:report-cache:v5-report-cleanup:eastmoney:1.600519:600519:沪A";
+    storage.setItem(
+      legacyKey,
+      JSON.stringify({
+        report,
+        cachedAt: 1000,
+        expiresAt: 1000 + 30 * 24 * 60 * 60 * 1000,
+      }),
+    );
+
+    expect(loadCachedReport(company, 2000)?.report.oneSentence).toBe("旧本地缓存报告");
   });
 
   test("preserves generation metrics with cached reports", () => {

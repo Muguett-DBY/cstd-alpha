@@ -84,6 +84,66 @@ describe("report API stream", () => {
     });
   });
 
+  test("uses the same shared cache key for the same listed security across candidate sources", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+    const firstCache = mockKvCacheByKey(() => null);
+    const secondCache = mockKvCacheByKey(() => null);
+    const firstCompany = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      quoteId: "1.600519",
+      source: "eastmoney" as const,
+    };
+    const secondCompany = {
+      ...firstCompany,
+      id: "alternate-provider:SH600519",
+      name: "贵州茅台股份有限公司",
+      exchange: "SSE",
+    };
+
+    await postReportEvents({ company: firstCompany, env: { REPORT_CACHE: firstCache } });
+    await postReportEvents({ company: secondCompany, env: { REPORT_CACHE: secondCache } });
+
+    expect(firstReportGetKey(firstCache)).toBe(firstReportGetKey(secondCache));
+  });
+
+  test("falls back to a legacy shared cache key before regenerating", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "旧 key 缓存报告" };
+    let reportReads = 0;
+    const cache = mockKvCacheByKey((key) => {
+      if (key.startsWith("report:")) {
+        reportReads += 1;
+        return reportReads === 2
+          ? {
+              report: cachedReport,
+              evidence,
+              cachedAt: "2026-05-10T00:00:00.000Z",
+              expiresAt: "2099-05-11T00:00:00.000Z",
+            }
+          : null;
+      }
+      return null;
+    });
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache } });
+
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(reportGetKeys(cache)).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      report: cachedReport,
+      metrics: { cacheHit: true },
+    });
+  });
+
   test("refresh mode bypasses shared cache and stores the generated report", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
@@ -113,7 +173,7 @@ describe("report API stream", () => {
     const cache = mockKvCacheByKey((key) => {
       if (key.startsWith("report:")) {
         reportReads += 1;
-        return reportReads >= 3
+        return reportReads >= 4
           ? {
               report: cachedReport,
               evidence,
@@ -435,7 +495,15 @@ function mockKvCacheByKey(
   };
 }
 
-async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
+function reportGetKeys(cache: TestKvCache) {
+  return cache.get.mock.calls.map(([key]) => key).filter((key): key is string => typeof key === "string" && key.startsWith("report:"));
+}
+
+function firstReportGetKey(cache: TestKvCache) {
+  return reportGetKeys(cache)[0];
+}
+
+async function postReportEvents(options: { forceRefresh?: boolean; company?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
   const response = await postReportResponse(options);
 
   return (await response.text())
@@ -445,7 +513,17 @@ async function postReportEvents(options: { forceRefresh?: boolean; env?: Record<
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-async function postReportResponse(options: { forceRefresh?: boolean; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
+async function postReportResponse(options: { forceRefresh?: boolean; company?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
+  const company = options.company ?? {
+    id: "eastmoney:1.600519",
+    name: "贵州茅台",
+    code: "600519",
+    exchange: "上海证券交易所",
+    listingPlace: "沪A",
+    marketType: "AStock",
+    quoteId: "1.600519",
+    source: "eastmoney",
+  };
   return onRequestPost({
     request: new Request("https://alpha.custard.top/api/report", {
       method: "POST",
@@ -453,16 +531,7 @@ async function postReportResponse(options: { forceRefresh?: boolean; env?: Recor
       signal: options.signal,
       body: JSON.stringify({
         forceRefresh: options.forceRefresh,
-        company: {
-          id: "eastmoney:1.600519",
-          name: "贵州茅台",
-          code: "600519",
-          exchange: "上海证券交易所",
-          listingPlace: "沪A",
-          marketType: "AStock",
-          quoteId: "1.600519",
-          source: "eastmoney",
-        },
+        company,
       }),
     }),
     env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key", ...options.env },

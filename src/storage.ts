@@ -71,16 +71,19 @@ export function saveCachedReport(company: CompanyCandidate, report: InvestmentRe
 
 export function loadCachedReport(company: CompanyCandidate, now = Date.now()): CachedReport | null {
   try {
-    const raw = localStorage.getItem(buildReportCacheKey(company));
+    const cacheKeys = reportCacheKeys(company);
+    const cacheKey = cacheKeys.find((key) => localStorage.getItem(key));
+    if (!cacheKey) return null;
+    const raw = localStorage.getItem(cacheKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedReport>;
     if (!parsed.expiresAt || parsed.expiresAt <= now || !parsed.report) {
-      localStorage.removeItem(buildReportCacheKey(company));
+      localStorage.removeItem(cacheKey);
       return null;
     }
     const report = validateReportPayload(parsed.report);
     if (isLegacyModelFailureReport(report)) {
-      localStorage.removeItem(buildReportCacheKey(company));
+      localStorage.removeItem(cacheKey);
       return null;
     }
     return { report, cachedAt: Number(parsed.cachedAt) || now, expiresAt: parsed.expiresAt, metrics: normalizeGenerationMetrics(parsed.metrics) };
@@ -181,7 +184,22 @@ function numberOrZero(value: unknown) {
 }
 
 function stableCompanyId(company: CompanyCandidate) {
+  const market = normalizeCacheIdentityPart(company.listingPlace);
+  const code = normalizeCacheIdentityPart(company.code);
+  const name = normalizeCacheIdentityPart(company.name);
+  return code ? `${market || "UNKNOWN"}:${code}` : `${market || "UNKNOWN"}:${name}`;
+}
+
+function reportCacheKeys(company: CompanyCandidate) {
+  return Array.from(new Set([buildReportCacheKey(company), `${REPORT_CACHE_PREFIX}${REPORT_CACHE_VERSION}:${legacyStableCompanyId(company)}`]));
+}
+
+function legacyStableCompanyId(company: CompanyCandidate) {
   return [company.id, company.code, company.listingPlace].filter(Boolean).join(":");
+}
+
+function normalizeCacheIdentityPart(value: unknown) {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

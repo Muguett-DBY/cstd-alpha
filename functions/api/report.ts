@@ -40,8 +40,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const cacheMode = body?.forceRefresh || body?.cacheMode === "refresh" ? "refresh" : "prefer-cache";
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const cacheKey = await buildReportCacheKey({ company, companyName, ticker: body?.ticker, market: body?.market });
-  const priorCached = await readReportCache(env, cacheKey);
+  const cacheKeys = await buildReportCacheKeys({ company, companyName, ticker: body?.ticker, market: body?.market });
+  const cacheKey = cacheKeys.primary;
+  const priorCached = await readReportCache(env, cacheKeys.readKeys);
 
   return streamNdjson(async (emit, signal) => {
     let lock: ReportGenerationLock | null = null;
@@ -379,7 +380,29 @@ function buildCacheHitMetrics(startedAtMs: number, startedAt: string, cachedMetr
   };
 }
 
-async function buildReportCacheKey(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
+async function buildReportCacheKeys(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
+  const primary = await buildCanonicalReportCacheKey(input);
+  const legacy = await buildLegacyReportCacheKey(input);
+  return {
+    primary,
+    readKeys: Array.from(new Set([primary, legacy])),
+  };
+}
+
+async function buildCanonicalReportCacheKey(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
+  const company = input.company;
+  const raw = JSON.stringify({
+    version: SERVER_REPORT_CACHE_VERSION,
+    identity: canonicalCompanyCacheIdentity({
+      name: company?.name ?? input.companyName,
+      code: company?.code ?? input.ticker,
+      listingPlace: company?.listingPlace ?? input.market,
+    }),
+  });
+  return `report:${SERVER_REPORT_CACHE_VERSION}:${await sha256(raw)}`;
+}
+
+async function buildLegacyReportCacheKey(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
   const company = input.company;
   const raw = JSON.stringify({
     version: SERVER_REPORT_CACHE_VERSION,
@@ -393,10 +416,25 @@ async function buildReportCacheKey(input: { company?: CompanyCandidate; companyN
   return `report:${SERVER_REPORT_CACHE_VERSION}:${await sha256(raw)}`;
 }
 
-async function readReportCache(env: Env, cacheKey: string): Promise<ReportCachePayload | null> {
-  const kvCached = await readKvReportCache(env, cacheKey);
-  if (kvCached) return kvCached;
-  return readEdgeReportCache(cacheKey);
+function canonicalCompanyCacheIdentity(input: { name?: string; code?: string; listingPlace?: string }) {
+  const market = normalizeCacheIdentityPart(input.listingPlace);
+  const code = normalizeCacheIdentityPart(input.code);
+  const name = normalizeCacheIdentityPart(input.name);
+  return code ? `${market || "UNKNOWN"}:${code}` : `${market || "UNKNOWN"}:${name}`;
+}
+
+function normalizeCacheIdentityPart(value: unknown) {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+async function readReportCache(env: Env, cacheKeys: string | string[]): Promise<ReportCachePayload | null> {
+  for (const cacheKey of Array.isArray(cacheKeys) ? cacheKeys : [cacheKeys]) {
+    const kvCached = await readKvReportCache(env, cacheKey);
+    if (kvCached) return kvCached;
+    const edgeCached = await readEdgeReportCache(cacheKey);
+    if (edgeCached) return edgeCached;
+  }
+  return null;
 }
 
 async function readKvReportCache(env: Env, cacheKey: string): Promise<ReportCachePayload | null> {
