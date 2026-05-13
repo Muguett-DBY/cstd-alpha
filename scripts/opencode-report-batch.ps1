@@ -159,6 +159,7 @@ foreach ($company in $companies) {
   New-Item -ItemType Directory -Force $companyDir | Out-Null
   $reportPath = Join-Path $companyDir "report.json"
   $eventsPath = Join-Path $companyDir "opencode-events.jsonl"
+  $opencodeErrorPath = Join-Path $companyDir "opencode.stderr.log"
   $promptPath = Join-Path $companyDir "prompt.md"
   $evidencePath = Join-Path $companyDir "evidence.json"
   $statusPath = Join-Path $companyDir "status.json"
@@ -222,7 +223,26 @@ Read evidence.json and produce the final report JSON now.
   $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
 
   Write-Output "RUN opencode $($company.code) $($company.name)"
-  opencode run "Generate the final report JSON from prompt.md and evidence.json. Do not write files or call tools. Return only JSON in the final answer." --model $Model --variant $Variant --agent $Agent --format json --dir (Get-Location).Path --file $promptPath --file $evidencePath | Tee-Object -FilePath $eventsPath | Out-Null
+  $opencodeCmd = Get-Command opencode.cmd -ErrorAction SilentlyContinue
+  $opencodeCommand = if ($opencodeCmd) { $opencodeCmd.Source } else { $null }
+  if (-not $opencodeCommand) { $opencodeCommand = (Get-Command opencode -ErrorAction Stop).Source }
+  Remove-Item -LiteralPath $eventsPath, $opencodeErrorPath -Force -ErrorAction SilentlyContinue
+  $opencodeArgs = @(
+    "run",
+    "Generate the final report JSON from prompt.md and evidence.json. Do not write files or call tools. Return only JSON in the final answer.",
+    "--model", $Model,
+    "--variant", $Variant,
+    "--agent", $Agent,
+    "--format", "json",
+    "--dir", (Get-Location).Path,
+    "--file", $promptPath,
+    "--file", $evidencePath
+  )
+  $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -Wait -PassThru
+  if ($opencodeProcess.ExitCode -ne 0) {
+    $stderr = if (Test-Path $opencodeErrorPath) { Get-Content -LiteralPath $opencodeErrorPath -Raw -Encoding UTF8 } else { "" }
+    throw "opencode failed with exit code $($opencodeProcess.ExitCode). $stderr"
+  }
 
   $textParts = Get-Content -LiteralPath $eventsPath -Encoding UTF8 | ForEach-Object {
     try {
@@ -253,6 +273,7 @@ Read evidence.json and produce the final report JSON now.
     importedAt = (Get-Date).ToUniversalTime().ToString("o")
     imported = $imported.imported
   } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
+  Remove-Item -LiteralPath $failurePath -Force -ErrorAction SilentlyContinue
   Write-Output "DONE $($company.code) $($company.name)"
   } catch {
     [pscustomobject]@{
