@@ -32,6 +32,7 @@ function Format-ProviderNumber {
 function Test-UsableValuationField {
   param([object]$Value)
   if ($null -eq $Value) { return $false }
+  if ($Value -is [array] -or $Value -is [System.Collections.IDictionary] -or $Value -is [pscustomobject]) { return $false }
   $text = ([string]$Value).Trim()
   if (-not $text) { return $false }
   $badTerms = @(
@@ -46,7 +47,7 @@ function Test-UsableValuationField {
   foreach ($term in $badTerms) {
     if ($text.Contains($term)) { return $false }
   }
-  return -not ($text -match "unavailable|N/A")
+  return -not ($text -match "unavailable|N/A|^@\{")
 }
 
 function Get-CurrencyFromMarket {
