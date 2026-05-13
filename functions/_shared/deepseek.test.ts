@@ -159,13 +159,15 @@ function mockSuccessfulReport(scoringPayload = reportPayload()) {
 }
 
 describe("DeepSeek report client", () => {
-  test("requests DeepSeek V4 Flash in max thinking mode with JSON output", async () => {
+  test("requests OpenCode Zen DeepSeek V4 Flash Free in max thinking mode with JSON output", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe("deepseek-v4-flash");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("authorization");
+    expect(body.model).toBe("deepseek-v4-flash-free");
     expect(body.reasoning_effort).toBe("max");
     expect(body.thinking).toEqual({ type: "enabled" });
     expect(body.response_format).toEqual({ type: "json_object" });
@@ -201,7 +203,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20).toHaveLength(20);
   });
 
-  test("uses V4 Flash for scoring, detail and narrative generation", async () => {
+  test("uses V4 Flash Free for scoring, detail and narrative generation", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
@@ -209,9 +211,9 @@ describe("DeepSeek report client", () => {
     const scoringBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     const detailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     const narrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
-    expect(scoringBody.model).toBe("deepseek-v4-flash");
-    expect(detailBody.model).toBe("deepseek-v4-flash");
-    expect(narrativeBody.model).toBe("deepseek-v4-flash");
+    expect(scoringBody.model).toBe("deepseek-v4-flash-free");
+    expect(detailBody.model).toBe("deepseek-v4-flash-free");
+    expect(narrativeBody.model).toBe("deepseek-v4-flash-free");
     for (const body of [scoringBody, detailBody, narrativeBody]) {
       expect(body.reasoning_effort).toBe("max");
       expect(body.thinking).toEqual({ type: "enabled" });
@@ -227,7 +229,7 @@ describe("DeepSeek report client", () => {
     expect(metrics.modelCalls).toBe(11);
     expect(metrics.tokenUsage).toEqual([
       {
-        model: "deepseek-v4-flash",
+        model: "deepseek-v4-flash-free",
         calls: 11,
         promptTokens: 11000,
         promptCacheHitTokens: 1100,

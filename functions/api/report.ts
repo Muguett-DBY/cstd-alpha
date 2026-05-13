@@ -5,7 +5,7 @@ import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from
 
 type Env = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY: string;
+  DEEPSEEK_API_KEY?: string;
   REPORT_CACHE?: KVNamespace;
 };
 
@@ -36,7 +36,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const company = body?.company;
   const companyName = company?.name?.trim() || body?.companyName?.trim();
   if (!companyName) return json({ error: "请先搜索并选择一个候选公司。" }, 400);
-  if (!env.DEEPSEEK_API_KEY) return json({ error: "DEEPSEEK_API_KEY is not configured." }, 500);
   const cacheMode = body?.forceRefresh || body?.cacheMode === "refresh" ? "refresh" : "prefer-cache";
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();

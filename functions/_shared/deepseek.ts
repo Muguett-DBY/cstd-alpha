@@ -14,11 +14,12 @@ import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
-type DeepSeekModel = "deepseek-v4-pro" | "deepseek-v4-flash";
+type DeepSeekModel = "deepseek-v4-flash-free";
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 export const DEEPSEEK_NETWORK_MESSAGE = "DeepSeek 网络连接不稳定，本次报告未完成，请重试。";
+const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["accountRules"],
@@ -103,7 +104,7 @@ export class DeepSeekReportError extends Error {
 }
 
 type DeepSeekInput = {
-  apiKey: string;
+  apiKey?: string;
   evidence: EvidenceBundle;
   language?: "zh-CN" | "en";
   fetchImpl?: FetchLike;
@@ -127,7 +128,6 @@ export async function callDeepSeekReport({
   metrics,
   priorReport,
 }: DeepSeekInput): Promise<InvestmentReport> {
-  if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
   let modelCalls = 0;
   const usageTracker: DeepSeekUsageTracker = { byModel: new Map() };
   const countedFetch = ((...args: Parameters<FetchLike>) => {
@@ -140,7 +140,7 @@ export async function callDeepSeekReport({
           : "url" in resource
             ? resource.url
             : "";
-    if (url.includes("api.deepseek.com/chat/completions")) modelCalls += 1;
+    if (url.includes("/chat/completions")) modelCalls += 1;
     return fetchImpl(args[0], { ...args[1], signal: args[1]?.signal ?? signal });
   }) as FetchLike;
 
@@ -200,7 +200,7 @@ async function requestScoringJson({
   onProgress,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
@@ -229,7 +229,7 @@ async function requestScoringJsonOnce({
   strictLength,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
@@ -239,7 +239,7 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: 12000,
     usageTracker,
     messages: [
@@ -278,7 +278,7 @@ async function requestNarrativeSections({
   onProgress,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -317,7 +317,7 @@ async function requestScoreItemDetails({
   onProgress,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -405,7 +405,7 @@ async function requestScoreItemDetailBatch({
   itemIds,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -439,7 +439,7 @@ async function requestScoreItemDetailBatchOnce({
   strictLength,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -451,7 +451,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: strictLength ? 2400 : 3600,
     timeoutMs: 90_000,
     usageTracker,
@@ -516,7 +516,7 @@ async function requestNarrativeBatch({
   keys,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -554,7 +554,7 @@ async function requestNarrativeSectionsIndividually({
   keys,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -591,7 +591,7 @@ async function requestNarrativeBatchOnce({
   strictLength,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -603,7 +603,7 @@ async function requestNarrativeBatchOnce({
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: strictLength ? 2600 : 4200,
     usageTracker,
     messages: [
@@ -643,7 +643,7 @@ async function requestDeepSeekJson({
   timeoutMs,
   usageTracker,
 }: {
-  apiKey: string;
+  apiKey?: string;
   fetchImpl: FetchLike;
   model: DeepSeekModel;
   messages: Array<{ role: "system" | "user"; content: string }>;
@@ -655,10 +655,7 @@ async function requestDeepSeekJson({
   const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
   const requestInit: RequestInit = {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
+    headers: { "content-type": "application/json" },
     signal: timeoutController?.signal,
     body: JSON.stringify({
       model,
@@ -702,7 +699,7 @@ async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, init: RequestInit) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetchImpl("https://api.deepseek.com/chat/completions", init);
+      const response = await fetchImpl(OPENCODE_ZEN_CHAT_COMPLETIONS_URL, init);
       if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
       lastError = new Error(`DeepSeek request failed: ${response.status}`);
     } catch (error) {
@@ -1356,3 +1353,4 @@ function numericValue(value: unknown) {
 function formatProviderNumber(value: number) {
   return value.toLocaleString("zh-CN", { maximumFractionDigits: 3 });
 }
+
