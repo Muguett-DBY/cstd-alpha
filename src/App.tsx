@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
+import { RankingView } from "./RankingView";
 import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
+import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
+type AppView = "report" | "ranking";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -30,6 +33,7 @@ function App() {
   const [priceMode, setPriceMode] = useState<PriceMode>("adjusted");
   const [cacheNotice, setCacheNotice] = useState("");
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
+  const [activeView, setActiveView] = useState<AppView>("report");
 
   useEffect(() => {
     void checkSession()
@@ -171,6 +175,41 @@ function App() {
     }
   }
 
+  function openRankingEntry(entry: RankingEntry) {
+    const company = companyCandidateFromRanking(entry);
+    setSelectedCompany(company);
+    setQuery(entry.name);
+    setChartBundle(null);
+    setChartError("");
+    setActiveView("report");
+    if (entry.report) {
+      setReport(entry.report);
+      setReportMetrics(null);
+      saveLastReport(entry.report);
+      setEvidenceCount(entry.report.evidence.length);
+      setProgress([
+        {
+          type: "progress",
+          stage: "imported_report",
+          label: "导入报告",
+          detail: "已打开排行榜中的深度报告。",
+          percent: 100,
+          at: new Date().toISOString(),
+          evidenceCount: entry.report.evidence.length,
+        },
+      ]);
+      setPhase("ready");
+      setCacheNotice("正在显示排行榜导入报告。");
+      return;
+    }
+    setReport(null);
+    setReportMetrics(null);
+    setProgress([]);
+    setEvidenceCount(0);
+    setPhase("idle");
+    setCacheNotice("已从排行榜选择公司，可生成完整评分报告或导入深度报告 JSON。");
+  }
+
   if (checking) return <div className="loading-screen">CSTD Alpha</div>;
 
   if (!authenticated) {
@@ -207,6 +246,15 @@ function App() {
           <h1>中文深度评分报告</h1>
           <p className="rail-copy">先确认上市主体，再生成完整模板报告，避免同名公司或错误代码。</p>
         </div>
+
+        <nav className="view-tabs" aria-label="工作区">
+          <button type="button" className={activeView === "report" ? "active" : ""} onClick={() => setActiveView("report")}>
+            生成报告
+          </button>
+          <button type="button" className={activeView === "ranking" ? "active" : ""} onClick={() => setActiveView("ranking")}>
+            100 家排行
+          </button>
+        </nav>
 
         <form onSubmit={submitSearch} className="report-form">
           <label htmlFor="companyQuery">公司名或股票代码</label>
@@ -281,10 +329,16 @@ function App() {
       </aside>
 
       <section className="workspace">
-        {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
-          <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
-        ) : null}
-        {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
+        {activeView === "ranking" ? (
+          <RankingView onOpenEntry={openRankingEntry} />
+        ) : (
+          <>
+            {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
+              <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
+            ) : null}
+            {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
+          </>
+        )}
       </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
