@@ -5,7 +5,7 @@ param(
   [string]$Password,
   [int]$Offset = 0,
   [int]$Limit = 1,
-  [string]$Model = "opencode-go/deepseek-v4-flash",
+  [string]$Model = "opencode/deepseek-v4-flash-free",
   [string]$Variant = "max",
   [string]$Agent = "build",
   [switch]$ImportOnline,
@@ -15,10 +15,16 @@ param(
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force $OutputDir | Out-Null
 
+$accessPath = "E:\DEV\codex-tools\cstd-alpha-access.txt"
+$accessLines = if (Test-Path $accessPath) { @(Get-Content $accessPath) } else { @() }
+if (-not $PSBoundParameters.ContainsKey("BaseUrl")) {
+  $urlLine = $accessLines | Where-Object { $_ -match "^(URL|BASE_URL)[:=]" } | Select-Object -First 1
+  if ($urlLine) { $BaseUrl = ($urlLine -replace "^[^:=]+[:=]\s*", "").Trim() }
+}
+
 if (-not $Password) {
-  $accessPath = "E:\DEV\codex-tools\cstd-alpha-access.txt"
-  if (Test-Path $accessPath) {
-    $line = Get-Content $accessPath | Where-Object { $_ -match "^REPORT_PASSWORD[:=]" } | Select-Object -First 1
+  if ($accessLines.Count) {
+    $line = $accessLines | Where-Object { $_ -match "^REPORT_PASSWORD[:=]" } | Select-Object -First 1
     if ($line) { $Password = ($line -replace "^[^:=]+[:=]\s*", "").Trim() }
   }
 }
@@ -298,11 +304,11 @@ function ConvertFrom-ReportJson {
     }
 
     $repairScript = Join-Path $PSScriptRoot "repair-json.mjs"
-    $repairOutput = (& $nodeCommand.Source $repairScript $rawTextPath 2>&1) -join "`n"
+    $repairOutput = (& $nodeCommand.Source $repairScript $rawTextPath $repairedTextPath 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0) {
       throw "Report JSON parse failed and jsonrepair failed. Parse error: $parseError Repair output: $repairOutput"
     }
-    $repairOutput | Set-Content -LiteralPath $repairedTextPath -Encoding UTF8
+    $repairOutput = Get-Content -LiteralPath $repairedTextPath -Raw -Encoding UTF8
 
     try {
       return $repairOutput | ConvertFrom-Json
@@ -330,7 +336,7 @@ $schemaIds = @(
 )
 
 foreach ($company in $companies) {
-  $safeName = (($company.code + "-" + $company.name) -replace '[\\/:*?"<>|]', "_")
+  $safeName = (($company.code + "-" + $company.name) -replace '[\\/:*?"<>|\s]+', "_").Trim("_")
   $companyDir = Join-Path $OutputDir $safeName
   New-Item -ItemType Directory -Force $companyDir | Out-Null
   $reportPath = Join-Path $companyDir "report.json"
@@ -346,6 +352,7 @@ foreach ($company in $companies) {
     Write-Output "SKIP existing $($company.code) $($company.name)"
     continue
   }
+  Remove-Item -LiteralPath $failurePath -Force -ErrorAction SilentlyContinue
 
   Write-Output "FETCH evidence $($company.code) $($company.name)"
   $candidate = [pscustomobject]@{

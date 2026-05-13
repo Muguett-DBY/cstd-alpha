@@ -10,6 +10,8 @@
 4. DeepSeek `deepseek-v4-pro` 使用 thinking mode 和 `reasoning_effort: "max"` 生成完整报告。
 5. 前端实时显示 NDJSON 进度流，并支持 DOCX/JSON 导出。
 
+批量导入报告库使用 OpenCode Zen 免费模型 `opencode/deepseek-v4-flash-free` 生成报告，再导入 D1/R2 报告库。
+
 ## API
 
 - `GET /api/company-search?q=万科A`：返回候选公司列表。
