@@ -318,6 +318,27 @@ function ConvertFrom-ReportJson {
   }
 }
 
+function Resolve-OpenCodeCommand {
+  $commands = @(
+    (Get-Command opencode.cmd -ErrorAction SilentlyContinue),
+    (Get-Command opencode.ps1 -ErrorAction SilentlyContinue),
+    (Get-Command opencode -ErrorAction SilentlyContinue)
+  ) | Where-Object { $_ }
+  foreach ($command in $commands) {
+    if ($command.Source -and (Test-Path -LiteralPath $command.Source)) { return $command.Source }
+  }
+
+  $candidatePaths = @(
+    (Join-Path $env:APPDATA "npm\opencode.cmd"),
+    (Join-Path $env:APPDATA "npm\opencode.ps1")
+  )
+  foreach ($path in $candidatePaths) {
+    if ($path -and (Test-Path -LiteralPath $path)) { return $path }
+  }
+
+  throw "OpenCode command not found. Install opencode or add it to PATH."
+}
+
 $loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ password = $Password } | ConvertTo-Json)
 $setCookie = @($loginResponse.Headers["Set-Cookie"])[0]
 if (-not $setCookie) { throw "Login succeeded but no session cookie was returned." }
@@ -412,9 +433,7 @@ Read evidence.json and produce the final report JSON now.
   $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
 
   Write-Output "RUN opencode $($company.code) $($company.name)"
-  $opencodeCmd = Get-Command opencode.cmd -ErrorAction SilentlyContinue
-  $opencodeCommand = if ($opencodeCmd) { $opencodeCmd.Source } else { $null }
-  if (-not $opencodeCommand) { $opencodeCommand = (Get-Command opencode -ErrorAction Stop).Source }
+  $opencodeCommand = Resolve-OpenCodeCommand
   Remove-Item -LiteralPath $eventsPath, $opencodeErrorPath -Force -ErrorAction SilentlyContinue
   $opencodeArgs = @(
     "run",
