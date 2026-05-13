@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck:functions": "tsc --noEmit --ignoreConfig --skipLibCheck --target ES2023 --lib ES2023 --module ESNext --moduleResolution Bundler --types @cloudflare/workers-types functions/api/session.ts functions/api/report.ts functions/api/report-library.ts functions/api/company-search.ts functions/api/chart-data.ts functions/_shared/auth.ts functions/_shared/providers.ts functions/_shared/deepseek.ts src/shared/report.ts src/shared/report-library.ts src/shared/ranking.ts src/shared/chart.ts",
+    "typecheck:functions": "tsc --noEmit --ignoreConfig --skipLibCheck --target ES2023 --lib ES2023 --module ESNext --moduleResolution Bundler --types @cloudflare/workers-types functions/api/session.ts functions/api/report.ts functions/api/report-library.ts functions/api/company-search.ts functions/api/company-evidence.ts functions/api/chart-data.ts functions/_shared/auth.ts functions/_shared/providers.ts functions/_shared/deepseek.ts src/shared/report.ts src/shared/report-library.ts src/shared/ranking.ts src/shared/chart.ts",
     "pages:dev": "wrangler pages dev dist",
     "pages:deploy": "wrangler pages deploy dist --project-name=cstd-alpha --branch=main"
   },
