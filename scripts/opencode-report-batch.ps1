@@ -10,7 +10,8 @@ param(
   [string]$Agent = "build",
   [switch]$ImportOnline,
   [switch]$ContinueOnError,
-  [int]$MaxAttempts = 2
+  [int]$MaxAttempts = 2,
+  [int]$OpencodeTimeoutMinutes = 45
 )
 
 $ErrorActionPreference = "Stop"
@@ -452,7 +453,11 @@ Read evidence.json and produce the final report JSON now.
     "--file", $promptPath,
     "--file", $evidencePath
   )
-  $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -Wait -PassThru
+  $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -PassThru
+  if (-not $opencodeProcess.WaitForExit($OpencodeTimeoutMinutes * 60 * 1000)) {
+    Stop-Process -Id $opencodeProcess.Id -Force -ErrorAction SilentlyContinue
+    throw "opencode timed out after $OpencodeTimeoutMinutes minutes."
+  }
   if ($opencodeProcess.ExitCode -ne 0) {
     $stderr = if (Test-Path $opencodeErrorPath) { Get-Content -LiteralPath $opencodeErrorPath -Raw -Encoding UTF8 } else { "" }
     throw "opencode failed with exit code $($opencodeProcess.ExitCode). $stderr"
