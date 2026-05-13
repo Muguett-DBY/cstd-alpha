@@ -53,24 +53,19 @@ function Normalize-ModelReport {
   if ($Report.PSObject.Properties.Name -contains "report" -and -not ($Report.PSObject.Properties.Name -contains "company")) {
     $Report = $Report.report
   }
-  if (-not ($Report.PSObject.Properties.Name -contains "company") -and ($Report.PSObject.Properties.Name -contains "companyName")) {
+  if ($EvidenceResponse.evidence.company) {
+    $Report | Add-Member -NotePropertyName company -NotePropertyValue ([pscustomobject]@{
+      name = $EvidenceResponse.evidence.company.name
+      ticker = $EvidenceResponse.evidence.company.ticker
+      market = $EvidenceResponse.evidence.company.market
+      sector = $EvidenceResponse.evidence.company.sector
+    }) -Force
+  } elseif (-not ($Report.PSObject.Properties.Name -contains "company") -and ($Report.PSObject.Properties.Name -contains "companyName")) {
     $Report | Add-Member -NotePropertyName company -NotePropertyValue ([pscustomobject]@{
       name = $Report.companyName
       ticker = $Report.ticker
       market = $Report.market
     })
-  }
-  if (-not ($Report.PSObject.Properties.Name -contains "company") -and $EvidenceResponse.evidence.company) {
-    $Report | Add-Member -NotePropertyName company -NotePropertyValue ([pscustomobject]@{
-      name = $EvidenceResponse.evidence.company.name
-      ticker = $EvidenceResponse.evidence.company.ticker
-      market = $EvidenceResponse.evidence.company.market
-    })
-  }
-  if ($Report.company -and $EvidenceResponse.evidence.company) {
-    if (-not $Report.company.name) { $Report.company.name = $EvidenceResponse.evidence.company.name }
-    if (-not $Report.company.ticker) { $Report.company.ticker = $EvidenceResponse.evidence.company.ticker }
-    if (-not $Report.company.market) { $Report.company.market = $EvidenceResponse.evidence.company.market }
   }
   if (-not ($Report.PSObject.Properties.Name -contains "asOf")) {
     $asOf = if ($Report.generatedAt) { $Report.generatedAt } elseif ($EvidenceResponse.evidence.retrievedAt) { $EvidenceResponse.evidence.retrievedAt } else { (Get-Date).ToUniversalTime().ToString("o") }
