@@ -131,6 +131,41 @@ function Extract-JsonObjectText {
   return $trimmed
 }
 
+function ConvertFrom-ReportJson {
+  param(
+    [string]$JsonText,
+    [string]$CompanyDir
+  )
+
+  try {
+    return $JsonText | ConvertFrom-Json
+  } catch {
+    $parseError = $_.Exception.Message
+    $rawTextPath = Join-Path $CompanyDir "raw-report.json"
+    $repairedTextPath = Join-Path $CompanyDir "raw-report.repaired.json"
+    $JsonText | Set-Content -LiteralPath $rawTextPath -Encoding UTF8
+
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $nodeCommand) { $nodeCommand = Get-Command node -ErrorAction SilentlyContinue }
+    if (-not $nodeCommand) {
+      throw "Report JSON parse failed and Node.js is not available for jsonrepair. Parse error: $parseError"
+    }
+
+    $repairScript = Join-Path $PSScriptRoot "repair-json.mjs"
+    $repairOutput = (& $nodeCommand.Source $repairScript $rawTextPath 2>&1) -join "`n"
+    if ($LASTEXITCODE -ne 0) {
+      throw "Report JSON parse failed and jsonrepair failed. Parse error: $parseError Repair output: $repairOutput"
+    }
+    $repairOutput | Set-Content -LiteralPath $repairedTextPath -Encoding UTF8
+
+    try {
+      return $repairOutput | ConvertFrom-Json
+    } catch {
+      throw "Report JSON parse failed after jsonrepair. Original parse error: $parseError Repaired parse error: $($_.Exception.Message)"
+    }
+  }
+}
+
 $loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ password = $Password } | ConvertTo-Json)
 $setCookie = @($loginResponse.Headers["Set-Cookie"])[0]
 if (-not $setCookie) { throw "Login succeeded but no session cookie was returned." }
@@ -254,7 +289,7 @@ Read evidence.json and produce the final report JSON now.
       throw "opencode did not return a JSON object for $($company.code)."
     }
   }
-  $report = Normalize-ModelReport -Report ($raw | ConvertFrom-Json) -SchemaIds $schemaIds -EvidenceResponse $evidenceResponse
+  $report = Normalize-ModelReport -Report (ConvertFrom-ReportJson -JsonText $raw -CompanyDir $companyDir) -SchemaIds $schemaIds -EvidenceResponse $evidenceResponse
   $report | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
   Write-Output "IMPORT report $($company.code) $($company.name)"
