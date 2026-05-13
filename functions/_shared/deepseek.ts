@@ -651,6 +651,7 @@ async function requestDeepSeekJson({
   timeoutMs?: number;
   usageTracker: DeepSeekUsageTracker;
 }) {
+  void apiKey;
   const timeoutController = timeoutMs ? new AbortController() : undefined;
   const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
   const requestInit: RequestInit = {

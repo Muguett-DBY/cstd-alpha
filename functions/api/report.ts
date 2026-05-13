@@ -2,11 +2,14 @@ import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "../../src/shared/report";
+import { buildReportLibraryEntry, validateLibraryReport } from "../../src/shared/report-library";
 
 type Env = {
   AUTH_SECRET: string;
   DEEPSEEK_API_KEY?: string;
   REPORT_CACHE?: KVNamespace;
+  REPORT_LIBRARY_DB?: D1Database;
+  REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
 type ReportRequest = {
@@ -24,8 +27,8 @@ const SERVER_REPORT_CACHE_VERSION = "v7-score-placeholder-cleanup";
 const REPORT_GENERATION_LOCK_TTL_SECONDS = 30 * 60;
 const REPORT_GENERATION_LOCK_WAIT_TIMEOUT_MS = 28 * 60 * 1000;
 const REPORT_GENERATION_LOCK_POLL_MS = 5 * 1000;
-const REPORT_GENERATION_LOCK_HEARTBEAT_MS = 30 * 1000;
-const REPORT_GENERATION_LOCK_STALE_MS = 90 * 1000;
+const REPORT_GENERATION_LOCK_HEARTBEAT_MS = 2 * 60 * 1000;
+const REPORT_GENERATION_LOCK_STALE_MS = 6 * 60 * 1000;
 const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，正在等待共享缓存写入，本次不会重复调用 DeepSeek。";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
@@ -41,7 +44,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const startedAt = new Date(startedAtMs).toISOString();
   const cacheKeys = await buildReportCacheKeys({ company, companyName, ticker: body?.ticker, market: body?.market });
   const cacheKey = cacheKeys.primary;
-  const priorCached = await readReportCache(env, cacheKeys.readKeys);
+  const priorCached = await readReportCache(env, cacheKeys);
 
   return streamNdjson(async (emit, signal) => {
     let lock: ReportGenerationLock | null = null;
@@ -70,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     lock = await acquireReportGenerationLock(env, cacheKey, companyName, startedAt);
     if (!lock.acquired) {
       if (cacheMode === "prefer-cache") {
-        const cached = await readReportCache(env, cacheKey);
+        const cached = await readReportCache(env, cacheKeys);
         if (cached) {
           emit({
             type: "progress",
@@ -96,7 +99,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         detail: REPORT_GENERATION_LOCK_MESSAGE,
         percent: 3,
       });
-      const cached = await waitForLockedReportCache(env, cacheKey, emit);
+      const cached = await waitForLockedReportCache(env, cacheKeys, emit);
       if (cached) {
         emit({
           type: "progress",
@@ -257,6 +260,33 @@ type ReportCachePayload = {
   expiresAt: string;
 };
 
+type ReportCacheKeys = {
+  primary: string;
+  readKeys: string[];
+  libraryIds: string[];
+};
+
+type ReportLibraryRow = {
+  id: string;
+  company_name: string;
+  ticker: string | null;
+  market: string | null;
+  industry: string | null;
+  sector: string | null;
+  cqs: number;
+  ias: number;
+  conclusion: InvestmentReport["conclusion"];
+  qualitative_band: string;
+  position_advice: string;
+  valuation_view: string;
+  as_of: string;
+  imported_at: string;
+  evidence_count: number;
+  score_item_count: number;
+  object_key: string;
+  report_hash: string;
+};
+
 type ReportLockPayload = {
   owner: string;
   companyName: string;
@@ -382,9 +412,11 @@ function buildCacheHitMetrics(startedAtMs: number, startedAt: string, cachedMetr
 async function buildReportCacheKeys(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
   const primary = await buildCanonicalReportCacheKey(input);
   const legacy = await buildLegacyReportCacheKey(input);
+  const libraryIds = await buildReportLibraryReadIds(input);
   return {
     primary,
     readKeys: Array.from(new Set([primary, legacy])),
+    libraryIds,
   };
 }
 
@@ -426,12 +458,116 @@ function normalizeCacheIdentityPart(value: unknown) {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
-async function readReportCache(env: Env, cacheKeys: string | string[]): Promise<ReportCachePayload | null> {
-  for (const cacheKey of Array.isArray(cacheKeys) ? cacheKeys : [cacheKeys]) {
+async function buildReportLibraryReadIds(input: { company?: CompanyCandidate; companyName: string; ticker?: string; market?: string }) {
+  const company = input.company;
+  const identities = [
+    ...reportLibraryIdentityCandidates(company?.listingPlace ?? input.market, company?.code ?? input.ticker, company?.name ?? input.companyName),
+    ...reportLibraryIdentityCandidates(company?.marketType, company?.code ?? input.ticker, company?.name ?? input.companyName),
+  ];
+  return Promise.all(Array.from(new Set(identities)).map((identity) => sha256(identity)));
+}
+
+function reportLibraryIdentityFromParts(market: unknown, ticker: unknown, name: unknown) {
+  const normalizedMarket = normalizeCacheIdentityPart(market);
+  const normalizedTicker = normalizeCacheIdentityPart(ticker);
+  const normalizedName = normalizeCacheIdentityPart(name);
+  return normalizedTicker ? `${normalizedMarket}:${normalizedTicker}` : `${normalizedMarket}:${normalizedName}`;
+}
+
+function canonicalReportLibraryIdentityFromParts(market: unknown, ticker: unknown, name: unknown) {
+  return reportLibraryIdentityFromParts(canonicalReportLibraryMarket(market, ticker), ticker, name);
+}
+
+function reportLibraryIdentityCandidates(market: unknown, ticker: unknown, name: unknown) {
+  const normalizedMarket = normalizeCacheIdentityPart(market);
+  const canonicalMarket = canonicalReportLibraryMarket(market, ticker);
+  const markets = new Set([normalizedMarket, canonicalMarket, ...reportLibraryMarketAliases(normalizedMarket, ticker)].filter(Boolean));
+  return Array.from(markets).map((candidateMarket) => reportLibraryIdentityFromParts(candidateMarket, ticker, name));
+}
+
+function canonicalReportLibraryMarket(market: unknown, ticker: unknown) {
+  const normalizedMarket = normalizeCacheIdentityPart(market);
+  const normalizedTicker = normalizeCacheIdentityPart(ticker);
+  if (/^(HK|HKG|港股|香港)$/i.test(normalizedMarket) || /HONG\s*KONG/i.test(normalizedMarket)) return "HK";
+  if (/^(US|USA|美股|NASDAQ|NYSE|AMEX)$/i.test(normalizedMarket) || /UNITED\s*STATES/i.test(normalizedMarket)) return "US";
+  if (!/^\d{6}$/.test(normalizedTicker)) return normalizedMarket;
+
+  const looksLikeAShare =
+    !normalizedMarket ||
+    /^(A|A股|ASTOCK|SH-A|SZ-A|沪A|深A|STAR MARKET|CHINEXT)$/i.test(normalizedMarket) ||
+    /上海|深圳|证券交易所|科创|创业|沪|深/i.test(normalizedMarket);
+  if (!looksLikeAShare) return normalizedMarket;
+  if (/^(688|689)/.test(normalizedTicker)) return "STAR MARKET";
+  if (/^(300|301)/.test(normalizedTicker)) return "CHINEXT";
+  if (/^[69]/.test(normalizedTicker)) return "SH-A";
+  if (/^[023]/.test(normalizedTicker)) return "SZ-A";
+  return normalizedMarket || "A";
+}
+
+function reportLibraryMarketAliases(normalizedMarket: string, ticker: unknown) {
+  const canonicalMarket = canonicalReportLibraryMarket(normalizedMarket, ticker);
+  const aliases = new Set<string>([canonicalMarket]);
+  if (canonicalMarket === "SH-A") {
+    aliases.add("沪A");
+    aliases.add("上海证券交易所");
+    aliases.add("ASTOCK");
+  } else if (canonicalMarket === "SZ-A") {
+    aliases.add("深A");
+    aliases.add("深圳证券交易所");
+    aliases.add("ASTOCK");
+  } else if (canonicalMarket === "STAR MARKET") {
+    aliases.add("科创板");
+    aliases.add("沪A");
+    aliases.add("ASTOCK");
+  } else if (canonicalMarket === "CHINEXT") {
+    aliases.add("创业板");
+    aliases.add("深A");
+    aliases.add("ASTOCK");
+  } else if (canonicalMarket === "HK") {
+    aliases.add("港股");
+    aliases.add("HONG KONG");
+  } else if (canonicalMarket === "US") {
+    aliases.add("美股");
+    aliases.add("USA");
+  }
+  return Array.from(aliases);
+}
+
+async function readReportCache(env: Env, cacheKeys: ReportCacheKeys | string | string[]): Promise<ReportCachePayload | null> {
+  const lookup = normalizeReportCacheLookup(cacheKeys);
+  const libraryCached = await readReportLibraryCache(env, lookup.libraryIds);
+  if (libraryCached) return libraryCached;
+
+  for (const cacheKey of lookup.readKeys) {
     const kvCached = await readKvReportCache(env, cacheKey);
     if (kvCached) return kvCached;
     const edgeCached = await readEdgeReportCache(cacheKey);
     if (edgeCached) return edgeCached;
+  }
+  return null;
+}
+
+function normalizeReportCacheLookup(cacheKeys: ReportCacheKeys | string | string[]): Pick<ReportCacheKeys, "readKeys" | "libraryIds"> {
+  if (typeof cacheKeys === "string") return { readKeys: [cacheKeys], libraryIds: [] };
+  if (Array.isArray(cacheKeys)) return { readKeys: cacheKeys, libraryIds: [] };
+  return { readKeys: cacheKeys.readKeys, libraryIds: cacheKeys.libraryIds };
+}
+
+async function readReportLibraryCache(env: Env, ids: string[]): Promise<ReportCachePayload | null> {
+  if (!hasDurableReportLibrary(env)) return null;
+  for (const id of ids) {
+    const row = await readReportLibraryIndexRow(env.REPORT_LIBRARY_DB, id);
+    if (!row?.object_key) continue;
+    const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
+    if (!object) continue;
+    const report = validateLibraryReport(await object.json());
+    return {
+      version: SERVER_REPORT_CACHE_VERSION,
+      report,
+      evidence: evidenceBundleFromReport(report),
+      cachedAt: row.imported_at,
+      expiresAt: "2099-12-31T23:59:59.000Z",
+    };
   }
   return null;
 }
@@ -459,9 +595,99 @@ async function readEdgeReportCache(cacheKey: string): Promise<ReportCachePayload
 async function writeReportCache(env: Env, cacheKey: string, payload: ReportCachePayload) {
   const text = JSON.stringify(payload);
   await Promise.allSettled([
-    env.REPORT_CACHE?.put(cacheKey, text, { expirationTtl: SERVER_REPORT_CACHE_TTL_SECONDS }) ?? Promise.resolve(),
+    writeReportLibraryCache(env, payload.report, payload.cachedAt),
     writeEdgeReportCache(cacheKey, text),
   ]);
+}
+
+async function writeReportLibraryCache(env: Env, report: InvestmentReport, importedAt: string) {
+  if (!hasDurableReportLibrary(env)) return;
+  const durableReport = validateLibraryReport(report);
+  const id = await sha256(canonicalReportLibraryIdentityFromParts(durableReport.company.market, durableReport.company.ticker, durableReport.company.name));
+  const reportJson = JSON.stringify(durableReport);
+  const reportHash = await sha256(reportJson);
+  const existing = await readReportLibraryIndexRow(env.REPORT_LIBRARY_DB, id);
+  if (existing?.report_hash === reportHash) return;
+
+  const entry = buildReportLibraryEntry(durableReport, id, importedAt);
+  const objectKey = `report-library/v1/reports/${id}.json`;
+  await env.REPORT_LIBRARY_BUCKET.put(objectKey, reportJson, {
+    httpMetadata: { contentType: "application/json; charset=utf-8" },
+    customMetadata: { reportHash },
+  });
+  await env.REPORT_LIBRARY_DB.prepare(
+    `INSERT INTO report_library (
+      id, company_name, ticker, market, industry, sector, cqs, ias, conclusion,
+      qualitative_band, position_advice, valuation_view, as_of, imported_at,
+      evidence_count, score_item_count, object_key, report_hash
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+    ON CONFLICT(id) DO UPDATE SET
+      company_name = excluded.company_name,
+      ticker = excluded.ticker,
+      market = excluded.market,
+      industry = excluded.industry,
+      sector = excluded.sector,
+      cqs = excluded.cqs,
+      ias = excluded.ias,
+      conclusion = excluded.conclusion,
+      qualitative_band = excluded.qualitative_band,
+      position_advice = excluded.position_advice,
+      valuation_view = excluded.valuation_view,
+      as_of = excluded.as_of,
+      imported_at = excluded.imported_at,
+      evidence_count = excluded.evidence_count,
+      score_item_count = excluded.score_item_count,
+      object_key = excluded.object_key,
+      report_hash = excluded.report_hash`,
+  )
+    .bind(
+      entry.id,
+      entry.companyName,
+      entry.ticker ?? null,
+      entry.market ?? null,
+      entry.industry ?? null,
+      entry.sector ?? null,
+      entry.cqs,
+      entry.ias,
+      entry.conclusion,
+      entry.qualitativeBand,
+      entry.positionAdvice,
+      entry.valuationView,
+      entry.asOf,
+      entry.importedAt,
+      entry.evidenceCount,
+      entry.scoreItemCount,
+      objectKey,
+      reportHash,
+    )
+    .run();
+}
+
+async function readReportLibraryIndexRow(db: D1Database, id: string) {
+  return db
+    .prepare(
+      `SELECT
+        id, company_name, ticker, market, industry, sector, cqs, ias, conclusion,
+        qualitative_band, position_advice, valuation_view, as_of, imported_at,
+        evidence_count, score_item_count, object_key, report_hash
+      FROM report_library
+      WHERE id = ?1`,
+    )
+    .bind(id)
+    .first<ReportLibraryRow>();
+}
+
+function evidenceBundleFromReport(report: InvestmentReport) {
+  return {
+    company: report.company,
+    retrievedAt: report.asOf,
+    evidence: report.evidence,
+    facts: {},
+  };
+}
+
+function hasDurableReportLibrary(env: Env): env is Env & { REPORT_LIBRARY_DB: D1Database; REPORT_LIBRARY_BUCKET: R2Bucket } {
+  return Boolean(env.REPORT_LIBRARY_DB && env.REPORT_LIBRARY_BUCKET);
 }
 
 async function writeEdgeReportCache(cacheKey: string, text: string) {
@@ -477,13 +703,14 @@ async function writeEdgeReportCache(cacheKey: string, text: string) {
   );
 }
 
-async function waitForLockedReportCache(env: Env, cacheKey: string, emit: StreamEmit) {
+async function waitForLockedReportCache(env: Env, cacheKeys: ReportCacheKeys, emit: StreamEmit) {
   const deadline = Date.now() + REPORT_GENERATION_LOCK_WAIT_TIMEOUT_MS;
   let attempts = 0;
   while (Date.now() < deadline) {
-    const cached = await readReportCache(env, cacheKey);
+    const cached = await readReportCache(env, cacheKeys);
     if (cached) return cached;
 
+    const cacheKey = cacheKeys.primary;
     const lock = env.REPORT_CACHE ? await readReportLock(env.REPORT_CACHE, reportLockKey(cacheKey)) : null;
     if (!lock || !isActiveReportLock(lock)) return null;
 
