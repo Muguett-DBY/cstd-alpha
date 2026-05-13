@@ -19,7 +19,6 @@ type ReportLibraryRecord = {
 };
 
 const LIBRARY_VERSION = "v1";
-const INDEX_PREFIX = `report-library:${LIBRARY_VERSION}:index:`;
 const REPORT_PREFIX = `report-library:${LIBRARY_VERSION}:report:`;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -58,9 +57,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 async function writeReportRecord(cache: KVNamespace, rawReport: InvestmentReport, importedAt: string) {
   const report = validateLibraryReport(rawReport);
   const id = await reportLibraryId(report);
+  const existing = await readReportRecord(cache, id);
+  if (existing && reportsEqual(existing.report, report)) return existing.entry;
+
   const entry = buildReportLibraryEntry(report, id, importedAt);
   const record: ReportLibraryRecord = { entry, report };
-  await Promise.all([cache.put(`${REPORT_PREFIX}${id}`, JSON.stringify(record)), cache.put(`${INDEX_PREFIX}${id}`, JSON.stringify(entry))]);
+  await cache.put(`${REPORT_PREFIX}${id}`, JSON.stringify(record));
   return entry;
 }
 
@@ -78,11 +80,11 @@ async function listReportEntries(cache: KVNamespace) {
   const entries: ReportLibraryEntry[] = [];
   let cursor: string | undefined;
   do {
-    const page = await cache.list({ prefix: INDEX_PREFIX, cursor });
+    const page = await cache.list({ prefix: REPORT_PREFIX, cursor });
     const pageEntries = await Promise.all(
       page.keys.map(async (key) => {
-        const value = await cache.get<ReportLibraryEntry>(key.name, "json");
-        return isValidEntry(value) ? value : null;
+        const value = await cache.get<ReportLibraryRecord>(key.name, "json");
+        return isRecord(value) && isValidEntry(value.entry) ? value.entry : null;
       }),
     );
     entries.push(...pageEntries.filter((entry): entry is ReportLibraryEntry => entry !== null));
@@ -94,6 +96,10 @@ async function listReportEntries(cache: KVNamespace) {
     if (right.cqs !== left.cqs) return right.cqs - left.cqs;
     return left.companyName.localeCompare(right.companyName);
   });
+}
+
+function reportsEqual(left: InvestmentReport, right: InvestmentReport) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 async function reportLibraryId(report: InvestmentReport) {

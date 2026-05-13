@@ -8,6 +8,7 @@ param(
   [string]$Model = "opencode-go/deepseek-v4-flash",
   [string]$Variant = "max",
   [string]$Agent = "build",
+  [switch]$ImportOnline,
   [switch]$ContinueOnError
 )
 
@@ -121,6 +122,64 @@ function Complete-ValuationAnalysis {
   }) -Force
 }
 
+function Test-MissingOneSentence {
+  param([object]$Value, [string]$CompanyName)
+  if ($null -eq $Value) { return $true }
+  $text = ([string]$Value).Trim()
+  if (-not $text) { return $true }
+  return $text.Contains($CompanyName) -and $text.Contains((-join @([char]0x6838, [char]0x5FC3, [char]0x4E00, [char]0x53E5, [char]0x8BDD)))
+}
+
+function Get-FirstReportSentence {
+  param([object]$Text)
+  if ($null -eq $Text) { return $null }
+  $value = ([string]$Text).Trim()
+  if (-not $value) { return $null }
+  $period = [char]0x3002
+  $index = $value.IndexOf($period)
+  if ($index -ge 12) { return $value.Substring(0, [Math]::Min($index + 1, 140)).Trim() }
+  return $value.Substring(0, [Math]::Min($value.Length, 140)).Trim()
+}
+
+function Complete-OneSentence {
+  param([object]$Report)
+  $companyName = if ($Report.company -and $Report.company.name) { [string]$Report.company.name } else { "" }
+  if (-not (Test-MissingOneSentence -Value $Report.oneSentence -CompanyName $companyName)) { return }
+  $sentence = Get-FirstReportSentence -Text $Report.fullSections.onePageConclusion
+  if (-not $sentence) { $sentence = Get-FirstReportSentence -Text $Report.fullSections.finalConclusion }
+  if (-not $sentence -and $Report.summaryDashboard -and $Report.summaryDashboard.valuationView) {
+    $sentence = "${companyName}: $($Report.summaryDashboard.valuationView)"
+  }
+  if ($sentence) { $Report | Add-Member -NotePropertyName oneSentence -NotePropertyValue $sentence -Force }
+}
+
+function Complete-RiskMatrix {
+  param([object]$Report)
+  if ($Report.riskMatrix -and @($Report.riskMatrix).Count -ge 3) { return }
+  $risks = @()
+  if ($Report.riskMatrix) {
+    $risks += @($Report.riskMatrix | ForEach-Object {
+      if ($_.risk) {
+        $riskText = [string]$_.risk
+        if (-not ($riskText -match "\d+[)）].*\d+[)）]")) { $riskText }
+      }
+    })
+  }
+  if ($Report.summaryDashboard -and $Report.summaryDashboard.keyRisks) {
+    $risks += @($Report.summaryDashboard.keyRisks | Where-Object { $_ })
+  }
+  if ($risks.Count -lt 3 -and $Report.fullSections -and $Report.fullSections.risks) {
+    $riskText = [string]$Report.fullSections.risks
+    $risks += @($riskText -split "(?:[;；。`n]+|(?=\s*\d+[)）.、]))" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch "^主要风险[:：]?$" } | Select-Object -First 6)
+  }
+  if (-not $risks.Count) { return }
+  $Report | Add-Member -NotePropertyName riskMatrix -NotePropertyValue @(
+    $risks | Select-Object -First 6 | ForEach-Object {
+      [pscustomobject]@{ risk = [string]$_ }
+    }
+  ) -Force
+}
+
 function Invoke-JsonPost {
   param(
     [string]$Uri,
@@ -175,6 +234,8 @@ function Normalize-ModelReport {
     $Report | Add-Member -NotePropertyName financialTenYear -NotePropertyValue $EvidenceResponse.evidence.facts.financialTenYear
   }
   Complete-ValuationAnalysis -Report $Report -EvidenceResponse $EvidenceResponse
+  Complete-OneSentence -Report $Report
+  Complete-RiskMatrix -Report $Report
   if ($Report.scoreItems20 -and -not ($Report.scoreItems20 -is [array])) {
     $items = foreach ($id in $SchemaIds) {
       $raw = $Report.scoreItems20.$id
@@ -316,6 +377,7 @@ Do not fabricate facts, financial numbers, sources, or URLs. If evidence is weak
 
 The output must be a single report object, not a reports array. It must pass CSTD Alpha validateReportPayload and these constraints:
 - scoreItems20 must be an array of 20 objects, not a map/object.
+- oneSentence must be a concise Simplified Chinese investment sentence, not a placeholder.
 - Each scoreItems20 object must contain: id, score, evidence, deductions, recentChange, reason.
 - scoreItems20 must contain all 20 ids: $($schemaIds -join ", ")
 - Each score is 0-100.
@@ -328,6 +390,7 @@ The output must be a single report object, not a reports array. It must pass CST
 - High leverage, persistent losses, cash-flow deterioration, governance risk, delisting risk, material litigation or penalties must significantly reduce scores.
 - summaryDashboard must contain valuationView, positionAdvice, investmentHorizon, keyReasons, keyRisks, trackingMetrics.
 - accountRules must contain companyGrade, maxPosition, addCondition, reduceCondition, reviewTiming.
+- riskMatrix must contain at least 3 concrete risk objects with risk text. Do not leave it empty.
 - valuationAnalysis must contain currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
 - If public quote price is available, valuationAnalysis.buyRange and valuationAnalysis.sellReduceRange must not be unavailable. Use a conservative quote-anchored safety-margin range when intrinsic valuation evidence is insufficient.
 - fullSections must contain string fields: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
@@ -378,16 +441,22 @@ Read evidence.json and produce the final report JSON now.
   $report = Normalize-ModelReport -Report (ConvertFrom-ReportJson -JsonText $raw -CompanyDir $companyDir) -SchemaIds $schemaIds -EvidenceResponse $evidenceResponse
   $report | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
-  Write-Output "IMPORT report $($company.code) $($company.name)"
-  $importBodyPath = Join-Path $companyDir "import-request.json"
-  @{ reports = @($report) } | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $importBodyPath -Encoding UTF8
-  $importRaw = Invoke-JsonPost -Uri "$BaseUrl/api/report-library" -BodyPath $importBodyPath -CookieHeader $cookieHeader -TimeoutSeconds 120
-  $imported = $importRaw | ConvertFrom-Json
+  $imported = $null
+  if ($ImportOnline) {
+    Write-Output "IMPORT report $($company.code) $($company.name)"
+    $importBodyPath = Join-Path $companyDir "import-request.json"
+    @{ reports = @($report) } | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $importBodyPath -Encoding UTF8
+    $importRaw = Invoke-JsonPost -Uri "$BaseUrl/api/report-library" -BodyPath $importBodyPath -CookieHeader $cookieHeader -TimeoutSeconds 120
+    $imported = $importRaw | ConvertFrom-Json
+  } else {
+    Write-Output "SKIP online import $($company.code) $($company.name). Pass -ImportOnline to write Cloudflare KV."
+  }
   [pscustomobject]@{
     code = $company.code
     name = $company.name
     importedAt = (Get-Date).ToUniversalTime().ToString("o")
-    imported = $imported.imported
+    onlineImported = [bool]$ImportOnline
+    imported = if ($imported) { $imported.imported } else { @() }
   } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
   Remove-Item -LiteralPath $failurePath -Force -ErrorAction SilentlyContinue
   Write-Output "DONE $($company.code) $($company.name)"
