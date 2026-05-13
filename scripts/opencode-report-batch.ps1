@@ -9,7 +9,8 @@ param(
   [string]$Variant = "max",
   [string]$Agent = "build",
   [switch]$ImportOnline,
-  [switch]$ContinueOnError
+  [switch]$ContinueOnError,
+  [int]$MaxAttempts = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -368,12 +369,17 @@ foreach ($company in $companies) {
   $statusPath = Join-Path $companyDir "status.json"
   $failurePath = Join-Path $companyDir "failure.json"
 
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt += 1) {
   try {
   if (Test-Path $statusPath) {
     Write-Output "SKIP existing $($company.code) $($company.name)"
-    continue
+    break
   }
   Remove-Item -LiteralPath $failurePath -Force -ErrorAction SilentlyContinue
+
+  if ($attempt -gt 1) {
+    Write-Output "RETRY attempt $attempt/$MaxAttempts $($company.code) $($company.name)"
+  }
 
   Write-Output "FETCH evidence $($company.code) $($company.name)"
   $candidate = [pscustomobject]@{
@@ -490,13 +496,21 @@ Read evidence.json and produce the final report JSON now.
   Remove-Item -LiteralPath $failurePath -Force -ErrorAction SilentlyContinue
   Write-Output "DONE $($company.code) $($company.name)"
   } catch {
-    [pscustomobject]@{
-      code = $company.code
-      name = $company.name
-      failedAt = (Get-Date).ToUniversalTime().ToString("o")
-      error = $_.Exception.Message
-    } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $failurePath -Encoding UTF8
-    Write-Output "FAIL $($company.code) $($company.name): $($_.Exception.Message)"
-    if (-not $ContinueOnError) { throw }
+    $isFinalAttempt = $attempt -ge $MaxAttempts
+    if ($isFinalAttempt) {
+      [pscustomobject]@{
+        code = $company.code
+        name = $company.name
+        failedAt = (Get-Date).ToUniversalTime().ToString("o")
+        attempts = $attempt
+        error = $_.Exception.Message
+      } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $failurePath -Encoding UTF8
+      Write-Output "FAIL $($company.code) $($company.name): $($_.Exception.Message)"
+      if (-not $ContinueOnError) { throw }
+    } else {
+      Write-Output "RETRYABLE FAIL $($company.code) $($company.name) attempt ${attempt}/${MaxAttempts}: $($_.Exception.Message)"
+      Start-Sleep -Seconds ([Math]::Min(30, 8 * $attempt))
+    }
+  }
   }
 }
