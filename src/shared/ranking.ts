@@ -27,6 +27,7 @@ export type RankingEntry = {
   asOf: string;
   source: RankingSource;
   hasReport: boolean;
+  seedOrder: number;
   report?: InvestmentReport;
   candidate: CompanyCandidate;
 };
@@ -137,10 +138,10 @@ export const A_SHARE_RANKING_SEEDS: RankingSeed[] = [
 export function buildRankingEntries(reports: InvestmentReport[] = []): RankingEntry[] {
   const reportByKey = new Map(reports.map((report) => [reportIdentityKey(report), report]));
   const seedKeys = new Set<string>();
-  const rows = A_SHARE_RANKING_SEEDS.map((seed) => {
+  const rows = A_SHARE_RANKING_SEEDS.map((seed, index) => {
     seedKeys.add(seedIdentityKey(seed));
     const report = reportByKey.get(seedIdentityKey(seed));
-    return report ? reportToRankingEntry(report, seed) : seedToRankingEntry(seed);
+    return report ? reportToRankingEntry(report, seed, index) : seedToRankingEntry(seed, index);
   });
 
   for (const report of reports) {
@@ -149,10 +150,11 @@ export function buildRankingEntries(reports: InvestmentReport[] = []): RankingEn
 
   return rows
     .sort((left, right) => {
-      if (right.ias !== left.ias) return right.ias - left.ias;
-      if (right.cqs !== left.cqs) return right.cqs - left.cqs;
       const sourceScore = sourcePriority(right.source) - sourcePriority(left.source);
       if (sourceScore !== 0) return sourceScore;
+      if (left.source === "seed" && right.source === "seed") return left.seedOrder - right.seedOrder;
+      if (right.ias !== left.ias) return right.ias - left.ias;
+      if (right.cqs !== left.cqs) return right.cqs - left.cqs;
       return left.code.localeCompare(right.code);
     })
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
@@ -173,9 +175,7 @@ function seedIdentityKey(seed: RankingSeed) {
   return `${normalizeIdentity(seed.listingPlace)}:${normalizeIdentity(seed.code)}`;
 }
 
-function seedToRankingEntry(seed: RankingSeed): RankingEntry {
-  const cqs = boundedScore(seed.baseline + stableOffset(seed.code, 5));
-  const ias = boundedScore(seed.baseline - 4 + stableOffset(`${seed.code}:ias`, 6));
+function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry {
   return {
     id: seedIdentityKey(seed),
     rank: 0,
@@ -184,19 +184,20 @@ function seedToRankingEntry(seed: RankingSeed): RankingEntry {
     exchange: seed.exchange,
     listingPlace: seed.listingPlace,
     sector: seed.sector,
-    cqs,
-    ias,
+    cqs: 0,
+    ias: 0,
     conclusion: "待导入",
     positionAdvice: "待导入深度报告",
     valuationView: "待验证",
     asOf: "种子列表",
     source: "seed",
     hasReport: false,
+    seedOrder,
     candidate: seedToCandidate(seed),
   };
 }
 
-function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed): RankingEntry {
+function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = report.company.ticker || seed?.code || report.company.name;
   const listingPlace = report.company.market || seed?.listingPlace || "A股";
   return {
@@ -215,6 +216,7 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed): Ran
     asOf: report.asOf,
     source: "deep-report",
     hasReport: true,
+    seedOrder,
     report,
     candidate: seed ? seedToCandidate(seed) : reportToCandidate(report),
   };
@@ -242,15 +244,6 @@ function reportToCandidate(report: InvestmentReport): CompanyCandidate {
     marketType: "Imported",
     source: "eastmoney",
   };
-}
-
-function stableOffset(value: string, spread: number) {
-  const hash = Array.from(value).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return (hash % (spread * 2 + 1)) - spread;
-}
-
-function boundedScore(value: number) {
-  return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
 }
 
 function sourcePriority(source: RankingSource) {

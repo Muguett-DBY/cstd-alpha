@@ -8,6 +8,13 @@ describe("ranking entries", () => {
     expect(new Set(A_SHARE_RANKING_SEEDS.map((seed) => `${seed.listingPlace}:${seed.code}`)).size).toBe(100);
   });
 
+  test("keeps seed companies as unscored watchlist rows", () => {
+    const entries = buildRankingEntries();
+
+    expect(entries).toHaveLength(100);
+    expect(entries[0]).toMatchObject({ code: "600519", source: "seed", cqs: 0, ias: 0, conclusion: "待导入" });
+  });
+
   test("overrides a seed row with an imported deep report", () => {
     const report = validateReportPayload({
       company: { name: "德才股份", ticker: "605287", market: "沪A", industry: "建筑装饰" },

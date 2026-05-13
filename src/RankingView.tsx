@@ -27,7 +27,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
 
   const deepReportCount = entries.filter((entry) => entry.source === "deep-report").length;
   const seedCount = entries.filter((entry) => entry.source === "seed").length;
-  const topEntry = entries[0];
+  const topEntry = entries.find((entry) => entry.source === "deep-report");
 
   function submitImport(event: React.FormEvent) {
     event.preventDefault();
@@ -63,7 +63,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
           <MetricTile label="公司池" value={`${entries.length}`} />
           <MetricTile label="深度报告" value={`${deepReportCount}`} />
           <MetricTile label="待导入" value={`${seedCount}`} />
-          <MetricTile label="当前第一" value={topEntry ? topEntry.name : "-"} />
+          <MetricTile label="当前第一" value={topEntry ? topEntry.name : "待生成"} />
         </div>
       </header>
 
@@ -127,8 +127,8 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
               </small>
             </button>
             <span>{entry.sector}</span>
-            <span>{formatScore(entry.cqs)}</span>
-            <span>{formatScore(entry.ias)}</span>
+            <span>{formatScore(entry, "cqs")}</span>
+            <span>{formatScore(entry, "ias")}</span>
             <span>{entry.conclusion}</span>
             <span>{entry.positionAdvice}</span>
             <span>{entry.source === "deep-report" ? "深度报告" : "待导入"}</span>
@@ -158,6 +158,8 @@ function MetricTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatScore(value: number) {
+function formatScore(entry: RankingEntry, key: "cqs" | "ias") {
+  if (entry.source !== "deep-report") return "待评分";
+  const value = entry[key];
   return Number.isFinite(value) ? value.toFixed(value % 1 === 0 ? 0 : 1) : "-";
 }
