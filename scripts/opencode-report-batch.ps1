@@ -7,7 +7,8 @@ param(
   [int]$Limit = 1,
   [string]$Model = "opencode-go/deepseek-v4-flash",
   [string]$Variant = "max",
-  [string]$Agent = "build"
+  [string]$Agent = "build",
+  [switch]$ContinueOnError
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,6 +58,13 @@ function Normalize-ModelReport {
       name = $Report.companyName
       ticker = $Report.ticker
       market = $Report.market
+    })
+  }
+  if (-not ($Report.PSObject.Properties.Name -contains "company") -and $EvidenceResponse.evidence.company) {
+    $Report | Add-Member -NotePropertyName company -NotePropertyValue ([pscustomobject]@{
+      name = $EvidenceResponse.evidence.company.name
+      ticker = $EvidenceResponse.evidence.company.ticker
+      market = $EvidenceResponse.evidence.company.market
     })
   }
   if ($Report.company -and $EvidenceResponse.evidence.company) {
@@ -154,7 +162,9 @@ foreach ($company in $companies) {
   $promptPath = Join-Path $companyDir "prompt.md"
   $evidencePath = Join-Path $companyDir "evidence.json"
   $statusPath = Join-Path $companyDir "status.json"
+  $failurePath = Join-Path $companyDir "failure.json"
 
+  try {
   if (Test-Path $statusPath) {
     Write-Output "SKIP existing $($company.code) $($company.name)"
     continue
@@ -244,4 +254,14 @@ Read evidence.json and produce the final report JSON now.
     imported = $imported.imported
   } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
   Write-Output "DONE $($company.code) $($company.name)"
+  } catch {
+    [pscustomobject]@{
+      code = $company.code
+      name = $company.name
+      failedAt = (Get-Date).ToUniversalTime().ToString("o")
+      error = $_.Exception.Message
+    } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $failurePath -Encoding UTF8
+    Write-Output "FAIL $($company.code) $($company.name): $($_.Exception.Message)"
+    if (-not $ContinueOnError) { throw }
+  }
 }
