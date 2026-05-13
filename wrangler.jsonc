@@ -11,5 +11,18 @@
       "binding": "REPORT_CACHE",
       "id": "d2c77bf9e7f14258af33e2efd3f59c60"
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "REPORT_LIBRARY_DB",
+      "database_name": "cstd-alpha-report-library",
+      "database_id": "3eb99167-0083-4510-924c-66735e4be407"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "REPORT_LIBRARY_BUCKET",
+      "bucket_name": "cstd-alpha-report-library"
+    }
   ]
 }

@@ -291,7 +291,7 @@ function App() {
             生成报告
           </button>
           <button type="button" className={activeView === "ranking" ? "active" : ""} onClick={() => setActiveView("ranking")}>
-            100 家排行
+            A 股排行
           </button>
         </nav>
 

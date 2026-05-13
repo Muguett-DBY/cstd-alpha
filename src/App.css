@@ -673,7 +673,7 @@ button:disabled {
 
 .ranking-tools {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) minmax(280px, 360px);
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 200px) minmax(150px, 210px) minmax(100px, 130px) minmax(280px, 360px);
   gap: 10px;
   padding: 12px;
 }

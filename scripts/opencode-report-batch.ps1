@@ -449,7 +449,7 @@ Read evidence.json and produce the final report JSON now.
     $importRaw = Invoke-JsonPost -Uri "$BaseUrl/api/report-library" -BodyPath $importBodyPath -CookieHeader $cookieHeader -TimeoutSeconds 120
     $imported = $importRaw | ConvertFrom-Json
   } else {
-    Write-Output "SKIP online import $($company.code) $($company.name). Pass -ImportOnline to write Cloudflare KV."
+    Write-Output "SKIP online import $($company.code) $($company.name). Pass -ImportOnline to write the D1/R2 report library."
   }
   [pscustomobject]@{
     code = $company.code

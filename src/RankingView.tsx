@@ -8,6 +8,9 @@ type RankingViewProps = {
   onOpenEntry: (entry: RankingEntry) => void | Promise<void>;
 };
 
+type SortMode = "rank" | "ias" | "cqs" | "name" | "code" | "sector";
+type SortDirection = "desc" | "asc";
+
 export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
@@ -15,6 +18,8 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("全部行业");
   const [source, setSource] = useState<"all" | "deep-report" | "seed">("all");
+  const [sortMode, setSortMode] = useState<SortMode>("rank");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [importText, setImportText] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -33,13 +38,17 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
 
   const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries), [imported, libraryEntries]);
   const sectors = useMemo(() => ["全部行业", ...Array.from(new Set(entries.map((entry) => entry.sector))).sort()], [entries]);
-  const filtered = entries.filter((entry) => {
+  const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const keywordMatched = !keyword || `${entry.name} ${entry.code} ${entry.sector}`.toLowerCase().includes(keyword);
-    const sectorMatched = sector === "全部行业" || entry.sector === sector;
-    const sourceMatched = source === "all" || entry.source === source;
-    return keywordMatched && sectorMatched && sourceMatched;
-  });
+    return entries
+      .filter((entry) => {
+        const keywordMatched = !keyword || `${entry.name} ${entry.code} ${entry.sector}`.toLowerCase().includes(keyword);
+        const sectorMatched = sector === "全部行业" || entry.sector === sector;
+        const sourceMatched = source === "all" || entry.source === source;
+        return keywordMatched && sectorMatched && sourceMatched;
+      })
+      .sort((left, right) => compareRankingRows(left, right, sortMode, sortDirection));
+  }, [entries, query, sector, sortDirection, sortMode, source]);
 
   const deepReportCount = entries.filter((entry) => entry.source === "deep-report").length;
   const seedCount = entries.filter((entry) => entry.source === "seed").length;
@@ -74,8 +83,8 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       <header className="ranking-header">
         <div>
           <p className="eyebrow">A 股评分池</p>
-          <h2 id="ranking-title">100 家公司排行</h2>
-          <p className="muted">按 IAS 与 CQS 排序；已导入的深度报告会覆盖本地种子分数。</p>
+          <h2 id="ranking-title">A 股公司排行</h2>
+          <p className="muted">按完整深度报告评分排序；未入库公司保留在待导入列表。</p>
         </div>
         <div className="ranking-summary">
           <MetricTile label="公司池" value={`${entries.length}`} />
@@ -110,6 +119,18 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
             </option>
           ))}
         </select>
+        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)} aria-label="排序字段">
+          <option value="rank">综合排名</option>
+          <option value="ias">投资吸引力 IAS</option>
+          <option value="cqs">公司质量 CQS</option>
+          <option value="name">公司名称</option>
+          <option value="code">股票代码</option>
+          <option value="sector">行业</option>
+        </select>
+        <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as SortDirection)} aria-label="排序方向">
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
         <div className="segmented-control" role="group" aria-label="数据来源">
           <button type="button" className={source === "all" ? "active" : ""} onClick={() => setSource("all")}>
             全部
@@ -135,9 +156,9 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
           <span>来源</span>
           <span>操作</span>
         </div>
-        {filtered.map((entry) => (
+        {filtered.map((entry, index) => (
           <div key={`${entry.id}-${entry.source}`} className={`ranking-row ${entry.source === "deep-report" ? "is-report" : "is-seed"}`} role="row">
-            <span>#{entry.rank}</span>
+            <span>#{sortMode === "rank" ? entry.rank : index + 1}</span>
             <button type="button" className="ranking-company" onClick={() => void onOpenEntry(entry)}>
               <strong>{entry.name}</strong>
               <small>
@@ -165,6 +186,25 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       </div>
     </section>
   );
+}
+
+function compareRankingRows(left: RankingEntry, right: RankingEntry, sortMode: SortMode, direction: SortDirection) {
+  const multiplier = direction === "desc" ? -1 : 1;
+  if (sortMode === "rank") return direction === "desc" ? left.rank - right.rank : right.rank - left.rank;
+  const value = compareRankingValue(left, right, sortMode);
+  if (value !== 0) return value * multiplier;
+  return left.rank - right.rank;
+}
+
+function compareRankingValue(left: RankingEntry, right: RankingEntry, sortMode: Exclude<SortMode, "rank">) {
+  if (sortMode === "ias" || sortMode === "cqs") return scoreValue(left, sortMode) - scoreValue(right, sortMode);
+  if (sortMode === "name") return left.name.localeCompare(right.name, "zh-CN");
+  if (sortMode === "code") return left.code.localeCompare(right.code);
+  return left.sector.localeCompare(right.sector, "zh-CN");
+}
+
+function scoreValue(entry: RankingEntry, key: "ias" | "cqs") {
+  return entry.source === "deep-report" && Number.isFinite(entry[key]) ? entry[key] : -1;
 }
 
 function mergeLibraryEntries(current: ReportLibraryEntry[], incoming: ReportLibraryEntry[]) {
