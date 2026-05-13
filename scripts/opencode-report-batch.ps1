@@ -208,6 +208,27 @@ function Invoke-JsonPost {
   }
 }
 
+function New-ModelEvidenceResponse {
+  param([object]$EvidenceResponse)
+
+  $bundle = $EvidenceResponse.evidence
+  $facts = if ($bundle -and $bundle.facts) { $bundle.facts } else { [pscustomobject]@{} }
+
+  return [pscustomobject]@{
+    evidence = [pscustomobject]@{
+      company = $bundle.company
+      retrievedAt = $bundle.retrievedAt
+      evidence = @($bundle.evidence)
+      facts = [pscustomobject]@{
+        selectedCompany = $facts.selectedCompany
+        quote = $facts.quote
+        summary = $facts.summary
+        financialTenYear = $facts.financialTenYear
+      }
+    }
+  }
+}
+
 function Normalize-ModelReport {
   param(
     [object]$Report,
@@ -341,6 +362,16 @@ function Resolve-OpenCodeCommand {
   throw "OpenCode command not found. Install opencode or add it to PATH."
 }
 
+function Stop-ProcessTree {
+  param([int]$ProcessId)
+
+  $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue)
+  foreach ($child in $children) {
+    Stop-ProcessTree -ProcessId $child.ProcessId
+  }
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
 $loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ password = $Password } | ConvertTo-Json)
 $setCookie = @($loginResponse.Headers["Set-Cookie"])[0]
 if (-not $setCookie) { throw "Login succeeded but no session cookie was returned." }
@@ -400,7 +431,9 @@ foreach ($company in $companies) {
   $evidenceBody | Set-Content -LiteralPath $evidenceTemp -Encoding UTF8
   $evidenceRaw = Invoke-JsonPost -Uri "$BaseUrl/api/company-evidence" -BodyPath $evidenceTemp -CookieHeader $cookieHeader -TimeoutSeconds 120
   $evidenceResponse = $evidenceRaw | ConvertFrom-Json
-  $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+  $fullEvidencePath = Join-Path $companyDir "evidence-full.json"
+  $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $fullEvidencePath -Encoding UTF8
+  New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
 
   $prompt = @"
 You are the CSTD Alpha stock report generator.
@@ -455,10 +488,12 @@ Read evidence.json and produce the final report JSON now.
   )
   $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -PassThru
   if (-not $opencodeProcess.WaitForExit($OpencodeTimeoutMinutes * 60 * 1000)) {
-    Stop-Process -Id $opencodeProcess.Id -Force -ErrorAction SilentlyContinue
+    Stop-ProcessTree -ProcessId $opencodeProcess.Id
     throw "opencode timed out after $OpencodeTimeoutMinutes minutes."
   }
-  if ($opencodeProcess.ExitCode -ne 0) {
+  $opencodeProcess.WaitForExit()
+  $opencodeProcess.Refresh()
+  if ($null -ne $opencodeProcess.ExitCode -and $opencodeProcess.ExitCode -ne 0) {
     $stderr = if (Test-Path $opencodeErrorPath) { Get-Content -LiteralPath $opencodeErrorPath -Raw -Encoding UTF8 } else { "" }
     throw "opencode failed with exit code $($opencodeProcess.ExitCode). $stderr"
   }
