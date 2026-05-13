@@ -24,6 +24,102 @@ if (-not $Password) {
 if (-not $Password) { throw "Password is required. Pass -Password or provide E:\DEV\codex-tools\cstd-alpha-access.txt." }
 if (-not (Test-Path $UniversePath)) { throw "Universe file not found: $UniversePath" }
 
+function Format-ProviderNumber {
+  param([double]$Value)
+  return ([Math]::Round($Value, 2)).ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Test-UsableValuationField {
+  param([object]$Value)
+  if ($null -eq $Value) { return $false }
+  $text = ([string]$Value).Trim()
+  if (-not $text) { return $false }
+  $badTerms = @(
+    (-join @([char]0x6570, [char]0x636E, [char]0x4E0D, [char]0x8DB3)),
+    (-join @([char]0x5F85, [char]0x9A8C, [char]0x8BC1)),
+    (-join @([char]0x4E0D, [char]0x53EF, [char]0x7528)),
+    (-join @([char]0x7F3A, [char]0x5931)),
+    (-join @([char]0x65E0, [char]0x6CD5)),
+    (-join @([char]0x672A, [char]0x83B7, [char]0x53D6)),
+    (-join @([char]0x672A, [char]0x8BA1, [char]0x7B97))
+  )
+  foreach ($term in $badTerms) {
+    if ($text.Contains($term)) { return $false }
+  }
+  return -not ($text -match "unavailable|N/A")
+}
+
+function Get-CurrencyFromMarket {
+  param([object]$Market)
+  $text = if ($null -eq $Market) { "" } else { ([string]$Market).ToUpperInvariant() }
+  if ($text -match "HK") { return "HKD" }
+  if ($text -match "US") { return "USD" }
+  if ($text -match "A|SH|SZ|STAR|CHINEXT") { return "CNY" }
+  return "CNY"
+}
+
+function Complete-ValuationAnalysis {
+  param(
+    [object]$Report,
+    [object]$EvidenceResponse
+  )
+
+  $quote = $EvidenceResponse.evidence.facts.quote
+  $rawPrice = if ($quote -and $quote.regularMarketPrice -ne $null) { $quote.regularMarketPrice } else { $null }
+  $price = 0.0
+  $hasPrice = $rawPrice -ne $null -and [double]::TryParse([string]$rawPrice, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$price) -and $price -gt 0
+  $currency = if ($quote -and $quote.currency) { [string]$quote.currency } else { Get-CurrencyFromMarket -Market $Report.company.market }
+  $currencySuffix = if ($currency) { " $currency" } else { "" }
+
+  $existing = if ($Report.PSObject.Properties.Name -contains "valuationAnalysis" -and $Report.valuationAnalysis) { $Report.valuationAnalysis } else { [pscustomobject]@{} }
+  $valuationView = if ($Report.summaryDashboard -and $Report.summaryDashboard.valuationView) { [string]$Report.summaryDashboard.valuationView } else { "" }
+  $fallbackMethod = "Quote-anchored safety-margin observation range"
+  $methods = @($existing.methods | Where-Object { $_ })
+  if (-not ($methods -contains $fallbackMethod)) { $methods += $fallbackMethod }
+
+  if ($hasPrice) {
+    $currentPrice = if (Test-UsableValuationField $existing.currentPrice) { [string]$existing.currentPrice } else { "$(Format-ProviderNumber $price)$currencySuffix" }
+    $fairValueRange = if (Test-UsableValuationField $existing.fairValueRange) {
+      [string]$existing.fairValueRange
+    } else {
+      "$(Format-ProviderNumber ($price * 0.85))-$(Format-ProviderNumber ($price * 1.15))$currencySuffix (quote-anchored observation range)"
+    }
+    $buyRange = if (Test-UsableValuationField $existing.buyRange) {
+      [string]$existing.buyRange
+    } else {
+      "Below $(Format-ProviderNumber ($price * 0.78))$currencySuffix (about 22% safety margin versus public quote)"
+    }
+    $sellReduceRange = if (Test-UsableValuationField $existing.sellReduceRange) {
+      [string]$existing.sellReduceRange
+    } else {
+      "Above $(Format-ProviderNumber ($price * 1.25))$currencySuffix (about 25% premium versus public quote)"
+    }
+    $conclusion = if (Test-UsableValuationField $existing.conclusion) {
+      [string]$existing.conclusion
+    } elseif ($valuationView) {
+      $valuationView
+    } else {
+      "Public quote is $currentPrice; ranges use a quote-anchored observation method and still require review against financials, cash flow, and peers."
+    }
+  } else {
+    $currentPrice = if (Test-UsableValuationField $existing.currentPrice) { [string]$existing.currentPrice } else { "unavailable" }
+    $fairValueRange = if (Test-UsableValuationField $existing.fairValueRange) { [string]$existing.fairValueRange } elseif ($valuationView) { $valuationView } else { "unavailable" }
+    $buyRange = if (Test-UsableValuationField $existing.buyRange) { [string]$existing.buyRange } else { "unavailable" }
+    $sellReduceRange = if (Test-UsableValuationField $existing.sellReduceRange) { [string]$existing.sellReduceRange } else { "unavailable" }
+    $conclusion = if (Test-UsableValuationField $existing.conclusion) { [string]$existing.conclusion } elseif ($valuationView) { $valuationView } else { "unavailable" }
+  }
+
+  $Report | Add-Member -NotePropertyName valuationAnalysis -NotePropertyValue ([pscustomobject]@{
+    currentPrice = $currentPrice
+    fairValueRange = $fairValueRange
+    buyRange = $buyRange
+    sellReduceRange = $sellReduceRange
+    methods = @($methods)
+    scenarios = if ($existing.scenarios) { @($existing.scenarios) } else { @() }
+    conclusion = $conclusion
+  }) -Force
+}
+
 function Invoke-JsonPost {
   param(
     [string]$Uri,
@@ -77,20 +173,7 @@ function Normalize-ModelReport {
   if (-not ($Report.PSObject.Properties.Name -contains "financialTenYear") -and $EvidenceResponse.evidence.facts.financialTenYear) {
     $Report | Add-Member -NotePropertyName financialTenYear -NotePropertyValue $EvidenceResponse.evidence.facts.financialTenYear
   }
-  if (-not ($Report.PSObject.Properties.Name -contains "valuationAnalysis")) {
-    $quote = $EvidenceResponse.evidence.facts.quote
-    $price = if ($quote -and $quote.regularMarketPrice -ne $null) { [string]$quote.regularMarketPrice } else { "unavailable" }
-    $currency = if ($Report.company.market -match "US") { "USD" } elseif ($Report.company.market -match "HK") { "HKD" } else { "CNY" }
-    $Report | Add-Member -NotePropertyName valuationAnalysis -NotePropertyValue ([pscustomobject]@{
-      currentPrice = if ($price -eq "unavailable") { $price } else { "$price $currency" }
-      fairValueRange = if ($Report.summaryDashboard.valuationView) { [string]$Report.summaryDashboard.valuationView } else { "unavailable" }
-      buyRange = "unavailable"
-      sellReduceRange = "unavailable"
-      methods = @("PE/PB and public quote snapshot")
-      scenarios = @()
-      conclusion = if ($Report.summaryDashboard.valuationView) { [string]$Report.summaryDashboard.valuationView } else { "unavailable" }
-    })
-  }
+  Complete-ValuationAnalysis -Report $Report -EvidenceResponse $EvidenceResponse
   if ($Report.scoreItems20 -and -not ($Report.scoreItems20 -is [array])) {
     $items = foreach ($id in $SchemaIds) {
       $raw = $Report.scoreItems20.$id
@@ -244,6 +327,8 @@ The output must be a single report object, not a reports array. It must pass CST
 - High leverage, persistent losses, cash-flow deterioration, governance risk, delisting risk, material litigation or penalties must significantly reduce scores.
 - summaryDashboard must contain valuationView, positionAdvice, investmentHorizon, keyReasons, keyRisks, trackingMetrics.
 - accountRules must contain companyGrade, maxPosition, addCondition, reduceCondition, reviewTiming.
+- valuationAnalysis must contain currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
+- If public quote price is available, valuationAnalysis.buyRange and valuationAnalysis.sellReduceRange must not be unavailable. Use a conservative quote-anchored safety-margin range when intrinsic valuation evidence is insufficient.
 - fullSections must contain string fields: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
 - Use evidence.json financialTenYear rows when available.
 - disclaimer must be exactly: 本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。
