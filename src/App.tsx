@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkSession, fetchChartData, generateReport, login, searchCompanies, type ReportProgress } from "./api";
+import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView } from "./RankingView";
 import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
@@ -175,7 +175,7 @@ function App() {
     }
   }
 
-  function openRankingEntry(entry: RankingEntry) {
+  async function openRankingEntry(entry: RankingEntry) {
     const company = companyCandidateFromRanking(entry);
     setSelectedCompany(company);
     setQuery(entry.name);
@@ -200,6 +200,45 @@ function App() {
       ]);
       setPhase("ready");
       setCacheNotice("正在显示排行榜导入报告。");
+      return;
+    }
+    if (entry.libraryId) {
+      setPhase("generating");
+      setProgress([
+        {
+          type: "progress",
+          stage: "report_library",
+          label: "读取报告库",
+          detail: "正在从服务端报告库读取完整深度报告。",
+          percent: 70,
+          at: new Date().toISOString(),
+        },
+      ]);
+      try {
+        const record = await fetchReportLibraryRecord(entry.libraryId);
+        setReport(record.report);
+        setReportMetrics(null);
+        saveLastReport(record.report);
+        setEvidenceCount(record.report.evidence.length);
+        setProgress([
+          {
+            type: "progress",
+            stage: "report_library_hit",
+            label: "命中报告库",
+            detail: "已从服务端报告库打开完整深度报告。",
+            percent: 100,
+            at: new Date().toISOString(),
+            evidenceCount: record.report.evidence.length,
+          },
+        ]);
+        setPhase("ready");
+        setCacheNotice("正在显示服务端报告库中的深度报告。");
+      } catch (err) {
+        setReport(null);
+        setReportMetrics(null);
+        setPhase("error");
+        setError(err instanceof Error ? err.message : "报告库读取失败。");
+      }
       return;
     }
     setReport(null);

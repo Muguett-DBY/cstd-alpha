@@ -1,4 +1,5 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
+import type { ReportLibraryEntry } from "./report-library";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -28,6 +29,7 @@ export type RankingEntry = {
   source: RankingSource;
   hasReport: boolean;
   seedOrder: number;
+  libraryId?: string;
   report?: InvestmentReport;
   candidate: CompanyCandidate;
 };
@@ -135,17 +137,23 @@ export const A_SHARE_RANKING_SEEDS: RankingSeed[] = [
   { code: "601919", name: "中远海控", exchange: "上海证券交易所", listingPlace: "沪A", sector: "交通运输", baseline: 60 },
 ];
 
-export function buildRankingEntries(reports: InvestmentReport[] = []): RankingEntry[] {
+export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEntries: ReportLibraryEntry[] = []): RankingEntry[] {
   const reportByKey = new Map(reports.map((report) => [reportIdentityKey(report), report]));
+  const libraryEntryByKey = new Map(libraryEntries.map((entry) => [libraryEntryIdentityKey(entry), entry]));
   const seedKeys = new Set<string>();
   const rows = A_SHARE_RANKING_SEEDS.map((seed, index) => {
     seedKeys.add(seedIdentityKey(seed));
     const report = reportByKey.get(seedIdentityKey(seed));
-    return report ? reportToRankingEntry(report, seed, index) : seedToRankingEntry(seed, index);
+    const libraryEntry = libraryEntryByKey.get(seedIdentityKey(seed));
+    return report ? reportToRankingEntry(report, seed, index) : libraryEntry ? libraryEntryToRankingEntry(libraryEntry, seed, index) : seedToRankingEntry(seed, index);
   });
 
   for (const report of reports) {
     if (!seedKeys.has(reportIdentityKey(report))) rows.push(reportToRankingEntry(report));
+  }
+  for (const entry of libraryEntries) {
+    const key = libraryEntryIdentityKey(entry);
+    if (!seedKeys.has(key) && !reportByKey.has(key)) rows.push(libraryEntryToRankingEntry(entry));
   }
 
   return rows
@@ -173,6 +181,13 @@ export function reportIdentityKey(report: InvestmentReport) {
 
 function seedIdentityKey(seed: RankingSeed) {
   return `${normalizeIdentity(seed.listingPlace)}:${normalizeIdentity(seed.code)}`;
+}
+
+function libraryEntryIdentityKey(entry: ReportLibraryEntry) {
+  const ticker = normalizeIdentity(entry.ticker);
+  const market = normalizeIdentity(entry.market);
+  const name = normalizeIdentity(entry.companyName);
+  return ticker ? `${market}:${ticker}` : `${market}:${name}`;
 }
 
 function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry {
@@ -222,6 +237,31 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
   };
 }
 
+function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
+  const code = entry.ticker || seed?.code || entry.companyName;
+  const listingPlace = entry.market || seed?.listingPlace || "A股";
+  return {
+    id: libraryEntryIdentityKey(entry),
+    rank: 0,
+    code,
+    name: entry.companyName || seed?.name || code,
+    exchange: seed?.exchange || listingPlace,
+    listingPlace,
+    sector: entry.sector || entry.industry || seed?.sector || "行业待验证",
+    cqs: entry.cqs,
+    ias: entry.ias,
+    conclusion: entry.conclusion,
+    positionAdvice: entry.positionAdvice,
+    valuationView: entry.valuationView,
+    asOf: entry.asOf,
+    source: "deep-report",
+    hasReport: true,
+    seedOrder,
+    libraryId: entry.id,
+    candidate: seed ? seedToCandidate(seed) : libraryEntryToCandidate(entry),
+  };
+}
+
 function seedToCandidate(seed: RankingSeed): CompanyCandidate {
   return {
     id: `ranking:${seed.listingPlace}:${seed.code}`,
@@ -242,6 +282,18 @@ function reportToCandidate(report: InvestmentReport): CompanyCandidate {
     exchange: report.company.market || "导入报告",
     listingPlace: report.company.market || "导入",
     marketType: "Imported",
+    source: "eastmoney",
+  };
+}
+
+function libraryEntryToCandidate(entry: ReportLibraryEntry): CompanyCandidate {
+  return {
+    id: `library:${entry.market || "UNKNOWN"}:${entry.ticker || entry.companyName}`,
+    name: entry.companyName,
+    code: entry.ticker || entry.companyName,
+    exchange: entry.market || "报告库",
+    listingPlace: entry.market || "报告库",
+    marketType: "Library",
     source: "eastmoney",
   };
 }

@@ -1,13 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
+import type { ReportLibraryEntry } from "./shared/report-library";
 import { buildRankingEntries, type RankingEntry } from "./shared/ranking";
 
 type RankingViewProps = {
-  onOpenEntry: (entry: RankingEntry) => void;
+  onOpenEntry: (entry: RankingEntry) => void | Promise<void>;
 };
 
 export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [imported, setImported] = useState(() => loadImportedRankingReports());
+  const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
+  const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("全部行业");
   const [source, setSource] = useState<"all" | "deep-report" | "seed">("all");
@@ -15,7 +19,19 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report)), [imported]);
+  useEffect(() => {
+    void fetchReportLibrary()
+      .then((entries) => {
+        setLibraryEntries(entries);
+        setLibraryPhase("ready");
+      })
+      .catch((err) => {
+        setLibraryPhase("error");
+        setError(err instanceof Error ? err.message : "报告库读取失败。");
+      });
+  }, []);
+
+  const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries), [imported, libraryEntries]);
   const sectors = useMemo(() => ["全部行业", ...Array.from(new Set(entries.map((entry) => entry.sector))).sort()], [entries]);
   const filtered = entries.filter((entry) => {
     const keyword = query.trim().toLowerCase();
@@ -29,16 +45,18 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const seedCount = entries.filter((entry) => entry.source === "seed").length;
   const topEntry = entries.find((entry) => entry.source === "deep-report");
 
-  function submitImport(event: React.FormEvent) {
+  async function submitImport(event: React.FormEvent) {
     event.preventDefault();
     setNotice("");
     setError("");
     try {
       const reports = parseRankingReportJson(importText);
+      const saved = await importReportLibraryReports(reports);
       const nextImported = upsertImportedRankingReports(reports);
       setImported(nextImported);
+      setLibraryEntries((current) => mergeLibraryEntries(current, saved));
       setImportText("");
-      setNotice(`已导入 ${reports.length} 份报告，排行榜已按深度报告评分更新。`);
+      setNotice(`已导入 ${reports.length} 份报告到服务端报告库，排行榜已按深度报告评分更新。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "导入失败，请检查 JSON。");
     }
@@ -61,7 +79,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
         <div className="ranking-summary">
           <MetricTile label="公司池" value={`${entries.length}`} />
-          <MetricTile label="深度报告" value={`${deepReportCount}`} />
+          <MetricTile label="报告库" value={libraryPhase === "loading" ? "读取中" : `${deepReportCount}`} />
           <MetricTile label="待导入" value={`${seedCount}`} />
           <MetricTile label="当前第一" value={topEntry ? topEntry.name : "待生成"} />
         </div>
@@ -120,7 +138,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         {filtered.map((entry) => (
           <div key={`${entry.id}-${entry.source}`} className={`ranking-row ${entry.source === "deep-report" ? "is-report" : "is-seed"}`} role="row">
             <span>#{entry.rank}</span>
-            <button type="button" className="ranking-company" onClick={() => onOpenEntry(entry)}>
+            <button type="button" className="ranking-company" onClick={() => void onOpenEntry(entry)}>
               <strong>{entry.name}</strong>
               <small>
                 {entry.code} / {entry.listingPlace}
@@ -133,7 +151,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
             <span>{entry.positionAdvice}</span>
             <span>{entry.source === "deep-report" ? "深度报告" : "待导入"}</span>
             <span className="ranking-actions">
-              <button type="button" className="secondary-button" onClick={() => onOpenEntry(entry)}>
+              <button type="button" className="secondary-button" onClick={() => void onOpenEntry(entry)}>
                 查看
               </button>
               {entry.report ? (
@@ -147,6 +165,12 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       </div>
     </section>
   );
+}
+
+function mergeLibraryEntries(current: ReportLibraryEntry[], incoming: ReportLibraryEntry[]) {
+  const byId = new Map(current.map((entry) => [entry.id, entry]));
+  for (const entry of incoming) byId.set(entry.id, entry);
+  return Array.from(byId.values());
 }
 
 function MetricTile({ label, value }: { label: string; value: string }) {

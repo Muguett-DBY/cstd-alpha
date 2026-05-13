@@ -1,4 +1,5 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
+import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 
 export type GenerateReportInput = {
@@ -28,6 +29,11 @@ export type ReportProgress = {
 export type ReportGenerationResult = {
   report: InvestmentReport;
   metrics?: ReportGenerationMetrics;
+};
+
+export type ReportLibraryRecord = {
+  entry: ReportLibraryEntry;
+  report: InvestmentReport;
 };
 
 export async function checkSession() {
@@ -102,6 +108,31 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
 
   if (!response.ok) throw new Error((await readError(response)) || "图表数据生成失败。");
   return (await response.json()) as ChartBundle;
+}
+
+export async function fetchReportLibrary(): Promise<ReportLibraryEntry[]> {
+  const response = await fetch("/api/report-library", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
+  const data = (await response.json()) as { entries?: ReportLibraryEntry[] };
+  return data.entries ?? [];
+}
+
+export async function fetchReportLibraryRecord(id: string): Promise<ReportLibraryRecord> {
+  const response = await fetch(`/api/report-library?id=${encodeURIComponent(id)}`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "报告读取失败。");
+  return (await response.json()) as ReportLibraryRecord;
+}
+
+export async function importReportLibraryReports(reports: InvestmentReport[]): Promise<ReportLibraryEntry[]> {
+  const response = await fetch("/api/report-library", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ reports }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "报告导入失败。");
+  const data = (await response.json()) as { imported?: ReportLibraryEntry[] };
+  return data.imported ?? [];
 }
 
 async function* readNdjson(response: Response): AsyncGenerator<Record<string, unknown>> {
