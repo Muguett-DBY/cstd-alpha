@@ -209,6 +209,86 @@ describe("public data providers", () => {
     expect(result.evidence).not.toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public quote endpoint" })]));
   });
 
+  test("falls back to Tencent A-share quote when Eastmoney quote and kline are unavailable", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com") || url.includes("push2his.eastmoney.com")) {
+        return Promise.resolve({ ok: false, status: 502, json: async () => ({}) });
+      }
+      if (url.includes("qt.gtimg.cn")) {
+        return Promise.resolve({
+          ok: true,
+          text: async () =>
+            'v_sz002001="51~XHC~002001~32.92~33.50~33.20~333367~~~~~~~~~~~~~~~~~~~~~~~20260513161427~-0.58~-1.73~33.63~32.60~32.92/333367/1099587354~333367~109959~1.10~15.08~~~~~999.73~1011.77~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~CNY~0~~33.02~-270~";',
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "新和成",
+      company: {
+        id: "eastmoney:0.002001",
+        name: "新和成",
+        code: "002001",
+        exchange: "深圳证券交易所",
+        listingPlace: "深A",
+        marketType: "AStock",
+        quoteId: "0.002001",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("qt.gtimg.cn/q=sz002001"), expect.any(Object));
+    expect(result.facts.quote).toMatchObject({
+      symbol: "002001",
+      longName: "新和成",
+      regularMarketPrice: 32.92,
+      regularMarketPreviousClose: 33.5,
+      regularMarketOpen: 33.2,
+      currency: "CNY",
+      quoteSourceName: "Tencent",
+    });
+    expect(result.evidence.find((item) => item.title.includes("Tencent quote fallback"))).toMatchObject({
+      freshness: "latest-public",
+    });
+  });
+
+  test("does not treat all-zero Eastmoney A-share quotes as usable prices", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ data: { f57: "688635", f58: "长进光子", f43: 0, f44: 0, f45: 0, f46: 0, f60: 0, f116: 0 } }),
+        });
+      }
+      if (url.includes("push2his.eastmoney.com")) {
+        return Promise.resolve({ ok: true, json: async () => ({ data: { klines: [] } }) });
+      }
+      if (url.includes("qt.gtimg.cn")) {
+        return Promise.resolve({ ok: true, text: async () => 'v_sh688635="1~CJGZ~688635~0.00~0.00~0.00~0";' });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "长进光子",
+      company: {
+        id: "eastmoney:1.688635",
+        name: "长进光子",
+        code: "688635",
+        exchange: "上海证券交易所",
+        listingPlace: "科创板",
+        marketType: "AStock",
+        quoteId: "1.688635",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(result.facts.quote).toBeUndefined();
+  });
+
   test("records unavailable evidence instead of inventing facts", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
 

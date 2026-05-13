@@ -116,6 +116,11 @@ export async function fetchPublicCompanyEvidence({
   const eastmoneyQuoteUrl = eastmoneyQuoteResult.url;
   const eastmoneyQuote = eastmoneyQuoteResult.quote;
   const eastmoneyQuoteSource = eastmoneyQuoteResult.source;
+  const tencentQuoteResult =
+    selectedCompany && isAStockListedCompany(selectedCompany) && !eastmoneyQuote
+      ? await fetchTencentAQuote(selectedCompany, fetchImpl)
+      : { url: "", quote: undefined };
+  const tencentQuote = tencentQuoteResult.quote;
   const incomeJson = incomeUrl ? await fetchJson(incomeUrl, fetchImpl) : null;
   const cashflowJson = cashflowUrl ? await fetchJson(cashflowUrl, fetchImpl) : null;
   const balanceJson = balanceUrl ? await fetchJson(balanceUrl, fetchImpl) : null;
@@ -152,7 +157,7 @@ export async function fetchPublicCompanyEvidence({
         : eastmoneyFinancialTenYear;
   const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length) || yahooFinancialTenYear.rows.length > 0;
 
-  if (!quote && !summary && !chartMeta && !searchQuote && !normalizedFundamentals && !eastmoneyQuote && !hasPublicFinancials) {
+  if (!quote && !summary && !chartMeta && !searchQuote && !normalizedFundamentals && !eastmoneyQuote && !tencentQuote && !hasPublicFinancials) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
   }
 
@@ -160,6 +165,7 @@ export async function fetchPublicCompanyEvidence({
   const price = isRecord(summary?.price) ? summary.price : undefined;
   const mergedQuote = {
     ...(eastmoneyQuote ? normalizeEastmoneyQuote(eastmoneyQuote, selectedCompany) : {}),
+    ...(tencentQuote ?? {}),
     ...(searchQuote ?? {}),
     ...(stooqQuote ?? {}),
     ...(chartMeta ?? {}),
@@ -213,6 +219,20 @@ export async function fetchPublicCompanyEvidence({
             : "Latest public market price, volume, market cap and valuation snapshot."
           : "Eastmoney quote unavailable.",
       },
+      ...(tencentQuoteResult.url
+        ? [
+            {
+              title: `${symbol} Tencent quote fallback`,
+              source: "Tencent public quote endpoint",
+              url: tencentQuoteResult.url,
+              retrievedAt,
+              freshness: tencentQuote ? "latest-public" : "unavailable",
+              notes: tencentQuote
+                ? "Latest A-share public market price recovered from Tencent quote fallback after Eastmoney quote was unavailable."
+                : "Tencent quote fallback returned no usable price.",
+            } satisfies EvidenceItem,
+          ]
+        : []),
       {
         title: `${symbol} Eastmoney financial statements`,
         source: "Eastmoney public financial statement endpoints",
@@ -666,7 +686,7 @@ async function fetchEastmoneyQuote(candidate: CompanyCandidate, fetchImpl: Fetch
   for (const url of urls) {
     const json = await fetchJson(url, fetchImpl);
     const quote = isRecord(recordPath(json, ["data"])) ? (recordPath(json, ["data"]) as Record<string, unknown>) : undefined;
-    if (quote) return { url, quote, source: "quote" as const };
+    if (quote && hasPositiveQuotePrice(normalizeEastmoneyQuote(quote, candidate))) return { url, quote, source: "quote" as const };
   }
   for (const secid of eastmoneyQuoteIds(candidate)) {
     const url = eastmoneyLatestKlineUrl(secid);
@@ -675,6 +695,11 @@ async function fetchEastmoneyQuote(candidate: CompanyCandidate, fetchImpl: Fetch
     if (quote) return { url, quote, source: "kline" as const };
   }
   return { url: urls[0] ?? "", quote: undefined };
+}
+
+function hasPositiveQuotePrice(quote: Record<string, unknown> | undefined) {
+  const price = numberValue(quote?.regularMarketPrice);
+  return price !== undefined && price > 0;
 }
 
 function eastmoneyQuoteUrls(candidate: CompanyCandidate) {
@@ -697,6 +722,43 @@ function derivedEastmoneyQuoteId(candidate: CompanyCandidate) {
 
 function eastmoneyQuoteUrl(secid: string) {
   return `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid)}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f167,f168,f169,f170`;
+}
+
+async function fetchTencentAQuote(candidate: CompanyCandidate, fetchImpl: FetchLike) {
+  const url = tencentAQuoteUrl(candidate);
+  if (!url) return { url: "", quote: undefined };
+  const text = await fetchText(url, fetchImpl);
+  return { url, quote: normalizeTencentAQuote(text, candidate) };
+}
+
+function tencentAQuoteUrl(candidate: CompanyCandidate) {
+  if (!isAStockListedCompany(candidate)) return "";
+  const prefix = candidate.code.startsWith("6") || candidate.code.startsWith("9") || candidate.listingPlace.includes("沪") ? "sh" : "sz";
+  return `https://qt.gtimg.cn/q=${prefix}${candidate.code}`;
+}
+
+function normalizeTencentAQuote(text: string | undefined, candidate: CompanyCandidate) {
+  if (!text) return undefined;
+  const quoted = text.match(/="([^"]*)"/)?.[1] ?? text;
+  const fields = quoted.split("~");
+  const price = numberFromString(fields[3]);
+  if (price === undefined || price <= 0) return undefined;
+  return pickDefined({
+    symbol: candidate.code || stringValue(fields[2]),
+    longName: candidate.name,
+    regularMarketPrice: price,
+    regularMarketPreviousClose: numberFromString(fields[4]),
+    regularMarketOpen: numberFromString(fields[5]),
+    regularMarketVolume: numberFromString(fields[6]),
+    regularMarketChange: numberFromString(fields[31]),
+    regularMarketChangePercent: numberFromString(fields[32]),
+    regularMarketDayHigh: numberFromString(fields[33]),
+    regularMarketDayLow: numberFromString(fields[34]),
+    trailingPE: numberFromString(fields[39]),
+    marketCap: numberFromString(fields[45]),
+    currency: /^[A-Z]{3}$/.test(fields[82] ?? "") ? fields[82] : "CNY",
+    quoteSourceName: "Tencent",
+  });
 }
 
 function eastmoneyLatestKlineUrl(secid: string) {
@@ -814,6 +876,18 @@ function isUsListedCompany(candidate: CompanyCandidate) {
     candidate.quoteId?.startsWith("105.") ||
     candidate.quoteId?.startsWith("106.") ||
     candidate.quoteId?.startsWith("107.")
+  );
+}
+
+function isAStockListedCompany(candidate: CompanyCandidate) {
+  return Boolean(
+    !isUsListedCompany(candidate) &&
+      !isHongKongListedCompany(candidate) &&
+      (candidate.marketType === "AStock" ||
+        candidate.listingPlace.includes("A") ||
+        candidate.listingPlace.includes("沪") ||
+        candidate.listingPlace.includes("深") ||
+        /^[0369]\d{5}$/.test(candidate.code))
   );
 }
 
