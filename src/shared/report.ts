@@ -15,6 +15,8 @@ export type CompanyCandidate = {
   exchange: string;
   listingPlace: string;
   marketType: string;
+  industry?: string;
+  sector?: string;
   quoteId?: string;
   secid?: string;
   yahooSymbol?: string;

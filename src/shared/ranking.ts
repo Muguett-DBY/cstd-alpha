@@ -1,5 +1,5 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
-import type { ReportLibraryEntry } from "./report-library";
+import { cleanIndustryLabel, type ReportLibraryEntry } from "./report-library";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -222,7 +222,7 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
     name: report.company.name || seed?.name || code,
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: report.company.sector || report.company.industry || seed?.sector || "行业待验证",
+    sector: rankingSector(report.company.industry, report.company.sector, seed?.sector),
     cqs: report.cqs,
     ias: report.ias,
     conclusion: report.conclusion,
@@ -247,7 +247,7 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     name: entry.companyName || seed?.name || code,
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: entry.sector || entry.industry || seed?.sector || "行业待验证",
+    sector: rankingSector(entry.industry, entry.sector, seed?.sector),
     cqs: entry.cqs,
     ias: entry.ias,
     conclusion: entry.conclusion,
@@ -300,6 +300,10 @@ function libraryEntryToCandidate(entry: ReportLibraryEntry): CompanyCandidate {
 
 function sourcePriority(source: RankingSource) {
   return source === "deep-report" ? 1 : 0;
+}
+
+function rankingSector(industry?: string, sector?: string, fallback?: string) {
+  return cleanIndustryLabel(industry) || cleanIndustryLabel(sector) || fallback || "行业待验证";
 }
 
 function normalizeIdentity(value: unknown) {

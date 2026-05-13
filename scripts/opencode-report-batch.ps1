@@ -214,6 +214,7 @@ function Normalize-ModelReport {
       name = $EvidenceResponse.evidence.company.name
       ticker = $EvidenceResponse.evidence.company.ticker
       market = $EvidenceResponse.evidence.company.market
+      industry = $EvidenceResponse.evidence.company.industry
       sector = $EvidenceResponse.evidence.company.sector
     }) -Force
   } elseif (-not ($Report.PSObject.Properties.Name -contains "company") -and ($Report.PSObject.Properties.Name -contains "companyName")) {
@@ -355,6 +356,8 @@ foreach ($company in $companies) {
     listingPlace = $company.listingPlace
     marketType = $company.marketType
     quoteId = $company.quoteId
+    industry = $company.industry
+    sector = $company.sector
     source = "eastmoney"
   }
   $evidenceBody = @{ company = $candidate } | ConvertTo-Json -Depth 6

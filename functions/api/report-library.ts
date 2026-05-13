@@ -1,6 +1,7 @@
 import { verifySessionCookie } from "../_shared/auth";
 import {
   buildReportLibraryEntry,
+  cleanIndustryLabel,
   parseReportLibraryReports,
   reportLibraryIdentity,
   validateLibraryReport,
@@ -247,8 +248,8 @@ function rowToEntry(row: ReportLibraryRow): ReportLibraryEntry {
     companyName: row.company_name,
     ticker: row.ticker ?? undefined,
     market: row.market ?? undefined,
-    industry: row.industry ?? undefined,
-    sector: row.sector ?? undefined,
+    industry: cleanIndustryLabel(row.industry),
+    sector: cleanIndustryLabel(row.sector),
     cqs: row.cqs,
     ias: row.ias,
     conclusion: row.conclusion,

@@ -186,8 +186,8 @@ export async function fetchPublicCompanyEvidence({
         stringValue(searchQuote?.exchDisp) ||
         stringValue(chartMeta?.exchangeName) ||
         market,
-      industry: stringValue(profile?.industry) || stringValue(searchQuote?.industry) || stringValue(searchQuote?.industryDisp),
-      sector: selectedCompany?.marketType || stringValue(profile?.sector) || stringValue(searchQuote?.sector) || stringValue(searchQuote?.sectorDisp),
+      industry: selectedCompany?.industry || stringValue(profile?.industry) || stringValue(searchQuote?.industry) || stringValue(searchQuote?.industryDisp),
+      sector: selectedCompany?.sector || stringValue(profile?.sector) || stringValue(searchQuote?.sector) || stringValue(searchQuote?.sectorDisp),
     },
     retrievedAt,
     evidence: [
@@ -519,7 +519,8 @@ export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch, 
       name: company.name,
       ticker: company.code,
       market: company.listingPlace,
-      sector: company.marketType,
+      industry: company.industry,
+      sector: company.sector,
     },
     asOf,
     priceMode,

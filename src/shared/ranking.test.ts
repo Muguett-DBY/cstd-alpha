@@ -36,4 +36,25 @@ describe("ranking entries", () => {
     expect(decai).toMatchObject({ source: "deep-report", hasReport: true, conclusion: "回避", ias: 24 });
     expect(companyCandidateFromRanking(decai!).code).toBe("605287");
   });
+
+  test("does not show market type as the ranking industry", () => {
+    const report = validateReportPayload({
+      company: { name: "测试公司", ticker: "123456", market: "SH-A", sector: "AStock" },
+      conclusion: "观察",
+      oneSentence: "测试报告。",
+      evidence: [
+        { title: "财报", source: "公开财报", url: "https://example.com", retrievedAt: "2026-05-13T00:00:00.000Z", freshness: "latest-public", notes: "ok" },
+        { title: "行情", source: "公开行情", url: "https://example.com/quote", retrievedAt: "2026-05-13T00:00:00.000Z", freshness: "latest-public", notes: "ok" },
+      ],
+      cqs: 65,
+      ias: 66,
+      summaryDashboard: { valuationView: "合理", positionAdvice: "观察仓", investmentHorizon: "中长期", keyReasons: [], keyRisks: [], trackingMetrics: [] },
+      sections: { companyOverview: "概况" },
+    });
+
+    const entries = buildRankingEntries([report]);
+    const entry = entries.find((item) => item.code === "123456");
+
+    expect(entry?.sector).toBe("行业待验证");
+  });
 });

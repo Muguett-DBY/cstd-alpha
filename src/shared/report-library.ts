@@ -43,13 +43,15 @@ export function validateLibraryReport(value: unknown) {
 }
 
 export function buildReportLibraryEntry(report: InvestmentReport, id: string, importedAt: string): ReportLibraryEntry {
+  const industry = cleanIndustryLabel(report.company.industry);
+  const sector = cleanIndustryLabel(report.company.sector);
   return {
     id,
     companyName: report.company.name,
     ticker: report.company.ticker,
     market: report.company.market,
-    industry: report.company.industry,
-    sector: report.company.sector,
+    industry,
+    sector,
     cqs: report.cqs,
     ias: report.ias,
     conclusion: report.conclusion,
@@ -61,6 +63,13 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
     evidenceCount: report.evidence.length,
     scoreItemCount: report.scoreItems20.filter((item) => item.score > 0).length,
   };
+}
+
+export function cleanIndustryLabel(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const label = value.trim();
+  if (!label || /^(AStock|UsStock|HK|EQUITY|Imported|Library)$/i.test(label)) return undefined;
+  return label;
 }
 
 export function importedEntryToReport(entry: ReportLibraryEntry, report: InvestmentReport): ImportedLibraryReport {
