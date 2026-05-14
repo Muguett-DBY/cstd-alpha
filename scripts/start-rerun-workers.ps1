@@ -17,7 +17,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $testRoot = "E:\DEV\$([char]0x6D4B)$([char]0x8BD5)\cstd-alpha-opencode-batch"
-if (-not $UniversePath) { $UniversePath = Join-Path $testRoot "ashare-universe-next-pass-quality-and-missing-20260514-1614.json" }
+if (-not $UniversePath) {
+  $latestUniverse = Get-ChildItem -LiteralPath $testRoot -Filter "ashare-universe-next-pass-quality-and-missing-*.json" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+  if (-not $latestUniverse) { throw "No next-pass universe file found under: $testRoot" }
+  $UniversePath = $latestUniverse.FullName
+}
 if (-not $OutputDir) { $OutputDir = Join-Path $testRoot "production-rerun" }
 if (-not $RunRoot) { $RunRoot = Join-Path $testRoot "production-runs" }
 
