@@ -14,6 +14,7 @@ type SortDirection = "desc" | "asc";
 export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
+  const [libraryTotal, setLibraryTotal] = useState(0);
   const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("全部行业");
@@ -26,8 +27,9 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
 
   useEffect(() => {
     void fetchReportLibrary()
-      .then((entries) => {
-        setLibraryEntries(entries);
+      .then((library) => {
+        setLibraryEntries(library.entries);
+        setLibraryTotal(library.total);
         setLibraryPhase("ready");
       })
       .catch((err) => {
@@ -64,6 +66,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       const nextImported = upsertImportedRankingReports(reports);
       setImported(nextImported);
       setLibraryEntries((current) => mergeLibraryEntries(current, saved));
+      setLibraryTotal((current) => Math.max(current, mergeLibraryEntries(libraryEntries, saved).length));
       setImportText("");
       setNotice(`已导入 ${reports.length} 份报告到服务端报告库，排行榜已按深度报告评分更新。`);
     } catch (err) {
@@ -88,7 +91,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
         <div className="ranking-summary">
           <MetricTile label="公司池" value={`${entries.length}`} />
-          <MetricTile label="报告库" value={libraryPhase === "loading" ? "读取中" : `${deepReportCount}`} />
+          <MetricTile label="报告库" value={libraryPhase === "loading" ? "读取中" : `${libraryTotal || deepReportCount}`} />
           <MetricTile label="待导入" value={`${seedCount}`} />
           <MetricTile label="当前第一" value={topEntry ? topEntry.name : "待生成"} />
         </div>

@@ -37,8 +37,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return json(record);
   }
 
-  const entries = hasDurableLibrary(env) ? await listDurableReportEntries(env.REPORT_LIBRARY_DB) : env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE) : [];
-  return json({ entries });
+  const limit = boundedListLimit(url.searchParams.get("limit"));
+  const { entries, total } = hasDurableLibrary(env)
+    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit)
+    : env.REPORT_CACHE
+      ? await listKvReportEntries(env.REPORT_CACHE, limit)
+      : { entries: [], total: 0 };
+  return json({ entries, total, limit });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -149,40 +154,48 @@ async function readKvReportRecord(cache: KVNamespace, id: string): Promise<Repor
   };
 }
 
-async function listDurableReportEntries(db: D1Database) {
-  const result = await db
-    .prepare(
-      `SELECT
+async function listDurableReportEntries(db: D1Database, limit: number) {
+  const [countRow, result] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS count FROM report_library`).first<{ count: number }>(),
+    db
+      .prepare(
+        `SELECT
         id, company_name, ticker, market, industry, sector, cqs, ias, conclusion,
         qualitative_band, position_advice, valuation_view, as_of, imported_at,
         evidence_count, score_item_count, object_key, report_hash
       FROM report_library
-      ORDER BY ias DESC, cqs DESC, company_name ASC`,
-    )
-    .all<ReportLibraryRow>();
-  return (result.results ?? []).map(rowToEntry);
+      ORDER BY ias DESC, cqs DESC, company_name ASC
+      LIMIT ?1`,
+      )
+      .bind(limit)
+      .all<ReportLibraryRow>(),
+  ]);
+  return { entries: (result.results ?? []).map(rowToEntry), total: countRow?.count ?? 0 };
 }
 
-async function listKvReportEntries(cache: KVNamespace) {
+async function listKvReportEntries(cache: KVNamespace, limit: number) {
   const entries: ReportLibraryEntry[] = [];
   let cursor: string | undefined;
+  let total = 0;
   do {
     const page = await cache.list({ prefix: REPORT_PREFIX, cursor });
+    total += page.keys.length;
     const pageEntries = await Promise.all(
-      page.keys.map(async (key) => {
+      page.keys.slice(0, Math.max(0, limit - entries.length)).map(async (key) => {
         const value = await cache.get<ReportLibraryRecord>(key.name, "json");
         return isRecord(value) && isValidEntry(value.entry) ? value.entry : null;
       }),
     );
     entries.push(...pageEntries.filter((entry): entry is ReportLibraryEntry => entry !== null));
     cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+  } while (cursor && entries.length < limit);
 
-  return entries.sort((left, right) => {
+  const sorted = entries.sort((left, right) => {
     if (right.ias !== left.ias) return right.ias - left.ias;
     if (right.cqs !== left.cqs) return right.cqs - left.cqs;
     return left.companyName.localeCompare(right.companyName);
   });
+  return { entries: sorted.slice(0, limit), total };
 }
 
 async function readDurableIndexRow(db: D1Database, id: string) {
@@ -265,6 +278,12 @@ function rowToEntry(row: ReportLibraryRow): ReportLibraryEntry {
 
 function hasDurableLibrary(env: Env): env is Env & { REPORT_LIBRARY_DB: D1Database; REPORT_LIBRARY_BUCKET: R2Bucket } {
   return Boolean(env.REPORT_LIBRARY_DB && env.REPORT_LIBRARY_BUCKET);
+}
+
+function boundedListLimit(value: string | null) {
+  const parsed = value ? Number(value) : 500;
+  if (!Number.isFinite(parsed)) return 500;
+  return Math.max(1, Math.min(1000, Math.floor(parsed)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
