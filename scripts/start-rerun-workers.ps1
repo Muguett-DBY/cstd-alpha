@@ -36,6 +36,8 @@ if ($Workers -gt $MaxWorkers) { throw "Workers=$Workers exceeds MaxWorkers=$MaxW
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $batchScript = Join-Path $repoRoot "scripts\opencode-report-batch.ps1"
 if (-not (Test-Path -LiteralPath $batchScript)) { throw "Batch script not found: $batchScript" }
+$shell = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+if (-not $shell) { $shell = Get-Command powershell.exe -ErrorAction Stop }
 
 $universe = Get-Content -LiteralPath $UniversePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $companies = @($universe.companies)
@@ -80,7 +82,7 @@ for ($index = 0; $index -lt $Workers; $index += 1) {
   $started += [pscustomobject]@{
     Worker = $index + 1
     ProcessId = if ($DryRun) { $null } else {
-      (Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru).Id
+      (Start-Process -FilePath $shell.Source -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru).Id
     }
     Offset = $offset
     Limit = $limit

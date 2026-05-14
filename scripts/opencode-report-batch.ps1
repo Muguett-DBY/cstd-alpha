@@ -827,7 +827,11 @@ $modelInput
   }
   } finally {
     if ($lockAcquired) {
-      Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+      try {
+        if ($lockPath -and (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+          Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+        }
+      } catch {}
     }
   }
 }
