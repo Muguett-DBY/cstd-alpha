@@ -100,7 +100,7 @@ export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["concl
 export function normalizeEntryValuationView(value: unknown) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) return "估值待复核";
-  if (/unavailable|无公开报价|暂无报价|缺乏实时|行情数据暂不可用|报价缺失|不可用|无法计算/i.test(text)) {
+  if (/unavailable|无公开报价|暂无报价|缺乏实时|行情数据暂不可用|报价缺失|不可用|无法/i.test(text)) {
     return "估值待复核";
   }
   return text;

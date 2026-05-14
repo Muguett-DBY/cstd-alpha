@@ -20,6 +20,7 @@ describe("report library entries", () => {
   test("does not surface stale quote-missing valuation text in ranking entries", () => {
     expect(normalizeEntryValuationView("当前无公开报价，基于净利润估算合理市值")).toBe("估值待复核");
     expect(normalizeEntryValuationView("缺乏实时估值数据，暂无法计算")).toBe("估值待复核");
+    expect(normalizeEntryValuationView("无法获得实时PE，估值需观察")).toBe("估值待复核");
     expect(normalizeEntryValuationView("当前PE 15倍，处于历史低位")).toBe("当前PE 15倍，处于历史低位");
   });
 
