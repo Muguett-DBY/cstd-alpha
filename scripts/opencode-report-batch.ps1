@@ -27,6 +27,11 @@ if (-not $PSBoundParameters.ContainsKey("BaseUrl")) {
 }
 
 if (-not $Password) {
+  if ($env:REPORT_PASSWORD) {
+    $Password = $env:REPORT_PASSWORD
+  }
+}
+if (-not $Password) {
   if ($accessLines.Count) {
     $line = $accessLines | Where-Object { $_ -match "^REPORT_PASSWORD[:=]" } | Select-Object -First 1
     if ($line) { $Password = ($line -replace "^[^:=]+[:=]\s*", "").Trim() }

@@ -2,6 +2,7 @@ param(
   [string]$UniversePath = "",
   [string]$OutputDir = "",
   [string]$RunRoot = "",
+  [string]$BaseUrl = "",
   [string]$Model = "deepseek/deepseek-v4-flash",
   [string]$Variant = "max",
   [string]$Agent = "build",
@@ -72,6 +73,7 @@ for ($index = 0; $index -lt $Workers; $index += 1) {
     "-OpencodeTimeoutMinutes", $OpencodeTimeoutMinutes,
     "-CacheAnchorRepeat", $CacheAnchorRepeat
   )
+  if ($BaseUrl) { $arguments += @("-BaseUrl", $BaseUrl) }
   if ($ImportOnline) { $arguments += "-ImportOnline" }
   if (-not $UseOpencodeForDeepSeek -and $Model -like "deepseek/*") { $arguments += "-DirectDeepSeekApi" }
 

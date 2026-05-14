@@ -45,16 +45,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const offset = boundedListOffset(url.searchParams.get("offset"));
   const order = listOrder(url.searchParams.get("sort"), url.searchParams.get("direction"));
   const industry = cleanIndustryLabel(url.searchParams.get("industry"));
+  const market = parseMarketFilter(url.searchParams.get("market"));
   const seedCodes = parseSeedCodes(url.searchParams.get("seedCodes"));
   if (hasDurableLibrary(env)) {
     const [{ entries, total }, matchedTickers] = await Promise.all([
-      listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry),
-      listDurableMatchedTickers(env.REPORT_LIBRARY_DB, seedCodes),
+      listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry, market),
+      listDurableMatchedTickers(env.REPORT_LIBRARY_DB, seedCodes, market),
     ]);
     return json({ entries, total, limit, offset, matchedTickers });
   }
 
-  const { entries, total } = env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry) : { entries: [], total: 0 };
+  const { entries, total } = env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry, market) : { entries: [], total: 0 };
   return json({ entries, total, limit, offset, matchedTickers: [] });
 };
 
@@ -166,12 +167,11 @@ async function readKvReportRecord(cache: KVNamespace, id: string): Promise<Repor
   };
 }
 
-async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string) {
-  const candidates = industry ? industryMembersForGroup(industry) : [];
-  const where = candidates.length ? `WHERE ${normalizedIndustrySql()} IN (${candidates.map((_, index) => `?${index + 1}`).join(", ")})` : "";
-  const selectParams = [...candidates, limit, offset];
+async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string, market?: MarketFilter) {
+  const filters = durableListFilters(industry, market);
+  const selectParams = [...filters.params, limit, offset];
   const [countRow, result] = await Promise.all([
-    bindD1(db.prepare(`SELECT COUNT(*) AS count FROM report_library ${where}`), candidates).first<{ count: number }>(),
+    bindD1(db.prepare(`SELECT COUNT(*) AS count FROM report_library ${filters.where}`), filters.params).first<{ count: number }>(),
     db
       .prepare(
         `SELECT
@@ -179,9 +179,9 @@ async function listDurableReportEntries(db: D1Database, limit: number, offset: n
         qualitative_band, position_advice, valuation_view, as_of, imported_at,
         evidence_count, score_item_count, object_key, report_hash
       FROM report_library
-      ${where}
+      ${filters.where}
       ORDER BY ${order}
-      LIMIT ?${candidates.length + 1} OFFSET ?${candidates.length + 2}`,
+      LIMIT ?${filters.params.length + 1} OFFSET ?${filters.params.length + 2}`,
       )
       .bind(...selectParams)
       .all<ReportLibraryRow>(),
@@ -189,17 +189,21 @@ async function listDurableReportEntries(db: D1Database, limit: number, offset: n
   return { entries: (result.results ?? []).map(rowToEntry), total: countRow?.count ?? 0 };
 }
 
-async function listDurableMatchedTickers(db: D1Database, seedCodes: string[]) {
+async function listDurableMatchedTickers(db: D1Database, seedCodes: string[], market?: MarketFilter) {
   if (!seedCodes.length) return [];
-  const placeholders = seedCodes.map((_, index) => `?${index + 1}`).join(", ");
+  const marketCandidates = market ? marketMembersForGroup(market) : [];
+  const tickerPlaceholders = seedCodes.map((_, index) => `?${index + 1}`).join(", ");
+  const marketClause = marketCandidates.length
+    ? ` AND ${normalizedMarketSql()} IN (${marketCandidates.map((_, index) => `?${seedCodes.length + index + 1}`).join(", ")})`
+    : "";
   const result = await db
-    .prepare(`SELECT DISTINCT ticker FROM report_library WHERE ticker IN (${placeholders})`)
-    .bind(...seedCodes)
+    .prepare(`SELECT DISTINCT ticker FROM report_library WHERE ticker IN (${tickerPlaceholders})${marketClause}`)
+    .bind(...seedCodes, ...marketCandidates)
     .all<{ ticker: string }>();
   return (result.results ?? []).map((row) => row.ticker).filter(Boolean);
 }
 
-async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string) {
+async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string, market?: MarketFilter) {
   const entries: ReportLibraryEntry[] = [];
   const candidates = industry ? new Set(industryMembersForGroup(industry)) : null;
   let cursor: string | undefined;
@@ -216,6 +220,7 @@ async function listKvReportEntries(cache: KVNamespace, limit: number, offset: nu
     entries.push(
       ...pageEntries.filter((entry): entry is ReportLibraryEntry => {
         if (!entry) return false;
+        if (market && !entryMatchesMarket(entry, market)) return false;
         if (!candidates) return true;
         return candidates.has(cleanIndustryLabel(entry.industry) ?? "") || candidates.has(cleanIndustryLabel(entry.sector) ?? "");
       }),
@@ -333,9 +338,49 @@ function parseSeedCodes(value: string | null) {
       value
         .split(",")
         .map((item) => item.trim())
-        .filter((item) => /^\d{6}$/.test(item)),
+        .filter((item) => /^[A-Za-z0-9.]{1,16}$/.test(item)),
     ),
   ).slice(0, 200);
+}
+
+type MarketFilter = "a-share" | "us" | "hk";
+
+function parseMarketFilter(value: string | null): MarketFilter | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["a", "cn", "ashare", "a-share", "a股"].includes(normalized)) return "a-share";
+  if (["us", "usa", "us-stock", "美股"].includes(normalized)) return "us";
+  if (["hk", "hkg", "hk-stock", "港股"].includes(normalized)) return "hk";
+  return undefined;
+}
+
+function durableListFilters(industry?: string, market?: MarketFilter) {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  const industryCandidates = industry ? industryMembersForGroup(industry) : [];
+  if (industryCandidates.length) {
+    clauses.push(`${normalizedIndustrySql()} IN (${industryCandidates.map((_, index) => `?${params.length + index + 1}`).join(", ")})`);
+    params.push(...industryCandidates);
+  }
+  const marketCandidates = market ? marketMembersForGroup(market) : [];
+  if (marketCandidates.length) {
+    clauses.push(`${normalizedMarketSql()} IN (${marketCandidates.map((_, index) => `?${params.length + index + 1}`).join(", ")})`);
+    params.push(...marketCandidates);
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+}
+
+function marketMembersForGroup(market: MarketFilter) {
+  if (market === "a-share") {
+    return ["A股", "ASHARE", "ASTOCK", "沪A", "深A", "SH-A", "SZ-A", "CHINEXT", "STAR MARKET", "创业板", "科创板", "上海证券交易所", "深圳证券交易所"];
+  }
+  if (market === "us") return ["美股", "US", "USA", "USSTOCK", "NASDAQ", "NYSE", "AMEX", "NMS", "NYQ", "NGM", "NCM", "美国市场"];
+  return ["港股", "HK", "HKG", "HKEX", "HONG KONG", "香港"];
+}
+
+function entryMatchesMarket(entry: ReportLibraryEntry, market: MarketFilter) {
+  const members = new Set(marketMembersForGroup(market));
+  return members.has(normalizeMarketLabel(entry.market)) || members.has(normalizeMarketLabel(entry.sector)) || members.has(normalizeMarketLabel(entry.industry));
 }
 
 function listOrder(sort: string | null, direction: string | null) {
@@ -349,6 +394,14 @@ function listOrder(sort: string | null, direction: string | null) {
 
 function normalizedIndustrySql() {
   return `TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(industry, sector, ''), 'Ⅰ', ''), 'Ⅱ', ''), 'Ⅲ', ''), 'Ⅳ', ''), 'Ⅴ', ''), 'Ⅵ', ''), 'Ⅶ', ''), 'Ⅷ', ''), 'Ⅸ', ''), 'Ⅹ', ''))`;
+}
+
+function normalizedMarketSql() {
+  return `UPPER(TRIM(COALESCE(market, '')))`;
+}
+
+function normalizeMarketLabel(value: unknown) {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
 function bindD1<T extends D1PreparedStatement>(statement: T, values: unknown[]) {

@@ -139,11 +139,11 @@ export const A_SHARE_RANKING_SEEDS: RankingSeed[] = [
   { code: "601919", name: "中远海控", exchange: "上海证券交易所", listingPlace: "沪A", sector: "交通运输", baseline: 60 },
 ];
 
-export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEntries: ReportLibraryEntry[] = []): RankingEntry[] {
+export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEntries: ReportLibraryEntry[] = [], seeds: readonly RankingSeed[] = A_SHARE_RANKING_SEEDS): RankingEntry[] {
   const reportByKey = new Map(reports.map((report) => [reportRankingMatchKey(report), report]));
   const libraryEntryByKey = new Map(libraryEntries.map((entry) => [libraryEntryRankingMatchKey(entry), entry]));
   const seedKeys = new Set<string>();
-  const rows = A_SHARE_RANKING_SEEDS.map((seed, index) => {
+  const rows = seeds.map((seed, index) => {
     const seedKey = seedRankingMatchKey(seed);
     seedKeys.add(seedKey);
     const report = reportByKey.get(seedKey);

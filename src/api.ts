@@ -119,7 +119,7 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
 }
 
 export async function fetchReportLibrary(
-  options: { limit?: number; offset?: number; sort?: string; direction?: string; industry?: string; seedCodes?: string[] } = {},
+  options: { limit?: number; offset?: number; sort?: string; direction?: string; industry?: string; market?: string; seedCodes?: string[] } = {},
 ): Promise<ReportLibraryList> {
   const params = new URLSearchParams({
     limit: String(options.limit ?? 20),
@@ -127,6 +127,7 @@ export async function fetchReportLibrary(
     sort: options.sort ?? "rank",
     direction: options.direction ?? "desc",
   });
+  if (options.market) params.set("market", options.market);
   if (options.industry && options.industry !== "全部行业") params.set("industry", options.industry);
   if (options.seedCodes?.length) params.set("seedCodes", options.seedCodes.join(","));
   const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include" });

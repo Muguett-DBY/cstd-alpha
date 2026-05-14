@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
-import { RankingView } from "./RankingView";
+import { RankingView, type RankingMarket } from "./RankingView";
 import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
@@ -34,6 +34,7 @@ function App() {
   const [cacheNotice, setCacheNotice] = useState("");
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>("report");
+  const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
 
   useEffect(() => {
     void checkSession()
@@ -290,8 +291,35 @@ function App() {
           <button type="button" className={activeView === "report" ? "active" : ""} onClick={() => setActiveView("report")}>
             生成报告
           </button>
-          <button type="button" className={activeView === "ranking" ? "active" : ""} onClick={() => setActiveView("ranking")}>
+          <button
+            type="button"
+            className={activeView === "ranking" && rankingMarket === "a-share" ? "active" : ""}
+            onClick={() => {
+              setRankingMarket("a-share");
+              setActiveView("ranking");
+            }}
+          >
             A 股排行
+          </button>
+          <button
+            type="button"
+            className={activeView === "ranking" && rankingMarket === "us" ? "active" : ""}
+            onClick={() => {
+              setRankingMarket("us");
+              setActiveView("ranking");
+            }}
+          >
+            美股排行
+          </button>
+          <button
+            type="button"
+            className={activeView === "ranking" && rankingMarket === "hk" ? "active" : ""}
+            onClick={() => {
+              setRankingMarket("hk");
+              setActiveView("ranking");
+            }}
+          >
+            港股排行
           </button>
         </nav>
 
@@ -369,7 +397,7 @@ function App() {
 
       <section className="workspace">
         {activeView === "ranking" ? (
-          <RankingView onOpenEntry={openRankingEntry} />
+          <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
         ) : (
           <>
             {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (

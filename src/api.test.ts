@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchChartData, generateReport, searchCompanies } from "./api";
+import { fetchChartData, fetchReportLibrary, generateReport, searchCompanies } from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -276,5 +276,14 @@ describe("API client", () => {
         body: JSON.stringify({ company, priceMode: "adjusted" }),
       }),
     );
+  });
+
+  test("passes report-library market filters to the list endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ entries: [], total: 0, matchedTickers: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchReportLibrary({ market: "us", limit: 20, offset: 40, sort: "ias", direction: "desc" });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("market=us"), expect.objectContaining({ credentials: "include" }));
   });
 });

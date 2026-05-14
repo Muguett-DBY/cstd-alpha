@@ -3,9 +3,12 @@ import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
 import type { ReportLibraryEntry } from "./shared/report-library";
-import { A_SHARE_RANKING_SEEDS, buildRankingEntries, type RankingEntry } from "./shared/ranking";
+import { buildRankingEntries, type RankingEntry, type RankingSeed } from "./shared/ranking";
+
+export type RankingMarket = "a-share" | "us" | "hk";
 
 type RankingViewProps = {
+  market: RankingMarket;
   onOpenEntry: (entry: RankingEntry) => void | Promise<void>;
 };
 
@@ -13,7 +16,49 @@ type SortMode = "rank" | "ias" | "cqs" | "name" | "code" | "sector";
 type SortDirection = "desc" | "asc";
 const LIBRARY_PAGE_SIZE = 20;
 
-export function RankingView({ onOpenEntry }: RankingViewProps) {
+const RANKING_CONFIG: Record<
+  RankingMarket,
+  {
+    marketParam: string;
+    eyebrow: string;
+    title: string;
+    description: string;
+    tableLabel: string;
+    industryGroups: readonly string[];
+    seeds: readonly RankingSeed[];
+  }
+> = {
+  "a-share": {
+    marketParam: "cn",
+    eyebrow: "A 股评分池",
+    title: "A 股公司排行",
+    description: "按已入库完整深度报告评分排序；A 股报告库按唯一股票代码单独成榜。",
+    tableLabel: "A 股公司评分排行",
+    industryGroups: A_SHARE_INDUSTRY_GROUPS,
+    seeds: [],
+  },
+  us: {
+    marketParam: "us",
+    eyebrow: "美股评分池",
+    title: "美股公司排行",
+    description: "按已入库深度报告评分排序；美股报告单独成榜，不与 A 股混排。",
+    tableLabel: "美股公司评分排行",
+    industryGroups: [],
+    seeds: [],
+  },
+  hk: {
+    marketParam: "hk",
+    eyebrow: "港股评分池",
+    title: "港股公司排行",
+    description: "按已入库深度报告评分排序；港股报告单独成榜，不与 A 股混排。",
+    tableLabel: "港股公司评分排行",
+    industryGroups: [],
+    seeds: [],
+  },
+};
+
+export function RankingView({ market, onOpenEntry }: RankingViewProps) {
+  const config = RANKING_CONFIG[market];
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
@@ -30,6 +75,16 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    setLibraryPage(1);
+    setQuery("");
+    setSector("全部行业");
+    setSource("deep-report");
+    setLibraryEntries([]);
+    setLibraryTotal(0);
+    setMatchedSeedCodes(new Set());
+  }, [market]);
+
+  useEffect(() => {
     const offset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
     setLibraryPhase("loading");
     void fetchReportLibrary({
@@ -38,7 +93,8 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       sort: sortMode,
       direction: sortDirection,
       industry: sector,
-      seedCodes: A_SHARE_RANKING_SEEDS.map((seed) => seed.code),
+      market: config.marketParam,
+      seedCodes: config.seeds.map((seed) => seed.code),
     })
       .then((library) => {
         setLibraryEntries(library.entries);
@@ -50,16 +106,21 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         setLibraryPhase("error");
         setError(err instanceof Error ? err.message : "报告库读取失败。");
       });
-  }, [libraryPage, sector, sortDirection, sortMode]);
+  }, [config.marketParam, config.seeds, libraryPage, sector, sortDirection, sortMode]);
 
   const entries = useMemo(
-    () => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries).filter((entry) => entry.source !== "seed" || !matchedSeedCodes.has(entry.code)),
-    [imported, libraryEntries, matchedSeedCodes],
+    () =>
+      buildRankingEntries(
+        imported.map((entry) => entry.report),
+        libraryEntries,
+        config.seeds,
+      ).filter((entry) => entry.source !== "seed" || !matchedSeedCodes.has(entry.code)),
+    [config.seeds, imported, libraryEntries, matchedSeedCodes],
   );
   const sectors = useMemo(() => {
-    const seen = new Set(["全部行业", ...A_SHARE_INDUSTRY_GROUPS, ...entries.map((entry) => entry.industryGroup)]);
+    const seen = new Set(["全部行业", ...config.industryGroups, ...entries.map((entry) => entry.industryGroup)]);
     return Array.from(seen);
-  }, [entries]);
+  }, [config.industryGroups, entries]);
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return entries
@@ -109,9 +170,9 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
     <section className="ranking-workspace" aria-labelledby="ranking-title">
       <header className="ranking-header">
         <div>
-          <p className="eyebrow">A 股评分池</p>
-          <h2 id="ranking-title">A 股公司排行</h2>
-          <p className="muted">按完整深度报告评分排序；未入库公司保留在待导入列表。</p>
+          <p className="eyebrow">{config.eyebrow}</p>
+          <h2 id="ranking-title">{config.title}</h2>
+          <p className="muted">{config.description}</p>
         </div>
         <div className="ranking-summary">
           <MetricTile label="公司池" value={`${libraryTotal + seedCount}`} />
@@ -192,7 +253,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
       </div>
 
-      <div className="ranking-table" role="table" aria-label="A 股公司评分排行">
+      <div className="ranking-table" role="table" aria-label={config.tableLabel}>
         <div className="ranking-row ranking-row-head" role="row">
           <span>排名</span>
           <span>公司</span>

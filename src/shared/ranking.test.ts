@@ -15,6 +15,35 @@ describe("ranking entries", () => {
     expect(entries[0]).toMatchObject({ code: "600519", source: "seed", cqs: 0, ias: 0, conclusion: "待导入" });
   });
 
+  test("can build a market ranking without A-share seed rows", () => {
+    const entries = buildRankingEntries(
+      [],
+      [
+        {
+          id: "apple",
+          companyName: "Apple",
+          ticker: "AAPL",
+          market: "美股",
+          industry: "Consumer Electronics",
+          cqs: 82,
+          ias: 76,
+          conclusion: "持有",
+          qualitativeBand: "优质",
+          positionAdvice: "小仓 3-8%",
+          valuationView: "合理",
+          asOf: "2026-05-14T00:00:00.000Z",
+          importedAt: "2026-05-14T00:00:00.000Z",
+          evidenceCount: 3,
+          scoreItemCount: 20,
+        },
+      ],
+      [],
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ code: "AAPL", source: "deep-report", listingPlace: "美股", sector: "Consumer Electronics" });
+  });
+
   test("overrides a seed row with an imported deep report", () => {
     const report = validateReportPayload({
       company: { name: "德才股份", ticker: "605287", market: "沪A", industry: "建筑装饰" },

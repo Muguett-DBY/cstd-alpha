@@ -31,9 +31,18 @@ function Invoke-JsonPost {
     [string]$Body,
     [string]$CookieHeader
   )
-  $raw = (curl.exe -L --http1.1 --ssl-no-revoke --silent --show-error --fail-with-body --connect-timeout 15 --max-time 180 -X POST -H "Content-Type: application/json; charset=utf-8" -H "Cookie: $CookieHeader" --data-binary "@$Body" $Uri) -join ""
-  if (-not $raw) { return $null }
-  return $raw | ConvertFrom-Json
+  $responsePath = [System.IO.Path]::GetTempFileName()
+  try {
+    $httpCode = (curl.exe -L --http1.1 --ssl-no-revoke --silent --show-error --connect-timeout 15 --max-time 180 -o $responsePath -w "%{http_code}" -X POST -H "Content-Type: application/json; charset=utf-8" -H "Cookie: $CookieHeader" --data-binary "@$Body" $Uri) -join ""
+    $raw = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
+    if ($LASTEXITCODE -ne 0 -or -not ($httpCode -match "^2\d\d$")) {
+      throw "POST $Uri failed with HTTP $httpCode. $raw"
+    }
+    if (-not $raw) { return $null }
+    return $raw | ConvertFrom-Json
+  } finally {
+    Remove-Item -LiteralPath $responsePath -Force -ErrorAction SilentlyContinue
+  }
 }
 
 $loginPath = Join-Path ([System.IO.Path]::GetTempPath()) ("cstd-login-" + [guid]::NewGuid().ToString("N") + ".json")
@@ -54,12 +63,22 @@ try {
   $cookieHeader = $cookies -join "; "
   if (-not $cookieHeader) { throw "Login did not return a usable session cookie." }
 
-  $reports = Get-ChildItem -LiteralPath $InputDir -Recurse -Filter report.json | Sort-Object FullName
+  $reports = Get-ChildItem -LiteralPath $InputDir -Recurse -Filter report.json |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.DirectoryName "status.json") } |
+    Sort-Object FullName
   $imported = 0
   $failed = 0
   foreach ($reportPath in $reports) {
     $bodyPath = Join-Path $reportPath.DirectoryName "import-request.json"
     $reportRaw = Get-Content -LiteralPath $reportPath.FullName -Raw -Encoding UTF8
+    try {
+      $null = $reportRaw | ConvertFrom-Json
+    } catch {
+      $failed += 1
+      Write-Output "FAILED $($reportPath.FullName): invalid local report JSON: $($_.Exception.Message)"
+      if (-not $ContinueOnError) { throw }
+      continue
+    }
     ('{"reports":[' + $reportRaw + ']}') | Set-Content -LiteralPath $bodyPath -Encoding UTF8
     try {
       Invoke-JsonPost -Uri "$BaseUrl/api/report-library" -Body $bodyPath -CookieHeader $cookieHeader | Out-Null
