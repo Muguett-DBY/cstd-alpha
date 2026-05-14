@@ -159,16 +159,16 @@ export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEnt
     if (!seedKeys.has(key) && !reportByKey.has(key)) rows.push(libraryEntryToRankingEntry(entry));
   }
 
-  return rows
-    .sort((left, right) => {
-      const sourceScore = sourcePriority(right.source) - sourcePriority(left.source);
-      if (sourceScore !== 0) return sourceScore;
-      if (left.source === "seed" && right.source === "seed") return left.seedOrder - right.seedOrder;
-      if (right.ias !== left.ias) return right.ias - left.ias;
-      if (right.cqs !== left.cqs) return right.cqs - left.cqs;
-      return left.code.localeCompare(right.code);
-    })
-    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+  const sortedRows = rows.sort((left, right) => {
+    const sourceScore = sourcePriority(right.source) - sourcePriority(left.source);
+    if (sourceScore !== 0) return sourceScore;
+    if (left.source === "seed" && right.source === "seed") return left.seedOrder - right.seedOrder;
+    if (right.ias !== left.ias) return right.ias - left.ias;
+    if (right.cqs !== left.cqs) return right.cqs - left.cqs;
+    return left.code.localeCompare(right.code);
+  });
+
+  return dedupeShareClassRows(sortedRows).map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
 
 export function companyCandidateFromRanking(entry: RankingEntry): CompanyCandidate {
@@ -321,6 +321,37 @@ function libraryEntryToCandidate(entry: ReportLibraryEntry): CompanyCandidate {
 
 function sourcePriority(source: RankingSource) {
   return source === "deep-report" ? 1 : 0;
+}
+
+function dedupeShareClassRows(rows: RankingEntry[]) {
+  const byCompany = new Map<string, RankingEntry>();
+  for (const row of rows) {
+    const key = shareClassCompanyKey(row);
+    if (!byCompany.has(key)) byCompany.set(key, row);
+  }
+  return Array.from(byCompany.values());
+}
+
+const US_SHARE_CLASS_COMPANY_KEYS: Record<string, string> = {
+  BRK_A: "US:BERKSHIRE_HATHAWAY",
+  BRK_B: "US:BERKSHIRE_HATHAWAY",
+  FOX: "US:FOX_CORPORATION",
+  FOXA: "US:FOX_CORPORATION",
+  GOOG: "US:ALPHABET",
+  GOOGL: "US:ALPHABET",
+  NWS: "US:NEWS_CORP",
+  NWSA: "US:NEWS_CORP",
+};
+
+function shareClassCompanyKey(row: RankingEntry) {
+  if (!isUsListing(row.listingPlace)) return row.id;
+  const ticker = normalizeIdentity(row.code).replace(/[.-]/g, "_");
+  return US_SHARE_CLASS_COMPANY_KEYS[ticker] || row.id;
+}
+
+function isUsListing(value: unknown) {
+  const text = normalizeIdentity(value);
+  return /美|US|USA|NASDAQ|NYSE|AMEX/.test(text);
 }
 
 function normalizeIdentity(value: unknown) {

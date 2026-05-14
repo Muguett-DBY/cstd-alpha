@@ -101,6 +101,50 @@ describe("ranking entries", () => {
     expect(entries[0]).toMatchObject({ code: "EXSW", name: "Example Software Inc.", sector: "计算机", industryGroup: "计算机" });
   });
 
+  test("deduplicates overseas share classes for the same company", () => {
+    const entries = buildRankingEntries(
+      [],
+      [
+        {
+          id: "alphabet-class-a",
+          companyName: "Alphabet Inc.",
+          ticker: "GOOGL",
+          market: "美股",
+          cqs: 79.6,
+          ias: 78.15,
+          conclusion: "观察",
+          qualitativeBand: "优质",
+          positionAdvice: "观察仓",
+          valuationView: "合理",
+          asOf: "2026-05-14T00:00:00.000Z",
+          importedAt: "2026-05-14T00:00:00.000Z",
+          evidenceCount: 3,
+          scoreItemCount: 20,
+        },
+        {
+          id: "alphabet-class-c",
+          companyName: "Alphabet Inc.",
+          ticker: "GOOG",
+          market: "美股",
+          cqs: 81.14,
+          ias: 79.2,
+          conclusion: "观察",
+          qualitativeBand: "优质",
+          positionAdvice: "观察仓",
+          valuationView: "合理",
+          asOf: "2026-05-14T00:00:00.000Z",
+          importedAt: "2026-05-14T00:00:00.000Z",
+          evidenceCount: 3,
+          scoreItemCount: 20,
+        },
+      ],
+      [],
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ code: "GOOG", name: "谷歌", ias: 79.2 });
+  });
+
   test("overrides a seed row with an imported deep report", () => {
     const report = validateReportPayload({
       company: { name: "德才股份", ticker: "605287", market: "沪A", industry: "建筑装饰" },
