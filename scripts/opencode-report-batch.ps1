@@ -455,7 +455,41 @@ foreach ($company in $companies) {
   $evidencePath = Join-Path $companyDir "evidence.json"
   $statusPath = Join-Path $companyDir "status.json"
   $failurePath = Join-Path $companyDir "failure.json"
+  $lockPath = Join-Path $companyDir "work.lock"
+  $lockAcquired = $false
 
+  if (Test-Path $statusPath) {
+    Write-Output "SKIP existing $($company.code) $($company.name)"
+    continue
+  }
+  if (Test-Path $lockPath) {
+    $lockItem = Get-Item -LiteralPath $lockPath -ErrorAction SilentlyContinue
+    if ($lockItem -and $lockItem.LastWriteTime -gt (Get-Date).AddMinutes(-90)) {
+      Write-Output "SKIP locked $($company.code) $($company.name)"
+      continue
+    }
+    Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+  }
+  try {
+    $lockStream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try {
+      $lockWriter = New-Object System.IO.StreamWriter($lockStream)
+      try {
+        $lockWriter.WriteLine("pid=$PID")
+        $lockWriter.WriteLine("startedAt=$((Get-Date).ToUniversalTime().ToString("o"))")
+      } finally {
+        $lockWriter.Dispose()
+      }
+    } finally {
+      if ($lockStream) { $lockStream.Dispose() }
+    }
+    $lockAcquired = $true
+  } catch {
+    Write-Output "SKIP locked $($company.code) $($company.name)"
+    continue
+  }
+
+  try {
   for ($attempt = 1; $attempt -le $MaxAttempts; $attempt += 1) {
   try {
   if (Test-Path $statusPath) {
@@ -582,5 +616,10 @@ $evidencePath
       Start-Sleep -Seconds ([Math]::Min(30, 8 * $attempt))
     }
   }
+  }
+  } finally {
+    if ($lockAcquired) {
+      Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+    }
   }
 }
