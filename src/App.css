@@ -678,6 +678,34 @@ button:disabled {
   padding: 12px;
 }
 
+.ranking-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.ranking-pagination span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.ranking-pagination div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ranking-pagination button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .ranking-table {
   overflow-x: auto;
 }

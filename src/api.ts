@@ -40,6 +40,7 @@ export type ReportLibraryList = {
   entries: ReportLibraryEntry[];
   total: number;
   limit?: number;
+  offset?: number;
 };
 
 export async function checkSession() {
@@ -116,12 +117,18 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
   return (await response.json()) as ChartBundle;
 }
 
-export async function fetchReportLibrary(limit = 500): Promise<ReportLibraryList> {
-  const response = await fetch(`/api/report-library?limit=${encodeURIComponent(String(limit))}`, { credentials: "include" });
+export async function fetchReportLibrary(options: { limit?: number; offset?: number; sort?: string; direction?: string } = {}): Promise<ReportLibraryList> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 20),
+    offset: String(options.offset ?? 0),
+    sort: options.sort ?? "rank",
+    direction: options.direction ?? "desc",
+  });
+  const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
-  const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number };
+  const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number; offset?: number };
   const entries = data.entries ?? [];
-  return { entries, total: data.total ?? entries.length, limit: data.limit };
+  return { entries, total: data.total ?? entries.length, limit: data.limit, offset: data.offset };
 }
 
 export async function fetchReportLibraryRecord(id: string): Promise<ReportLibraryRecord> {

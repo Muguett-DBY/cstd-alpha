@@ -10,15 +10,17 @@ type RankingViewProps = {
 
 type SortMode = "rank" | "ias" | "cqs" | "name" | "code" | "sector";
 type SortDirection = "desc" | "asc";
+const LIBRARY_PAGE_SIZE = 20;
 
 export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
   const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [libraryPage, setLibraryPage] = useState(1);
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("全部行业");
-  const [source, setSource] = useState<"all" | "deep-report" | "seed">("all");
+  const [source, setSource] = useState<"all" | "deep-report" | "seed">("deep-report");
   const [sortMode, setSortMode] = useState<SortMode>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [importText, setImportText] = useState("");
@@ -26,7 +28,9 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void fetchReportLibrary()
+    const offset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
+    setLibraryPhase("loading");
+    void fetchReportLibrary({ limit: LIBRARY_PAGE_SIZE, offset, sort: sortMode, direction: sortDirection })
       .then((library) => {
         setLibraryEntries(library.entries);
         setLibraryTotal(library.total);
@@ -36,7 +40,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         setLibraryPhase("error");
         setError(err instanceof Error ? err.message : "报告库读取失败。");
       });
-  }, []);
+  }, [libraryPage, sortDirection, sortMode]);
 
   const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries), [imported, libraryEntries]);
   const sectors = useMemo(() => ["全部行业", ...Array.from(new Set(entries.map((entry) => entry.sector))).sort()], [entries]);
@@ -54,7 +58,11 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
 
   const deepReportCount = entries.filter((entry) => entry.source === "deep-report").length;
   const seedCount = entries.filter((entry) => entry.source === "seed").length;
-  const topEntry = entries.find((entry) => entry.source === "deep-report");
+  const pageTopEntry = entries.find((entry) => entry.source === "deep-report");
+  const libraryPageCount = Math.max(1, Math.ceil(libraryTotal / LIBRARY_PAGE_SIZE));
+  const libraryOffset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
+  const pageStart = libraryTotal ? libraryOffset + 1 : 0;
+  const pageEnd = Math.min(libraryOffset + deepReportCount, libraryTotal);
 
   async function submitImport(event: React.FormEvent) {
     event.preventDefault();
@@ -90,10 +98,10 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
           <p className="muted">按完整深度报告评分排序；未入库公司保留在待导入列表。</p>
         </div>
         <div className="ranking-summary">
-          <MetricTile label="公司池" value={`${entries.length}`} />
+          <MetricTile label="公司池" value={`${libraryTotal + seedCount}`} />
           <MetricTile label="报告库" value={libraryPhase === "loading" ? "读取中" : `${libraryTotal || deepReportCount}`} />
           <MetricTile label="待导入" value={`${seedCount}`} />
-          <MetricTile label="当前第一" value={topEntry ? topEntry.name : "待生成"} />
+          <MetricTile label="本页第一" value={pageTopEntry ? pageTopEntry.name : "待生成"} />
         </div>
       </header>
 
@@ -122,7 +130,14 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
             </option>
           ))}
         </select>
-        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)} aria-label="排序字段">
+        <select
+          value={sortMode}
+          onChange={(event) => {
+            setSortMode(event.target.value as SortMode);
+            setLibraryPage(1);
+          }}
+          aria-label="排序字段"
+        >
           <option value="rank">综合排名</option>
           <option value="ias">投资吸引力 IAS</option>
           <option value="cqs">公司质量 CQS</option>
@@ -130,7 +145,14 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
           <option value="code">股票代码</option>
           <option value="sector">行业</option>
         </select>
-        <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as SortDirection)} aria-label="排序方向">
+        <select
+          value={sortDirection}
+          onChange={(event) => {
+            setSortDirection(event.target.value as SortDirection);
+            setLibraryPage(1);
+          }}
+          aria-label="排序方向"
+        >
           <option value="desc">降序</option>
           <option value="asc">升序</option>
         </select>
@@ -147,6 +169,32 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
       </div>
 
+      {source !== "seed" ? (
+        <div className="ranking-pagination" aria-label="报告库分页">
+          <span>
+            第 {libraryPage} / {libraryPageCount} 页，显示 {pageStart}-{pageEnd} / {libraryTotal}
+          </span>
+          <div>
+            <button type="button" onClick={() => setLibraryPage(1)} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
+              首页
+            </button>
+            <button type="button" onClick={() => setLibraryPage((page) => Math.max(1, page - 1))} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
+              上一页
+            </button>
+            <button
+              type="button"
+              onClick={() => setLibraryPage((page) => Math.min(libraryPageCount, page + 1))}
+              disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}
+            >
+              下一页
+            </button>
+            <button type="button" onClick={() => setLibraryPage(libraryPageCount)} disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}>
+              末页
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="ranking-table" role="table" aria-label="A 股公司评分排行">
         <div className="ranking-row ranking-row-head" role="row">
           <span>排名</span>
@@ -161,7 +209,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
         {filtered.map((entry, index) => (
           <div key={`${entry.id}-${entry.source}`} className={`ranking-row ${entry.source === "deep-report" ? "is-report" : "is-seed"}`} role="row">
-            <span>#{sortMode === "rank" ? entry.rank : index + 1}</span>
+            <span>#{entry.source === "deep-report" ? libraryOffset + index + 1 : entry.rank}</span>
             <button type="button" className="ranking-company" onClick={() => void onOpenEntry(entry)}>
               <strong>{entry.name}</strong>
               <small>

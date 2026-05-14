@@ -38,12 +38,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const limit = boundedListLimit(url.searchParams.get("limit"));
+  const offset = boundedListOffset(url.searchParams.get("offset"));
+  const order = listOrder(url.searchParams.get("sort"), url.searchParams.get("direction"));
   const { entries, total } = hasDurableLibrary(env)
-    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit)
+    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order)
     : env.REPORT_CACHE
-      ? await listKvReportEntries(env.REPORT_CACHE, limit)
+      ? await listKvReportEntries(env.REPORT_CACHE, limit, offset)
       : { entries: [], total: 0 };
-  return json({ entries, total, limit });
+  return json({ entries, total, limit, offset });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -154,7 +156,7 @@ async function readKvReportRecord(cache: KVNamespace, id: string): Promise<Repor
   };
 }
 
-async function listDurableReportEntries(db: D1Database, limit: number) {
+async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string) {
   const [countRow, result] = await Promise.all([
     db.prepare(`SELECT COUNT(*) AS count FROM report_library`).first<{ count: number }>(),
     db
@@ -164,16 +166,16 @@ async function listDurableReportEntries(db: D1Database, limit: number) {
         qualitative_band, position_advice, valuation_view, as_of, imported_at,
         evidence_count, score_item_count, object_key, report_hash
       FROM report_library
-      ORDER BY ias DESC, cqs DESC, company_name ASC
-      LIMIT ?1`,
+      ORDER BY ${order}
+      LIMIT ?1 OFFSET ?2`,
       )
-      .bind(limit)
+      .bind(limit, offset)
       .all<ReportLibraryRow>(),
   ]);
   return { entries: (result.results ?? []).map(rowToEntry), total: countRow?.count ?? 0 };
 }
 
-async function listKvReportEntries(cache: KVNamespace, limit: number) {
+async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number) {
   const entries: ReportLibraryEntry[] = [];
   let cursor: string | undefined;
   let total = 0;
@@ -181,7 +183,7 @@ async function listKvReportEntries(cache: KVNamespace, limit: number) {
     const page = await cache.list({ prefix: REPORT_PREFIX, cursor });
     total += page.keys.length;
     const pageEntries = await Promise.all(
-      page.keys.slice(0, Math.max(0, limit - entries.length)).map(async (key) => {
+      page.keys.slice(offset + entries.length, offset + entries.length + Math.max(0, limit - entries.length)).map(async (key) => {
         const value = await cache.get<ReportLibraryRecord>(key.name, "json");
         return isRecord(value) && isValidEntry(value.entry) ? value.entry : null;
       }),
@@ -281,9 +283,24 @@ function hasDurableLibrary(env: Env): env is Env & { REPORT_LIBRARY_DB: D1Databa
 }
 
 function boundedListLimit(value: string | null) {
-  const parsed = value ? Number(value) : 500;
-  if (!Number.isFinite(parsed)) return 500;
-  return Math.max(1, Math.min(1000, Math.floor(parsed)));
+  const parsed = value ? Number(value) : 20;
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.max(1, Math.min(100, Math.floor(parsed)));
+}
+
+function boundedListOffset(value: string | null) {
+  const parsed = value ? Number(value) : 0;
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
+}
+
+function listOrder(sort: string | null, direction: string | null) {
+  const dir = direction === "asc" ? "ASC" : "DESC";
+  if (sort === "cqs") return `cqs ${dir}, ias ${dir}, company_name ASC`;
+  if (sort === "name") return `company_name ${dir}, ias DESC, cqs DESC`;
+  if (sort === "code") return `ticker ${dir}, ias DESC, cqs DESC`;
+  if (sort === "sector") return `COALESCE(industry, sector, '') ${dir}, ias DESC, cqs DESC`;
+  return `ias ${dir}, cqs ${dir}, company_name ASC`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
