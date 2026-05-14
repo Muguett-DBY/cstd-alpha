@@ -41,7 +41,7 @@ describe("ranking entries", () => {
     );
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ code: "AAPL", source: "deep-report", listingPlace: "美股", sector: "Consumer Electronics" });
+    expect(entries[0]).toMatchObject({ code: "AAPL", source: "deep-report", listingPlace: "美股", sector: "电子 / 消费电子" });
   });
 
   test("overrides a seed row with an imported deep report", () => {
@@ -110,8 +110,8 @@ describe("ranking entries", () => {
     const entries = buildRankingEntries([report]);
     const entry = entries.find((item) => item.code === "123456");
 
-    expect(entry?.sector).toBe("行业待验证");
-    expect(entry?.industryGroup).toBe("行业待验证");
+    expect(entry?.sector).toBe("未分类");
+    expect(entry?.industryGroup).toBe("未分类");
   });
 
   test("normalizes provider industry levels for display", () => {
@@ -154,8 +154,8 @@ describe("ranking entries", () => {
 
     expect(entries.find((entry) => entry.name === "测试银行")?.sector).toBe("银行");
     expect(entries.find((entry) => entry.name === "测试银行")?.industryGroup).toBe("银行");
-    expect(entries.find((entry) => entry.name === "未知行业")?.sector).toBe("行业待验证");
-    expect(entries.find((entry) => entry.name === "未知行业")?.industryGroup).toBe("行业待验证");
+    expect(entries.find((entry) => entry.name === "未知行业")?.sector).toBe("未分类");
+    expect(entries.find((entry) => entry.name === "未知行业")?.industryGroup).toBe("未分类");
   });
 
   test("uses first-level industry groups for filtering while keeping detailed labels", () => {

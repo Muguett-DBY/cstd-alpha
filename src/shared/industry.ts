@@ -1,4 +1,4 @@
-export const UNKNOWN_INDUSTRY = "行业待验证";
+export const UNKNOWN_INDUSTRY = "未分类";
 
 export const A_SHARE_INDUSTRY_GROUPS = [
   "农林牧渔",
@@ -72,12 +72,33 @@ const GROUP_BY_DETAIL = Object.fromEntries(
   Object.entries(INDUSTRY_GROUP_MEMBERS).flatMap(([group, members]) => members.map((member) => [member, group])),
 ) as Record<string, string>;
 
+const ENGLISH_INDUSTRY_LABELS: Record<string, string> = {
+  "consumer cyclical": "可选消费",
+  "consumer defensive": "必需消费",
+  "consumer goods": "消费品",
+  "consumer electronics": "消费电子",
+  "discount stores": "零售",
+  diversified: "综合",
+  environmental: "环保",
+  "environmental services": "环保",
+  finance: "金融",
+  healthcare: "医疗保健",
+  "information technology services": "IT服务",
+  "medical instruments": "医疗器械",
+  "real estate": "房地产",
+  "real estate development": "房地产开发",
+  restaurants: "餐饮",
+  solar: "光伏设备",
+  technology: "科技",
+  telecommunications: "通信",
+};
+
 export function normalizeIndustryLabel(value: unknown) {
   if (typeof value !== "string") return undefined;
   const label = value.trim().replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+$/u, "").trim();
-  if (!label || /^(AStock|UsStock|HK|EQUITY|Imported|Library)$/i.test(label)) return undefined;
+  if (!label || /^(AStock|UsStock|HK|EQUITY|Imported|Library|行业待验证|未分类)$/i.test(label)) return undefined;
   if (/^[-—–]+$/.test(label)) return undefined;
-  return label;
+  return ENGLISH_INDUSTRY_LABELS[label.toLowerCase()] ?? label;
 }
 
 export function industryGroupForLabel(value: unknown) {
