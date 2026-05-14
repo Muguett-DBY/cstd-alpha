@@ -1,6 +1,6 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
-import { cleanIndustryLabel, normalizeEntryConclusion, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
-import { formatIndustryLabel, industryGroupForLabel, UNKNOWN_INDUSTRY } from "./industry";
+import { normalizeEntryConclusion, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
+import { formatLocalizedIndustry, localizedCompanyName, localizedIndustry } from "./market-display";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -231,15 +231,15 @@ function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry 
 function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = report.company.ticker || seed?.code || report.company.name;
   const listingPlace = report.company.market || seed?.listingPlace || "A股";
-  const industry = rankingIndustry(report.company.industry, report.company.sector, seed?.sector);
+  const industry = localizedIndustry(code, listingPlace, report.company.industry, report.company.sector, seed?.sector);
   return {
     id: reportIdentityKey(report),
     rank: 0,
     code,
-    name: report.company.name || seed?.name || code,
+    name: localizedCompanyName(report.company.name || seed?.name || code, code, listingPlace),
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: formatIndustryLabel(industry.detail, industry.group),
+    sector: formatLocalizedIndustry(industry),
     industryGroup: industry.group,
     cqs: report.cqs,
     ias: report.ias,
@@ -258,16 +258,16 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
 function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = entry.ticker || seed?.code || entry.companyName;
   const listingPlace = seed?.listingPlace || entry.market || "A股";
-  const industry = rankingIndustry(entry.industry, entry.sector, seed?.sector);
+  const industry = localizedIndustry(code, listingPlace, entry.industry, entry.sector, seed?.sector);
   const conclusion = normalizeEntryConclusion(entry.conclusion, entry.cqs, entry.ias);
   return {
     id: libraryEntryIdentityKey(entry),
     rank: 0,
     code,
-    name: entry.companyName || seed?.name || code,
+    name: localizedCompanyName(entry.companyName || seed?.name || code, code, listingPlace),
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: formatIndustryLabel(industry.detail, industry.group),
+    sector: formatLocalizedIndustry(industry),
     industryGroup: industry.group,
     cqs: entry.cqs,
     ias: entry.ias,
@@ -321,12 +321,6 @@ function libraryEntryToCandidate(entry: ReportLibraryEntry): CompanyCandidate {
 
 function sourcePriority(source: RankingSource) {
   return source === "deep-report" ? 1 : 0;
-}
-
-function rankingIndustry(industry?: string, sector?: string, fallback?: string) {
-  const detail = cleanIndustryLabel(industry) || cleanIndustryLabel(sector);
-  const group = industryGroupForLabel(detail) || industryGroupForLabel(fallback) || detail || fallback || UNKNOWN_INDUSTRY;
-  return { detail, group };
 }
 
 function normalizeIdentity(value: unknown) {

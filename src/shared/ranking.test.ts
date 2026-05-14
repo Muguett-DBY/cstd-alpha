@@ -41,7 +41,64 @@ describe("ranking entries", () => {
     );
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ code: "AAPL", source: "deep-report", listingPlace: "美股", sector: "电子 / 消费电子" });
+    expect(entries[0]).toMatchObject({ code: "AAPL", name: "苹果", source: "deep-report", listingPlace: "美股", sector: "电子 / 消费电子" });
+  });
+
+  test("localizes Hong Kong ranking names and industries", () => {
+    const entries = buildRankingEntries(
+      [],
+      [
+        {
+          id: "hkex",
+          companyName: "Hong Kong Exchanges and Clearing Limited",
+          ticker: "00388",
+          market: "港股",
+          industry: "Diversified",
+          sector: "Finance",
+          cqs: 76,
+          ias: 74,
+          conclusion: "持有",
+          qualitativeBand: "优质",
+          positionAdvice: "小仓 3-8%",
+          valuationView: "合理",
+          asOf: "2026-05-14T00:00:00.000Z",
+          importedAt: "2026-05-14T00:00:00.000Z",
+          evidenceCount: 3,
+          scoreItemCount: 20,
+        },
+      ],
+      [],
+    );
+
+    expect(entries[0]).toMatchObject({ code: "00388", name: "香港交易所", sector: "非银金融 / 证券", industryGroup: "非银金融" });
+  });
+
+  test("keeps unknown overseas names while normalizing broad industry labels", () => {
+    const entries = buildRankingEntries(
+      [],
+      [
+        {
+          id: "unknown-us",
+          companyName: "Example Software Inc.",
+          ticker: "EXSW",
+          market: "美股",
+          industry: "Technology",
+          cqs: 61,
+          ias: 59,
+          conclusion: "观察",
+          qualitativeBand: "中规中矩",
+          positionAdvice: "观察仓",
+          valuationView: "合理",
+          asOf: "2026-05-14T00:00:00.000Z",
+          importedAt: "2026-05-14T00:00:00.000Z",
+          evidenceCount: 3,
+          scoreItemCount: 20,
+        },
+      ],
+      [],
+    );
+
+    expect(entries[0]).toMatchObject({ code: "EXSW", name: "Example Software Inc.", sector: "计算机", industryGroup: "计算机" });
   });
 
   test("overrides a seed row with an imported deep report", () => {
