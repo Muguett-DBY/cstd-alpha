@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$UniversePath = "E:\DEV\测试\cstd-alpha-opencode-batch\ashare-universe.json",
   [string]$OutputDir = "E:\DEV\测试\cstd-alpha-opencode-batch",
   [string]$BaseUrl = "http://127.0.0.1:8789",
@@ -11,7 +11,8 @@ param(
   [switch]$ImportOnline,
   [switch]$ContinueOnError,
   [int]$MaxAttempts = 2,
-  [int]$OpencodeTimeoutMinutes = 45
+  [int]$OpencodeTimeoutMinutes = 45,
+  [int]$CacheAnchorRepeat = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -147,6 +148,13 @@ function Get-FirstReportSentence {
   $index = $value.IndexOf($period)
   if ($index -ge 12) { return $value.Substring(0, [Math]::Min($index + 1, 140)).Trim() }
   return $value.Substring(0, [Math]::Min($value.Length, 140)).Trim()
+}
+
+function New-CacheAnchor {
+  param([int]$Repeat)
+  if ($Repeat -le 0) { return "" }
+  $line = "Fixed CSTD Alpha cache anchor: use the same evidence rules, scoring definitions, valuation safety margin, risk caps, and Chinese report schema; never fabricate facts; ordinary companies should not receive high scores easily."
+  return (($line + "`n") * $Repeat)
 }
 
 function Complete-OneSentence {
@@ -388,6 +396,53 @@ $schemaIds = @(
   "roeRoicMargins", "cashFlowConsistency", "balanceSheetHealth", "managementExecution", "governanceFairness",
   "capitalReturn", "relativeValuation", "tenYearReturnSafety", "riskAndDisconfirmingEvidence", "ownerPerspective"
 )
+$cacheAnchor = New-CacheAnchor -Repeat $CacheAnchorRepeat
+$staticPromptDir = if ($UniversePath) { Split-Path -Parent $UniversePath } else { $OutputDir }
+$staticPromptPath = Join-Path $staticPromptDir "cstd-alpha-static-report-prompt-cache-$CacheAnchorRepeat.md"
+$staticPrompt = @"
+You are the CSTD Alpha stock report generator.
+Return exactly one JSON object for one report. Do not return Markdown, explanations, or fenced code.
+All human-readable report content must be written in Simplified Chinese.
+
+CSTD Alpha fixed generation contract:
+- Use only the attached evidence.json public evidence, financial table, quote snapshot, and company identity.
+- Do not fabricate facts, financial numbers, sources, or URLs. If evidence is weak, score conservatively.
+- Provider failures are missing-data evidence only; they are not business weakness by themselves.
+- The output must be a single report object, not a reports array.
+- The report must pass CSTD Alpha validateReportPayload and these constraints:
+- scoreItems20 must be an array of 20 objects, not a map/object.
+- oneSentence must be a concise Simplified Chinese investment sentence, not a placeholder.
+- Each scoreItems20 object must contain: id, score, evidence, deductions, recentChange, reason.
+- scoreItems20 must contain all 20 ids: $($schemaIds -join ", ")
+- Each score is 0-100.
+- At least 15 scoreItems20 scores must be greater than 0.
+- evidence must contain at least 2 items with freshness = latest-public.
+- conclusion must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
+- If conclusion is 回避, summaryDashboard.positionAdvice and accountRules.maxPosition must be exactly 0%.
+- CQS is long-term company quality and should not reward cheap valuation directly.
+- IAS is investment attractiveness and includes valuation, safety margin, and risk.
+- High leverage, persistent losses, cash-flow deterioration, governance risk, delisting risk, material litigation or penalties must significantly reduce scores.
+- summaryDashboard must contain valuationView, positionAdvice, investmentHorizon, keyReasons, keyRisks, trackingMetrics.
+- accountRules must contain companyGrade, maxPosition, addCondition, reduceCondition, reviewTiming.
+- riskMatrix must contain at least 3 concrete risk objects with risk text. Do not leave it empty.
+- valuationAnalysis must contain currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
+- If public quote price is available, valuationAnalysis.buyRange and valuationAnalysis.sellReduceRange must not be unavailable. Use a conservative quote-anchored safety-margin range when intrinsic valuation evidence is insufficient.
+- fullSections must contain string fields: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
+- Use evidence.json financialTenYear rows when available.
+- disclaimer must be exactly: 本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。
+
+DeepSeek prefix-cache stable rubric anchor:
+$cacheAnchor
+
+Read the attached evidence.json. The company identity is inside evidence.json. Produce the final report JSON now.
+"@
+if (-not (Test-Path -LiteralPath $staticPromptPath)) {
+  try {
+    $staticPrompt | Set-Content -LiteralPath $staticPromptPath -Encoding UTF8
+  } catch {
+    if (-not (Test-Path -LiteralPath $staticPromptPath)) { throw }
+  }
+}
 
 foreach ($company in $companies) {
   $safeName = (($company.code + "-" + $company.name) -replace '[\\/:*?"<>|\s]+', "_").Trim("_")
@@ -436,39 +491,14 @@ foreach ($company in $companies) {
   New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
 
   $prompt = @"
-You are the CSTD Alpha stock report generator.
-Return exactly one JSON object for one report. Do not return Markdown, explanations, or fenced code.
-All human-readable report content must be written in Simplified Chinese.
-
 Company:
 $($company.name) / $($company.code) / $($company.listingPlace)
 
-Use only the attached evidence.json public evidence, financial table, quote snapshot, and company identity.
-Do not fabricate facts, financial numbers, sources, or URLs. If evidence is weak, score conservatively.
+Static prompt file used for generation:
+$staticPromptPath
 
-The output must be a single report object, not a reports array. It must pass CSTD Alpha validateReportPayload and these constraints:
-- scoreItems20 must be an array of 20 objects, not a map/object.
-- oneSentence must be a concise Simplified Chinese investment sentence, not a placeholder.
-- Each scoreItems20 object must contain: id, score, evidence, deductions, recentChange, reason.
-- scoreItems20 must contain all 20 ids: $($schemaIds -join ", ")
-- Each score is 0-100.
-- At least 15 scoreItems20 scores must be greater than 0.
-- evidence must contain at least 2 items with freshness = latest-public.
-- conclusion must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
-- If conclusion is 回避, summaryDashboard.positionAdvice and accountRules.maxPosition must be exactly 0%.
-- CQS is long-term company quality and should not reward cheap valuation directly.
-- IAS is investment attractiveness and includes valuation, safety margin, and risk.
-- High leverage, persistent losses, cash-flow deterioration, governance risk, delisting risk, material litigation or penalties must significantly reduce scores.
-- summaryDashboard must contain valuationView, positionAdvice, investmentHorizon, keyReasons, keyRisks, trackingMetrics.
-- accountRules must contain companyGrade, maxPosition, addCondition, reduceCondition, reviewTiming.
-- riskMatrix must contain at least 3 concrete risk objects with risk text. Do not leave it empty.
-- valuationAnalysis must contain currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
-- If public quote price is available, valuationAnalysis.buyRange and valuationAnalysis.sellReduceRange must not be unavailable. Use a conservative quote-anchored safety-margin range when intrinsic valuation evidence is insufficient.
-- fullSections must contain string fields: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
-- Use evidence.json financialTenYear rows when available.
-- disclaimer must be exactly: 本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。
-
-Read evidence.json and produce the final report JSON now.
+Evidence file:
+$evidencePath
 "@
   $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
 
@@ -477,13 +507,13 @@ Read evidence.json and produce the final report JSON now.
   Remove-Item -LiteralPath $eventsPath, $opencodeErrorPath -Force -ErrorAction SilentlyContinue
   $opencodeArgs = @(
     "run",
-    "Generate the final report JSON from prompt.md and evidence.json. Do not write files or call tools. Return only JSON in the final answer.",
+    "Generate the final report JSON from the attached static prompt and evidence file. Do not write files or call tools. Return only JSON in the final answer.",
     "--model", $Model,
     "--variant", $Variant,
     "--agent", $Agent,
     "--format", "json",
     "--dir", (Get-Location).Path,
-    "--file", $promptPath,
+    "--file", $staticPromptPath,
     "--file", $evidencePath
   )
   $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -PassThru
