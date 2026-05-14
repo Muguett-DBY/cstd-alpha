@@ -15,6 +15,7 @@ type RankingViewProps = {
 type SortMode = "rank" | "ias" | "cqs" | "name" | "code" | "sector";
 type SortDirection = "desc" | "asc";
 const LIBRARY_PAGE_SIZE = 20;
+const CLIENT_FILTERED_LIBRARY_LIMIT = 100;
 
 const RANKING_CONFIG: Record<
   RankingMarket,
@@ -59,6 +60,7 @@ const RANKING_CONFIG: Record<
 
 export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const config = RANKING_CONFIG[market];
+  const usesClientSideLibrary = market !== "a-share";
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
@@ -84,29 +86,45 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     setMatchedSeedCodes(new Set());
   }, [market]);
 
+  const remoteLibraryPage = usesClientSideLibrary ? 1 : libraryPage;
+  const remoteIndustry = usesClientSideLibrary ? "全部行业" : sector;
+  const remoteSortMode = usesClientSideLibrary ? "rank" : sortMode;
+  const remoteSortDirection = usesClientSideLibrary ? "desc" : sortDirection;
+
   useEffect(() => {
-    const offset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
+    let cancelled = false;
+    const offset = (remoteLibraryPage - 1) * LIBRARY_PAGE_SIZE;
     setLibraryPhase("loading");
-    void fetchReportLibrary({
-      limit: LIBRARY_PAGE_SIZE,
-      offset,
-      sort: sortMode,
-      direction: sortDirection,
-      industry: sector,
-      market: config.marketParam,
-      seedCodes: config.seeds.map((seed) => seed.code),
-    })
+    const seedCodes = config.seeds.map((seed) => seed.code);
+    const request = usesClientSideLibrary
+      ? fetchAllMarketLibraryEntries(config.marketParam, seedCodes)
+      : fetchReportLibrary({
+          limit: LIBRARY_PAGE_SIZE,
+          offset,
+          sort: remoteSortMode,
+          direction: remoteSortDirection,
+          industry: remoteIndustry,
+          market: config.marketParam,
+          seedCodes,
+        });
+
+    void request
       .then((library) => {
+        if (cancelled) return;
         setLibraryEntries(library.entries);
         setLibraryTotal(library.total);
         setMatchedSeedCodes(new Set(library.matchedTickers ?? []));
         setLibraryPhase("ready");
       })
       .catch((err) => {
+        if (cancelled) return;
         setLibraryPhase("error");
         setError(err instanceof Error ? err.message : "报告库读取失败。");
       });
-  }, [config.marketParam, config.seeds, libraryPage, sector, sortDirection, sortMode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [config.marketParam, config.seeds, remoteIndustry, remoteLibraryPage, remoteSortDirection, remoteSortMode, usesClientSideLibrary]);
 
   const entries = useMemo(
     () =>
@@ -132,14 +150,20 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       })
       .sort((left, right) => compareRankingRows(left, right, sortMode, sortDirection));
   }, [entries, query, sector, sortDirection, sortMode, source]);
+  const visibleRows = useMemo(() => {
+    if (!usesClientSideLibrary) return filtered;
+    const pageOffset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
+    return filtered.slice(pageOffset, pageOffset + LIBRARY_PAGE_SIZE);
+  }, [filtered, libraryPage, usesClientSideLibrary]);
 
   const deepReportCount = entries.filter((entry) => entry.source === "deep-report").length;
   const seedCount = entries.filter((entry) => entry.source === "seed").length;
   const pageTopEntry = entries.find((entry) => entry.source === "deep-report");
-  const libraryPageCount = Math.max(1, Math.ceil(libraryTotal / LIBRARY_PAGE_SIZE));
+  const visibleTotal = usesClientSideLibrary ? filtered.length : libraryTotal;
+  const libraryPageCount = Math.max(1, Math.ceil(visibleTotal / LIBRARY_PAGE_SIZE));
   const libraryOffset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
-  const pageStart = libraryTotal ? libraryOffset + 1 : 0;
-  const pageEnd = Math.min(libraryOffset + deepReportCount, libraryTotal);
+  const pageStart = visibleTotal ? libraryOffset + 1 : 0;
+  const pageEnd = Math.min(libraryOffset + visibleRows.length, visibleTotal);
 
   async function submitImport(event: React.FormEvent) {
     event.preventDefault();
@@ -199,7 +223,15 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       </form>
 
       <div className="ranking-tools">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索公司、代码或行业" aria-label="搜索排行" />
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setLibraryPage(1);
+          }}
+          placeholder="搜索公司、代码或行业"
+          aria-label="搜索排行"
+        />
         <select
           value={sector}
           onChange={(event) => {
@@ -241,13 +273,34 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <option value="asc">升序</option>
         </select>
         <div className="segmented-control" role="group" aria-label="数据来源">
-          <button type="button" className={source === "all" ? "active" : ""} onClick={() => setSource("all")}>
+          <button
+            type="button"
+            className={source === "all" ? "active" : ""}
+            onClick={() => {
+              setSource("all");
+              setLibraryPage(1);
+            }}
+          >
             全部
           </button>
-          <button type="button" className={source === "deep-report" ? "active" : ""} onClick={() => setSource("deep-report")}>
+          <button
+            type="button"
+            className={source === "deep-report" ? "active" : ""}
+            onClick={() => {
+              setSource("deep-report");
+              setLibraryPage(1);
+            }}
+          >
             深度报告
           </button>
-          <button type="button" className={source === "seed" ? "active" : ""} onClick={() => setSource("seed")}>
+          <button
+            type="button"
+            className={source === "seed" ? "active" : ""}
+            onClick={() => {
+              setSource("seed");
+              setLibraryPage(1);
+            }}
+          >
             待导入
           </button>
         </div>
@@ -265,7 +318,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <span>来源</span>
           <span>操作</span>
         </div>
-        {filtered.map((entry, index) => (
+        {visibleRows.map((entry, index) => (
           <div key={`${entry.id}-${entry.source}`} className={`ranking-row ${entry.source === "deep-report" ? "is-report" : "is-seed"}`} role="row">
             <span>#{entry.source === "deep-report" ? libraryOffset + index + 1 : entry.rank}</span>
             <button type="button" className="ranking-company" onClick={() => void onOpenEntry(entry)}>
@@ -297,7 +350,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       {source !== "seed" ? (
         <div className="ranking-pagination" aria-label="报告库分页">
           <span>
-            第 {libraryPage} / {libraryPageCount} 页，显示 {pageStart}-{pageEnd} / {libraryTotal}
+            第 {libraryPage} / {libraryPageCount} 页，显示 {pageStart}-{pageEnd} / {visibleTotal}
           </span>
           <div>
             <button type="button" onClick={() => setLibraryPage(1)} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
@@ -329,6 +382,27 @@ function compareRankingRows(left: RankingEntry, right: RankingEntry, sortMode: S
   const value = compareRankingValue(left, right, sortMode);
   if (value !== 0) return value * multiplier;
   return left.rank - right.rank;
+}
+
+async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[]) {
+  const entries: ReportLibraryEntry[] = [];
+  const matchedTickers = new Set<string>();
+  let total = 0;
+  for (let offset = 0; ; offset += CLIENT_FILTERED_LIBRARY_LIMIT) {
+    const page = await fetchReportLibrary({
+      limit: CLIENT_FILTERED_LIBRARY_LIMIT,
+      offset,
+      sort: "rank",
+      direction: "desc",
+      market,
+      seedCodes,
+    });
+    entries.push(...page.entries);
+    for (const ticker of page.matchedTickers ?? []) matchedTickers.add(ticker);
+    total = page.total ?? entries.length;
+    if (!page.entries.length || entries.length >= total) break;
+  }
+  return { entries, total, matchedTickers: Array.from(matchedTickers) };
 }
 
 function compareRankingValue(left: RankingEntry, right: RankingEntry, sortMode: Exclude<SortMode, "rank">) {
