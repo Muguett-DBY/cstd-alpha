@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
+import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { buildRankingEntries, type RankingEntry } from "./shared/ranking";
 
@@ -30,7 +31,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   useEffect(() => {
     const offset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
     setLibraryPhase("loading");
-    void fetchReportLibrary({ limit: LIBRARY_PAGE_SIZE, offset, sort: sortMode, direction: sortDirection })
+    void fetchReportLibrary({ limit: LIBRARY_PAGE_SIZE, offset, sort: sortMode, direction: sortDirection, industry: sector })
       .then((library) => {
         setLibraryEntries(library.entries);
         setLibraryTotal(library.total);
@@ -40,16 +41,19 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         setLibraryPhase("error");
         setError(err instanceof Error ? err.message : "报告库读取失败。");
       });
-  }, [libraryPage, sortDirection, sortMode]);
+  }, [libraryPage, sector, sortDirection, sortMode]);
 
   const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries), [imported, libraryEntries]);
-  const sectors = useMemo(() => ["全部行业", ...Array.from(new Set(entries.map((entry) => entry.sector))).sort()], [entries]);
+  const sectors = useMemo(() => {
+    const seen = new Set(["全部行业", ...A_SHARE_INDUSTRY_GROUPS, ...entries.map((entry) => entry.industryGroup)]);
+    return Array.from(seen);
+  }, [entries]);
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return entries
       .filter((entry) => {
-        const keywordMatched = !keyword || `${entry.name} ${entry.code} ${entry.sector}`.toLowerCase().includes(keyword);
-        const sectorMatched = sector === "全部行业" || entry.sector === sector;
+        const keywordMatched = !keyword || `${entry.name} ${entry.code} ${entry.sector} ${entry.industryGroup}`.toLowerCase().includes(keyword);
+        const sectorMatched = sector === "全部行业" || entry.industryGroup === sector;
         const sourceMatched = source === "all" || entry.source === source;
         return keywordMatched && sectorMatched && sourceMatched;
       })
@@ -123,7 +127,14 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
 
       <div className="ranking-tools">
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索公司、代码或行业" aria-label="搜索排行" />
-        <select value={sector} onChange={(event) => setSector(event.target.value)} aria-label="行业筛选">
+        <select
+          value={sector}
+          onChange={(event) => {
+            setSector(event.target.value);
+            setLibraryPage(1);
+          }}
+          aria-label="行业筛选"
+        >
           {sectors.map((item) => (
             <option key={item} value={item}>
               {item}
@@ -251,7 +262,7 @@ function compareRankingValue(left: RankingEntry, right: RankingEntry, sortMode: 
   if (sortMode === "ias" || sortMode === "cqs") return scoreValue(left, sortMode) - scoreValue(right, sortMode);
   if (sortMode === "name") return left.name.localeCompare(right.name, "zh-CN");
   if (sortMode === "code") return left.code.localeCompare(right.code);
-  return left.sector.localeCompare(right.sector, "zh-CN");
+  return `${left.industryGroup} ${left.sector}`.localeCompare(`${right.industryGroup} ${right.sector}`, "zh-CN");
 }
 
 function scoreValue(entry: RankingEntry, key: "ias" | "cqs") {

@@ -1,5 +1,6 @@
 import { validateReportPayload, type InvestmentReport } from "./report";
 import { reportIdentityKey } from "./ranking";
+import { normalizeIndustryLabel } from "./industry";
 
 export type ReportLibraryEntry = {
   id: string;
@@ -66,11 +67,7 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
 }
 
 export function cleanIndustryLabel(value: unknown) {
-  if (typeof value !== "string") return undefined;
-  const label = value.trim().replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+$/u, "").trim();
-  if (!label || /^(AStock|UsStock|HK|EQUITY|Imported|Library)$/i.test(label)) return undefined;
-  if (/^[-—–]+$/.test(label)) return undefined;
-  return label;
+  return normalizeIndustryLabel(value);
 }
 
 export function importedEntryToReport(entry: ReportLibraryEntry, report: InvestmentReport): ImportedLibraryReport {

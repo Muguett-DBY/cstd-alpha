@@ -7,6 +7,7 @@ import {
   validateLibraryReport,
   type ReportLibraryEntry,
 } from "../../src/shared/report-library";
+import { industryMembersForGroup } from "../../src/shared/industry";
 import type { InvestmentReport } from "../../src/shared/report";
 
 type Env = {
@@ -40,10 +41,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const limit = boundedListLimit(url.searchParams.get("limit"));
   const offset = boundedListOffset(url.searchParams.get("offset"));
   const order = listOrder(url.searchParams.get("sort"), url.searchParams.get("direction"));
+  const industry = cleanIndustryLabel(url.searchParams.get("industry"));
   const { entries, total } = hasDurableLibrary(env)
-    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order)
+    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry)
     : env.REPORT_CACHE
-      ? await listKvReportEntries(env.REPORT_CACHE, limit, offset)
+      ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry)
       : { entries: [], total: 0 };
   return json({ entries, total, limit, offset });
 };
@@ -156,9 +158,12 @@ async function readKvReportRecord(cache: KVNamespace, id: string): Promise<Repor
   };
 }
 
-async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string) {
+async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string) {
+  const candidates = industry ? industryMembersForGroup(industry) : [];
+  const where = candidates.length ? `WHERE ${normalizedIndustrySql()} IN (${candidates.map((_, index) => `?${index + 1}`).join(", ")})` : "";
+  const selectParams = [...candidates, limit, offset];
   const [countRow, result] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) AS count FROM report_library`).first<{ count: number }>(),
+    bindD1(db.prepare(`SELECT COUNT(*) AS count FROM report_library ${where}`), candidates).first<{ count: number }>(),
     db
       .prepare(
         `SELECT
@@ -166,38 +171,46 @@ async function listDurableReportEntries(db: D1Database, limit: number, offset: n
         qualitative_band, position_advice, valuation_view, as_of, imported_at,
         evidence_count, score_item_count, object_key, report_hash
       FROM report_library
+      ${where}
       ORDER BY ${order}
-      LIMIT ?1 OFFSET ?2`,
+      LIMIT ?${candidates.length + 1} OFFSET ?${candidates.length + 2}`,
       )
-      .bind(limit, offset)
+      .bind(...selectParams)
       .all<ReportLibraryRow>(),
   ]);
   return { entries: (result.results ?? []).map(rowToEntry), total: countRow?.count ?? 0 };
 }
 
-async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number) {
+async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string) {
   const entries: ReportLibraryEntry[] = [];
+  const candidates = industry ? new Set(industryMembersForGroup(industry)) : null;
   let cursor: string | undefined;
   let total = 0;
   do {
     const page = await cache.list({ prefix: REPORT_PREFIX, cursor });
     total += page.keys.length;
     const pageEntries = await Promise.all(
-      page.keys.slice(offset + entries.length, offset + entries.length + Math.max(0, limit - entries.length)).map(async (key) => {
+      page.keys.map(async (key) => {
         const value = await cache.get<ReportLibraryRecord>(key.name, "json");
         return isRecord(value) && isValidEntry(value.entry) ? value.entry : null;
       }),
     );
-    entries.push(...pageEntries.filter((entry): entry is ReportLibraryEntry => entry !== null));
+    entries.push(
+      ...pageEntries.filter((entry): entry is ReportLibraryEntry => {
+        if (!entry) return false;
+        if (!candidates) return true;
+        return candidates.has(cleanIndustryLabel(entry.industry) ?? "") || candidates.has(cleanIndustryLabel(entry.sector) ?? "");
+      }),
+    );
     cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor && entries.length < limit);
+  } while (cursor);
 
   const sorted = entries.sort((left, right) => {
     if (right.ias !== left.ias) return right.ias - left.ias;
     if (right.cqs !== left.cqs) return right.cqs - left.cqs;
     return left.companyName.localeCompare(right.companyName);
   });
-  return { entries: sorted.slice(0, limit), total };
+  return { entries: sorted.slice(offset, offset + limit), total: candidates ? sorted.length : total };
 }
 
 async function readDurableIndexRow(db: D1Database, id: string) {
@@ -301,6 +314,14 @@ function listOrder(sort: string | null, direction: string | null) {
   if (sort === "code") return `ticker ${dir}, ias DESC, cqs DESC`;
   if (sort === "sector") return `COALESCE(industry, sector, '') ${dir}, ias DESC, cqs DESC`;
   return `ias ${dir}, cqs ${dir}, company_name ASC`;
+}
+
+function normalizedIndustrySql() {
+  return `TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(industry, sector, ''), 'Ⅰ', ''), 'Ⅱ', ''), 'Ⅲ', ''), 'Ⅳ', ''), 'Ⅴ', ''), 'Ⅵ', ''), 'Ⅶ', ''), 'Ⅷ', ''), 'Ⅸ', ''), 'Ⅹ', ''))`;
+}
+
+function bindD1<T extends D1PreparedStatement>(statement: T, values: unknown[]) {
+  return values.length ? statement.bind(...values) : statement;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

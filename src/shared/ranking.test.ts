@@ -56,6 +56,7 @@ describe("ranking entries", () => {
     const entry = entries.find((item) => item.code === "123456");
 
     expect(entry?.sector).toBe("行业待验证");
+    expect(entry?.industryGroup).toBe("行业待验证");
   });
 
   test("normalizes provider industry levels for display", () => {
@@ -97,6 +98,34 @@ describe("ranking entries", () => {
     ]);
 
     expect(entries.find((entry) => entry.name === "测试银行")?.sector).toBe("银行");
+    expect(entries.find((entry) => entry.name === "测试银行")?.industryGroup).toBe("银行");
     expect(entries.find((entry) => entry.name === "未知行业")?.sector).toBe("行业待验证");
+    expect(entries.find((entry) => entry.name === "未知行业")?.industryGroup).toBe("行业待验证");
+  });
+
+  test("uses first-level industry groups for filtering while keeping detailed labels", () => {
+    const entries = buildRankingEntries([], [
+      {
+        id: "baijiu",
+        companyName: "测试白酒",
+        ticker: "600519",
+        market: "SH-A",
+        industry: "白酒Ⅱ",
+        cqs: 88,
+        ias: 87,
+        conclusion: "持有",
+        qualitativeBand: "优质",
+        positionAdvice: "小仓 3-8%",
+        valuationView: "合理",
+        asOf: "2026-05-14T00:00:00.000Z",
+        importedAt: "2026-05-14T00:00:00.000Z",
+        evidenceCount: 3,
+        scoreItemCount: 20,
+      },
+    ]);
+
+    const entry = entries.find((item) => item.name === "测试白酒");
+    expect(entry?.industryGroup).toBe("食品饮料");
+    expect(entry?.sector).toBe("食品饮料 / 白酒");
   });
 });

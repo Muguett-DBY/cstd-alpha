@@ -1,5 +1,6 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
 import { cleanIndustryLabel, type ReportLibraryEntry } from "./report-library";
+import { formatIndustryLabel, industryGroupForLabel, UNKNOWN_INDUSTRY } from "./industry";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -20,6 +21,7 @@ export type RankingEntry = {
   exchange: string;
   listingPlace: string;
   sector: string;
+  industryGroup: string;
   cqs: number;
   ias: number;
   conclusion: InvestmentReport["conclusion"] | "待导入";
@@ -199,6 +201,7 @@ function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry 
     exchange: seed.exchange,
     listingPlace: seed.listingPlace,
     sector: seed.sector,
+    industryGroup: seed.sector,
     cqs: 0,
     ias: 0,
     conclusion: "待导入",
@@ -215,6 +218,7 @@ function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry 
 function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = report.company.ticker || seed?.code || report.company.name;
   const listingPlace = report.company.market || seed?.listingPlace || "A股";
+  const industry = rankingIndustry(report.company.industry, report.company.sector, seed?.sector);
   return {
     id: reportIdentityKey(report),
     rank: 0,
@@ -222,7 +226,8 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
     name: report.company.name || seed?.name || code,
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: rankingSector(report.company.industry, report.company.sector, seed?.sector),
+    sector: formatIndustryLabel(industry.detail, industry.group),
+    industryGroup: industry.group,
     cqs: report.cqs,
     ias: report.ias,
     conclusion: report.conclusion,
@@ -240,6 +245,7 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
 function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = entry.ticker || seed?.code || entry.companyName;
   const listingPlace = entry.market || seed?.listingPlace || "A股";
+  const industry = rankingIndustry(entry.industry, entry.sector, seed?.sector);
   return {
     id: libraryEntryIdentityKey(entry),
     rank: 0,
@@ -247,7 +253,8 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     name: entry.companyName || seed?.name || code,
     exchange: seed?.exchange || listingPlace,
     listingPlace,
-    sector: rankingSector(entry.industry, entry.sector, seed?.sector),
+    sector: formatIndustryLabel(industry.detail, industry.group),
+    industryGroup: industry.group,
     cqs: entry.cqs,
     ias: entry.ias,
     conclusion: entry.conclusion,
@@ -302,8 +309,10 @@ function sourcePriority(source: RankingSource) {
   return source === "deep-report" ? 1 : 0;
 }
 
-function rankingSector(industry?: string, sector?: string, fallback?: string) {
-  return cleanIndustryLabel(industry) || cleanIndustryLabel(sector) || fallback || "行业待验证";
+function rankingIndustry(industry?: string, sector?: string, fallback?: string) {
+  const detail = cleanIndustryLabel(industry) || cleanIndustryLabel(sector);
+  const group = industryGroupForLabel(detail) || industryGroupForLabel(fallback) || detail || fallback || UNKNOWN_INDUSTRY;
+  return { detail, group };
 }
 
 function normalizeIdentity(value: unknown) {
