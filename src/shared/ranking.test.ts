@@ -37,6 +37,32 @@ describe("ranking entries", () => {
     expect(companyCandidateFromRanking(decai!).code).toBe("605287");
   });
 
+  test("matches seed rows to report library rows by A-share stock code across market aliases", () => {
+    const entries = buildRankingEntries([], [
+      {
+        id: "kweichow-moutai",
+        companyName: "贵州茅台",
+        ticker: "600519",
+        market: "SH-A",
+        industry: "白酒Ⅱ",
+        cqs: 80,
+        ias: 81,
+        conclusion: "观察",
+        qualitativeBand: "优质",
+        positionAdvice: "观察仓",
+        valuationView: "合理",
+        asOf: "2026-05-14T00:00:00.000Z",
+        importedAt: "2026-05-14T00:00:00.000Z",
+        evidenceCount: 3,
+        scoreItemCount: 20,
+      },
+    ]);
+
+    const moutaiRows = entries.filter((entry) => entry.code === "600519");
+    expect(moutaiRows).toHaveLength(1);
+    expect(moutaiRows[0]).toMatchObject({ source: "deep-report", listingPlace: "沪A", ias: 81 });
+  });
+
   test("does not show market type as the ranking industry", () => {
     const report = validateReportPayload({
       company: { name: "测试公司", ticker: "123456", market: "SH-A", sector: "AStock" },

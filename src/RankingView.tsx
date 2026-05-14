@@ -3,7 +3,7 @@ import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
 import type { ReportLibraryEntry } from "./shared/report-library";
-import { buildRankingEntries, type RankingEntry } from "./shared/ranking";
+import { A_SHARE_RANKING_SEEDS, buildRankingEntries, type RankingEntry } from "./shared/ranking";
 
 type RankingViewProps = {
   onOpenEntry: (entry: RankingEntry) => void | Promise<void>;
@@ -17,6 +17,7 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
+  const [matchedSeedCodes, setMatchedSeedCodes] = useState<Set<string>>(() => new Set());
   const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
   const [libraryPage, setLibraryPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -31,10 +32,18 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
   useEffect(() => {
     const offset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
     setLibraryPhase("loading");
-    void fetchReportLibrary({ limit: LIBRARY_PAGE_SIZE, offset, sort: sortMode, direction: sortDirection, industry: sector })
+    void fetchReportLibrary({
+      limit: LIBRARY_PAGE_SIZE,
+      offset,
+      sort: sortMode,
+      direction: sortDirection,
+      industry: sector,
+      seedCodes: A_SHARE_RANKING_SEEDS.map((seed) => seed.code),
+    })
       .then((library) => {
         setLibraryEntries(library.entries);
         setLibraryTotal(library.total);
+        setMatchedSeedCodes(new Set(library.matchedTickers ?? []));
         setLibraryPhase("ready");
       })
       .catch((err) => {
@@ -43,7 +52,10 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
       });
   }, [libraryPage, sector, sortDirection, sortMode]);
 
-  const entries = useMemo(() => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries), [imported, libraryEntries]);
+  const entries = useMemo(
+    () => buildRankingEntries(imported.map((entry) => entry.report), libraryEntries).filter((entry) => entry.source !== "seed" || !matchedSeedCodes.has(entry.code)),
+    [imported, libraryEntries, matchedSeedCodes],
+  );
   const sectors = useMemo(() => {
     const seen = new Set(["全部行业", ...A_SHARE_INDUSTRY_GROUPS, ...entries.map((entry) => entry.industryGroup)]);
     return Array.from(seen);

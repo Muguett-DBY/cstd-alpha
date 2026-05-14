@@ -140,21 +140,22 @@ export const A_SHARE_RANKING_SEEDS: RankingSeed[] = [
 ];
 
 export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEntries: ReportLibraryEntry[] = []): RankingEntry[] {
-  const reportByKey = new Map(reports.map((report) => [reportIdentityKey(report), report]));
-  const libraryEntryByKey = new Map(libraryEntries.map((entry) => [libraryEntryIdentityKey(entry), entry]));
+  const reportByKey = new Map(reports.map((report) => [reportRankingMatchKey(report), report]));
+  const libraryEntryByKey = new Map(libraryEntries.map((entry) => [libraryEntryRankingMatchKey(entry), entry]));
   const seedKeys = new Set<string>();
   const rows = A_SHARE_RANKING_SEEDS.map((seed, index) => {
-    seedKeys.add(seedIdentityKey(seed));
-    const report = reportByKey.get(seedIdentityKey(seed));
-    const libraryEntry = libraryEntryByKey.get(seedIdentityKey(seed));
+    const seedKey = seedRankingMatchKey(seed);
+    seedKeys.add(seedKey);
+    const report = reportByKey.get(seedKey);
+    const libraryEntry = libraryEntryByKey.get(seedKey);
     return report ? reportToRankingEntry(report, seed, index) : libraryEntry ? libraryEntryToRankingEntry(libraryEntry, seed, index) : seedToRankingEntry(seed, index);
   });
 
   for (const report of reports) {
-    if (!seedKeys.has(reportIdentityKey(report))) rows.push(reportToRankingEntry(report));
+    if (!seedKeys.has(reportRankingMatchKey(report))) rows.push(reportToRankingEntry(report));
   }
   for (const entry of libraryEntries) {
-    const key = libraryEntryIdentityKey(entry);
+    const key = libraryEntryRankingMatchKey(entry);
     if (!seedKeys.has(key) && !reportByKey.has(key)) rows.push(libraryEntryToRankingEntry(entry));
   }
 
@@ -185,11 +186,23 @@ function seedIdentityKey(seed: RankingSeed) {
   return `${normalizeIdentity(seed.listingPlace)}:${normalizeIdentity(seed.code)}`;
 }
 
+function seedRankingMatchKey(seed: RankingSeed) {
+  return stockCodeIdentity(seed.code) || seedIdentityKey(seed);
+}
+
+function reportRankingMatchKey(report: InvestmentReport) {
+  return stockCodeIdentity(report.company.ticker) || reportIdentityKey(report);
+}
+
 function libraryEntryIdentityKey(entry: ReportLibraryEntry) {
   const ticker = normalizeIdentity(entry.ticker);
   const market = normalizeIdentity(entry.market);
   const name = normalizeIdentity(entry.companyName);
   return ticker ? `${market}:${ticker}` : `${market}:${name}`;
+}
+
+function libraryEntryRankingMatchKey(entry: ReportLibraryEntry) {
+  return stockCodeIdentity(entry.ticker) || libraryEntryIdentityKey(entry);
 }
 
 function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry {
@@ -244,7 +257,7 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
 
 function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
   const code = entry.ticker || seed?.code || entry.companyName;
-  const listingPlace = entry.market || seed?.listingPlace || "A股";
+  const listingPlace = seed?.listingPlace || entry.market || "A股";
   const industry = rankingIndustry(entry.industry, entry.sector, seed?.sector);
   return {
     id: libraryEntryIdentityKey(entry),
@@ -317,4 +330,10 @@ function rankingIndustry(industry?: string, sector?: string, fallback?: string) 
 
 function normalizeIdentity(value: unknown) {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+function stockCodeIdentity(value: unknown) {
+  if (typeof value !== "string") return "";
+  const match = value.trim().toUpperCase().match(/\b(\d{6})\b/);
+  return match ? `CN:${match[1]}` : "";
 }

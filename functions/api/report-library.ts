@@ -42,12 +42,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const offset = boundedListOffset(url.searchParams.get("offset"));
   const order = listOrder(url.searchParams.get("sort"), url.searchParams.get("direction"));
   const industry = cleanIndustryLabel(url.searchParams.get("industry"));
-  const { entries, total } = hasDurableLibrary(env)
-    ? await listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry)
-    : env.REPORT_CACHE
-      ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry)
-      : { entries: [], total: 0 };
-  return json({ entries, total, limit, offset });
+  const seedCodes = parseSeedCodes(url.searchParams.get("seedCodes"));
+  if (hasDurableLibrary(env)) {
+    const [{ entries, total }, matchedTickers] = await Promise.all([
+      listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry),
+      listDurableMatchedTickers(env.REPORT_LIBRARY_DB, seedCodes),
+    ]);
+    return json({ entries, total, limit, offset, matchedTickers });
+  }
+
+  const { entries, total } = env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry) : { entries: [], total: 0 };
+  return json({ entries, total, limit, offset, matchedTickers: [] });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -181,6 +186,16 @@ async function listDurableReportEntries(db: D1Database, limit: number, offset: n
   return { entries: (result.results ?? []).map(rowToEntry), total: countRow?.count ?? 0 };
 }
 
+async function listDurableMatchedTickers(db: D1Database, seedCodes: string[]) {
+  if (!seedCodes.length) return [];
+  const placeholders = seedCodes.map((_, index) => `?${index + 1}`).join(", ");
+  const result = await db
+    .prepare(`SELECT DISTINCT ticker FROM report_library WHERE ticker IN (${placeholders})`)
+    .bind(...seedCodes)
+    .all<{ ticker: string }>();
+  return (result.results ?? []).map((row) => row.ticker).filter(Boolean);
+}
+
 async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string) {
   const entries: ReportLibraryEntry[] = [];
   const candidates = industry ? new Set(industryMembersForGroup(industry)) : null;
@@ -305,6 +320,18 @@ function boundedListOffset(value: string | null) {
   const parsed = value ? Number(value) : 0;
   if (!Number.isFinite(parsed)) return 0;
   return Math.max(0, Math.floor(parsed));
+}
+
+function parseSeedCodes(value: string | null) {
+  if (!value) return [];
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => /^\d{6}$/.test(item)),
+    ),
+  ).slice(0, 200);
 }
 
 function listOrder(sort: string | null, direction: string | null) {
