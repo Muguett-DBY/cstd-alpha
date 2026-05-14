@@ -94,6 +94,9 @@ export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["concl
     return conclusion === "加仓" ? "15-20% 上限" : "标准仓 8-15%";
   }
   if (conclusion === "持有" && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) return "小仓 3-8%";
+  if ((conclusion === "观察" || conclusion === "减仓") && /报价缺失|无公开报价|缺乏实时|暂不建仓|不可用|无法/i.test(text)) {
+    return conclusion === "减仓" ? "0%" : "观察仓";
+  }
   return text || "观察仓";
 }
 

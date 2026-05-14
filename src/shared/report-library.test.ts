@@ -7,6 +7,8 @@ describe("report library entries", () => {
     expect(normalizeEntryPositionAdvice("买入", "观察仓", 80, 80)).toBe("标准仓 8-15%");
     expect(normalizeEntryPositionAdvice("加仓", "观察仓", 90, 90)).toBe("15-20% 上限");
     expect(normalizeEntryPositionAdvice("持有", "观察仓", 75, 70)).toBe("小仓 3-8%");
+    expect(normalizeEntryPositionAdvice("观察", "观察仓（报价缺失，暂不建仓）")).toBe("观察仓");
+    expect(normalizeEntryPositionAdvice("减仓", "观察仓（报价缺失，暂不建仓）")).toBe("0%");
     expect(normalizeEntryPositionAdvice("回避", "0-3% 观察上限")).toBe("0%");
     expect(normalizeEntryPositionAdvice("卖出", "观察仓")).toBe("0%");
   });
