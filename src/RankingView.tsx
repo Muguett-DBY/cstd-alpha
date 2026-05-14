@@ -192,32 +192,6 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
         </div>
       </div>
 
-      {source !== "seed" ? (
-        <div className="ranking-pagination" aria-label="报告库分页">
-          <span>
-            第 {libraryPage} / {libraryPageCount} 页，显示 {pageStart}-{pageEnd} / {libraryTotal}
-          </span>
-          <div>
-            <button type="button" onClick={() => setLibraryPage(1)} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
-              首页
-            </button>
-            <button type="button" onClick={() => setLibraryPage((page) => Math.max(1, page - 1))} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
-              上一页
-            </button>
-            <button
-              type="button"
-              onClick={() => setLibraryPage((page) => Math.min(libraryPageCount, page + 1))}
-              disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}
-            >
-              下一页
-            </button>
-            <button type="button" onClick={() => setLibraryPage(libraryPageCount)} disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}>
-              末页
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <div className="ranking-table" role="table" aria-label="A 股公司评分排行">
         <div className="ranking-row ranking-row-head" role="row">
           <span>排名</span>
@@ -258,6 +232,32 @@ export function RankingView({ onOpenEntry }: RankingViewProps) {
           </div>
         ))}
       </div>
+
+      {source !== "seed" ? (
+        <div className="ranking-pagination" aria-label="报告库分页">
+          <span>
+            第 {libraryPage} / {libraryPageCount} 页，显示 {pageStart}-{pageEnd} / {libraryTotal}
+          </span>
+          <div>
+            <button type="button" onClick={() => setLibraryPage(1)} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
+              首页
+            </button>
+            <button type="button" onClick={() => setLibraryPage((page) => Math.max(1, page - 1))} disabled={libraryPage <= 1 || libraryPhase === "loading"}>
+              上一页
+            </button>
+            <button
+              type="button"
+              onClick={() => setLibraryPage((page) => Math.min(libraryPageCount, page + 1))}
+              disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}
+            >
+              下一页
+            </button>
+            <button type="button" onClick={() => setLibraryPage(libraryPageCount)} disabled={libraryPage >= libraryPageCount || libraryPhase === "loading"}>
+              末页
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
