@@ -409,6 +409,7 @@ CSTD Alpha fixed generation contract:
 - Do not fabricate facts, financial numbers, sources, or URLs. If evidence is weak, score conservatively.
 - Provider failures are missing-data evidence only; they are not business weakness by themselves.
 - The output must be a single report object, not a reports array.
+- The attached evidence.json content is already in context; do not call shell/tools to read the file path.
 - The report must pass CSTD Alpha validateReportPayload and these constraints:
 - scoreItems20 must be an array of 20 objects, not a map/object.
 - oneSentence must be a concise Simplified Chinese investment sentence, not a placeholder.
@@ -522,7 +523,7 @@ foreach ($company in $companies) {
   $evidenceResponse = $evidenceRaw | ConvertFrom-Json
   $fullEvidencePath = Join-Path $companyDir "evidence-full.json"
   $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $fullEvidencePath -Encoding UTF8
-  New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+  New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 -Compress | Set-Content -LiteralPath $evidencePath -Encoding UTF8
 
   $prompt = @"
 Company:
@@ -541,7 +542,7 @@ $evidencePath
   Remove-Item -LiteralPath $eventsPath, $opencodeErrorPath -Force -ErrorAction SilentlyContinue
   $opencodeArgs = @(
     "run",
-    "Generate the final report JSON from the attached static prompt and evidence file. Do not write files or call tools. Return only JSON in the final answer.",
+    "Generate the final report JSON from the attached static prompt and evidence file content already in context. Do not inspect paths, write files, or call tools. Return only JSON in the final answer.",
     "--model", $Model,
     "--variant", $Variant,
     "--agent", $Agent,

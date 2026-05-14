@@ -7,7 +7,7 @@ param(
   [string]$Agent = "build",
   [int]$Workers = 2,
   [int]$MaxWorkers = 4,
-  [int]$CacheAnchorRepeat = 1800,
+  [int]$CacheAnchorRepeat = 3000,
   [int]$MaxAttempts = 2,
   [int]$OpencodeTimeoutMinutes = 20,
   [switch]$ImportOnline,
