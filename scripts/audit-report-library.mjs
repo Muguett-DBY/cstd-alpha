@@ -8,6 +8,8 @@ const args = parseArgs(process.argv.slice(2));
 const accessPath = args.access || defaultAccessPath;
 const outputDir = args.output || defaultOutputDir;
 const detailLimit = Number(args.detailLimit || 0);
+const detailOffset = Math.max(0, Number(args.detailOffset || 0));
+const detailConcurrency = Math.max(1, Math.min(20, Number(args.detailConcurrency || 8)));
 
 const access = parseAccessFile(await readFile(accessPath, "utf8"));
 const baseUrl = args.baseUrl || access.URL;
@@ -19,23 +21,22 @@ await mkdir(outputDir, { recursive: true });
 
 const cookie = await login(baseUrl, password);
 const entries = await fetchAllEntries(baseUrl, cookie);
-const detailTargets = detailLimit > 0 ? entries.slice(0, detailLimit) : entries;
-const detailAudits = [];
-for (const entry of detailTargets) {
+const detailTargets = detailLimit > 0 ? entries.slice(detailOffset, detailOffset + detailLimit) : entries.slice(detailOffset);
+const detailAudits = await mapLimit(detailTargets, detailConcurrency, async (entry) => {
   try {
     const record = await fetchJson(`${baseUrl}/api/report-library?id=${encodeURIComponent(entry.id)}`, { cookie });
-    detailAudits.push(auditReport(record.entry ?? entry, record.report));
+    return auditReport(record.entry ?? entry, record.report);
   } catch (error) {
-    detailAudits.push({
+    return {
       source: "detail",
       id: entry.id,
       ticker: entry.ticker,
       companyName: entry.companyName,
       severity: "error",
       issues: [`detail_fetch_failed: ${error instanceof Error ? error.message : String(error)}`],
-    });
+    };
   }
-}
+});
 
 const entryAudits = entries.map(auditEntry);
 const issues = [...entryAudits, ...detailAudits].filter((item) => item.issues.length);
@@ -47,6 +48,8 @@ const output = {
   baseUrl: redactUrl(baseUrl),
   entryCount: entries.length,
   detailChecked: detailTargets.length,
+  detailOffset,
+  detailConcurrency,
   summary,
   rerunCandidates: classified.rerunCandidates,
   localFixCandidates: classified.localFixCandidates,
@@ -116,6 +119,20 @@ async function fetchJson(url, { cookie }) {
   const text = await response.text();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`);
   return JSON.parse(text);
+}
+
+async function mapLimit(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function auditEntry(entry) {
