@@ -723,6 +723,43 @@ describe("report validation", () => {
     expect(report.accountRules.maxPosition).toBe("0%");
   });
 
+  test("does not preserve a model buy call when IAS is only barely above observation threshold", () => {
+    const report = validateReportPayload({
+      company: { name: "Borderline Co." },
+      conclusion: "买入",
+      cqs: 50.74,
+      ias: 50.95,
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      valuationAnalysis: {
+        currentPrice: "11.87",
+        fairValueRange: "10.09-13.65",
+        buyRange: "9.26 以下",
+        sellReduceRange: "14.84 以上",
+        conclusion: "模型认为低估。",
+      },
+    });
+
+    expect(report.conclusion).toBe("观察");
+    expect(report.summaryDashboard.positionAdvice).toBe("观察仓");
+  });
+
   test("forces avoid action and zero position for critical red flags", () => {
     const report = validateReportPayload({
       company: { name: "Risk Co." },

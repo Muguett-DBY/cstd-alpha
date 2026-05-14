@@ -46,6 +46,7 @@ export function validateLibraryReport(value: unknown) {
 export function buildReportLibraryEntry(report: InvestmentReport, id: string, importedAt: string): ReportLibraryEntry {
   const industry = cleanIndustryLabel(report.company.industry);
   const sector = cleanIndustryLabel(report.company.sector);
+  const conclusion = normalizeEntryConclusion(report.conclusion, report.cqs, report.ias);
   return {
     id,
     companyName: report.company.name,
@@ -55,9 +56,9 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
     sector,
     cqs: report.cqs,
     ias: report.ias,
-    conclusion: report.conclusion,
+    conclusion,
     qualitativeBand: report.qualitativeBand,
-    positionAdvice: normalizeEntryPositionAdvice(report.conclusion, report.summaryDashboard.positionAdvice || report.accountRules.maxPosition),
+    positionAdvice: normalizeEntryPositionAdvice(conclusion, report.summaryDashboard.positionAdvice || report.accountRules.maxPosition, report.cqs, report.ias),
     valuationView: report.summaryDashboard.valuationView,
     asOf: report.asOf,
     importedAt,
@@ -70,10 +71,26 @@ export function cleanIndustryLabel(value: unknown) {
   return normalizeIndustryLabel(value);
 }
 
-export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["conclusion"], value: unknown) {
+export function normalizeEntryConclusion(conclusion: InvestmentReport["conclusion"], cqs?: number, ias?: number): InvestmentReport["conclusion"] {
+  if (conclusion === "回避" || conclusion === "卖出") return conclusion;
+  const safeCqs = typeof cqs === "number" && Number.isFinite(cqs) ? cqs : 0;
+  const safeIas = typeof ias === "number" && Number.isFinite(ias) ? ias : 0;
+  if (safeIas <= 40) return "回避";
+  if (safeIas <= 50) return "观察";
+  if ((conclusion === "买入" || conclusion === "加仓") && (safeIas < 76 || safeCqs < 70)) {
+    return safeIas >= 66 && safeCqs >= 70 ? "持有" : "观察";
+  }
+  if (conclusion === "持有" && (safeIas < 66 || safeCqs < 70)) return "观察";
+  return conclusion;
+}
+
+export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["conclusion"], value: unknown, cqs?: number, ias?: number) {
   const text = typeof value === "string" ? value.trim() : "";
   if (conclusion === "回避" || conclusion === "卖出") return "0%";
   if ((conclusion === "买入" || conclusion === "加仓") && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) {
+    const safeCqs = typeof cqs === "number" && Number.isFinite(cqs) ? cqs : 0;
+    const safeIas = typeof ias === "number" && Number.isFinite(ias) ? ias : 0;
+    if (safeIas < 76 || safeCqs < 70) return "观察仓";
     return conclusion === "加仓" ? "15-20% 上限" : "标准仓 8-15%";
   }
   if (conclusion === "持有" && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) return "小仓 3-8%";

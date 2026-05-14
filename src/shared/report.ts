@@ -806,9 +806,9 @@ function deriveInvestmentDecision(
   if (ias >= 66 && cqs >= 70 && (valuationView === "低估" || valuationView === "合理偏低" || valuationView === "合理")) {
     return { conclusion: "持有", positionAdvice: "小仓 3-8%" };
   }
-  if (ias >= 51) return { conclusion: "观察", positionAdvice: "观察仓" };
+  if (ias > 50) return { conclusion: "观察", positionAdvice: "观察仓" };
 
-  return { conclusion: modelConclusion, positionAdvice: "观察仓" };
+  return { conclusion: modelConclusion === "卖出" ? "卖出" : "观察", positionAdvice: modelConclusion === "卖出" ? "0%" : "观察仓" };
 }
 
 function normalizeModelConclusion(value: unknown): InvestmentReport["conclusion"] {

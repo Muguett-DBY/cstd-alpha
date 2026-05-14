@@ -2,6 +2,7 @@ import { verifySessionCookie } from "../_shared/auth";
 import {
   buildReportLibraryEntry,
   cleanIndustryLabel,
+  normalizeEntryConclusion,
   normalizeEntryPositionAdvice,
   parseReportLibraryReports,
   reportLibraryIdentity,
@@ -287,6 +288,7 @@ type ReportLibraryRow = {
 };
 
 function rowToEntry(row: ReportLibraryRow): ReportLibraryEntry {
+  const conclusion = normalizeEntryConclusion(row.conclusion, row.cqs, row.ias);
   return {
     id: row.id,
     companyName: row.company_name,
@@ -296,9 +298,9 @@ function rowToEntry(row: ReportLibraryRow): ReportLibraryEntry {
     sector: cleanIndustryLabel(row.sector),
     cqs: row.cqs,
     ias: row.ias,
-    conclusion: row.conclusion,
+    conclusion,
     qualitativeBand: row.qualitative_band,
-    positionAdvice: normalizeEntryPositionAdvice(row.conclusion, row.position_advice),
+    positionAdvice: normalizeEntryPositionAdvice(conclusion, row.position_advice, row.cqs, row.ias),
     valuationView: row.valuation_view,
     asOf: row.as_of,
     importedAt: row.imported_at,

@@ -1,5 +1,5 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
-import { cleanIndustryLabel, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
+import { cleanIndustryLabel, normalizeEntryConclusion, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
 import { formatIndustryLabel, industryGroupForLabel, UNKNOWN_INDUSTRY } from "./industry";
 
 export type RankingSource = "deep-report" | "seed";
@@ -259,6 +259,7 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
   const code = entry.ticker || seed?.code || entry.companyName;
   const listingPlace = seed?.listingPlace || entry.market || "A股";
   const industry = rankingIndustry(entry.industry, entry.sector, seed?.sector);
+  const conclusion = normalizeEntryConclusion(entry.conclusion, entry.cqs, entry.ias);
   return {
     id: libraryEntryIdentityKey(entry),
     rank: 0,
@@ -270,8 +271,8 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     industryGroup: industry.group,
     cqs: entry.cqs,
     ias: entry.ias,
-    conclusion: entry.conclusion,
-    positionAdvice: normalizeEntryPositionAdvice(entry.conclusion, entry.positionAdvice),
+    conclusion,
+    positionAdvice: normalizeEntryPositionAdvice(conclusion, entry.positionAdvice, entry.cqs, entry.ias),
     valuationView: entry.valuationView,
     asOf: entry.asOf,
     source: "deep-report",
