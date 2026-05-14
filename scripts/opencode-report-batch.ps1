@@ -10,6 +10,7 @@
   [string]$Agent = "build",
   [switch]$ImportOnline,
   [switch]$ContinueOnError,
+  [switch]$DirectDeepSeekApi,
   [int]$MaxAttempts = 2,
   [int]$OpencodeTimeoutMinutes = 45,
   [int]$CacheAnchorRepeat = 0
@@ -216,6 +217,87 @@ function Invoke-JsonPost {
   }
 }
 
+function Get-DeepSeekApiKey {
+  if ($env:DEEPSEEK_API_KEY) { return $env:DEEPSEEK_API_KEY }
+
+  $tokenPath = "E:\DEV\codex-tools\TOKEN.md"
+  if (Test-Path -LiteralPath $tokenPath) {
+    $tokenText = Get-Content -LiteralPath $tokenPath -Raw -Encoding UTF8
+    $match = [regex]::Match($tokenText, "(?im)^\s*\[DEEPSEEK\]\s+(sk-[^\s]+)")
+    if ($match.Success) { return $match.Groups[1].Value }
+  }
+
+  throw "DeepSeek API key not found. Set DEEPSEEK_API_KEY or add [DEEPSEEK] to E:\DEV\codex-tools\TOKEN.md."
+}
+
+function Invoke-DeepSeekChatCompletion {
+  param(
+    [string]$Model,
+    [string]$Variant,
+    [string]$Prompt,
+    [string]$EventsPath
+  )
+
+  $apiKey = Get-DeepSeekApiKey
+  $apiModel = $Model -replace "^deepseek/", ""
+  $payload = [ordered]@{
+    model = $apiModel
+    messages = @(
+      [ordered]@{
+        role = "user"
+        content = $Prompt
+      }
+    )
+    stream = $false
+    temperature = 0.1
+  }
+  if ($Variant) {
+    $payload.reasoning_effort = $Variant
+  }
+
+  $requestPath = [System.IO.Path]::GetTempFileName()
+  $responsePath = [System.IO.Path]::GetTempFileName()
+  try {
+    [System.IO.File]::WriteAllText($requestPath, ($payload | ConvertTo-Json -Depth 20 -Compress), [System.Text.UTF8Encoding]::new($false))
+    $httpCode = (curl.exe --silent --show-error --max-time 1800 -o $responsePath -w "%{http_code}" -H "Authorization: Bearer $apiKey" -H "Content-Type: application/json; charset=utf-8" --data-binary "@$requestPath" "https://api.deepseek.com/chat/completions") -join ""
+    $body = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
+    if ($LASTEXITCODE -ne 0 -or -not ($httpCode -match '^2\d\d$')) {
+      throw "DeepSeek API failed with HTTP $httpCode. $body"
+    }
+
+    $response = $body | ConvertFrom-Json
+    $content = [string]$response.choices[0].message.content
+    if (-not $content) { throw "DeepSeek API returned empty content." }
+
+    $usage = $response.usage
+    $cacheHit = 0
+    $cacheMiss = 0
+    if ($usage.prompt_cache_hit_tokens -ne $null) { $cacheHit = [int]$usage.prompt_cache_hit_tokens }
+    elseif ($usage.prompt_tokens_details -and $usage.prompt_tokens_details.cached_tokens -ne $null) { $cacheHit = [int]$usage.prompt_tokens_details.cached_tokens }
+    if ($usage.prompt_cache_miss_tokens -ne $null) { $cacheMiss = [int]$usage.prompt_cache_miss_tokens }
+    elseif ($usage.prompt_tokens -ne $null) { $cacheMiss = [Math]::Max(0, [int]$usage.prompt_tokens - $cacheHit) }
+
+    $events = @(
+      [ordered]@{
+        type = "step_finish"
+        part = [ordered]@{
+          reason = "stop"
+          tokens = [ordered]@{
+            input = $cacheMiss
+            output = [int]$usage.completion_tokens
+            total = [int]$usage.total_tokens
+            cache = [ordered]@{ read = $cacheHit }
+          }
+        }
+      }
+    )
+    ($events | ForEach-Object { $_ | ConvertTo-Json -Depth 20 -Compress }) -join "`n" | Set-Content -LiteralPath $EventsPath -Encoding UTF8
+    return $content
+  } finally {
+    Remove-Item -LiteralPath $requestPath, $responsePath -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function New-ModelEvidenceResponse {
   param([object]$EvidenceResponse)
 
@@ -370,6 +452,32 @@ function Resolve-OpenCodeCommand {
   throw "OpenCode command not found. Install opencode or add it to PATH."
 }
 
+function Resolve-OpenCodeInvocation {
+  $opencodeCommand = Resolve-OpenCodeCommand
+  $opencodeDirectory = Split-Path -Parent $opencodeCommand
+  $opencodeNodeScript = Join-Path $opencodeDirectory "node_modules\opencode-ai\bin\opencode"
+  if (Test-Path -LiteralPath $opencodeNodeScript) {
+    $localNode = Join-Path $opencodeDirectory "node.exe"
+    $nodeCommand = if (Test-Path -LiteralPath $localNode) {
+      $localNode
+    } else {
+      $resolvedNode = Get-Command node.exe -ErrorAction SilentlyContinue
+      if (-not $resolvedNode) { $resolvedNode = Get-Command node -ErrorAction SilentlyContinue }
+      if (-not $resolvedNode) { throw "Node.js command not found for direct opencode invocation." }
+      $resolvedNode.Source
+    }
+    return [pscustomobject]@{
+      FilePath = $nodeCommand
+      PrefixArguments = @($opencodeNodeScript)
+    }
+  }
+
+  return [pscustomobject]@{
+    FilePath = $opencodeCommand
+    PrefixArguments = @()
+  }
+}
+
 function Stop-ProcessTree {
   param([int]$ProcessId)
 
@@ -378,6 +486,85 @@ function Stop-ProcessTree {
     Stop-ProcessTree -ProcessId $child.ProcessId
   }
   Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+function ConvertTo-WindowsCommandLineArgument {
+  param([AllowNull()][string]$Argument)
+
+  if ($null -eq $Argument) { return '""' }
+  if ($Argument.Length -eq 0) { return '""' }
+  if ($Argument -notmatch '[\s"]') { return $Argument }
+
+  $builder = [System.Text.StringBuilder]::new()
+  [void]$builder.Append('"')
+  $backslashes = 0
+  foreach ($char in $Argument.ToCharArray()) {
+    if ($char -eq '\') {
+      $backslashes += 1
+      continue
+    }
+
+    if ($char -eq '"') {
+      [void]$builder.Append('\' * (($backslashes * 2) + 1))
+      [void]$builder.Append('"')
+    } else {
+      [void]$builder.Append('\' * $backslashes)
+      [void]$builder.Append($char)
+    }
+    $backslashes = 0
+  }
+  [void]$builder.Append('\' * ($backslashes * 2))
+  [void]$builder.Append('"')
+  return $builder.ToString()
+}
+
+function Invoke-OpenCodeRun {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$OutputPath,
+    [string]$ErrorPath,
+    [int]$TimeoutMilliseconds,
+    [AllowNull()][string]$InputText = $null
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $FilePath
+  $startInfo.WorkingDirectory = (Get-Location).Path
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = ($null -ne $InputText)
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  if ($null -ne $startInfo.ArgumentList) {
+    foreach ($argument in $Arguments) {
+      [void]$startInfo.ArgumentList.Add($argument)
+    }
+  } else {
+    $startInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-WindowsCommandLineArgument $_ }) -join " ")
+  }
+
+  $process = [System.Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  [void]$process.Start()
+  if ($null -ne $InputText) {
+    $inputBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($InputText)
+    $process.StandardInput.BaseStream.Write($inputBytes, 0, $inputBytes.Length)
+    $process.StandardInput.Close()
+  }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+
+  if (-not $process.WaitForExit($TimeoutMilliseconds)) {
+    Stop-ProcessTree -ProcessId $process.Id
+    [void]$process.WaitForExit(10000)
+    throw "opencode timed out after $([math]::Round($TimeoutMilliseconds / 60000, 2)) minutes."
+  }
+  $process.WaitForExit()
+
+  [System.IO.File]::WriteAllText($OutputPath, $stdoutTask.Result, [System.Text.UTF8Encoding]::new($false))
+  [System.IO.File]::WriteAllText($ErrorPath, $stderrTask.Result, [System.Text.UTF8Encoding]::new($false))
+  return $process.ExitCode
 }
 
 $loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ password = $Password } | ConvertTo-Json)
@@ -398,18 +585,18 @@ $schemaIds = @(
 )
 $cacheAnchor = New-CacheAnchor -Repeat $CacheAnchorRepeat
 $staticPromptDir = if ($UniversePath) { Split-Path -Parent $UniversePath } else { $OutputDir }
-$staticPromptPath = Join-Path $staticPromptDir "cstd-alpha-static-report-prompt-cache-$CacheAnchorRepeat.md"
+$staticPromptPath = Join-Path $staticPromptDir "cstd-alpha-static-report-prompt-cache-$CacheAnchorRepeat-v4.md"
 $staticPrompt = @"
 You are the CSTD Alpha stock report generator.
 Return exactly one JSON object for one report. Do not return Markdown, explanations, or fenced code.
 All human-readable report content must be written in Simplified Chinese.
 
 CSTD Alpha fixed generation contract:
-- Use only the attached evidence.json public evidence, financial table, quote snapshot, and company identity.
+- Use only the evidence JSON public evidence, financial table, quote snapshot, and company identity included below this static contract.
 - Do not fabricate facts, financial numbers, sources, or URLs. If evidence is weak, score conservatively.
 - Provider failures are missing-data evidence only; they are not business weakness by themselves.
 - The output must be a single report object, not a reports array.
-- The attached evidence.json content is already in context; do not call shell/tools to read the file path.
+- The evidence JSON content is already in this input; do not call shell/tools to inspect files or paths.
 - The report must pass CSTD Alpha validateReportPayload and these constraints:
 - scoreItems20 must be an array of 20 objects, not a map/object.
 - oneSentence must be a concise Simplified Chinese investment sentence, not a placeholder.
@@ -417,6 +604,7 @@ CSTD Alpha fixed generation contract:
 - scoreItems20 must contain all 20 ids: $($schemaIds -join ", ")
 - Each score is 0-100.
 - At least 15 scoreItems20 scores must be greater than 0.
+- scoreItems20 evidence and deductions must cite concrete public facts, metrics, or observations when available, not only source names.
 - evidence must contain at least 2 items with freshness = latest-public.
 - conclusion must be one of: 买入, 加仓, 持有, 观察, 减仓, 卖出, 回避.
 - If conclusion is 回避, summaryDashboard.positionAdvice and accountRules.maxPosition must be exactly 0%.
@@ -429,13 +617,16 @@ CSTD Alpha fixed generation contract:
 - valuationAnalysis must contain currentPrice, fairValueRange, buyRange, sellReduceRange, methods, scenarios, conclusion.
 - If public quote price is available, valuationAnalysis.buyRange and valuationAnalysis.sellReduceRange must not be unavailable. Use a conservative quote-anchored safety-margin range when intrinsic valuation evidence is insufficient.
 - fullSections must contain string fields: onePageConclusion, companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, risks, finalConclusion, accountRules.
+- fullSections must be complete but not bloated. onePageConclusion must be 220-380 Chinese characters. companyOverview, industryTrack, businessModel, moat, governance, financialQuality, growthInflection, valuation, and risks must each be 120-280 Chinese characters. finalConclusion and accountRules must each be 100-240 Chinese characters.
+- Do not use one-sentence placeholder sections. If data is missing, still write a complete section that explains what is missing, what can be inferred from available evidence, and how uncertainty affects the judgment.
+- Before returning JSON, verify that no fullSections field is a terse sentence or below the requested length.
 - Use evidence.json financialTenYear rows when available.
 - disclaimer must be exactly: 本报告仅用于学习、研究和个人复盘，不构成任何买卖建议。
 
 DeepSeek prefix-cache stable rubric anchor:
 $cacheAnchor
 
-Read the attached evidence.json. The company identity is inside evidence.json. Produce the final report JSON now.
+After this static contract, read the company block and evidence JSON. The company identity is inside the evidence JSON. Produce the final report JSON now.
 "@
 if (-not (Test-Path -LiteralPath $staticPromptPath)) {
   try {
@@ -523,53 +714,64 @@ foreach ($company in $companies) {
   $evidenceResponse = $evidenceRaw | ConvertFrom-Json
   $fullEvidencePath = Join-Path $companyDir "evidence-full.json"
   $evidenceResponse | ConvertTo-Json -Depth 60 | Set-Content -LiteralPath $fullEvidencePath -Encoding UTF8
-  New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 -Compress | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+  $modelEvidenceJson = New-ModelEvidenceResponse -EvidenceResponse $evidenceResponse | ConvertTo-Json -Depth 60 -Compress
+  $modelEvidenceJson | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+  $modelInputPath = Join-Path $companyDir "report-input.md"
+  $modelInput = @"
+$staticPrompt
+
+Company:
+$($company.name) / $($company.code) / $($company.listingPlace)
+
+Evidence JSON:
+$modelEvidenceJson
+"@
+  $modelInput | Set-Content -LiteralPath $modelInputPath -Encoding UTF8
 
   $prompt = @"
 Company:
 $($company.name) / $($company.code) / $($company.listingPlace)
 
-Static prompt file used for generation:
-$staticPromptPath
-
-Evidence file:
-$evidencePath
+Model input file used for generation:
+$modelInputPath
 "@
   $prompt | Set-Content -LiteralPath $promptPath -Encoding UTF8
 
-  Write-Output "RUN opencode $($company.code) $($company.name)"
-  $opencodeCommand = Resolve-OpenCodeCommand
   Remove-Item -LiteralPath $eventsPath, $opencodeErrorPath -Force -ErrorAction SilentlyContinue
-  $opencodeArgs = @(
-    "run",
-    "Generate the final report JSON from the attached static prompt and evidence file content already in context. Do not inspect paths, write files, or call tools. Return only JSON in the final answer.",
-    "--model", $Model,
-    "--variant", $Variant,
-    "--agent", $Agent,
-    "--format", "json",
-    "--dir", (Get-Location).Path,
-    "--file", $staticPromptPath,
-    "--file", $evidencePath
-  )
-  $opencodeProcess = Start-Process -FilePath $opencodeCommand -ArgumentList $opencodeArgs -WindowStyle Hidden -RedirectStandardOutput $eventsPath -RedirectStandardError $opencodeErrorPath -PassThru
-  if (-not $opencodeProcess.WaitForExit($OpencodeTimeoutMinutes * 60 * 1000)) {
-    Stop-ProcessTree -ProcessId $opencodeProcess.Id
-    throw "opencode timed out after $OpencodeTimeoutMinutes minutes."
-  }
-  $opencodeProcess.WaitForExit()
-  $opencodeProcess.Refresh()
-  if ($null -ne $opencodeProcess.ExitCode -and $opencodeProcess.ExitCode -ne 0) {
-    $stderr = if (Test-Path $opencodeErrorPath) { Get-Content -LiteralPath $opencodeErrorPath -Raw -Encoding UTF8 } else { "" }
-    throw "opencode failed with exit code $($opencodeProcess.ExitCode). $stderr"
+  $opencodeMessage = @"
+$modelInput
+"@
+
+  if ($DirectDeepSeekApi -and $Model -like "deepseek/*") {
+    Write-Output "RUN direct DeepSeek API $($company.code) $($company.name)"
+    $raw = Invoke-DeepSeekChatCompletion -Model $Model -Variant $Variant -Prompt $opencodeMessage -EventsPath $eventsPath
+  } else {
+    Write-Output "RUN opencode $($company.code) $($company.name)"
+    $opencodeInvocation = Resolve-OpenCodeInvocation
+    $opencodeArgs = @($opencodeInvocation.PrefixArguments) + @(
+      "run",
+      "--pure",
+      "--model", $Model,
+      "--variant", $Variant,
+      "--agent", $Agent,
+      "--format", "json",
+      "--dir", (Get-Location).Path
+    )
+    $opencodeExitCode = Invoke-OpenCodeRun -FilePath $opencodeInvocation.FilePath -Arguments $opencodeArgs -OutputPath $eventsPath -ErrorPath $opencodeErrorPath -TimeoutMilliseconds ($OpencodeTimeoutMinutes * 60 * 1000) -InputText $opencodeMessage
+    if ($null -ne $opencodeExitCode -and $opencodeExitCode -ne 0) {
+      $stderr = if (Test-Path $opencodeErrorPath) { Get-Content -LiteralPath $opencodeErrorPath -Raw -Encoding UTF8 } else { "" }
+      throw "opencode failed with exit code $opencodeExitCode. $stderr"
+    }
+
+    $textParts = Get-Content -LiteralPath $eventsPath -Encoding UTF8 | ForEach-Object {
+      try {
+        $event = $_ | ConvertFrom-Json
+        if ($event.type -eq "text" -and $event.part.text) { [string]$event.part.text }
+      } catch {}
+    }
+    $raw = ($textParts -join "").Trim()
   }
 
-  $textParts = Get-Content -LiteralPath $eventsPath -Encoding UTF8 | ForEach-Object {
-    try {
-      $event = $_ | ConvertFrom-Json
-      if ($event.type -eq "text" -and $event.part.text) { [string]$event.part.text }
-    } catch {}
-  }
-  $raw = ($textParts -join "").Trim()
   $raw = Extract-JsonObjectText -Text $raw
   if (-not $raw.StartsWith("{")) {
     if (Test-Path $reportPath) {

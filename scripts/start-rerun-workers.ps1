@@ -7,10 +7,11 @@ param(
   [string]$Agent = "build",
   [int]$Workers = 2,
   [int]$MaxWorkers = 4,
-  [int]$CacheAnchorRepeat = 3000,
+  [int]$CacheAnchorRepeat = 20000,
   [int]$MaxAttempts = 2,
   [int]$OpencodeTimeoutMinutes = 20,
   [switch]$ImportOnline,
+  [switch]$UseOpencodeForDeepSeek,
   [switch]$DryRun
 )
 
@@ -72,6 +73,7 @@ for ($index = 0; $index -lt $Workers; $index += 1) {
     "-CacheAnchorRepeat", $CacheAnchorRepeat
   )
   if ($ImportOnline) { $arguments += "-ImportOnline" }
+  if (-not $UseOpencodeForDeepSeek -and $Model -like "deepseek/*") { $arguments += "-DirectDeepSeekApi" }
 
   $started += [pscustomobject]@{
     Worker = $index + 1
