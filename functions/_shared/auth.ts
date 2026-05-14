@@ -1,8 +1,15 @@
 const COOKIE_NAME = "cstd_alpha_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-export async function createSessionCookie(secret: string, issuedAt = new Date().toISOString()) {
-  const payload = base64UrlEncode(JSON.stringify({ issuedAt }));
+export type SessionPayload = {
+  issuedAt: string;
+  userKey: string;
+  username: string;
+};
+
+export async function createSessionCookie(secret: string, issuedAt = new Date().toISOString(), user?: { userKey?: string; username?: string }) {
+  const username = normalizeUsername(user?.username);
+  const payload = base64UrlEncode(JSON.stringify({ issuedAt, userKey: user?.userKey || usernameToKey(username), username }));
   const signature = await sign(payload, secret);
   const value = `${payload}.${signature}`;
 
@@ -10,25 +17,46 @@ export async function createSessionCookie(secret: string, issuedAt = new Date().
 }
 
 export async function verifySessionCookie(cookieHeader: string | null | undefined, secret: string) {
-  if (!cookieHeader || !secret) return false;
+  return Boolean(await readSessionCookie(cookieHeader, secret));
+}
+
+export async function readSessionCookie(cookieHeader: string | null | undefined, secret: string): Promise<SessionPayload | null> {
+  if (!cookieHeader || !secret) return null;
 
   const value = parseCookie(cookieHeader, COOKIE_NAME);
-  if (!value) return false;
+  if (!value) return null;
 
   const [payload, signature] = value.split(".");
-  if (!payload || !signature) return false;
+  if (!payload || !signature) return null;
 
   const expected = await sign(payload, secret);
-  if (signature !== expected) return false;
+  if (signature !== expected) return null;
 
   try {
-    const decoded = JSON.parse(base64UrlDecode(payload)) as { issuedAt?: string };
-    if (!decoded.issuedAt) return false;
+    const decoded = JSON.parse(base64UrlDecode(payload)) as Partial<SessionPayload>;
+    if (!decoded.issuedAt) return null;
     const ageSeconds = (Date.now() - new Date(decoded.issuedAt).getTime()) / 1000;
-    return ageSeconds >= 0 && ageSeconds <= SESSION_TTL_SECONDS;
+    if (ageSeconds < 0 || ageSeconds > SESSION_TTL_SECONDS) return null;
+    const username = normalizeUsername(decoded.username);
+    return {
+      issuedAt: decoded.issuedAt,
+      username,
+      userKey: decoded.userKey || usernameToKey(username),
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function normalizeUsername(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || "默认用户";
+}
+
+export function usernameToKey(value: unknown) {
+  const username = normalizeUsername(value);
+  if (username === "默认用户") return "default";
+  return username.toLowerCase().replace(/\s+/g, "-").slice(0, 80) || "default";
 }
 
 export function parseCookie(cookieHeader: string, name: string) {

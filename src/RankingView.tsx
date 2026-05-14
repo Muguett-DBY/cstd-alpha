@@ -79,14 +79,16 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setLibraryPage(1);
-    setQuery("");
-    setSector("全部行业");
-    setSource("deep-report");
-    setLibraryEntries([]);
-    setAnchorLibraryEntries([]);
-    setLibraryTotal(0);
-    setMatchedSeedCodes(new Set());
+    queueMicrotask(() => {
+      setLibraryPage(1);
+      setQuery("");
+      setSector("全部行业");
+      setSource("deep-report");
+      setLibraryEntries([]);
+      setAnchorLibraryEntries([]);
+      setLibraryTotal(0);
+      setMatchedSeedCodes(new Set());
+    });
   }, [market]);
 
   const remoteLibraryPage = usesClientSideLibrary ? 1 : libraryPage;
@@ -97,7 +99,9 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   useEffect(() => {
     let cancelled = false;
     const offset = (remoteLibraryPage - 1) * LIBRARY_PAGE_SIZE;
-    setLibraryPhase("loading");
+    queueMicrotask(() => {
+      if (!cancelled) setLibraryPhase("loading");
+    });
     const seedCodes = config.seeds.map((seed) => seed.code);
     const request = usesClientSideLibrary
       ? fetchAllMarketLibraryEntries(config.marketParam, seedCodes)
@@ -393,7 +397,7 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[])
   const entries: ReportLibraryEntry[] = [];
   const anchorEntries: ReportLibraryEntry[] = [];
   const matchedTickers = new Set<string>();
-  let total = 0;
+  let total: number;
   for (let offset = 0; ; offset += CLIENT_FILTERED_LIBRARY_LIMIT) {
     const page = await fetchReportLibrary({
       limit: CLIENT_FILTERED_LIBRARY_LIMIT,

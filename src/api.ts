@@ -1,6 +1,7 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
+import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -45,20 +46,24 @@ export type ReportLibraryList = {
   matchedTickers?: string[];
 };
 
-export async function checkSession() {
+export async function checkSession(): Promise<UserSession | null> {
   const response = await fetch("/api/session", { credentials: "include" });
-  return response.ok;
+  if (!response.ok) return null;
+  const data = (await response.json()) as { user?: UserSession | null };
+  return data.user ?? null;
 }
 
-export async function login(password: string) {
+export async function login(password: string, username?: string): Promise<UserSession | null> {
   const response = await fetch("/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, username }),
   });
 
   if (!response.ok) throw new Error((await readError(response)) || "登录失败。");
+  const data = (await response.json()) as { user?: UserSession | null };
+  return data.user ?? null;
 }
 
 export async function searchCompanies(query: string): Promise<CompanyCandidate[]> {
@@ -155,6 +160,53 @@ export async function importReportLibraryReports(reports: InvestmentReport[]): P
   if (!response.ok) throw new Error((await readError(response)) || "报告导入失败。");
   const data = (await response.json()) as { imported?: ReportLibraryEntry[] };
   return data.imported ?? [];
+}
+
+export async function fetchWatchlist(): Promise<{ items: WatchlistItem[]; user?: UserSession }> {
+  const response = await fetch("/api/watchlist", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "自选股读取失败。");
+  const data = (await response.json()) as { items?: WatchlistItem[]; user?: UserSession };
+  return { items: data.items ?? [], user: data.user };
+}
+
+export async function addWatchlistItem(input: { company: CompanyCandidate; reportLibraryId?: string }): Promise<WatchlistItem> {
+  const response = await fetch("/api/watchlist", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "加入自选失败。");
+  const data = (await response.json()) as { item?: WatchlistItem };
+  if (!data.item) throw new Error("加入自选失败。");
+  return data.item;
+}
+
+export async function removeWatchlistItem(id: string) {
+  const response = await fetch(`/api/watchlist?id=${encodeURIComponent(id)}`, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "移除自选失败。");
+}
+
+export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ analyses: TemplateAnalysisResult[]; templates: ResearchTemplate[] }> {
+  const params = new URLSearchParams();
+  if (watchlistId) params.set("watchlistId", watchlistId);
+  const response = await fetch(`/api/template-analysis${params.size ? `?${params.toString()}` : ""}`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "模板分析读取失败。");
+  const data = (await response.json()) as { analyses?: TemplateAnalysisResult[]; templates?: ResearchTemplate[] };
+  return { analyses: data.analyses ?? [], templates: data.templates ?? [] };
+}
+
+export async function generateTemplateAnalysis(input: { watchlistId: string; templateId: string }): Promise<TemplateAnalysisResult> {
+  const response = await fetch("/api/template-analysis", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "模板分析生成失败。");
+  const data = (await response.json()) as { analysis?: TemplateAnalysisResult };
+  if (!data.analysis) throw new Error("模板分析生成失败。");
+  return data.analysis;
 }
 
 async function* readNdjson(response: Response): AsyncGenerator<Record<string, unknown>> {

@@ -2,18 +2,22 @@ import { useEffect, useState } from "react";
 import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
+import { MyResearchView } from "./MyResearchView";
 import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
+import type { UserSession } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
-type AppView = "report" | "ranking";
+type AppView = "report" | "ranking" | "mine";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [user, setUser] = useState<UserSession | null>(null);
   const [checking, setChecking] = useState(true);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
@@ -38,7 +42,10 @@ function App() {
 
   useEffect(() => {
     void checkSession()
-      .then(setAuthenticated)
+      .then((session) => {
+        setUser(session);
+        setAuthenticated(Boolean(session));
+      })
       .finally(() => setChecking(false));
   }, []);
 
@@ -52,7 +59,8 @@ function App() {
     event.preventDefault();
     setError("");
     try {
-      await login(password);
+      const session = await login(password, username);
+      setUser(session);
       setAuthenticated(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败。");
@@ -250,6 +258,20 @@ function App() {
     setCacheNotice("已从排行榜选择公司，可生成完整评分报告或导入深度报告 JSON。");
   }
 
+  function openCompanyFromMine(company: CompanyCandidate) {
+    setSelectedCompany(company);
+    setQuery(company.name);
+    setChartBundle(null);
+    setChartError("");
+    setReport(null);
+    setReportMetrics(null);
+    setProgress([]);
+    setEvidenceCount(0);
+    setPhase("idle");
+    setActiveView("report");
+    setCacheNotice("已从我的自选股打开公司，可生成或查看完整评分报告。");
+  }
+
   if (checking) return <div className="loading-screen">CSTD Alpha</div>;
 
   if (!authenticated) {
@@ -259,6 +281,14 @@ function App() {
           <p className="brand">CSTD Alpha</p>
           <h1 id="auth-title">私人公司深度研究工具</h1>
           <form onSubmit={submitLogin} className="auth-form">
+            <label htmlFor="username">用户名</label>
+            <input
+              id="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              placeholder="用于区分我的自选股"
+            />
             <label htmlFor="password">访问密码</label>
             <input
               id="password"
@@ -320,6 +350,9 @@ function App() {
             }}
           >
             港股排行
+          </button>
+          <button type="button" className={activeView === "mine" ? "active" : ""} onClick={() => setActiveView("mine")}>
+            我的
           </button>
         </nav>
 
@@ -398,6 +431,8 @@ function App() {
       <section className="workspace">
         {activeView === "ranking" ? (
           <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
+        ) : activeView === "mine" ? (
+          <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
         ) : (
           <>
             {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (

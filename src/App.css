@@ -774,6 +774,89 @@ button:disabled {
   padding: 0 10px;
 }
 
+.my-workspace {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.my-actions {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(180px, 1fr) minmax(180px, 240px) minmax(150px, 190px);
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.my-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.45fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.my-list,
+.analysis-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.my-list h3,
+.analysis-panel h3 {
+  margin-top: 0;
+}
+
+.my-list article {
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.my-list article:first-of-type {
+  border-top: 0;
+}
+
+.my-list article.active {
+  background: #f6fbf8;
+}
+
+.my-list article > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.my-list article button {
+  min-height: 34px;
+}
+
+.analysis-result {
+  display: grid;
+  gap: 16px;
+}
+
+.analysis-lists {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analysis-lists section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfff8;
+}
+
+.analysis-lists h4 {
+  margin: 0 0 8px;
+}
+
 .score-tile,
 .decision,
 .info-tile {
@@ -1026,7 +1109,10 @@ button:disabled {
   .financial-mini-grid,
   .ranking-header,
   .ranking-summary,
-  .ranking-tools {
+  .ranking-tools,
+  .my-actions,
+  .my-grid,
+  .analysis-lists {
     grid-template-columns: 1fr;
   }
 
