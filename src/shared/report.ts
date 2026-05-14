@@ -693,14 +693,17 @@ function normalizeValuationAnalysis(value: unknown): ValuationAnalysis {
           probability: optionalString(item.probability) ?? "待验证",
         }))
     : [];
+  const currentPrice = meaningfulValuationField(raw.currentPrice) ?? "待验证";
+  const buyRange = meaningfulValuationField(raw.buyRange) ?? fallbackBuyRange(currentPrice);
+  const sellReduceRange = meaningfulValuationField(raw.sellReduceRange) ?? fallbackSellReduceRange(currentPrice);
   return {
-    currentPrice: optionalString(raw.currentPrice) ?? "待验证",
-    fairValueRange: optionalString(raw.fairValueRange) ?? "待验证",
-    buyRange: optionalString(raw.buyRange) ?? "待验证",
-    sellReduceRange: optionalString(raw.sellReduceRange) ?? "待验证",
+    currentPrice,
+    fairValueRange: meaningfulValuationField(raw.fairValueRange) ?? "待验证",
+    buyRange: buyRange ?? "待验证",
+    sellReduceRange: sellReduceRange ?? "待验证",
     methods: stringArray(raw.methods),
     scenarios,
-    conclusion: optionalString(raw.conclusion) ?? "数据不足：模型未提供完整估值结论。",
+    conclusion: meaningfulValuationField(raw.conclusion) ?? "数据不足：模型未提供完整估值结论。",
   };
 }
 
@@ -749,12 +752,22 @@ function isPlaceholderText(value: unknown) {
     text === "数据不足" ||
     text === "无法计算" ||
     text === "不可用" ||
+    text === "unavailable" ||
     text === "无" ||
     text === "N/A" ||
     text === "-" ||
     text === "未分类风险" ||
-    text.startsWith("未命名")
+    text.startsWith("未命名") ||
+    /^(暂无报价|无公开报价|缺乏实时|行情数据暂不可用)$/i.test(text)
   );
+}
+
+function meaningfulValuationField(value: unknown) {
+  const text = optionalString(value)?.trim();
+  if (!text || isPlaceholderText(text)) return undefined;
+  if (/^(待验证|数据不足|unavailable|N\/A)$/i.test(text)) return undefined;
+  if (/不可用|缺失|无法|暂无报价|无公开报价|缺乏实时/.test(text)) return undefined;
+  return text;
 }
 
 function normalizeAccountRules(value: unknown, cqs: number, decision: DerivedInvestmentDecision): AccountRules {
@@ -776,6 +789,8 @@ function deriveInvestmentDecision(
   valuationAnalysis: ValuationAnalysis,
 ): DerivedInvestmentDecision {
   const criticalRedFlag = redFlags.some((flag) => flag.severity === "critical" || flag.cap <= 30);
+  const modelConclusion = normalizeModelConclusion(value);
+  if (modelConclusion === "回避") return { conclusion: "回避", positionAdvice: "0%" };
   if (criticalRedFlag || ias <= 30) return { conclusion: "回避", positionAdvice: "0%" };
   if (ias <= 40) return { conclusion: "回避", positionAdvice: "0%" };
   if (ias <= 50) return { conclusion: "观察", positionAdvice: "0-3% 观察上限" };
@@ -793,7 +808,7 @@ function deriveInvestmentDecision(
   }
   if (ias >= 51) return { conclusion: "观察", positionAdvice: "观察仓" };
 
-  return { conclusion: normalizeModelConclusion(value), positionAdvice: "观察仓" };
+  return { conclusion: modelConclusion, positionAdvice: "观察仓" };
 }
 
 function normalizeModelConclusion(value: unknown): InvestmentReport["conclusion"] {
@@ -803,7 +818,36 @@ function normalizeModelConclusion(value: unknown): InvestmentReport["conclusion"
 
 function hasReliableCurrentPrice(value: string) {
   if (parseFirstNumber(value) === undefined) return false;
-  return !/数据不足|待验证|不可用|缺失|无法|未获取|假设|估算|推算/.test(value);
+  return !/数据不足|待验证|不可用|缺失|无法|未获取|假设|估算|推算|暂无报价|无公开报价|缺乏实时|行情数据暂/.test(value);
+}
+
+function fallbackBuyRange(currentPrice: string) {
+  return fallbackPriceRange(currentPrice, 0.85, "低于", "相对当前价留出约 15% 安全边际");
+}
+
+function fallbackSellReduceRange(currentPrice: string) {
+  return fallbackPriceRange(currentPrice, 1.25, "高于", "相对当前价溢价约 25%");
+}
+
+function fallbackPriceRange(currentPrice: string, multiplier: number, prefix: string, note: string) {
+  if (!hasReliableCurrentPrice(currentPrice)) return undefined;
+  const current = parseFirstNumber(currentPrice);
+  if (current === undefined || current <= 0) return undefined;
+  const unit = valuationUnit(currentPrice);
+  return `${prefix} ${formatValuationNumber(current * multiplier)}${unit ? ` ${unit}` : ""}（${note}）`;
+}
+
+function valuationUnit(value: string) {
+  if (/港元|HKD/i.test(value)) return "HKD";
+  if (/美元|USD/i.test(value)) return "USD";
+  if (/元|CNY/i.test(value)) return "CNY";
+  return "";
+}
+
+function formatValuationNumber(value: number) {
+  if (value >= 100) return value.toFixed(1).replace(/\.0$/, "");
+  if (value >= 10) return value.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+  return value.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
 }
 
 function summarizeItems(items: ScoreItem[]) {

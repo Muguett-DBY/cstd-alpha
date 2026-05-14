@@ -57,7 +57,7 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
     ias: report.ias,
     conclusion: report.conclusion,
     qualitativeBand: report.qualitativeBand,
-    positionAdvice: report.summaryDashboard.positionAdvice || report.accountRules.maxPosition,
+    positionAdvice: normalizeEntryPositionAdvice(report.conclusion, report.summaryDashboard.positionAdvice || report.accountRules.maxPosition),
     valuationView: report.summaryDashboard.valuationView,
     asOf: report.asOf,
     importedAt,
@@ -68,6 +68,16 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
 
 export function cleanIndustryLabel(value: unknown) {
   return normalizeIndustryLabel(value);
+}
+
+export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["conclusion"], value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (conclusion === "回避" || conclusion === "卖出") return "0%";
+  if ((conclusion === "买入" || conclusion === "加仓") && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) {
+    return conclusion === "加仓" ? "15-20% 上限" : "标准仓 8-15%";
+  }
+  if (conclusion === "持有" && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) return "小仓 3-8%";
+  return text || "观察仓";
 }
 
 export function importedEntryToReport(entry: ReportLibraryEntry, report: InvestmentReport): ImportedLibraryReport {

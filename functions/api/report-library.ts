@@ -2,6 +2,7 @@ import { verifySessionCookie } from "../_shared/auth";
 import {
   buildReportLibraryEntry,
   cleanIndustryLabel,
+  normalizeEntryPositionAdvice,
   parseReportLibraryReports,
   reportLibraryIdentity,
   validateLibraryReport,
@@ -297,7 +298,7 @@ function rowToEntry(row: ReportLibraryRow): ReportLibraryEntry {
     ias: row.ias,
     conclusion: row.conclusion,
     qualitativeBand: row.qualitative_band,
-    positionAdvice: row.position_advice,
+    positionAdvice: normalizeEntryPositionAdvice(row.conclusion, row.position_advice),
     valuationView: row.valuation_view,
     asOf: row.as_of,
     importedAt: row.imported_at,

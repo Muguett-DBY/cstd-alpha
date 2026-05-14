@@ -1,5 +1,5 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
-import { cleanIndustryLabel, type ReportLibraryEntry } from "./report-library";
+import { cleanIndustryLabel, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
 import { formatIndustryLabel, industryGroupForLabel, UNKNOWN_INDUSTRY } from "./industry";
 
 export type RankingSource = "deep-report" | "seed";
@@ -271,7 +271,7 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     cqs: entry.cqs,
     ias: entry.ias,
     conclusion: entry.conclusion,
-    positionAdvice: entry.positionAdvice,
+    positionAdvice: normalizeEntryPositionAdvice(entry.conclusion, entry.positionAdvice),
     valuationView: entry.valuationView,
     asOf: entry.asOf,
     source: "deep-report",

@@ -630,6 +630,99 @@ describe("report validation", () => {
     expect(report.accountRules.companyGrade).toContain("A+");
   });
 
+  test("treats literal unavailable valuation fields as missing and fills safety-margin ranges when price is reliable", () => {
+    const report = validateReportPayload({
+      company: { name: "Priced Co." },
+      conclusion: "观察",
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 70,
+        label: "好",
+        evidence: ["公开财务和行情数据可用"],
+        deductions: ["估值仍需保守"],
+        recentChange: "最近 12 个月稳定。",
+        reason: "按公开证据给出中性偏好评分。",
+      })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      valuationAnalysis: {
+        currentPrice: "10.00 CNY",
+        fairValueRange: "unavailable",
+        buyRange: "unavailable",
+        sellReduceRange: "暂无报价",
+        conclusion: "unavailable",
+      },
+    });
+
+    expect(report.valuationAnalysis.fairValueRange).toBe("待验证");
+    expect(report.valuationAnalysis.buyRange).toContain("8.5 CNY");
+    expect(report.valuationAnalysis.sellReduceRange).toContain("12.5 CNY");
+    expect(report.valuationAnalysis.conclusion).toContain("数据不足");
+  });
+
+  test("respects an explicit avoid conclusion by forcing zero position even when scores are midrange", () => {
+    const report = validateReportPayload({
+      company: { name: "Avoid Co." },
+      conclusion: "回避",
+      scoreItems20: SCORE_ITEMS_20.map((item) => ({
+        ...item,
+        score: 55,
+        label: "一般",
+        evidence: ["公开证据不足以支持建仓"],
+        deductions: ["模型结论要求回避"],
+        recentChange: "最近 12 个月风险未解除。",
+        reason: "分数中性但结论明确回避时应保持零仓位。",
+      })),
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      summaryDashboard: { positionAdvice: "0-3% 观察上限" },
+      accountRules: { maxPosition: "0-3% 观察上限" },
+      valuationAnalysis: {
+        currentPrice: "10",
+        fairValueRange: "8-12",
+        buyRange: "6 以下",
+        sellReduceRange: "15 以上",
+        conclusion: "估值中性。",
+      },
+    });
+
+    expect(report.conclusion).toBe("回避");
+    expect(report.summaryDashboard.positionAdvice).toBe("0%");
+    expect(report.accountRules.maxPosition).toBe("0%");
+  });
+
   test("forces avoid action and zero position for critical red flags", () => {
     const report = validateReportPayload({
       company: { name: "Risk Co." },
