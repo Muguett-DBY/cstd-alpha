@@ -57,4 +57,46 @@ describe("ranking entries", () => {
 
     expect(entry?.sector).toBe("行业待验证");
   });
+
+  test("normalizes provider industry levels for display", () => {
+    const entries = buildRankingEntries([], [
+      {
+        id: "bank",
+        companyName: "测试银行",
+        ticker: "600000",
+        market: "SH-A",
+        industry: "银行Ⅱ",
+        cqs: 60,
+        ias: 61,
+        conclusion: "观察",
+        qualitativeBand: "中规中矩",
+        positionAdvice: "观察仓",
+        valuationView: "合理",
+        asOf: "2026-05-14T00:00:00.000Z",
+        importedAt: "2026-05-14T00:00:00.000Z",
+        evidenceCount: 3,
+        scoreItemCount: 20,
+      },
+      {
+        id: "unknown",
+        companyName: "未知行业",
+        ticker: "300000",
+        market: "SZ-A",
+        industry: "-",
+        cqs: 55,
+        ias: 56,
+        conclusion: "观察",
+        qualitativeBand: "中规中矩",
+        positionAdvice: "观察仓",
+        valuationView: "合理",
+        asOf: "2026-05-14T00:00:00.000Z",
+        importedAt: "2026-05-14T00:00:00.000Z",
+        evidenceCount: 3,
+        scoreItemCount: 20,
+      },
+    ]);
+
+    expect(entries.find((entry) => entry.name === "测试银行")?.sector).toBe("银行");
+    expect(entries.find((entry) => entry.name === "未知行业")?.sector).toBe("行业待验证");
+  });
 });
