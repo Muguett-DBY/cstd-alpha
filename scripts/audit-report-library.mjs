@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const repoRoot = process.cwd();
 const defaultAccessPath = "E:\\DEV\\codex-tools\\cstd-alpha-access.txt";
 const defaultOutputDir = "E:\\DEV\\测试\\cstd-alpha-report-audit";
 
@@ -28,6 +27,7 @@ for (const entry of detailTargets) {
     detailAudits.push(auditReport(record.entry ?? entry, record.report));
   } catch (error) {
     detailAudits.push({
+      source: "detail",
       id: entry.id,
       ticker: entry.ticker,
       companyName: entry.companyName,
@@ -40,6 +40,7 @@ for (const entry of detailTargets) {
 const entryAudits = entries.map(auditEntry);
 const issues = [...entryAudits, ...detailAudits].filter((item) => item.issues.length);
 const summary = summarize(entries, entryAudits, detailAudits);
+const classified = classifyIssues(issues);
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const output = {
   generatedAt: new Date().toISOString(),
@@ -47,13 +48,25 @@ const output = {
   entryCount: entries.length,
   detailChecked: detailTargets.length,
   summary,
+  rerunCandidates: classified.rerunCandidates,
+  localFixCandidates: classified.localFixCandidates,
+  manualReviewCandidates: classified.manualReviewCandidates,
   topIssues: issues.slice(0, 200),
+  allIssues: issues,
 };
 
 const outputPath = path.join(outputDir, `report-library-audit-${stamp}.json`);
+const rerunPath = path.join(outputDir, `report-library-rerun-candidates-${stamp}.json`);
+const localFixPath = path.join(outputDir, `report-library-local-fix-candidates-${stamp}.json`);
+const manualReviewPath = path.join(outputDir, `report-library-manual-review-${stamp}.json`);
 await writeFile(outputPath, JSON.stringify(output, null, 2), "utf8");
+await Promise.all([
+  writeFile(rerunPath, JSON.stringify(classified.rerunCandidates, null, 2), "utf8"),
+  writeFile(localFixPath, JSON.stringify(classified.localFixCandidates, null, 2), "utf8"),
+  writeFile(manualReviewPath, JSON.stringify(classified.manualReviewCandidates, null, 2), "utf8"),
+]);
 
-console.log(JSON.stringify({ outputPath, ...summary }, null, 2));
+console.log(JSON.stringify({ outputPath, rerunPath, localFixPath, manualReviewPath, ...summary }, null, 2));
 
 function parseArgs(values) {
   const parsed = {};
@@ -118,12 +131,13 @@ function auditEntry(entry) {
   if (/无公开报价|缺乏实时|不可用|无法|unavailable/i.test(valuation)) issues.push("valuation_mentions_missing_quote");
   if (Number(entry.evidenceCount) < 2) issues.push("too_few_evidence_items");
   if (Number(entry.scoreItemCount) < 15) issues.push("too_few_score_items");
-  return issueRecord(entry, issues);
+  if (Number(entry.scoreItemCount) < 20) issues.push(`partial_score_items:${Number(entry.scoreItemCount) || 0}`);
+  return issueRecord(entry, issues, "entry");
 }
 
 function auditReport(entry, report) {
   const issues = [];
-  if (!report || typeof report !== "object") return issueRecord(entry, ["missing_report_object"]);
+  if (!report || typeof report !== "object") return issueRecord(entry, ["missing_report_object"], "detail");
   const valuation = report.valuationAnalysis ?? {};
   const dashboard = report.summaryDashboard ?? {};
   const accountRules = report.accountRules ?? {};
@@ -139,7 +153,7 @@ function auditReport(entry, report) {
   if (isMissingValuation(valuation.sellReduceRange)) issues.push("missing_sell_reduce_range");
   const unavailableEvidence = Array.isArray(report.evidence) ? report.evidence.filter((item) => item?.freshness === "unavailable").length : 0;
   if (unavailableEvidence > 3) issues.push(`many_unavailable_evidence:${unavailableEvidence}`);
-  return issueRecord(entry, issues);
+  return issueRecord(entry, issues, "detail");
 }
 
 function summarize(entries, entryAudits, detailAudits) {
@@ -156,8 +170,57 @@ function summarize(entries, entryAudits, detailAudits) {
   };
 }
 
-function issueRecord(entry, issues) {
+function classifyIssues(issues) {
+  const rerunIssueNames = new Set([
+    "detail_fetch_failed",
+    "missing_report_object",
+    "missing_current_price",
+    "too_few_score_items",
+    "partial_score_items",
+    "score_items_not_20",
+    "placeholder_one_sentence",
+    "too_few_evidence_items",
+  ]);
+  const localFixIssueNames = new Set([
+    "avoid_with_nonzero_position",
+    "position_mentions_quote_missing",
+    "valuation_mentions_missing_quote",
+    "missing_buy_range",
+    "missing_sell_reduce_range",
+    "report_avoid_position_not_zero",
+    "report_avoid_account_max_not_zero",
+  ]);
+  const rerunCandidates = [];
+  const localFixCandidates = [];
+  const manualReviewCandidates = [];
+  for (const issue of issues) {
+    const names = issue.issues.map((item) => item.split(":")[0]);
+    if (names.some((name) => rerunIssueNames.has(name))) rerunCandidates.push(issue);
+    else if (names.some((name) => localFixIssueNames.has(name))) localFixCandidates.push(issue);
+    else manualReviewCandidates.push(issue);
+  }
   return {
+    rerunCandidates: uniqueIssueRecords(rerunCandidates),
+    localFixCandidates: uniqueIssueRecords(localFixCandidates),
+    manualReviewCandidates: uniqueIssueRecords(manualReviewCandidates),
+  };
+}
+
+function uniqueIssueRecords(records) {
+  const seen = new Set();
+  const result = [];
+  for (const record of records) {
+    const key = `${record.source}:${record.id}:${record.issues.join("|")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(record);
+  }
+  return result;
+}
+
+function issueRecord(entry, issues, source) {
+  return {
+    source,
     id: entry?.id,
     ticker: entry?.ticker,
     companyName: entry?.companyName,
