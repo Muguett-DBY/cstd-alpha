@@ -676,6 +676,43 @@ describe("report validation", () => {
     expect(report.valuationAnalysis.conclusion).toContain("数据不足");
   });
 
+  test("does not keep contradictory quote-missing dashboard valuation when price is reliable", () => {
+    const report = validateReportPayload({
+      company: { name: "Contradiction Co." },
+      conclusion: "观察",
+      cqs: 72,
+      ias: 68,
+      summaryDashboard: { valuationView: "当前无公开报价，基于净利润估算合理市值" },
+      evidence: [
+        {
+          title: "Quote",
+          source: "Public quote",
+          url: "https://example.com/quote",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+        {
+          title: "Financials",
+          source: "Public financials",
+          url: "https://example.com/financials",
+          retrievedAt: "2026-05-10T00:00:00.000Z",
+          freshness: "latest-public",
+          notes: "ok",
+        },
+      ],
+      valuationAnalysis: {
+        currentPrice: "10.00 CNY",
+        fairValueRange: "8-12 CNY",
+        buyRange: "8 CNY 以下",
+        sellReduceRange: "13 CNY 以上",
+        conclusion: "估值合理。",
+      },
+    });
+
+    expect(report.summaryDashboard.valuationView).toBe("合理");
+  });
+
   test("respects an explicit avoid conclusion by forcing zero position even when scores are midrange", () => {
     const report = validateReportPayload({
       company: { name: "Avoid Co." },

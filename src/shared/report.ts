@@ -644,8 +644,7 @@ function normalizeFinancialTenYear(value: unknown): FinancialTenYear {
 }
 
 function meaningfulValuationView(value: unknown) {
-  const text = optionalString(value);
-  return text && text !== "待验证" ? text : undefined;
+  return meaningfulValuationField(value);
 }
 
 function deriveValuationView(valuation: ValuationAnalysis | undefined) {

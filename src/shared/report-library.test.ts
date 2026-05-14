@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildReportLibraryEntry, normalizeEntryConclusion, normalizeEntryPositionAdvice } from "./report-library";
+import { buildReportLibraryEntry, normalizeEntryConclusion, normalizeEntryPositionAdvice, normalizeEntryValuationView } from "./report-library";
 import { validateReportPayload } from "./report";
 
 describe("report library entries", () => {
@@ -15,6 +15,12 @@ describe("report library entries", () => {
     expect(normalizeEntryConclusion("买入", 50.74, 50.95)).toBe("观察");
     expect(normalizeEntryConclusion("买入", 72, 70)).toBe("持有");
     expect(normalizeEntryConclusion("买入", 80, 78)).toBe("买入");
+  });
+
+  test("does not surface stale quote-missing valuation text in ranking entries", () => {
+    expect(normalizeEntryValuationView("当前无公开报价，基于净利润估算合理市值")).toBe("估值待复核");
+    expect(normalizeEntryValuationView("缺乏实时估值数据，暂无法计算")).toBe("估值待复核");
+    expect(normalizeEntryValuationView("当前PE 15倍，处于历史低位")).toBe("当前PE 15倍，处于历史低位");
   });
 
   test("builds report library entries from normalized report decisions", () => {

@@ -59,7 +59,7 @@ export function buildReportLibraryEntry(report: InvestmentReport, id: string, im
     conclusion,
     qualitativeBand: report.qualitativeBand,
     positionAdvice: normalizeEntryPositionAdvice(conclusion, report.summaryDashboard.positionAdvice || report.accountRules.maxPosition, report.cqs, report.ias),
-    valuationView: report.summaryDashboard.valuationView,
+    valuationView: normalizeEntryValuationView(report.summaryDashboard.valuationView),
     asOf: report.asOf,
     importedAt,
     evidenceCount: report.evidence.length,
@@ -95,6 +95,15 @@ export function normalizeEntryPositionAdvice(conclusion: InvestmentReport["concl
   }
   if (conclusion === "持有" && (!text || /观察|待验证|报价缺失|暂不建仓/.test(text))) return "小仓 3-8%";
   return text || "观察仓";
+}
+
+export function normalizeEntryValuationView(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "估值待复核";
+  if (/unavailable|无公开报价|暂无报价|缺乏实时|行情数据暂不可用|报价缺失|不可用|无法计算/i.test(text)) {
+    return "估值待复核";
+  }
+  return text;
 }
 
 export function importedEntryToReport(entry: ReportLibraryEntry, report: InvestmentReport): ImportedLibraryReport {
