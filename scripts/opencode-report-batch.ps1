@@ -665,7 +665,11 @@ foreach ($company in $companies) {
       Write-Output "SKIP locked $($company.code) $($company.name)"
       continue
     }
-    Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+    try {
+      if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+      }
+    } catch {}
   }
   try {
     $lockStream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
