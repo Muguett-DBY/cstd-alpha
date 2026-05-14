@@ -282,8 +282,9 @@ describe("API client", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ entries: [], total: 0, matchedTickers: [] })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchReportLibrary({ market: "us", limit: 20, offset: 40, sort: "ias", direction: "desc" });
+    await fetchReportLibrary({ market: "us", limit: 20, offset: 40, sort: "ias", direction: "desc", tickers: ["000333", "603259"] });
 
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("market=us"), expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("tickers=000333%2C603259"), expect.objectContaining({ credentials: "include" }));
   });
 });

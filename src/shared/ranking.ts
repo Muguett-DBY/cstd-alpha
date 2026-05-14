@@ -1,6 +1,7 @@
 import type { CompanyCandidate, InvestmentReport } from "./report";
 import { normalizeEntryConclusion, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
 import { formatLocalizedIndustry, localizedCompanyName, localizedIndustry } from "./market-display";
+import { crossMarketAnchorForListing } from "./cross-market";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -139,24 +140,34 @@ export const A_SHARE_RANKING_SEEDS: RankingSeed[] = [
   { code: "601919", name: "中远海控", exchange: "上海证券交易所", listingPlace: "沪A", sector: "交通运输", baseline: 60 },
 ];
 
-export function buildRankingEntries(reports: InvestmentReport[] = [], libraryEntries: ReportLibraryEntry[] = [], seeds: readonly RankingSeed[] = A_SHARE_RANKING_SEEDS): RankingEntry[] {
+export function buildRankingEntries(
+  reports: InvestmentReport[] = [],
+  libraryEntries: ReportLibraryEntry[] = [],
+  seeds: readonly RankingSeed[] = A_SHARE_RANKING_SEEDS,
+  anchorLibraryEntries: ReportLibraryEntry[] = [],
+): RankingEntry[] {
   const reportByKey = new Map(reports.map((report) => [reportRankingMatchKey(report), report]));
   const libraryEntryByKey = new Map(libraryEntries.map((entry) => [libraryEntryRankingMatchKey(entry), entry]));
+  const anchorEntryByTicker = new Map(anchorLibraryEntries.map((entry) => [normalizeIdentity(entry.ticker), entry]));
   const seedKeys = new Set<string>();
   const rows = seeds.map((seed, index) => {
     const seedKey = seedRankingMatchKey(seed);
     seedKeys.add(seedKey);
     const report = reportByKey.get(seedKey);
     const libraryEntry = libraryEntryByKey.get(seedKey);
-    return report ? reportToRankingEntry(report, seed, index) : libraryEntry ? libraryEntryToRankingEntry(libraryEntry, seed, index) : seedToRankingEntry(seed, index);
+    return report
+      ? reportToRankingEntry(report, seed, index, anchorEntryForListing(report.company.ticker, report.company.market, anchorEntryByTicker))
+      : libraryEntry
+        ? libraryEntryToRankingEntry(libraryEntry, seed, index, anchorEntryForListing(libraryEntry.ticker, libraryEntry.market, anchorEntryByTicker))
+        : seedToRankingEntry(seed, index);
   });
 
   for (const report of reports) {
-    if (!seedKeys.has(reportRankingMatchKey(report))) rows.push(reportToRankingEntry(report));
+    if (!seedKeys.has(reportRankingMatchKey(report))) rows.push(reportToRankingEntry(report, undefined, Number.MAX_SAFE_INTEGER, anchorEntryForListing(report.company.ticker, report.company.market, anchorEntryByTicker)));
   }
   for (const entry of libraryEntries) {
     const key = libraryEntryRankingMatchKey(entry);
-    if (!seedKeys.has(key) && !reportByKey.has(key)) rows.push(libraryEntryToRankingEntry(entry));
+    if (!seedKeys.has(key) && !reportByKey.has(key)) rows.push(libraryEntryToRankingEntry(entry, undefined, Number.MAX_SAFE_INTEGER, anchorEntryForListing(entry.ticker, entry.market, anchorEntryByTicker)));
   }
 
   const sortedRows = rows.sort((left, right) => {
@@ -228,10 +239,10 @@ function seedToRankingEntry(seed: RankingSeed, seedOrder: number): RankingEntry 
   };
 }
 
-function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
+function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER, anchor?: ReportLibraryEntry): RankingEntry {
   const code = report.company.ticker || seed?.code || report.company.name;
   const listingPlace = report.company.market || seed?.listingPlace || "A股";
-  const industry = localizedIndustry(code, listingPlace, report.company.industry, report.company.sector, seed?.sector);
+  const industry = localizedIndustry(code, listingPlace, anchor?.industry ?? report.company.industry, anchor?.sector ?? report.company.sector, seed?.sector);
   return {
     id: reportIdentityKey(report),
     rank: 0,
@@ -241,7 +252,7 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
     listingPlace,
     sector: formatLocalizedIndustry(industry),
     industryGroup: industry.group,
-    cqs: report.cqs,
+    cqs: anchor?.cqs ?? report.cqs,
     ias: report.ias,
     conclusion: report.conclusion,
     positionAdvice: report.summaryDashboard.positionAdvice || report.accountRules.maxPosition,
@@ -255,11 +266,12 @@ function reportToRankingEntry(report: InvestmentReport, seed?: RankingSeed, seed
   };
 }
 
-function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER): RankingEntry {
+function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSeed, seedOrder = Number.MAX_SAFE_INTEGER, anchor?: ReportLibraryEntry): RankingEntry {
   const code = entry.ticker || seed?.code || entry.companyName;
   const listingPlace = seed?.listingPlace || entry.market || "A股";
-  const industry = localizedIndustry(code, listingPlace, entry.industry, entry.sector, seed?.sector);
-  const conclusion = normalizeEntryConclusion(entry.conclusion, entry.cqs, entry.ias);
+  const industry = localizedIndustry(code, listingPlace, anchor?.industry ?? entry.industry, anchor?.sector ?? entry.sector, seed?.sector);
+  const cqs = anchor?.cqs ?? entry.cqs;
+  const conclusion = normalizeEntryConclusion(entry.conclusion, cqs, entry.ias);
   return {
     id: libraryEntryIdentityKey(entry),
     rank: 0,
@@ -269,10 +281,10 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     listingPlace,
     sector: formatLocalizedIndustry(industry),
     industryGroup: industry.group,
-    cqs: entry.cqs,
+    cqs,
     ias: entry.ias,
     conclusion,
-    positionAdvice: normalizeEntryPositionAdvice(conclusion, entry.positionAdvice, entry.cqs, entry.ias),
+    positionAdvice: normalizeEntryPositionAdvice(conclusion, entry.positionAdvice, cqs, entry.ias),
     valuationView: entry.valuationView,
     asOf: entry.asOf,
     source: "deep-report",
@@ -281,6 +293,11 @@ function libraryEntryToRankingEntry(entry: ReportLibraryEntry, seed?: RankingSee
     libraryId: entry.id,
     candidate: seed ? seedToCandidate(seed) : libraryEntryToCandidate(entry),
   };
+}
+
+function anchorEntryForListing(ticker: unknown, market: unknown, anchorEntryByTicker: Map<string, ReportLibraryEntry>) {
+  const anchor = crossMarketAnchorForListing(ticker, market);
+  return anchor ? anchorEntryByTicker.get(normalizeIdentity(anchor.anchorTicker)) : undefined;
 }
 
 function seedToCandidate(seed: RankingSeed): CompanyCandidate {

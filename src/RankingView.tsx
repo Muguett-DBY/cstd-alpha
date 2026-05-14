@@ -4,6 +4,7 @@ import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingRe
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { buildRankingEntries, type RankingEntry, type RankingSeed } from "./shared/ranking";
+import { crossMarketAnchorTickersForListings } from "./shared/cross-market";
 
 export type RankingMarket = "a-share" | "us" | "hk";
 
@@ -63,6 +64,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const usesClientSideLibrary = market !== "a-share";
   const [imported, setImported] = useState(() => loadImportedRankingReports());
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
+  const [anchorLibraryEntries, setAnchorLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
   const [matchedSeedCodes, setMatchedSeedCodes] = useState<Set<string>>(() => new Set());
   const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -82,6 +84,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     setSector("全部行业");
     setSource("deep-report");
     setLibraryEntries([]);
+    setAnchorLibraryEntries([]);
     setLibraryTotal(0);
     setMatchedSeedCodes(new Set());
   }, [market]);
@@ -112,6 +115,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       .then((library) => {
         if (cancelled) return;
         setLibraryEntries(library.entries);
+        setAnchorLibraryEntries(library.anchorEntries ?? []);
         setLibraryTotal(library.total);
         setMatchedSeedCodes(new Set(library.matchedTickers ?? []));
         setLibraryPhase("ready");
@@ -132,8 +136,9 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
         imported.map((entry) => entry.report),
         libraryEntries,
         config.seeds,
+        anchorLibraryEntries,
       ).filter((entry) => entry.source !== "seed" || !matchedSeedCodes.has(entry.code)),
-    [config.seeds, imported, libraryEntries, matchedSeedCodes],
+    [anchorLibraryEntries, config.seeds, imported, libraryEntries, matchedSeedCodes],
   );
   const sectors = useMemo(() => {
     const seen = new Set(["全部行业", ...config.industryGroups, ...entries.map((entry) => entry.industryGroup)]);
@@ -386,6 +391,7 @@ function compareRankingRows(left: RankingEntry, right: RankingEntry, sortMode: S
 
 async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[]) {
   const entries: ReportLibraryEntry[] = [];
+  const anchorEntries: ReportLibraryEntry[] = [];
   const matchedTickers = new Set<string>();
   let total = 0;
   for (let offset = 0; ; offset += CLIENT_FILTERED_LIBRARY_LIMIT) {
@@ -402,7 +408,20 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[])
     total = page.total ?? entries.length;
     if (!page.entries.length || entries.length >= total) break;
   }
-  return { entries, total, matchedTickers: Array.from(matchedTickers) };
+  const anchorTickers = crossMarketAnchorTickersForListings(entries);
+  for (let offset = 0; offset < anchorTickers.length; offset += CLIENT_FILTERED_LIBRARY_LIMIT) {
+    const pageTickers = anchorTickers.slice(offset, offset + CLIENT_FILTERED_LIBRARY_LIMIT);
+    const page = await fetchReportLibrary({
+      limit: CLIENT_FILTERED_LIBRARY_LIMIT,
+      offset: 0,
+      sort: "rank",
+      direction: "desc",
+      market: "cn",
+      tickers: pageTickers,
+    });
+    anchorEntries.push(...page.entries);
+  }
+  return { entries, total, matchedTickers: Array.from(matchedTickers), anchorEntries };
 }
 
 function compareRankingValue(left: RankingEntry, right: RankingEntry, sortMode: Exclude<SortMode, "rank">) {

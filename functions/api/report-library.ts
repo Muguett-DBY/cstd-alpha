@@ -46,16 +46,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const order = listOrder(url.searchParams.get("sort"), url.searchParams.get("direction"));
   const industry = cleanIndustryLabel(url.searchParams.get("industry"));
   const market = parseMarketFilter(url.searchParams.get("market"));
-  const seedCodes = parseSeedCodes(url.searchParams.get("seedCodes"));
+  const seedCodes = parseTickerCodes(url.searchParams.get("seedCodes"));
+  const tickers = parseTickerCodes(url.searchParams.get("tickers"));
   if (hasDurableLibrary(env)) {
     const [{ entries, total }, matchedTickers] = await Promise.all([
-      listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry, market),
+      listDurableReportEntries(env.REPORT_LIBRARY_DB, limit, offset, order, industry, market, tickers),
       listDurableMatchedTickers(env.REPORT_LIBRARY_DB, seedCodes, market),
     ]);
     return json({ entries, total, limit, offset, matchedTickers });
   }
 
-  const { entries, total } = env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry, market) : { entries: [], total: 0 };
+  const { entries, total } = env.REPORT_CACHE ? await listKvReportEntries(env.REPORT_CACHE, limit, offset, industry, market, tickers) : { entries: [], total: 0 };
   return json({ entries, total, limit, offset, matchedTickers: [] });
 };
 
@@ -167,8 +168,8 @@ async function readKvReportRecord(cache: KVNamespace, id: string): Promise<Repor
   };
 }
 
-async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string, market?: MarketFilter) {
-  const filters = durableListFilters(industry, market);
+async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string, market?: MarketFilter, tickers: string[] = []) {
+  const filters = durableListFilters(industry, market, tickers);
   const selectParams = [...filters.params, limit, offset];
   const [countRow, result] = await Promise.all([
     bindD1(db.prepare(`SELECT COUNT(*) AS count FROM report_library ${filters.where}`), filters.params).first<{ count: number }>(),
@@ -203,9 +204,10 @@ async function listDurableMatchedTickers(db: D1Database, seedCodes: string[], ma
   return (result.results ?? []).map((row) => row.ticker).filter(Boolean);
 }
 
-async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string, market?: MarketFilter) {
+async function listKvReportEntries(cache: KVNamespace, limit: number, offset: number, industry?: string, market?: MarketFilter, tickers: string[] = []) {
   const entries: ReportLibraryEntry[] = [];
   const candidates = industry ? new Set(industryMembersForGroup(industry)) : null;
+  const tickerSet = tickers.length ? new Set(tickers.map((ticker) => ticker.toUpperCase())) : null;
   let cursor: string | undefined;
   let total = 0;
   do {
@@ -221,6 +223,7 @@ async function listKvReportEntries(cache: KVNamespace, limit: number, offset: nu
       ...pageEntries.filter((entry): entry is ReportLibraryEntry => {
         if (!entry) return false;
         if (market && !entryMatchesMarket(entry, market)) return false;
+        if (tickerSet && !tickerSet.has((entry.ticker ?? "").toUpperCase())) return false;
         if (!candidates) return true;
         return candidates.has(cleanIndustryLabel(entry.industry) ?? "") || candidates.has(cleanIndustryLabel(entry.sector) ?? "");
       }),
@@ -331,7 +334,7 @@ function boundedListOffset(value: string | null) {
   return Math.max(0, Math.floor(parsed));
 }
 
-function parseSeedCodes(value: string | null) {
+function parseTickerCodes(value: string | null) {
   if (!value) return [];
   return Array.from(
     new Set(
@@ -354,7 +357,7 @@ function parseMarketFilter(value: string | null): MarketFilter | undefined {
   return undefined;
 }
 
-function durableListFilters(industry?: string, market?: MarketFilter) {
+function durableListFilters(industry?: string, market?: MarketFilter, tickers: string[] = []) {
   const clauses: string[] = [];
   const params: string[] = [];
   const industryCandidates = industry ? industryMembersForGroup(industry) : [];
@@ -366,6 +369,10 @@ function durableListFilters(industry?: string, market?: MarketFilter) {
   if (marketCandidates.length) {
     clauses.push(`${normalizedMarketSql()} IN (${marketCandidates.map((_, index) => `?${params.length + index + 1}`).join(", ")})`);
     params.push(...marketCandidates);
+  }
+  if (tickers.length) {
+    clauses.push(`ticker IN (${tickers.map((_, index) => `?${params.length + index + 1}`).join(", ")})`);
+    params.push(...tickers);
   }
   return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
 }

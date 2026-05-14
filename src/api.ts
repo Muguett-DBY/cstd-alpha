@@ -38,6 +38,7 @@ export type ReportLibraryRecord = {
 
 export type ReportLibraryList = {
   entries: ReportLibraryEntry[];
+  anchorEntries?: ReportLibraryEntry[];
   total: number;
   limit?: number;
   offset?: number;
@@ -119,7 +120,7 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
 }
 
 export async function fetchReportLibrary(
-  options: { limit?: number; offset?: number; sort?: string; direction?: string; industry?: string; market?: string; seedCodes?: string[] } = {},
+  options: { limit?: number; offset?: number; sort?: string; direction?: string; industry?: string; market?: string; seedCodes?: string[]; tickers?: string[] } = {},
 ): Promise<ReportLibraryList> {
   const params = new URLSearchParams({
     limit: String(options.limit ?? 20),
@@ -130,6 +131,7 @@ export async function fetchReportLibrary(
   if (options.market) params.set("market", options.market);
   if (options.industry && options.industry !== "全部行业") params.set("industry", options.industry);
   if (options.seedCodes?.length) params.set("seedCodes", options.seedCodes.join(","));
+  if (options.tickers?.length) params.set("tickers", options.tickers.join(","));
   const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
   const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number; offset?: number; matchedTickers?: string[] };
