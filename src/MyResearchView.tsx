@@ -586,13 +586,13 @@ function MarkdownReport({ markdown }: { markdown: string }) {
   const blocks = normalizeMarkdownForReading(markdown)
     .split(/\n{2,}/)
     .map((block) => block.trim())
-    .filter(Boolean);
+    .filter((block) => block && !/^#{1,6}\s*$/.test(block));
   return (
     <div className="markdown-report">
       {blocks.map((block, index) => {
-        if (/^###\s+/.test(block)) return <h5 key={index}>{block.replace(/^###\s+/, "")}</h5>;
-        if (/^##\s+/.test(block)) return <h4 key={index}>{block.replace(/^##\s+/, "")}</h4>;
-        if (/^#\s+/.test(block)) return <h3 key={index}>{block.replace(/^#\s+/, "")}</h3>;
+        if (/^###\s+/.test(block)) return <h5 key={index}>{renderInline(block.replace(/^###\s+/, ""))}</h5>;
+        if (/^##\s+/.test(block)) return <h4 key={index}>{renderInline(block.replace(/^##\s+/, ""))}</h4>;
+        if (/^#\s+/.test(block)) return <h3 key={index}>{renderInline(block.replace(/^#\s+/, ""))}</h3>;
         const numbered = block.match(/^(\d{1,2})\.\s+([\s\S]+)$/);
         if (numbered) {
           const body = numbered[2].trim();
@@ -600,8 +600,8 @@ function MarkdownReport({ markdown }: { markdown: string }) {
           return (
             <section key={index} className="markdown-numbered-section">
               <h4>
-                <span>{numbered[1]}</span>
-                {renderInline(heading)}
+                <span className="markdown-section-index">{numbered[1]}</span>
+                <span className="markdown-section-title">{renderInline(heading)}</span>
               </h4>
               {rest ? <p>{renderInline(rest)}</p> : null}
             </section>
@@ -630,7 +630,7 @@ function normalizeMarkdownForReading(markdown: string) {
   return markdown
     .replace(/\r\n/g, "\n")
     .replace(/\s+(?=\d{1,2}\.\s+)/g, "\n\n")
-    .replace(/\s+(?=(估值与仓位规则|待复核清单|总结)\b)/g, "\n\n## ")
+    .replace(/\s+(估值与仓位规则|待复核清单|总结)\b/g, "\n\n## $1")
     .replace(/\s+(?=\*\*反证条件：\*\*)/g, "\n")
     .replace(/\s+(?=\*\*待复核：\*\*)/g, "\n")
     .trim();
@@ -647,7 +647,7 @@ function splitNumberedSection(body: string) {
 function renderInline(value: string): ReactNode[] {
   return value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
-    return <span key={`${part}-${index}`}>{part}</span>;
+    return part;
   });
 }
 

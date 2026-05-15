@@ -1238,6 +1238,8 @@ button:disabled {
   background: #fffdf8;
   color: var(--body);
   line-height: 1.75;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .markdown-report h3,
@@ -1283,7 +1285,7 @@ button:disabled {
   margin: 0 0 10px;
 }
 
-.markdown-numbered-section h4 > span {
+.markdown-section-index {
   display: grid;
   place-items: center;
   width: 28px;
@@ -1294,8 +1296,18 @@ button:disabled {
   font-size: 14px;
 }
 
+.markdown-section-title {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 .markdown-numbered-section p {
   margin: 0;
+  line-height: 1.8;
 }
 
 .score-tile,
