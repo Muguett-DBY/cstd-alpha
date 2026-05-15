@@ -553,7 +553,10 @@ function SentimentMeter({ title, summary }: { title: string; summary: CompanyNew
         <span>中性 {summary.neutralPct}%</span>
         <span>利空 {summary.negativePct}%</span>
       </footer>
-      <small>样本 {summary.total} 条，按标题与摘要关键词自动归类。</small>
+      <small>
+        样本 {summary.total} 条，覆盖 {summary.sourceCount || 0} 个来源
+        {summary.sources?.length ? `：${summary.sources.slice(0, 4).join("、")}` : ""}。
+      </small>
     </section>
   );
 }
@@ -606,7 +609,7 @@ function saveCachedNewsBundle(item: WatchlistItem, bundle: CompanyNewsBundle) {
 
 function newsCacheKey(item: WatchlistItem) {
   const company = item.company;
-  return `cstd-news-cache:v3:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
+  return `cstd-news-cache:v4:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
 }
 
 function MarkdownReport({ markdown }: { markdown: string }) {

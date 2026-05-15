@@ -45,6 +45,24 @@ describe("news helpers", () => {
     });
   });
 
+  test("infers known source names from RSS item URLs when source is empty", () => {
+    const xml = `
+      <rss><channel>
+        <item>
+          <title><![CDATA[贵州茅台公告列表 _ 数据中心 _ 东方财富网]]></title>
+          <link><![CDATA[https://data.eastmoney.com/notices/stock/600519.html]]></link>
+          <description><![CDATA[回购进展情况。]]></description>
+        </item>
+      </channel></rss>`;
+
+    const rows = parseGoogleNewsRss(xml, 8, "百度新闻");
+
+    expect(rows[0]).toMatchObject({
+      source: "东方财富",
+      title: "贵州茅台公告列表 _ 数据中心 _ 东方财富网",
+    });
+  });
+
   test("classifies clearly positive, negative and neutral headlines", () => {
     expect(classifyNewsSentiment("公司业绩预增并宣布回购股份").sentiment).toBe("positive");
     expect(classifyNewsSentiment("公司遭监管处罚且利润大幅下滑").sentiment).toBe("negative");
@@ -67,7 +85,8 @@ describe("news helpers", () => {
       { id: "3", title: "会议", url: "#", source: "C", sentiment: "neutral", sentimentLabel: "中性", sentimentReason: "中性", confidence: 0.4 },
     ]);
 
-    expect(summary).toMatchObject({ total: 3, positive: 1, negative: 1, neutral: 1, overallLabel: "整体中性" });
+    expect(summary).toMatchObject({ total: 3, positive: 1, negative: 1, neutral: 1, overallLabel: "整体中性", sourceCount: 3 });
+    expect(summary.sources).toEqual(["A", "B", "C"]);
   });
 
   test("falls back from placeholder industry labels to company-name inference", () => {

@@ -37,8 +37,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月" }, request.signal),
-    fetchNewsWithFallback(industryQuery, { days: 1095, baiduWindow: "近三年" }, request.signal),
+    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 3 }, request.signal),
+    fetchNewsWithFallback(industryQuery, { days: 1095, baiduWindow: "近三年", limit: 16, variantLimit: 4 }, request.signal),
   ]);
 
   const companyNews = newsItemsFromResult(companyNewsResult);
@@ -70,22 +70,36 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 type NewsWindow = {
   days: number;
   baiduWindow: string;
+  limit: number;
+  variantLimit: number;
 };
 
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
   const errors: string[] = [];
-  for (const variant of newsQueryVariants(query)) {
-    for (const source of [fetchGoogleNews, fetchBaiduNews]) {
+  const variants = newsQueryVariants(query).slice(0, window.variantLimit);
+  const requests = variants.flatMap((variant) =>
+    [
+      { name: "Google News", run: fetchGoogleNews },
+      { name: "百度新闻", run: fetchBaiduNews },
+    ].map(async (source) => {
       try {
-        const items = await source(variant, window, signal);
-        if (items.length) return items;
-        errors.push(`${source === fetchGoogleNews ? "Google News" : "百度新闻"} 返回空列表：${variant}`);
+        const items = await source.run(variant, window, signal);
+        if (!items.length) errors.push(`${source.name} 返回空列表：${variant}`);
+        return { source: source.name, variant, items };
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error ?? ""));
+        return { source: source.name, variant, items: [] };
       }
-    }
-  }
-  throw new Error(uniqueMessages(errors).join("；") || "新闻源暂时不可用。");
+    }),
+  );
+  const results = await Promise.all(requests);
+  const items = selectNewsPortfolio(
+    results.flatMap((result) => result.items),
+    window.days,
+    window.limit,
+  );
+  if (items.length) return items;
+  throw new Error(uniqueMessages(errors).slice(0, 6).join("；") || "新闻源暂时不可用。");
 }
 
 async function fetchGoogleNews(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -98,7 +112,7 @@ async function fetchGoogleNews(query: string, window: NewsWindow, signal: AbortS
     signal,
   });
   if (!response.ok) throw new Error(`Google News 读取失败：${response.status}`);
-  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(await response.text(), 16), window.days));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(await response.text(), 32), window.days, window.limit * 2));
 }
 
 async function fetchBaiduNews(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -113,12 +127,60 @@ async function fetchBaiduNews(query: string, window: NewsWindow, signal: AbortSi
   if (!response.ok) throw new Error(`百度新闻读取失败：${response.status}`);
   const xml = decodeNewsResponse(await response.arrayBuffer(), response.headers.get("content-type"));
   if (/百度安全验证|网络不给力|请输入验证码/.test(xml)) throw new Error("百度新闻触发安全验证");
-  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 16, "百度新闻"), window.days));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 32, "百度新闻"), window.days, window.limit * 2));
 }
 
-function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[], days: number) {
-  const recent = filterRecentNews(items, days, 8);
-  return recent.length ? recent : items.slice(0, 8);
+function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[], days: number, limit: number) {
+  const recent = filterRecentNews(items, days, limit);
+  return recent.length ? recent : items.slice(0, limit);
+}
+
+function selectNewsPortfolio<T extends { id: string; publishedAt?: string; source?: string }>(items: T[], days: number, limit: number) {
+  const deduped = dedupeNewsItems(items);
+  const recent = filterRecentNews(deduped, days, limit * 3);
+  const candidates = sortNewsByDate(recent.length ? recent : deduped);
+  return diversifyBySource(candidates, limit);
+}
+
+function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
+  const seen = new Set<string>();
+  const rows: T[] = [];
+  for (const item of items) {
+    const key = (item.url || item.id || item.title || "").replace(/[?#].*$/, "").toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    rows.push(item);
+  }
+  return rows;
+}
+
+function sortNewsByDate<T extends { publishedAt?: string }>(items: T[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = left.publishedAt ? Date.parse(left.publishedAt) : 0;
+    const rightTime = right.publishedAt ? Date.parse(right.publishedAt) : 0;
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  });
+}
+
+function diversifyBySource<T extends { source?: string }>(items: T[], limit: number) {
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const source = item.source || "未知来源";
+    const bucket = buckets.get(source) || [];
+    bucket.push(item);
+    buckets.set(source, bucket);
+  }
+
+  const selected: T[] = [];
+  while (selected.length < limit && buckets.size) {
+    for (const [source, bucket] of Array.from(buckets.entries())) {
+      const item = bucket.shift();
+      if (item) selected.push(item);
+      if (!bucket.length) buckets.delete(source);
+      if (selected.length >= limit) break;
+    }
+  }
+  return selected;
 }
 
 function decodeNewsResponse(buffer: ArrayBuffer, contentType: string | null) {

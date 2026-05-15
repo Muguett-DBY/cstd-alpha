@@ -25,6 +25,8 @@ export type NewsSentimentSummary = {
   neutralPct: number;
   overall: NewsSentiment;
   overallLabel: string;
+  sourceCount: number;
+  sources: string[];
 };
 
 export type CompanyNewsBundle = {
@@ -95,7 +97,7 @@ export function parseGoogleNewsRss(xml: string, limit = 8, defaultSource = "Goog
     .map((item) => {
       const title = decodeXml(readTag(item, "title"));
       const rawUrl = decodeXml(readTag(item, "link"));
-      const source = decodeXml(readTag(item, "source")) || sourceFromTitle(title) || defaultSource;
+      const source = normalizeSourceName(decodeXml(readTag(item, "source")) || sourceFromTitle(title) || sourceFromUrl(rawUrl) || defaultSource);
       const publishedAt = normalizeRssDate(decodeXml(readTag(item, "pubDate")));
       const summary = stripHtml(decodeXml(readTag(item, "description")));
       return {
@@ -135,6 +137,7 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
   const negativePct = percent(negative, total);
   const neutralPct = Math.max(0, 100 - positivePct - negativePct);
   const overall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  const sources = summarizeSources(items);
   return {
     total,
     positive,
@@ -145,6 +148,8 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
     neutralPct,
     overall,
     overallLabel: overall === "positive" ? "整体偏利好" : overall === "negative" ? "整体偏利空" : "整体中性",
+    sourceCount: sources.length,
+    sources,
   };
 }
 
@@ -212,12 +217,67 @@ function decodeXml(value: string) {
 }
 
 function sourceFromTitle(title: string) {
-  const parts = title.split(" - ");
-  return parts.length > 1 ? parts.at(-1)?.trim() : "";
+  const hyphenParts = title.split(" - ");
+  if (hyphenParts.length > 1) return hyphenParts.at(-1)?.trim() || "";
+  const underscoreParts = title.split("_").map((part) => part.trim()).filter(Boolean);
+  const tail = underscoreParts.length > 1 ? underscoreParts.at(-1) || "" : "";
+  return /^[\u4e00-\u9fa5A-Za-z0-9 .·-]{2,24}$/.test(tail) ? tail.replace(/\.{2,}$/, "").trim() : "";
+}
+
+function normalizeSourceName(source: string) {
+  return (
+    {
+      东方财富网: "东方财富",
+      新浪财经网: "新浪财经",
+      上海证券报中国证券网: "上海证券报",
+      证券时报网: "证券时报",
+    }[source] || source
+  );
+}
+
+function sourceFromUrl(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    const knownSources: Record<string, string> = {
+      "eastmoney.com": "东方财富",
+      "emwap.eastmoney.com": "东方财富",
+      "data.eastmoney.com": "东方财富",
+      "finance.sina.com.cn": "新浪财经",
+      "stock.finance.sina.com.cn": "新浪财经",
+      "quote.cfi.cn": "中财网",
+      "cn.investing.com": "英为财情",
+      "xueqiu.com": "雪球",
+      "10jqka.com.cn": "同花顺",
+      "stock.10jqka.com.cn": "同花顺",
+      "cnstock.com": "上海证券报",
+      "stcn.com": "证券时报",
+      "cls.cn": "财联社",
+      "yicai.com": "第一财经",
+      "caixin.com": "财新",
+      "thepaper.cn": "澎湃新闻",
+      "baijiahao.baidu.com": "百家号",
+      "hkexnews.hk": "港交所披露易",
+      "sec.gov": "SEC",
+      "prnewswire.com": "美通社",
+      "reuters.com": "路透",
+      "bloomberg.com": "彭博",
+      "wsj.com": "华尔街日报",
+      "cnbc.com": "CNBC",
+    };
+    if (knownSources[host]) return knownSources[host];
+    const suffix = Object.keys(knownSources).find((domain) => host.endsWith(`.${domain}`));
+    if (suffix) return knownSources[suffix];
+    return "";
+  } catch {
+    return "";
+  }
 }
 
 function cleanNewsTitle(title: string, source: string) {
-  return title.replace(new RegExp(`\\s+-\\s+${escapeRegExp(source)}$`), "").trim();
+  return title
+    .replace(new RegExp(`\\s+-\\s+${escapeRegExp(source)}$`), "")
+    .replace(new RegExp(`_${escapeRegExp(source)}(?:\\.{2,})?$`), "")
+    .trim();
 }
 
 function normalizeRssDate(value: string) {
@@ -241,6 +301,10 @@ function confidenceScore(primary: number, opposite: number) {
 
 function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
+}
+
+function summarizeSources(items: NewsItem[]) {
+  return Array.from(new Set(items.map((item) => item.source).filter(Boolean))).slice(0, 6);
 }
 
 function escapeRegExp(value: string) {
