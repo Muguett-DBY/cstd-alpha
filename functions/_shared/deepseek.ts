@@ -14,11 +14,12 @@ import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
-type DeepSeekModel = "deepseek-v4-flash";
+type DeepSeekModel = "deepseek-v4-flash-free" | "deepseek-v4-flash";
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 export const DEEPSEEK_NETWORK_MESSAGE = "DeepSeek 网络连接不稳定，本次报告未完成，请重试。";
+const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
@@ -239,7 +240,7 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: 12000,
     usageTracker,
     messages: [
@@ -451,7 +452,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: strictLength ? 2400 : 3600,
     timeoutMs: 90_000,
     usageTracker,
@@ -603,7 +604,7 @@ async function requestNarrativeBatchOnce({
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-flash-free",
     maxTokens: strictLength ? 2600 : 4200,
     usageTracker,
     messages: [
@@ -651,18 +652,77 @@ async function requestDeepSeekJson({
   timeoutMs?: number;
   usageTracker: DeepSeekUsageTracker;
 }) {
-  if (!apiKey?.trim()) {
-    throw new DeepSeekReportError("DeepSeek API Key 未配置，无法直连 Flash Max。", "DEEPSEEK_API_KEY_MISSING", false);
-  }
   const timeoutController = timeoutMs ? new AbortController() : undefined;
   const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
-  const requestInit: RequestInit = {
+  const routes = modelRoutes(apiKey, model);
+  let lastFailure: unknown;
+  try {
+    for (const route of routes) {
+      let response: Response;
+      try {
+        response = await fetchDeepSeekWithRetry(fetchImpl, route.url, buildDeepSeekRequest(route, messages, maxTokens, timeoutController?.signal));
+      } catch (error) {
+        lastFailure = error;
+        continue;
+      }
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        lastFailure = new Error(`${route.model} request failed: ${response.status} ${text.slice(0, 500)}`);
+        continue;
+      }
+
+      const json = (await response.json()) as {
+        choices?: Array<{ finish_reason?: string; message?: { content?: string; reasoning_content?: string } }>;
+        usage?: Record<string, unknown>;
+      };
+      recordTokenUsage(usageTracker, route.model, json.usage);
+      const choice = json.choices?.[0];
+      const content = choice?.message?.content;
+      if (choice?.finish_reason === "length" || !content?.trim()) {
+        lastFailure = new DeepSeekReportError(MODEL_OUTPUT_LENGTH_MESSAGE, "MODEL_OUTPUT_LENGTH", true);
+        continue;
+      }
+
+      try {
+        return parseJsonObject(content);
+      } catch (error) {
+        lastFailure = new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true, { cause: error });
+      }
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  if (lastFailure instanceof DeepSeekReportError) throw lastFailure;
+  if (lastFailure instanceof Error) throw lastFailure;
+  throw new DeepSeekReportError(DEEPSEEK_NETWORK_MESSAGE, "DEEPSEEK_NETWORK", true, { cause: lastFailure });
+}
+
+function modelRoutes(apiKey: string | undefined, preferredModel: DeepSeekModel): Array<{ model: DeepSeekModel; url: string; apiKey?: string; isFree: boolean }> {
+  const freeRoute = { model: "deepseek-v4-flash-free" as const, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true };
+  const paidRoute = apiKey?.trim() ? { model: "deepseek-v4-flash" as const, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } : undefined;
+  if (preferredModel === "deepseek-v4-flash" && paidRoute) return [paidRoute, freeRoute];
+  return [
+    freeRoute,
+    ...(paidRoute ? [paidRoute] : []),
+  ];
+}
+
+function buildDeepSeekRequest(
+  route: { model: DeepSeekModel; apiKey?: string; isFree: boolean },
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  maxTokens: number,
+  signal: AbortSignal | undefined,
+): RequestInit {
+  return {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    signal: timeoutController?.signal,
+    headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+    signal,
     body: JSON.stringify({
-      model,
+      model: route.model,
       reasoning_effort: "max",
+      ...(route.isFree ? { thinking: { type: "enabled" } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
@@ -670,39 +730,13 @@ async function requestDeepSeekJson({
       messages,
     }),
   };
-  let response: Response;
-  try {
-    response = await fetchDeepSeekWithRetry(fetchImpl, requestInit);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`DeepSeek request failed: ${response.status} ${text.slice(0, 500)}`);
-  }
-
-  const json = (await response.json()) as {
-    choices?: Array<{ finish_reason?: string; message?: { content?: string; reasoning_content?: string } }>;
-    usage?: Record<string, unknown>;
-  };
-  recordTokenUsage(usageTracker, model, json.usage);
-  const choice = json.choices?.[0];
-  const content = choice?.message?.content;
-  if (choice?.finish_reason === "length" || !content?.trim()) throw new DeepSeekReportError(MODEL_OUTPUT_LENGTH_MESSAGE, "MODEL_OUTPUT_LENGTH", true);
-
-  try {
-    return parseJsonObject(content);
-  } catch (error) {
-    throw new DeepSeekReportError(MODEL_OUTPUT_INVALID_JSON_MESSAGE, "MODEL_OUTPUT_INVALID_JSON", true, { cause: error });
-  }
 }
 
-async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, init: RequestInit) {
+async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, url: string, init: RequestInit) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetchImpl(DEEPSEEK_CHAT_COMPLETIONS_URL, init);
+      const response = await fetchImpl(url, init);
       if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
       lastError = new Error(`DeepSeek request failed: ${response.status}`);
     } catch (error) {

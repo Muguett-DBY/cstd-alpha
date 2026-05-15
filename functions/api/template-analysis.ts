@@ -40,12 +40,14 @@ type GenerateBody = {
   forceRefresh?: boolean;
 };
 
-const MODEL = "deepseek-v4-flash";
+const FREE_MODEL = "deepseek-v4-flash-free";
+const PAID_MODEL = "deepseek-v4-flash";
+const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 240_000;
 const TEMPLATE_CACHE_ANCHOR =
-  "CSTD Alpha ten-template direct DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ".repeat(180);
+  "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ".repeat(180);
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -198,70 +200,33 @@ async function requestTemplateReportOnce(
   childAnalyses: TemplateAnalysisResult[],
   draftToExpand?: string,
 ) {
-  if (!env.DEEPSEEK_API_KEY?.trim()) throw new Error("DeepSeek API Key 未配置，无法直连 Flash Max。");
   const minLength = minimumMarkdownLength(template);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetchTemplateModel({
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: MODEL,
-        reasoning_effort: "max",
-        response_format: { type: "json_object" },
-        stream: false,
-        temperature: 0.1,
-        max_tokens: template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000,
-        messages: [
-          {
-            role: "system",
-            content:
-              `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。\n\n${TEMPLATE_CACHE_ANCHOR}`,
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              task:
-                draftToExpand
-                  ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
-                  : template.id === FULL_ANALYSIS_TEMPLATE_ID
-                    ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
-                    : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
-              template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
-              company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
-              publicEvidence: compactTemplateEvidence(evidence),
-              draftToExpand: draftToExpand || undefined,
-              childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
-                templateTitle,
-                summary,
-                verdict,
-                score,
-                keyPoints,
-                riskFlags,
-                followUps,
-              })),
-              expectedOutputShape: {
-                title: "报告标题",
-                score: "0-100 数字，可省略",
-                verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
-                summary: "300-600 字摘要",
-                keyPoints: ["5-10 条核心正面判断"],
-                riskFlags: ["5-10 条风险、反证或不确定性"],
-                followUps: ["5-10 条后续跟踪指标"],
-                markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，不足则不要结束。`,
-              },
-            }),
-          },
-        ],
-      }),
-    });
-    if (!response.ok) throw new Error(`模板分析生成失败：${response.status} ${(await response.text()).slice(0, 500)}`);
-    const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content?.trim()) throw new Error("模型未返回模板分析内容。");
-    return normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template);
+    const messages = buildTemplateMessages(watchlist, evidence, template, childAnalyses, minLength, draftToExpand);
+    const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
+    let lastError: unknown;
+    for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY)) {
+      try {
+        const response = await fetchTemplateModel(route.url, buildTemplateRequest(route, messages, maxTokens, controller.signal));
+        if (!response.ok) {
+          lastError = new Error(`模板分析生成失败：${route.model} ${response.status} ${(await response.text()).slice(0, 500)}`);
+          continue;
+        }
+        const payload = (await response.json()) as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
+        const choice = payload.choices?.[0];
+        const content = choice?.message?.content;
+        if (choice?.finish_reason === "length" || !content?.trim()) {
+          lastError = new Error(`${route.model} 未返回完整模板分析内容。`);
+          continue;
+        }
+        return normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("模板分析生成失败。");
   } catch (error) {
     if (isAbortLikeError(error)) throw new Error("模板分析模型请求超过 4 分钟未返回，已标记为可重试失败。", { cause: error });
     throw error;
@@ -270,11 +235,93 @@ async function requestTemplateReportOnce(
   }
 }
 
-async function fetchTemplateModel(init: RequestInit) {
+function buildTemplateMessages(
+  watchlist: WatchlistRow,
+  evidence: EvidenceBundle,
+  template: ResearchTemplate,
+  childAnalyses: TemplateAnalysisResult[],
+  minLength: number,
+  draftToExpand?: string,
+) {
+  return [
+    {
+      role: "system" as const,
+      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。\n\n${TEMPLATE_CACHE_ANCHOR}`,
+    },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        task: draftToExpand
+          ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
+          : template.id === FULL_ANALYSIS_TEMPLATE_ID
+            ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
+            : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
+        template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
+        company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
+        publicEvidence: compactTemplateEvidence(evidence),
+        draftToExpand: draftToExpand || undefined,
+        childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
+          templateTitle,
+          summary,
+          verdict,
+          score,
+          keyPoints,
+          riskFlags,
+          followUps,
+        })),
+        expectedOutputShape: {
+          title: "报告标题",
+          score: "0-100 数字，可省略",
+          verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
+          summary: "300-600 字摘要",
+          keyPoints: ["5-10 条核心正面判断"],
+          riskFlags: ["5-10 条风险、反证或不确定性"],
+          followUps: ["5-10 条后续跟踪指标"],
+          markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，不足则不要结束。`,
+        },
+      }),
+    },
+  ];
+}
+
+function templateModelRoutes(apiKey: string | undefined): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
+  const paidRoute = apiKey?.trim()
+    ? ({ model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } as const)
+    : undefined;
+  return [
+    { model: FREE_MODEL, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true },
+    ...(paidRoute ? [paidRoute] : []),
+  ];
+}
+
+function buildTemplateRequest(
+  route: { model: typeof FREE_MODEL | typeof PAID_MODEL; apiKey?: string; isFree: boolean },
+  messages: ReturnType<typeof buildTemplateMessages>,
+  maxTokens: number,
+  signal: AbortSignal,
+): RequestInit {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+    signal,
+    body: JSON.stringify({
+      model: route.model,
+      reasoning_effort: "max",
+      ...(route.isFree ? { thinking: { type: "enabled" } } : {}),
+      response_format: { type: "json_object" },
+      stream: false,
+      temperature: 0.1,
+      max_tokens: maxTokens,
+      messages,
+    }),
+  };
+}
+
+async function fetchTemplateModel(url: string, init: RequestInit) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, init);
+      const response = await fetch(url, init);
       if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
       lastError = new Error(`模板分析通道暂时不可用：${response.status} ${(await response.text()).slice(0, 300)}`);
     } catch (error) {
@@ -318,7 +365,7 @@ async function writeCompletedAnalysis(
     companyName: watchlist.company_name,
     ticker: watchlist.ticker,
     market: watchlist.market,
-    model: MODEL,
+    model: FREE_MODEL,
     status: "completed",
     title: generated.title,
     score: generated.score,
@@ -362,7 +409,7 @@ function baseAnalysis(userId: string, watchlist: WatchlistRow, template: Researc
     companyName: watchlist.company_name,
     ticker: watchlist.ticker,
     market: watchlist.market,
-    model: MODEL,
+    model: FREE_MODEL,
     status,
     title: `${watchlist.company_name}${template.shortTitle}`,
     verdict: "待生成",
@@ -412,7 +459,7 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
       result.companyName,
       result.ticker,
       result.market,
-      MODEL,
+      FREE_MODEL,
       result.status,
       result.title,
       result.score ?? null,
@@ -532,7 +579,7 @@ function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) 
 
 function normalizeTemplateAnalysisError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  if (message.includes("DEEPSEEK_API_KEY")) return "DeepSeek API Key 未配置，无法直连 Flash Max。";
+  if (message.includes("DEEPSEEK_API_KEY")) return "DeepSeek API Key 未配置，免费通道失败后无法启用付费兜底。";
   if (message.includes("Rate limit exceeded")) return "DeepSeek Flash Max 当前触发限流，请稍后重试；任务已保存为可重试失败。";
   if (message.includes("429")) return "模板分析模型通道当前限流，请稍后重试。";
   return message || "模板分析生成失败。";
