@@ -37,8 +37,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 3 }, request.signal),
-    fetchNewsWithFallback(industryQuery, { days: 1095, baiduWindow: "近三年", limit: 16, variantLimit: 4 }, request.signal),
+    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 3, requiredAny: [item.company.name, item.company.code] }, request.signal),
+    fetchNewsWithFallback(
+      industryQuery,
+      { days: 1095, baiduWindow: "近三年", limit: 16, variantLimit: 4, requiredAny: industryRelevanceTerms(industryQuery) },
+      request.signal,
+    ),
   ]);
 
   const companyNews = newsItemsFromResult(companyNewsResult);
@@ -72,6 +76,7 @@ type NewsWindow = {
   baiduWindow: string;
   limit: number;
   variantLimit: number;
+  requiredAny: string[];
 };
 
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -97,6 +102,7 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
     results.flatMap((result) => result.items),
     window.days,
     window.limit,
+    window.requiredAny,
   );
   if (items.length) return items;
   throw new Error(uniqueMessages(errors).slice(0, 6).join("；") || "新闻源暂时不可用。");
@@ -135,12 +141,26 @@ function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[]
   return recent.length ? recent : items.slice(0, limit);
 }
 
-function selectNewsPortfolio<T extends { id: string; publishedAt?: string; source?: string; title?: string; summary?: string }>(items: T[], days: number, limit: number) {
-  const qualityItems = items.filter(isUsefulNewsItem);
-  const deduped = dedupeNewsItems(qualityItems.length >= Math.min(6, limit) ? qualityItems : items);
+function selectNewsPortfolio<T extends { id: string; publishedAt?: string; source?: string; title?: string; summary?: string }>(
+  items: T[],
+  days: number,
+  limit: number,
+  requiredAny: string[],
+) {
+  const relevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny));
+  const relevancePool = relevantItems.length ? relevantItems : items;
+  const qualityItems = relevancePool.filter(isUsefulNewsItem);
+  const deduped = dedupeNewsItems(qualityItems.length >= Math.min(4, limit) ? qualityItems : relevancePool);
   const recent = filterRecentNews(deduped, days, limit * 3);
   const candidates = sortNewsByDate(recent.length ? recent : deduped);
   return diversifyBySource(candidates, limit);
+}
+
+function isRelevantNewsItem(item: { title?: string; summary?: string }, requiredAny: string[]) {
+  const terms = requiredAny.map((term) => normalizeRelevanceTerm(term)).filter((term) => term.length >= 2);
+  if (!terms.length) return true;
+  const text = normalizeRelevanceTerm(`${item.title || ""} ${item.summary || ""}`);
+  return terms.some((term) => text.includes(term));
 }
 
 function isUsefulNewsItem(item: { title?: string; summary?: string; source?: string }) {
@@ -227,6 +247,18 @@ function newsQueryVariants(query: string) {
     .trim();
   const industryCore = compact.match(/^(.+?)\s+行业\b/)?.[1]?.trim();
   return uniqueMessages([query, plain, compact, industryCore ? `${industryCore} 行业 新闻` : ""]).filter((item) => item.length > 1);
+}
+
+function industryRelevanceTerms(query: string) {
+  const scope = query.split(/\s+行业\b/)[0] || query;
+  return scope
+    .split(/[\s/／]+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !/^(所属行业|未分类|行业待验证|近三年)$/.test(part));
+}
+
+function normalizeRelevanceTerm(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "");
 }
 
 function uniqueMessages(messages: string[]) {
