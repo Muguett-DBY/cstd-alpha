@@ -157,11 +157,12 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   requiredAny: string[],
   titleRequiredAny: string[] = [],
 ) {
-  const relevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny));
-  if (!relevantItems.length && titleRequiredAny.length) return [];
+  const textRelevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny));
+  const titleRelevantItems = titleRequiredAny.length ? items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
+  const relevantItems = titleRelevantItems.length >= Math.min(3, limit) ? titleRelevantItems : textRelevantItems;
   const relevancePool = relevantItems.length ? relevantItems : items;
   const qualityItems = relevancePool.filter(isUsefulNewsItem);
-  const deduped = dedupeNewsItems(qualityItems.length >= Math.min(4, limit) ? qualityItems : relevancePool);
+  const deduped = dedupeNewsItems(qualityItems.length ? qualityItems : relevancePool);
   const recent = filterRecentNews(deduped, days, limit * 3);
   const candidates = sortNewsByDate(recent.length ? recent : deduped);
   return diversifyBySource(candidates, limit);
@@ -181,7 +182,7 @@ function isUsefulNewsItem(item: { title?: string; summary?: string; source?: str
   const text = `${item.title || ""} ${item.summary || ""}`.trim();
   const source = item.source || "";
   if (/百度文库|股吧|问答|百科/.test(source)) return false;
-  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|数据报告|估值——|技术分析/.test(text);
+  return !/最新价格|走势图|历史数据|股票行情|股票吧|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|行情_市值|财报研报数据|数据报告|估值——|技术分析/.test(text);
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
