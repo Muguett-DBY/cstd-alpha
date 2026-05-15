@@ -33,6 +33,10 @@ type DurableTemplateEnv = {
   REPORT_LIBRARY_DB: D1Database;
   REPORT_LIBRARY_BUCKET: R2Bucket;
 };
+type TemplateCacheEnv = {
+  REPORT_LIBRARY_DB?: D1Database;
+  REPORT_LIBRARY_BUCKET?: R2Bucket;
+};
 
 type GenerateBody = {
   watchlistId?: string;
@@ -53,6 +57,7 @@ const TEMPLATE_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
 const FREE_TEMPLATE_CACHE_REPEAT = 180;
 const PAID_TEMPLATE_CACHE_REPEAT = 420;
+const FULL_ANALYSIS_UNCACHED_WARMUP_COUNT = 2;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -174,7 +179,7 @@ async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSigna
   });
 }
 
-async function readCompletedAnalysisCache(env: Env, userId: string, watchlistId: string, templateId: string) {
+async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string, watchlistId: string, templateId: string) {
   if (!env.REPORT_LIBRARY_DB) return null;
   const id = await analysisId(userId, watchlistId, templateId);
   const row = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
@@ -190,11 +195,17 @@ async function generateFullAnalysis(
   forceRefresh: boolean,
   write?: TemplateProgressWriter,
 ) {
-  const children: TemplateAnalysisResult[] = [];
-  for (const template of RESEARCH_TEMPLATES) {
-    write?.({ type: "progress", stage: "child_template", label: "生成专项模板", detail: `正在生成 ${template.shortTitle}。` });
-    children.push(await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write));
-  }
+  const children = await runFullTemplateChildrenCacheAware({
+    readCached: async (template) => {
+      const cached = await readCompletedAnalysisCache(env, userId, watchlist.id, template.id);
+      if (cached) write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
+      return cached;
+    },
+    runUncached: async (template) => {
+      write?.({ type: "progress", stage: "child_template", label: "生成专项模板", detail: `正在生成 ${template.shortTitle}。` });
+      return generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write);
+    },
+  });
   const fullTemplate: ResearchTemplate = {
     id: FULL_ANALYSIS_TEMPLATE_ID,
     title: "十模板全面分析",
@@ -212,6 +223,43 @@ async function generateFullAnalysis(
   }
   write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: "十个专项模板已完成，正在交叉验证并生成最终全面分析。" });
   return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write), ...children];
+}
+
+export async function runFullTemplateChildrenCacheAware<T>({
+  readCached,
+  runUncached,
+  warmupCount = FULL_ANALYSIS_UNCACHED_WARMUP_COUNT,
+}: {
+  readCached: (template: ResearchTemplate) => Promise<T | null>;
+  runUncached: (template: ResearchTemplate) => Promise<T>;
+  warmupCount?: number;
+}) {
+  const cacheChecks = await Promise.all(
+    RESEARCH_TEMPLATES.map(async (template, index) => ({
+      index,
+      template,
+      cached: await readCached(template),
+    })),
+  );
+  const results = new Array<T>(RESEARCH_TEMPLATES.length);
+  const uncached: Array<{ index: number; template: ResearchTemplate }> = [];
+  for (const item of cacheChecks) {
+    if (item.cached) results[item.index] = item.cached;
+    else uncached.push({ index: item.index, template: item.template });
+  }
+
+  for (const item of uncached.slice(0, Math.max(0, warmupCount))) {
+    results[item.index] = await runUncached(item.template);
+  }
+
+  const concurrentResults = await Promise.all(
+    uncached.slice(Math.max(0, warmupCount)).map(async (item) => ({
+      index: item.index,
+      result: await runUncached(item.template),
+    })),
+  );
+  for (const item of concurrentResults) results[item.index] = item.result;
+  return results;
 }
 
 async function generateSingleTemplateAnalysis(
