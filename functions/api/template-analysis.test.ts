@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { RESEARCH_TEMPLATES } from "../../src/shared/user-research";
-import { runFullTemplateChildrenCacheAware, shouldStartFullAnalysis } from "./template-analysis";
+import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
+import { runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
@@ -46,6 +46,13 @@ describe("shouldStartFullAnalysis", () => {
     expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(false);
     expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], true)).toBe(true);
     expect(shouldStartFullAnalysis({ status: "failed_retryable" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(true);
+  });
+});
+
+describe("templateReasoningEffort", () => {
+  test("uses high for single templates and max for full synthesis", () => {
+    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("high");
+    expect(templateReasoningEffort(FULL_ANALYSIS_TEMPLATE_ID)).toBe("max");
   });
 });
 
