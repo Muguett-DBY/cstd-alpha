@@ -43,33 +43,51 @@ export type CompanyNewsBundle = {
   industryNewsError?: string;
 };
 
-const POSITIVE_PATTERNS = [
+const STRONG_POSITIVE_PATTERNS = [
   /利好/,
-  /增长|大增|提升|回升|复苏|改善|创新高|新高/,
   /预增|扭亏|超预期|beat/i,
   /增持|回购|分红|派息/,
   /中标|签约|获批|批准|合作|扩产|投产/,
   /上调|upgrade|outperform|buy/i,
 ];
 
-const NEGATIVE_PATTERNS = [
+const WEAK_POSITIVE_PATTERNS = [/增长|大增|大涨|涨停|提升|回升|复苏|改善|企稳|回暖|底部|重估|创新高|新高/];
+
+const STRONG_NEGATIVE_PATTERNS = [
   /利空/,
-  /下滑|下降|减少|承压|恶化|放缓|亏损|暴跌|跌停/,
-  /减持|处罚|罚款|调查|问询|诉讼|违规|违约|退市|警示/,
+  /风险|隐忧|泥潭|崩盘|唱衰|出险|暴雷|债务|违约|危机|清盘|退市/,
+  /下滑|下降|减少|承压|恶化|放缓|亏损|暴跌|跌停|下行|低迷|收缩|减值/,
+  /减持|处罚|罚款|调查|问询|诉讼|违规|警示|监管/,
   /召回|事故|裁员|停产|禁令|制裁/,
   /下调|downgrade|underperform|miss|probe|fraud|recall/i,
 ];
 
+const WEAK_NEGATIVE_PATTERNS = [/库存|去化|担保|流动性|调整|分化|压力/];
+
+const GENERIC_RESEARCH_PATTERNS = [/行业研究|行业分析|市场分析|行业报告|市场规模|发展趋势|研究报告/];
+
 export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsItem, "sentiment" | "sentimentLabel" | "sentimentReason" | "confidence"> {
   const text = `${title} ${summary}`.trim();
-  const positiveMatches = POSITIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
-  const negativeMatches = NEGATIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const strongPositive = STRONG_POSITIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const weakPositive = WEAK_POSITIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const strongNegative = STRONG_NEGATIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const weakNegative = WEAK_NEGATIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const positiveMatches = strongPositive * 2 + weakPositive;
+  const negativeMatches = strongNegative * 2 + weakNegative;
 
   if (positiveMatches > negativeMatches) {
+    if (strongPositive === 0 && isGenericResearchText(text)) {
+      return {
+        sentiment: "neutral",
+        sentimentLabel: "中性",
+        sentimentReason: "研究类标题只有弱方向词，按中性处理，避免把行业概览误判为利好。",
+        confidence: 0.45,
+      };
+    }
     return {
       sentiment: "positive",
       sentimentLabel: "偏利好",
-      sentimentReason: matchedReason(text, POSITIVE_PATTERNS) || "标题包含业绩、订单、回购、增持或评级改善等正面线索。",
+      sentimentReason: matchedReason(text, [...STRONG_POSITIVE_PATTERNS, ...WEAK_POSITIVE_PATTERNS]) || "标题包含业绩、订单、回购、增持或评级改善等正面线索。",
       confidence: confidenceScore(positiveMatches, negativeMatches),
     };
   }
@@ -77,7 +95,7 @@ export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsIte
     return {
       sentiment: "negative",
       sentimentLabel: "偏利空",
-      sentimentReason: matchedReason(text, NEGATIVE_PATTERNS) || "标题包含下滑、处罚、调查、减持或经营承压等负面线索。",
+      sentimentReason: matchedReason(text, [...STRONG_NEGATIVE_PATTERNS, ...WEAK_NEGATIVE_PATTERNS]) || "标题包含下滑、处罚、调查、减持或经营承压等负面线索。",
       confidence: confidenceScore(negativeMatches, positiveMatches),
     };
   }
@@ -136,7 +154,8 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
   const positivePct = percent(positive, total);
   const negativePct = percent(negative, total);
   const neutralPct = Math.max(0, 100 - positivePct - negativePct);
-  const overall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  const rawOverall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  const overall: NewsSentiment = conservativeOverall(rawOverall, { total, positive, negative });
   const sources = summarizeSources(items);
   return {
     total,
@@ -147,7 +166,7 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
     negativePct,
     neutralPct,
     overall,
-    overallLabel: overall === "positive" ? "整体偏利好" : overall === "negative" ? "整体偏利空" : "整体中性",
+    overallLabel: overallLabel(overall, { total, positive, negative }),
     sourceCount: sources.length,
     sources,
   };
@@ -302,6 +321,24 @@ function matchedReason(text: string, patterns: RegExp[]) {
 
 function confidenceScore(primary: number, opposite: number) {
   return Math.min(0.9, Math.max(0.55, 0.55 + (primary - opposite) * 0.15));
+}
+
+function isGenericResearchText(text: string) {
+  return GENERIC_RESEARCH_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function conservativeOverall(rawOverall: NewsSentiment, counts: { total: number; positive: number; negative: number }): NewsSentiment {
+  if (counts.total === 0) return "neutral";
+  if (counts.total < 5) {
+    if (counts.negative >= 2 && counts.negative > counts.positive) return "negative";
+    return "neutral";
+  }
+  return rawOverall;
+}
+
+function overallLabel(overall: NewsSentiment, counts: { total: number; positive: number; negative: number }) {
+  if (counts.total > 0 && counts.total < 5 && overall === "neutral") return "样本偏少，整体中性";
+  return overall === "positive" ? "整体偏利好" : overall === "negative" ? "整体偏利空" : "整体中性";
 }
 
 function percent(value: number, total: number) {

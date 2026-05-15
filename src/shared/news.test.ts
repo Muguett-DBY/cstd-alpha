@@ -70,6 +70,12 @@ describe("news helpers", () => {
     expect(classifyNewsSentiment("公司召开年度股东大会").sentimentLabel).toBe("中性");
   });
 
+  test("does not overstate generic or risk-heavy real estate industry headlines", () => {
+    expect(classifyNewsSentiment("【行业研究】2026年房地产开发经营行业分析").sentiment).toBe("neutral");
+    expect(classifyNewsSentiment("房地产政策改善但房企风险仍高，债务压力待化解").sentiment).toBe("negative");
+    expect(classifyNewsSentiment("为何北京对房产崩盘数据讳莫如深？").sentiment).toBe("negative");
+  });
+
   test("keeps recent news and summarizes positive/negative split", () => {
     const rows = [
       { title: "近期利好", publishedAt: "2026-05-01T00:00:00.000Z" },
@@ -85,8 +91,18 @@ describe("news helpers", () => {
       { id: "3", title: "会议", url: "#", source: "C", sentiment: "neutral", sentimentLabel: "中性", sentimentReason: "中性", confidence: 0.4 },
     ]);
 
-    expect(summary).toMatchObject({ total: 3, positive: 1, negative: 1, neutral: 1, overallLabel: "整体中性", sourceCount: 3 });
+    expect(summary).toMatchObject({ total: 3, positive: 1, negative: 1, neutral: 1, overallLabel: "样本偏少，整体中性", sourceCount: 3 });
     expect(summary.sources).toEqual(["A", "B", "C"]);
+  });
+
+  test("keeps small positive-only samples neutral at the summary level", () => {
+    const summary = summarizeNewsSentiment([
+      { id: "1", title: "政策改善", url: "#", source: "A", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "改善", confidence: 0.6 },
+      { id: "2", title: "成交新高", url: "#", source: "B", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "新高", confidence: 0.6 },
+      { id: "3", title: "行业回暖", url: "#", source: "C", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "回暖", confidence: 0.6 },
+    ]);
+
+    expect(summary).toMatchObject({ positivePct: 100, overall: "neutral", overallLabel: "样本偏少，整体中性" });
   });
 
   test("falls back from placeholder industry labels to company-name inference", () => {

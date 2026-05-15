@@ -56,6 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         requiredAny: industryRelevanceTerms(industryQuery, item.company.name),
         titleRequiredAny: industryRelevanceTerms(industryQuery, item.company.name),
         excludedAny: unrelatedIndustryTerms(industryQuery, item.company.name),
+        strictTitleRequired: true,
       },
       request.signal,
     ),
@@ -97,6 +98,7 @@ type NewsWindow = {
   requiredAny: string[];
   titleRequiredAny?: string[];
   excludedAny?: string[];
+  strictTitleRequired?: boolean;
 };
 
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -129,6 +131,7 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
     window.requiredAny,
     window.titleRequiredAny,
     window.excludedAny,
+    window.strictTitleRequired,
   );
   if (items.length) return items;
   throw new Error(uniqueMessages(errors).slice(0, 6).join("；") || "新闻源暂时不可用。");
@@ -208,11 +211,12 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   requiredAny: string[],
   titleRequiredAny: string[] = [],
   excludedAny: string[] = [],
+  strictTitleRequired = false,
 ) {
   const allowedItems = items.filter((item) => !hasExcludedIndustryTerms(item, excludedAny));
   const textRelevantItems = allowedItems.filter((item) => isRelevantNewsItem(item, requiredAny));
   const titleRelevantItems = titleRequiredAny.length ? allowedItems.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
-  const relevantItems = titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
+  const relevantItems = strictTitleRequired && titleRequiredAny.length ? titleRelevantItems : titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
   const relevancePool = relevantItems.length ? relevantItems : allowedItems;
   const strictQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && isNotConflictingIndustryResearch(item, titleRequiredAny));
   const looseQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && (!titleRequiredAny.length || isNotConflictingIndustryResearch(item, titleRequiredAny)));
@@ -379,6 +383,7 @@ function inferredBusinessTerms(companyName: string) {
   if (/小米|苹果|Apple|Xiaomi/i.test(companyName)) return ["消费电子", "智能手机", "手机", "智能硬件", "IoT", "电动汽车"];
   if (/腾讯|网易|快手|百度|阿里|京东|拼多多|美团/i.test(companyName)) return ["互联网", "平台经济", "云计算", "数字媒体"];
   if (/茅台|五粮液|泸州老窖|汾酒|洋河|古井贡|酒鬼酒|水井坊|舍得/.test(companyName)) return ["白酒", "高端白酒"];
+  if (/万科|保利|招商蛇口|华润置地|绿城|龙湖|碧桂园|融创|房地产|地产/.test(companyName)) return ["房地产", "房地产开发", "房企", "楼市", "二手房", "新房"];
   return [];
 }
 
