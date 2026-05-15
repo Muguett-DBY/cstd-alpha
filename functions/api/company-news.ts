@@ -37,14 +37,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 5, requiredAny: [item.company.name, item.company.code] }, request.signal),
+    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 4, baiduVariantLimit: 2, requiredAny: [item.company.name, item.company.code] }, request.signal),
     fetchNewsWithFallback(
       industryQuery,
       {
         days: 1095,
         baiduWindow: "近三年",
         limit: 16,
-        variantLimit: 7,
+        variantLimit: 5,
+        baiduVariantLimit: 2,
         requiredAny: industryRelevanceTerms(industryQuery),
         titleRequiredAny: industryRelevanceTerms(industryQuery),
       },
@@ -83,6 +84,7 @@ type NewsWindow = {
   baiduWindow: string;
   limit: number;
   variantLimit: number;
+  baiduVariantLimit: number;
   requiredAny: string[];
   titleRequiredAny?: string[];
 };
@@ -90,20 +92,22 @@ type NewsWindow = {
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
   const errors: string[] = [];
   const variants = newsQueryVariants(query).slice(0, window.variantLimit);
-  const requests = variants.flatMap((variant) =>
+  const requests = variants.flatMap((variant, variantIndex) =>
     [
       { name: "Google News", run: fetchGoogleNews },
       { name: "百度新闻", run: fetchBaiduNews },
-    ].map(async (source) => {
-      try {
-        const items = await source.run(variant, window, signal);
-        if (!items.length) errors.push(`${source.name} 返回空列表：${variant}`);
-        return { source: source.name, variant, items };
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error ?? ""));
-        return { source: source.name, variant, items: [] };
-      }
-    }),
+    ]
+      .filter((source) => source.name !== "百度新闻" || variantIndex < window.baiduVariantLimit)
+      .map(async (source) => {
+        try {
+          const items = await source.run(variant, window, signal);
+          if (!items.length) errors.push(`${source.name} 返回空列表：${variant}`);
+          return { source: source.name, variant, items };
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error ?? ""));
+          return { source: source.name, variant, items: [] };
+        }
+      }),
   );
   const results = await Promise.all(requests);
   const items = selectNewsPortfolio(
