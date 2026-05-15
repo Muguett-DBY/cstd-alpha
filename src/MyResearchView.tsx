@@ -337,7 +337,7 @@ function CompanyWorkbench({
         </button>
       </div>
 
-      <NewsRadar item={item} />
+      <NewsRadar key={item.id} item={item} />
 
       <section className="template-grid" aria-label="十模板深度分析">
         <TemplateCard
@@ -468,33 +468,24 @@ function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysis
 }
 
 function NewsRadar({ item }: { item: WatchlistItem }) {
-  const [bundle, setBundle] = useState<CompanyNewsBundle | null>(null);
-  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [bundle, setBundle] = useState<CompanyNewsBundle | null>(() => loadCachedNewsBundle(item));
+  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">(() => (loadCachedNewsBundle(item) ? "ready" : "idle"));
   const [error, setError] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setPhase("loading");
-      setError("");
-    });
-    void fetchCompanyNews(item.id)
+  async function refreshNews() {
+    setPhase("loading");
+    setError("");
+    await fetchCompanyNews(item.id)
       .then((data) => {
-        if (cancelled) return;
+        saveCachedNewsBundle(item, data);
         setBundle(data);
         setPhase("ready");
       })
       .catch((err) => {
-        if (cancelled) return;
-        setPhase("error");
+        setPhase(bundle ? "ready" : "error");
         setError(err instanceof Error ? err.message : "新闻读取失败。");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id, reloadKey]);
+  }
 
   return (
     <section className="news-radar" aria-label="公司与行业新闻">
@@ -506,15 +497,16 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
             {phase === "loading"
               ? "正在读取公开新闻源。"
               : bundle
-                ? `公司关键词：${bundle.companyQuery}；行业关键词：${bundle.industryQuery}`
-                : "新闻源暂不可用。"}
+                ? `已缓存 ${formatDateTime(bundle.fetchedAt)} 的新闻；公司关键词：${bundle.companyQuery}；行业关键词：${bundle.industryQuery}`
+                : "尚未读取新闻，点击“刷新新闻”后再请求公开新闻源。"}
           </p>
         </div>
-        <button type="button" className="secondary-button" disabled={phase === "loading"} onClick={() => setReloadKey((key) => key + 1)}>
+        <button type="button" className="secondary-button" disabled={phase === "loading"} onClick={() => void refreshNews()}>
           刷新新闻
         </button>
       </header>
       {phase === "error" ? <p className="error-text">{error}</p> : null}
+      {phase !== "error" && error ? <p className="error-text">{error}</p> : null}
       {bundle?.companyNewsError || bundle?.industryNewsError ? (
         <p className="cache-notice">
           {[
@@ -532,8 +524,13 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
         </div>
       ) : null}
       <div className="news-columns">
-        <NewsColumn title={`${item.company.name} 相关新闻`} items={bundle?.companyNews ?? []} loading={phase === "loading"} />
-        <NewsColumn title={`${bundle?.industryLabel || "所属行业"} 行业新闻`} items={bundle?.industryNews ?? []} loading={phase === "loading"} />
+        <NewsColumn title={`${item.company.name} 相关新闻`} items={bundle?.companyNews ?? []} loading={phase === "loading" && !bundle} idle={phase === "idle"} />
+        <NewsColumn
+          title={`${bundle?.industryLabel || "所属行业"} 行业新闻`}
+          items={bundle?.industryNews ?? []}
+          loading={phase === "loading" && !bundle}
+          idle={phase === "idle"}
+        />
       </div>
     </section>
   );
@@ -561,12 +558,13 @@ function SentimentMeter({ title, summary }: { title: string; summary: CompanyNew
   );
 }
 
-function NewsColumn({ title, items, loading }: { title: string; items: NewsItem[]; loading: boolean }) {
+function NewsColumn({ title, items, loading, idle }: { title: string; items: NewsItem[]; loading: boolean; idle: boolean }) {
   return (
     <section>
       <h5>{title}</h5>
       {loading ? <p className="muted">读取中...</p> : null}
-      {!loading && !items.length ? <p className="muted">暂无可展示新闻。</p> : null}
+      {idle ? <p className="muted">点击刷新新闻后读取。</p> : null}
+      {!loading && !idle && !items.length ? <p className="muted">暂无可展示新闻。</p> : null}
       <div className="news-list">
         {items.map((item) => (
           <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className={`news-card sentiment-${item.sentiment}`}>
@@ -582,6 +580,33 @@ function NewsColumn({ title, items, loading }: { title: string; items: NewsItem[
       </div>
     </section>
   );
+}
+
+function loadCachedNewsBundle(item: WatchlistItem) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(newsCacheKey(item));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CompanyNewsBundle;
+    if (!parsed?.fetchedAt || !Array.isArray(parsed.companyNews) || !Array.isArray(parsed.industryNews)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedNewsBundle(item: WatchlistItem, bundle: CompanyNewsBundle) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(newsCacheKey(item), JSON.stringify(bundle));
+  } catch {
+    // News cache is an optimization; ignore storage quota or privacy-mode failures.
+  }
+}
+
+function newsCacheKey(item: WatchlistItem) {
+  const company = item.company;
+  return `cstd-news-cache:v2:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
 }
 
 function MarkdownReport({ markdown }: { markdown: string }) {

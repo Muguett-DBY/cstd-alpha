@@ -69,20 +69,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 async function fetchNewsWithFallback(query: string, signal: AbortSignal) {
   const errors: string[] = [];
-  for (const source of [fetchGoogleNews, fetchBaiduNews]) {
-    try {
-      const items = await source(query, signal);
-      if (items.length) return items;
-      errors.push("新闻源返回空列表");
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error ?? ""));
+  for (const variant of newsQueryVariants(query)) {
+    for (const source of [fetchGoogleNews, fetchBaiduNews]) {
+      try {
+        const items = await source(variant, signal);
+        if (items.length) return items;
+        errors.push(`${source === fetchGoogleNews ? "Google News" : "百度新闻"} 返回空列表：${variant}`);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error ?? ""));
+      }
     }
   }
   throw new Error(uniqueMessages(errors).join("；") || "新闻源暂时不可用。");
 }
 
 async function fetchGoogleNews(query: string, signal: AbortSignal) {
-  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:120d`)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:180d`)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
   const response = await fetch(rssUrl, {
     headers: {
       "user-agent": "CSTDAlpha/1.0 (+https://alpha.custard.top)",
@@ -91,7 +93,7 @@ async function fetchGoogleNews(query: string, signal: AbortSignal) {
     signal,
   });
   if (!response.ok) throw new Error(`Google News 读取失败：${response.status}`);
-  return decorateNewsSentiment(filterRecentNews(parseGoogleNewsRss(await response.text(), 16), 120, 8));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(await response.text(), 16)));
 }
 
 async function fetchBaiduNews(query: string, signal: AbortSignal) {
@@ -106,7 +108,12 @@ async function fetchBaiduNews(query: string, signal: AbortSignal) {
   if (!response.ok) throw new Error(`百度新闻读取失败：${response.status}`);
   const xml = decodeNewsResponse(await response.arrayBuffer(), response.headers.get("content-type"));
   if (/百度安全验证|网络不给力|请输入验证码/.test(xml)) throw new Error("百度新闻触发安全验证");
-  return decorateNewsSentiment(filterRecentNews(parseGoogleNewsRss(xml, 16, "百度新闻"), 120, 8));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 16, "百度新闻")));
+}
+
+function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[]) {
+  const recent = filterRecentNews(items, 180, 8);
+  return recent.length ? recent : items.slice(0, 8);
 }
 
 function decodeNewsResponse(buffer: ArrayBuffer, contentType: string | null) {
@@ -120,6 +127,23 @@ function decodeNewsResponse(buffer: ArrayBuffer, contentType: string | null) {
 
 function plainNewsQuery(query: string) {
   return query.replace(/\s+OR\s+/gi, " ").replace(/[;；:：]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function newsQueryVariants(query: string) {
+  const plain = plainNewsQuery(query);
+  const compact = plain
+    .replace(/近三个月/g, "")
+    .replace(/上市公司/g, "")
+    .replace(/景气度/g, "")
+    .replace(/政策/g, "")
+    .replace(/价格/g, "")
+    .replace(/业绩/g, "")
+    .replace(/公告/g, "")
+    .replace(/股价/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const industryCore = compact.match(/^(.+?)\s+行业\b/)?.[1]?.trim();
+  return uniqueMessages([query, plain, compact, industryCore ? `${industryCore} 行业 新闻` : ""]).filter((item) => item.length > 1);
 }
 
 function uniqueMessages(messages: string[]) {
