@@ -40,7 +40,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 3, requiredAny: [item.company.name, item.company.code] }, request.signal),
     fetchNewsWithFallback(
       industryQuery,
-      { days: 1095, baiduWindow: "近三年", limit: 16, variantLimit: 4, requiredAny: industryRelevanceTerms(industryQuery) },
+      {
+        days: 1095,
+        baiduWindow: "近三年",
+        limit: 16,
+        variantLimit: 4,
+        requiredAny: industryRelevanceTerms(industryQuery),
+        titleRequiredAny: industryRelevanceTerms(industryQuery),
+      },
       request.signal,
     ),
   ]);
@@ -77,6 +84,7 @@ type NewsWindow = {
   limit: number;
   variantLimit: number;
   requiredAny: string[];
+  titleRequiredAny?: string[];
 };
 
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -103,6 +111,7 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
     window.days,
     window.limit,
     window.requiredAny,
+    window.titleRequiredAny,
   );
   if (items.length) return items;
   throw new Error(uniqueMessages(errors).slice(0, 6).join("；") || "新闻源暂时不可用。");
@@ -146,8 +155,10 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   days: number,
   limit: number,
   requiredAny: string[],
+  titleRequiredAny: string[] = [],
 ) {
-  const relevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny));
+  const relevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny));
+  if (!relevantItems.length && titleRequiredAny.length) return [];
   const relevancePool = relevantItems.length ? relevantItems : items;
   const qualityItems = relevancePool.filter(isUsefulNewsItem);
   const deduped = dedupeNewsItems(qualityItems.length >= Math.min(4, limit) ? qualityItems : relevancePool);
@@ -156,8 +167,11 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   return diversifyBySource(candidates, limit);
 }
 
-function isRelevantNewsItem(item: { title?: string; summary?: string }, requiredAny: string[]) {
+function isRelevantNewsItem(item: { title?: string; summary?: string }, requiredAny: string[], titleRequiredAny: string[] = []) {
   const terms = requiredAny.map((term) => normalizeRelevanceTerm(term)).filter((term) => term.length >= 2);
+  const titleTerms = titleRequiredAny.map((term) => normalizeRelevanceTerm(term)).filter((term) => term.length >= 2);
+  const title = normalizeRelevanceTerm(item.title || "");
+  if (titleTerms.length && !titleTerms.some((term) => title.includes(term))) return false;
   if (!terms.length) return true;
   const text = normalizeRelevanceTerm(`${item.title || ""} ${item.summary || ""}`);
   return terms.some((term) => text.includes(term));
@@ -167,7 +181,7 @@ function isUsefulNewsItem(item: { title?: string; summary?: string; source?: str
   const text = `${item.title || ""} ${item.summary || ""}`.trim();
   const source = item.source || "";
   if (/百度文库|股吧|问答|百科/.test(source)) return false;
-  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|个股资料|F10|实时行情|手机东方财富|手机同花顺财经|估值水平|技术分析/.test(text);
+  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|估值——|技术分析/.test(text);
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
