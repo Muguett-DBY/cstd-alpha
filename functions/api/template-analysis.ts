@@ -285,7 +285,12 @@ async function requestTemplateReportOnce(
           lastError = new Error(`${route.model} 未返回完整模板分析内容。`);
           continue;
         }
-        return { ...normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template), modelUsed: route.model };
+        const generated = { ...normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template), modelUsed: route.model };
+        if (route.isFree && env.DEEPSEEK_API_KEY?.trim() && generated.markdown.length < minLength) {
+          lastError = new Error(`${route.model} 输出过短：${generated.markdown.length}/${minLength} 字符，改用付费 Flash Max 兜底。`);
+          continue;
+        }
+        return generated;
       } catch (error) {
         lastError = error;
       }
