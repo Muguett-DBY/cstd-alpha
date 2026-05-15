@@ -288,11 +288,11 @@ function newsQueryVariants(query: string) {
 }
 
 function industryRelevanceTerms(query: string) {
-  const scope = query.split(/\s+行业\b/)[0] || query;
+  const scope = query.split(/\s+行业(?:\s|$)/)[0] || query;
   const parts = scope
     .split(/[\s/／]+/)
     .map((part) => part.trim())
-    .filter((part) => part && !/^(所属行业|未分类|行业待验证|近三年)$/.test(part));
+    .filter((part) => part && !/^(所属行业|未分类|行业待验证|行业|近三年|周期|景气度|政策|供需|价格|竞争格局|OR)$/i.test(part));
   const broadTerms = new Set(["食品饮料", "消费", "大消费", "制造业", "工业", "服务业"]);
   const specificTerms = parts.filter((part) => !broadTerms.has(part));
   const primary = specificTerms.at(-1);
