@@ -3,6 +3,8 @@ import type { InvestmentReport } from "../../src/shared/report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
+  completedTemplateAnalysesForFull,
+  minimumResearchMarkdownChars,
   researchTemplateById,
   type ResearchTemplate,
   type TemplateAnalysisResult,
@@ -39,8 +41,6 @@ type GenerateBody = {
 const MODEL = "deepseek-v4-flash-free";
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
-const MIN_TEMPLATE_MARKDOWN_CHARS = 6000;
-const MIN_FULL_MARKDOWN_CHARS = 5000;
 const MODEL_REQUEST_TIMEOUT_MS = 240_000;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -114,7 +114,7 @@ async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, wat
     prompt: "整合十个模板专项报告，输出最终综合结论。",
     fullPrompt: "请阅读十个模板专项报告，进行交叉验证，保留分歧，输出最终综合结论、评分、风险反证和仓位规则。",
   };
-  const completedChildren = children.filter((item) => item.status === "completed");
+  const completedChildren = completedTemplateAnalysesForFull(children);
   if (completedChildren.length < RESEARCH_TEMPLATES.length) {
     return [
       await writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, fullTemplate, "十个模板尚未全部完成，全面分析暂不可生成。", "failed_retryable"),
@@ -244,7 +244,7 @@ async function requestTemplateReportOnce(
 }
 
 function minimumMarkdownLength(template: ResearchTemplate) {
-  return template.id === FULL_ANALYSIS_TEMPLATE_ID ? MIN_FULL_MARKDOWN_CHARS : MIN_TEMPLATE_MARKDOWN_CHARS;
+  return minimumResearchMarkdownChars(template.id);
 }
 
 async function writeCompletedAnalysis(

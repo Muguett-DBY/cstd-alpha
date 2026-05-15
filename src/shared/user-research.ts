@@ -62,6 +62,8 @@ export type TemplateAnalysisResult = {
 };
 
 export const FULL_ANALYSIS_TEMPLATE_ID = "full";
+export const TEMPLATE_MARKDOWN_MIN_CHARS = 6000;
+export const FULL_ANALYSIS_MARKDOWN_MIN_CHARS = 5000;
 
 export const RESEARCH_TEMPLATES: ResearchTemplate[] = [
   {
@@ -162,4 +164,24 @@ export function researchTemplateById(templateId: string) {
 
 export function isRetryableTemplateStatus(status: TemplateAnalysisStatus) {
   return status === "failed_retryable";
+}
+
+export function minimumResearchMarkdownChars(templateId: string) {
+  return templateId === FULL_ANALYSIS_TEMPLATE_ID ? FULL_ANALYSIS_MARKDOWN_MIN_CHARS : TEMPLATE_MARKDOWN_MIN_CHARS;
+}
+
+export function completedTemplateAnalysesForFull(analyses: TemplateAnalysisResult[]) {
+  const completedByTemplate = new Map(
+    analyses.filter((analysis) => analysis.status === "completed").map((analysis) => [analysis.templateId, analysis]),
+  );
+  return RESEARCH_TEMPLATES.map((template) => completedByTemplate.get(template.id)).filter((analysis): analysis is TemplateAnalysisResult => Boolean(analysis));
+}
+
+export function missingTemplateIdsForFull(analyses: TemplateAnalysisResult[]) {
+  const completedIds = new Set(completedTemplateAnalysesForFull(analyses).map((analysis) => analysis.templateId));
+  return RESEARCH_TEMPLATES.map((template) => template.id).filter((templateId) => !completedIds.has(templateId));
+}
+
+export function isFullAnalysisReady(analyses: TemplateAnalysisResult[]) {
+  return missingTemplateIdsForFull(analyses).length === 0;
 }
