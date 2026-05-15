@@ -86,6 +86,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
 
   const report = await readBestReport(env, watchlist);
+  if (!report) {
+    return json({ error: "请先生成或打开该公司的基础深度评分报告；十模板分析必须基于已有深度报告和公开证据，不能只凭公司名称生成。" }, 409);
+  }
   const durableEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, report, Boolean(body?.forceRefresh));
@@ -405,12 +408,17 @@ async function readWatchlistRow(db: D1Database, userId: string, id: string) {
 
 async function readBestReport(env: Env, watchlist: WatchlistRow): Promise<InvestmentReport | null> {
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return null;
-  const row = watchlist.report_library_id
-    ? await readReportIndexRowById(env.REPORT_LIBRARY_DB, watchlist.report_library_id)
-    : await readReportIndexRowByTicker(env.REPORT_LIBRARY_DB, watchlist.ticker, watchlist.market);
-  if (!row?.object_key) return null;
-  const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
-  return object ? ((await object.json()) as InvestmentReport) : null;
+  try {
+    const row = watchlist.report_library_id
+      ? await readReportIndexRowById(env.REPORT_LIBRARY_DB, watchlist.report_library_id)
+      : await readReportIndexRowByTicker(env.REPORT_LIBRARY_DB, watchlist.ticker, watchlist.market);
+    if (!row?.object_key) return null;
+    const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
+    return object ? ((await object.json()) as InvestmentReport) : null;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("no such table")) return null;
+    throw error;
+  }
 }
 
 async function readReportIndexRowById(db: D1Database, id: string) {

@@ -1,4 +1,5 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
+import type { CompanyNewsBundle } from "./shared/news";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
@@ -206,6 +207,12 @@ export async function fetchTemplateAnalysis(analysisId: string): Promise<Templat
   const data = (await response.json()) as { analysis?: TemplateAnalysisResult };
   if (!data.analysis) throw new Error("模板报告读取失败。");
   return data.analysis;
+}
+
+export async function fetchCompanyNews(watchlistId: string): Promise<CompanyNewsBundle> {
+  const response = await fetch(`/api/company-news?watchlistId=${encodeURIComponent(watchlistId)}&t=${Date.now()}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error((await readError(response)) || "新闻读取失败。");
+  return (await response.json()) as CompanyNewsBundle;
 }
 
 export async function generateTemplateAnalysis(input: { watchlistId: string; templateId: string; forceRefresh?: boolean }): Promise<{ analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] }> {

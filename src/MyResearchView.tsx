@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { addWatchlistItem, fetchTemplateAnalyses, fetchTemplateAnalysis, fetchWatchlist, generateTemplateAnalysis, removeWatchlistItem } from "./api";
+import {
+  addWatchlistItem,
+  fetchCompanyNews,
+  fetchTemplateAnalyses,
+  fetchTemplateAnalysis,
+  fetchWatchlist,
+  generateTemplateAnalysis,
+  removeWatchlistItem,
+} from "./api";
+import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
@@ -257,11 +266,14 @@ function CompanyWorkbench({
           <p className="muted">
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
+          <p className="muted">十模板分析会先读取该公司的基础深度评分报告；没有报告库证据时会拒绝生成，避免模型凭公司名编造数据。</p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
           打开基础深度报告
         </button>
       </div>
+
+      <NewsRadar item={item} />
 
       <section className="template-grid" aria-label="十模板深度分析">
         <TemplateCard
@@ -352,6 +364,11 @@ function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult | n
       </div>
       {analysis.errorMessage ? <p className="error-text">{analysis.errorMessage}</p> : null}
       <p>{analysis.summary}</p>
+      <div className="analysis-meta">
+        {analysis.completedAt ? <span>完成时间：{formatDateTime(analysis.completedAt)}</span> : null}
+        {analysis.markdown ? <span>正文长度：{analysis.markdown.length.toLocaleString("zh-CN")} 字符</span> : null}
+        {analysis.objectKey ? <span>R2 已保存</span> : null}
+      </div>
       <div className="analysis-lists">
         <section>
           <h4>主要得分点</h4>
@@ -366,8 +383,114 @@ function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult | n
           <ul>{listItems(analysis.followUps)}</ul>
         </section>
       </div>
-      {analysis.markdown ? <pre className="markdown-report">{analysis.markdown}</pre> : null}
+      {analysis.markdown ? <MarkdownReport markdown={analysis.markdown} /> : null}
     </section>
+  );
+}
+
+function NewsRadar({ item }: { item: WatchlistItem }) {
+  const [bundle, setBundle] = useState<CompanyNewsBundle | null>(null);
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setPhase("loading");
+      setError("");
+    });
+    void fetchCompanyNews(item.id)
+      .then((data) => {
+        if (cancelled) return;
+        setBundle(data);
+        setPhase("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPhase("error");
+        setError(err instanceof Error ? err.message : "新闻读取失败。");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id, reloadKey]);
+
+  return (
+    <section className="news-radar" aria-label="公司与行业新闻">
+      <header>
+        <div>
+          <p className="eyebrow">实时新闻雷达</p>
+          <h4>公司新闻与行业新闻</h4>
+          <p className="muted">
+            {phase === "loading"
+              ? "正在读取公开新闻源。"
+              : bundle
+                ? `公司关键词：${bundle.companyQuery}；行业关键词：${bundle.industryQuery}`
+                : "新闻源暂不可用。"}
+          </p>
+        </div>
+        <button type="button" className="secondary-button" disabled={phase === "loading"} onClick={() => setReloadKey((key) => key + 1)}>
+          刷新新闻
+        </button>
+      </header>
+      {phase === "error" ? <p className="error-text">{error}</p> : null}
+      <div className="news-columns">
+        <NewsColumn title={`${item.company.name} 相关新闻`} items={bundle?.companyNews ?? []} loading={phase === "loading"} />
+        <NewsColumn title={`${bundle?.industryLabel || "所属行业"} 行业新闻`} items={bundle?.industryNews ?? []} loading={phase === "loading"} />
+      </div>
+    </section>
+  );
+}
+
+function NewsColumn({ title, items, loading }: { title: string; items: NewsItem[]; loading: boolean }) {
+  return (
+    <section>
+      <h5>{title}</h5>
+      {loading ? <p className="muted">读取中...</p> : null}
+      {!loading && !items.length ? <p className="muted">暂无可展示新闻。</p> : null}
+      <div className="news-list">
+        {items.map((item) => (
+          <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className={`news-card sentiment-${item.sentiment}`}>
+            <span className="sentiment-badge">{item.sentimentLabel}</span>
+            <strong>{item.title}</strong>
+            <small>
+              {item.source}
+              {item.publishedAt ? ` / ${formatDateTime(item.publishedAt)}` : ""}
+            </small>
+            <em>{item.sentimentReason}</em>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MarkdownReport({ markdown }: { markdown: string }) {
+  const blocks = markdown.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  return (
+    <div className="markdown-report">
+      {blocks.map((block, index) => {
+        if (/^###\s+/.test(block)) return <h5 key={index}>{block.replace(/^###\s+/, "")}</h5>;
+        if (/^##\s+/.test(block)) return <h4 key={index}>{block.replace(/^##\s+/, "")}</h4>;
+        if (/^#\s+/.test(block)) return <h3 key={index}>{block.replace(/^#\s+/, "")}</h3>;
+        if (/^[-*]\s+/m.test(block)) {
+          return (
+            <ul key={index}>
+              {block
+                .split(/\n/)
+                .map((line) => line.replace(/^[-*]\s+/, "").trim())
+                .filter(Boolean)
+                .map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+            </ul>
+          );
+        }
+        return <p key={index}>{block}</p>;
+      })}
+    </div>
   );
 }
 
@@ -402,6 +525,10 @@ function statusLabel(status: TemplateAnalysisStatus) {
 
 function listItems(items: string[]) {
   return (items.length ? items : ["模型未提供，需要复核。"]).map((item) => <li key={item}>{item}</li>);
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
 function mergeWatchlistItems(current: WatchlistItem[], incoming: WatchlistItem) {
