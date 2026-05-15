@@ -48,7 +48,7 @@ const PAID_MODEL = "deepseek-v4-flash";
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
-const MODEL_REQUEST_TIMEOUT_MS = 240_000;
+const MODEL_REQUEST_TIMEOUT_MS = 540_000;
 const TEMPLATE_CACHE_ANCHOR =
   "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ".repeat(180);
 
@@ -297,7 +297,7 @@ async function requestTemplateReportOnce(
     }
     throw lastError instanceof Error ? lastError : new Error("模板分析生成失败。");
   } catch (error) {
-    if (isAbortLikeError(error)) throw new Error("模板分析模型请求超过 4 分钟未返回，已标记为可重试失败。", { cause: error });
+    if (isAbortLikeError(error)) throw new Error("模板分析模型请求超过 9 分钟未返回，已标记为可重试失败。", { cause: error });
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -656,10 +656,11 @@ function normalizeTemplateAnalysisError(error: unknown) {
 
 function isRetryableError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  return message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || message.includes("超过 4 分钟") || /\b5\d\d\b/.test(message);
+  return message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || message.includes("超过 9 分钟") || /\b5\d\d\b/.test(message);
 }
 
 function isAbortLikeError(error: unknown) {
+  if (error === "model-timeout") return true;
   return error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("abort"));
 }
 
