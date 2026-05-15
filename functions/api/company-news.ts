@@ -161,8 +161,8 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   const titleRelevantItems = titleRequiredAny.length ? items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
   const relevantItems = titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
   const relevancePool = relevantItems.length ? relevantItems : items;
-  const qualityItems = relevancePool.filter(isUsefulNewsItem);
-  const deduped = dedupeNewsItems(qualityItems.length ? qualityItems : relevancePool);
+  const qualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && isNotConflictingIndustryResearch(item, titleRequiredAny));
+  const deduped = dedupeNewsItems(qualityItems.length || titleRequiredAny.length ? qualityItems : relevancePool);
   const recent = filterRecentNews(deduped, days, limit * 3);
   const candidates = sortNewsByDate(recent.length ? recent : deduped);
   return diversifyBySource(candidates, limit);
@@ -183,6 +183,14 @@ function isUsefulNewsItem(item: { title?: string; summary?: string; source?: str
   const source = item.source || "";
   if (/百度文库|股吧|问答|百科/.test(source)) return false;
   return !/最新价格|走势图|历史数据|股票行情|股票吧|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|行情_市值|财报研报数据|数据报告|估值——|技术分析/.test(text);
+}
+
+function isNotConflictingIndustryResearch(item: { title?: string }, titleRequiredAny: string[]) {
+  const terms = titleRequiredAny.map((term) => normalizeRelevanceTerm(term)).filter((term) => term.length >= 2);
+  if (!terms.length) return true;
+  const title = normalizeRelevanceTerm(item.title || "");
+  if (!/行业|产业|市场|竞争格局|供需|产量|发展趋势|现状/.test(item.title || "")) return true;
+  return terms.some((term) => title.includes(term));
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
