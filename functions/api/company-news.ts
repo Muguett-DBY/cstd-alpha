@@ -167,7 +167,7 @@ function isUsefulNewsItem(item: { title?: string; summary?: string; source?: str
   const text = `${item.title || ""} ${item.summary || ""}`.trim();
   const source = item.source || "";
   if (/百度文库|股吧|问答|百科/.test(source)) return false;
-  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|个股资料|F10|实时行情|手机东方财富|估值水平|技术分析/.test(text);
+  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|个股资料|F10|实时行情|手机东方财富|手机同花顺财经|估值水平|技术分析/.test(text);
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
@@ -251,10 +251,15 @@ function newsQueryVariants(query: string) {
 
 function industryRelevanceTerms(query: string) {
   const scope = query.split(/\s+行业\b/)[0] || query;
-  return scope
+  const parts = scope
     .split(/[\s/／]+/)
     .map((part) => part.trim())
     .filter((part) => part && !/^(所属行业|未分类|行业待验证|近三年)$/.test(part));
+  const broadTerms = new Set(["食品饮料", "消费", "大消费", "制造业", "工业", "服务业"]);
+  const specificTerms = parts.filter((part) => !broadTerms.has(part));
+  const primary = specificTerms.at(-1);
+  if (!primary) return parts;
+  return uniqueMessages([primary, ...specificTerms.filter((part) => part.length >= 4)]);
 }
 
 function normalizeRelevanceTerm(value: string) {
