@@ -150,12 +150,13 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
 
 export function buildCompanyNewsQuery(company: Pick<CompanyCandidate, "name" | "code" | "listingPlace">) {
   const suffix = marketNewsSuffix(company.listingPlace);
-  return `${company.name} ${company.code} ${suffix} 近三个月 业绩 OR 公告 OR 股价`;
+  return `${company.name} ${company.code} ${suffix} 近六个月 业绩 OR 公告 OR 监管 OR 回购 OR 事故 OR 股价`;
 }
 
 export function buildIndustryNewsQuery(industryLabel: string, company: Pick<CompanyCandidate, "name" | "listingPlace">) {
   const normalized = industryLabel && !isPlaceholderIndustry(industryLabel) ? industryLabel : inferIndustryFromCompanyName(company.name);
-  return `${normalized} 行业 近三个月 上市公司 景气度 OR 政策 OR 价格`;
+  const scopes = industrySearchScopes(normalized);
+  return `${scopes.join(" ")} 行业 近三年 周期 OR 景气度 OR 政策 OR 供需 OR 价格 OR 竞争格局`;
 }
 
 export function inferIndustryFromCompanyName(companyName: string) {
@@ -174,6 +175,17 @@ function marketNewsSuffix(listingPlace: string) {
 
 function isPlaceholderIndustry(value: string) {
   return /^(未分类|所属行业|行业|行业待验证|待验证)$/i.test(value.trim());
+}
+
+function industrySearchScopes(industryLabel: string) {
+  return Array.from(
+    new Set(
+      industryLabel
+        .split("/")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function readTag(xml: string, tag: string) {

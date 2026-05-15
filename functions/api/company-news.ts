@@ -37,8 +37,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, request.signal),
-    fetchNewsWithFallback(industryQuery, request.signal),
+    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月" }, request.signal),
+    fetchNewsWithFallback(industryQuery, { days: 1095, baiduWindow: "近三年" }, request.signal),
   ]);
 
   const companyNews = newsItemsFromResult(companyNewsResult);
@@ -67,12 +67,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-async function fetchNewsWithFallback(query: string, signal: AbortSignal) {
+type NewsWindow = {
+  days: number;
+  baiduWindow: string;
+};
+
+async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
   const errors: string[] = [];
   for (const variant of newsQueryVariants(query)) {
     for (const source of [fetchGoogleNews, fetchBaiduNews]) {
       try {
-        const items = await source(variant, signal);
+        const items = await source(variant, window, signal);
         if (items.length) return items;
         errors.push(`${source === fetchGoogleNews ? "Google News" : "百度新闻"} 返回空列表：${variant}`);
       } catch (error) {
@@ -83,8 +88,8 @@ async function fetchNewsWithFallback(query: string, signal: AbortSignal) {
   throw new Error(uniqueMessages(errors).join("；") || "新闻源暂时不可用。");
 }
 
-async function fetchGoogleNews(query: string, signal: AbortSignal) {
-  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:180d`)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+async function fetchGoogleNews(query: string, window: NewsWindow, signal: AbortSignal) {
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:${window.days}d`)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
   const response = await fetch(rssUrl, {
     headers: {
       "user-agent": "CSTDAlpha/1.0 (+https://alpha.custard.top)",
@@ -93,11 +98,11 @@ async function fetchGoogleNews(query: string, signal: AbortSignal) {
     signal,
   });
   if (!response.ok) throw new Error(`Google News 读取失败：${response.status}`);
-  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(await response.text(), 16)));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(await response.text(), 16), window.days));
 }
 
-async function fetchBaiduNews(query: string, signal: AbortSignal) {
-  const rssUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(`${plainNewsQuery(query)} 近三个月`)}&tn=newsrss&ie=utf-8`;
+async function fetchBaiduNews(query: string, window: NewsWindow, signal: AbortSignal) {
+  const rssUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(`${plainNewsQuery(query)} ${window.baiduWindow}`)}&tn=newsrss&ie=utf-8`;
   const response = await fetch(rssUrl, {
     headers: {
       "user-agent": "Mozilla/5.0 (compatible; CSTDAlpha/1.0; +https://alpha.custard.top)",
@@ -108,11 +113,11 @@ async function fetchBaiduNews(query: string, signal: AbortSignal) {
   if (!response.ok) throw new Error(`百度新闻读取失败：${response.status}`);
   const xml = decodeNewsResponse(await response.arrayBuffer(), response.headers.get("content-type"));
   if (/百度安全验证|网络不给力|请输入验证码/.test(xml)) throw new Error("百度新闻触发安全验证");
-  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 16, "百度新闻")));
+  return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 16, "百度新闻"), window.days));
 }
 
-function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[]) {
-  const recent = filterRecentNews(items, 180, 8);
+function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[], days: number) {
+  const recent = filterRecentNews(items, days, 8);
   return recent.length ? recent : items.slice(0, 8);
 }
 
@@ -133,9 +138,17 @@ function newsQueryVariants(query: string) {
   const plain = plainNewsQuery(query);
   const compact = plain
     .replace(/近三个月/g, "")
+    .replace(/近六个月/g, "")
+    .replace(/近三年/g, "")
     .replace(/上市公司/g, "")
     .replace(/景气度/g, "")
     .replace(/政策/g, "")
+    .replace(/监管/g, "")
+    .replace(/回购/g, "")
+    .replace(/事故/g, "")
+    .replace(/周期/g, "")
+    .replace(/供需/g, "")
+    .replace(/竞争格局/g, "")
     .replace(/价格/g, "")
     .replace(/业绩/g, "")
     .replace(/公告/g, "")

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildIndustryNewsQuery, classifyNewsSentiment, filterRecentNews, parseGoogleNewsRss, summarizeNewsSentiment } from "./news";
+import { buildCompanyNewsQuery, buildIndustryNewsQuery, classifyNewsSentiment, filterRecentNews, parseGoogleNewsRss, summarizeNewsSentiment } from "./news";
 
 describe("news helpers", () => {
   test("parses Google News RSS items into compact news rows", () => {
@@ -71,6 +71,15 @@ describe("news helpers", () => {
   });
 
   test("falls back from placeholder industry labels to company-name inference", () => {
-    expect(buildIndustryNewsQuery("所属行业", { name: "贵州茅台", listingPlace: "沪A" })).toContain("食品饮料 白酒");
+    const query = buildIndustryNewsQuery("所属行业", { name: "贵州茅台", listingPlace: "沪A" });
+    expect(query).toContain("食品饮料 白酒");
+    expect(query).toContain("近三年");
+    expect(query).toContain("供需");
+  });
+
+  test("uses different windows for company events and industry cycle news", () => {
+    expect(buildCompanyNewsQuery({ name: "万科A", code: "000002", listingPlace: "深A" })).toContain("近六个月");
+    expect(buildCompanyNewsQuery({ name: "万科A", code: "000002", listingPlace: "深A" })).toContain("监管");
+    expect(buildIndustryNewsQuery("房地产 / 房地产开发", { name: "万科A", listingPlace: "深A" })).toContain("房地产 房地产开发 行业 近三年");
   });
 });

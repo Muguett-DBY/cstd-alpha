@@ -498,7 +498,7 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
               ? "正在读取公开新闻源。"
               : bundle
                 ? `已缓存 ${formatDateTime(bundle.fetchedAt)} 的新闻；公司关键词：${bundle.companyQuery}；行业关键词：${bundle.industryQuery}`
-                : "尚未读取新闻，点击“刷新新闻”后再请求公开新闻源。"}
+                : "尚未读取新闻。公司新闻按近六个月事件跟踪；行业与细分产业按近三年周期、政策和供需趋势跟踪。点击“刷新新闻”后再请求公开新闻源。"}
           </p>
         </div>
         <button type="button" className="secondary-button" disabled={phase === "loading"} onClick={() => void refreshNews()}>
@@ -606,7 +606,7 @@ function saveCachedNewsBundle(item: WatchlistItem, bundle: CompanyNewsBundle) {
 
 function newsCacheKey(item: WatchlistItem) {
   const company = item.company;
-  return `cstd-news-cache:v2:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
+  return `cstd-news-cache:v3:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
 }
 
 function MarkdownReport({ markdown }: { markdown: string }) {
