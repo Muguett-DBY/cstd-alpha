@@ -223,6 +223,20 @@ export async function generateTemplateAnalysis(input: { watchlistId: string; tem
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板分析生成失败。");
+  if (response.headers.get("content-type")?.includes("application/x-ndjson")) {
+    let finalResult: { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] } | undefined;
+    for await (const event of readNdjson(response)) {
+      if (event.type === "error") throw new Error(String(event.error || "模板分析生成失败。"));
+      if (event.type === "final") {
+        finalResult = {
+          analysis: event.analysis as TemplateAnalysisResult | undefined,
+          analyses: event.analyses as TemplateAnalysisResult[] | undefined,
+        };
+      }
+    }
+    if (!finalResult?.analysis && !finalResult?.analyses) throw new Error("模板分析连接提前结束，请稍后重试。");
+    return finalResult;
+  }
   const data = (await response.json()) as { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] };
   if (!data.analysis && !data.analyses) throw new Error("模板分析生成失败。");
   return data;

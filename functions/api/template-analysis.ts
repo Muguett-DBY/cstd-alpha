@@ -40,6 +40,9 @@ type GenerateBody = {
   forceRefresh?: boolean;
 };
 
+type TemplateProgressWriter = (event: Record<string, unknown>) => void;
+type GeneratedTemplateAnalysis = ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
+
 const FREE_MODEL = "deepseek-v4-flash-free";
 const PAID_MODEL = "deepseek-v4-flash";
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
@@ -96,19 +99,68 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID) : null;
     if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
-    const evidence = await fetchTemplateEvidence(watchlist, request.signal);
-    const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh);
-    return json({ analyses, watchlistItem: watchlistRowToItem(watchlist) });
+    return streamTemplateGeneration(async (write) => {
+      write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据。" });
+      const evidence = await fetchTemplateEvidence(watchlist, request.signal);
+      write({ type: "progress", stage: "full_analysis", label: "十模板全面分析", detail: "正在逐项生成十个专项模板，已完成模板会复用缓存。" });
+      const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh, write);
+      write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
+    });
   }
 
   const template = researchTemplateById(templateId);
   if (!template) return json({ error: "未知模板。" }, 400);
   const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template.id) : null;
   if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
-  const evidence = await fetchTemplateEvidence(watchlist, request.signal);
-  const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidence, template, forceRefresh);
-  return json({ analysis, watchlistItem: watchlistRowToItem(watchlist) });
+  return streamTemplateGeneration(async (write) => {
+    write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据。" });
+    const evidence = await fetchTemplateEvidence(watchlist, request.signal);
+    write({ type: "progress", stage: "template_analysis", label: "生成模板深度报告", detail: `${template.shortTitle} 正在用 DeepSeek Flash Max 生成。` });
+    const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidence, template, forceRefresh, [], write);
+    write({ type: "final", analysis, watchlistItem: watchlistRowToItem(watchlist) });
+  });
 };
+
+function streamTemplateGeneration(run: (write: TemplateProgressWriter) => Promise<void>) {
+  const encoder = new TextEncoder();
+  let closed = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write: TemplateProgressWriter = (event) => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(`${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`));
+      };
+      write({ type: "progress", stage: "started", label: "模板任务已开始", detail: "连接会保持打开，避免长报告生成时触发 Cloudflare 524。" });
+      heartbeat = setInterval(() => {
+        write({ type: "progress", stage: "heartbeat", label: "模板分析生成中", detail: "模型仍在生成完整深度报告，请保持等待。" });
+      }, 12_000);
+      run(write)
+        .catch((error) => {
+          write({ type: "error", error: error instanceof Error ? error.message : "模板分析生成失败。" });
+        })
+        .finally(() => {
+          if (heartbeat) clearInterval(heartbeat);
+          if (!closed) {
+            closed = true;
+            controller.close();
+          }
+        });
+    },
+    cancel() {
+      closed = true;
+      if (heartbeat) clearInterval(heartbeat);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store",
+      "x-accel-buffering": "no",
+    },
+  });
+}
 
 async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSignal) {
   return fetchPublicCompanyEvidence({
@@ -128,10 +180,18 @@ async function readCompletedAnalysisCache(env: Env, userId: string, watchlistId:
   return { ...(await hydrateMarkdown(env, analysisRowToResult(row))), fromCache: true };
 }
 
-async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, watchlist: WatchlistRow, evidence: EvidenceBundle, forceRefresh: boolean) {
+async function generateFullAnalysis(
+  env: DurableTemplateEnv,
+  userId: string,
+  watchlist: WatchlistRow,
+  evidence: EvidenceBundle,
+  forceRefresh: boolean,
+  write?: TemplateProgressWriter,
+) {
   const children: TemplateAnalysisResult[] = [];
   for (const template of RESEARCH_TEMPLATES) {
-    children.push(await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false));
+    write?.({ type: "progress", stage: "child_template", label: "生成专项模板", detail: `正在生成 ${template.shortTitle}。` });
+    children.push(await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write));
   }
   const fullTemplate: ResearchTemplate = {
     id: FULL_ANALYSIS_TEMPLATE_ID,
@@ -148,7 +208,8 @@ async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, wat
       ...children,
     ];
   }
-  return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren), ...children];
+  write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: "十个专项模板已完成，正在交叉验证并生成最终全面分析。" });
+  return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write), ...children];
 }
 
 async function generateSingleTemplateAnalysis(
@@ -159,6 +220,7 @@ async function generateSingleTemplateAnalysis(
   template: ResearchTemplate,
   forceRefresh: boolean,
   childAnalyses: TemplateAnalysisResult[] = [],
+  write?: TemplateProgressWriter,
 ) {
   const id = await analysisId(userId, watchlist.id, template.id);
   const existing = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
@@ -169,6 +231,7 @@ async function generateSingleTemplateAnalysis(
   await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running");
   const startedAt = new Date().toISOString();
   try {
+    write?.({ type: "progress", stage: "model", label: "DeepSeek 生成中", detail: `${template.shortTitle} 正在生成完整 Markdown 深度报告。` });
     const generated = await requestTemplateReport(env, watchlist, evidence, template, childAnalyses);
     const objectKey = `${TEMPLATE_REPORT_PREFIX}/${userId}/${watchlist.id}/${template.id}.md`;
     await env.REPORT_LIBRARY_BUCKET.put(objectKey, generated.markdown, {
@@ -177,6 +240,7 @@ async function generateSingleTemplateAnalysis(
     });
     const completedAt = new Date().toISOString();
     const result = await writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, generated, objectKey, startedAt, completedAt);
+    write?.({ type: "progress", stage: "saved", label: "模板报告已保存", detail: `${template.shortTitle} 已写入 R2/D1 报告库。` });
     return { ...result, markdown: generated.markdown };
   } catch (error) {
     return writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, template, normalizeTemplateAnalysisError(error), isRetryableError(error) ? "failed_retryable" : "failed", startedAt);
@@ -221,7 +285,7 @@ async function requestTemplateReportOnce(
           lastError = new Error(`${route.model} 未返回完整模板分析内容。`);
           continue;
         }
-        return normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template);
+        return { ...normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template), modelUsed: route.model };
       } catch (error) {
         lastError = error;
       }
@@ -350,7 +414,7 @@ async function writeCompletedAnalysis(
   userId: string,
   watchlist: WatchlistRow,
   template: ResearchTemplate,
-  generated: ReturnType<typeof normalizeGeneratedAnalysis>,
+  generated: GeneratedTemplateAnalysis,
   objectKey: string,
   startedAt: string,
   completedAt: string,
@@ -365,7 +429,7 @@ async function writeCompletedAnalysis(
     companyName: watchlist.company_name,
     ticker: watchlist.ticker,
     market: watchlist.market,
-    model: FREE_MODEL,
+    model: generated.modelUsed ?? FREE_MODEL,
     status: "completed",
     title: generated.title,
     score: generated.score,
@@ -459,7 +523,7 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
       result.companyName,
       result.ticker,
       result.market,
-      FREE_MODEL,
+      result.model,
       result.status,
       result.title,
       result.score ?? null,
