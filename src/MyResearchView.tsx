@@ -747,7 +747,7 @@ function saveCachedNewsBundle(item: WatchlistItem, bundle: CompanyNewsBundle) {
 
 function newsCacheKey(item: WatchlistItem) {
   const company = item.company;
-  return `cstd-news-cache:v4:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
+  return `cstd-news-cache:v5:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
 }
 
 function MarkdownReport({ markdown }: { markdown: string }) {
