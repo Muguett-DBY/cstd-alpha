@@ -53,7 +53,8 @@ describe("user research templates", () => {
       expect(minimumResearchMarkdownChars(template.id)).toBe(TEMPLATE_MARKDOWN_MIN_CHARS);
     }
     expect(minimumResearchMarkdownChars(FULL_ANALYSIS_TEMPLATE_ID)).toBe(FULL_ANALYSIS_MARKDOWN_MIN_CHARS);
-    expect(TEMPLATE_MARKDOWN_MIN_CHARS).toBeGreaterThan(FULL_ANALYSIS_MARKDOWN_MIN_CHARS);
+    expect(TEMPLATE_MARKDOWN_MIN_CHARS).toBeGreaterThanOrEqual(4500);
+    expect(FULL_ANALYSIS_MARKDOWN_MIN_CHARS).toBeGreaterThanOrEqual(5000);
   });
 });
 

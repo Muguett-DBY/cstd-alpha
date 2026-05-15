@@ -321,10 +321,10 @@ function buildTemplateMessages(
       role: "user" as const,
       content: JSON.stringify({
         task: draftToExpand
-          ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
+          ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
           : template.id === FULL_ANALYSIS_TEMPLATE_ID
-            ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
-            : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
+            ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 7000-10000 个中文字符。`
+            : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，并包含模板要求的所有关键模块。`,
         template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
         company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
         publicEvidence: compactTemplateEvidence(evidence),
@@ -346,7 +346,7 @@ function buildTemplateMessages(
           keyPoints: ["5-10 条核心正面判断"],
           riskFlags: ["5-10 条风险、反证或不确定性"],
           followUps: ["5-10 条后续跟踪指标"],
-          markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，不足则不要结束。`,
+          markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，目标 6000 字以上，不足则不要结束。`,
         },
       }),
     },
