@@ -7,6 +7,7 @@ import {
   parseGoogleNewsRss,
   summarizeNewsSentiment,
   type CompanyNewsBundle,
+  type NewsItem,
 } from "../../src/shared/news";
 import { formatIndustryLabel } from "../../src/shared/industry";
 import { ensureUserResearchSchema, json, requireUserSession, watchlistRowToItem, type WatchlistRow } from "../_shared/user-research-db";
@@ -37,7 +38,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 4, baiduVariantLimit: 2, requiredAny: [item.company.name, item.company.code] }, request.signal),
+    fetchNewsWithFallback(
+      companyQuery,
+      { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 4, baiduVariantLimit: 2, eastmoneyVariantLimit: 2, requiredAny: [item.company.name, item.company.code] },
+      request.signal,
+    ),
     fetchNewsWithFallback(
       industryQuery,
       {
@@ -46,6 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         limit: 16,
         variantLimit: 5,
         baiduVariantLimit: 2,
+        eastmoneyVariantLimit: 2,
         requiredAny: industryRelevanceTerms(industryQuery),
         titleRequiredAny: industryRelevanceTerms(industryQuery),
       },
@@ -85,6 +91,7 @@ type NewsWindow = {
   limit: number;
   variantLimit: number;
   baiduVariantLimit: number;
+  eastmoneyVariantLimit: number;
   requiredAny: string[];
   titleRequiredAny?: string[];
 };
@@ -96,8 +103,10 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
     [
       { name: "Google News", run: fetchGoogleNews },
       { name: "百度新闻", run: fetchBaiduNews },
+      { name: "东方财富", run: fetchEastmoneyNews },
     ]
       .filter((source) => source.name !== "百度新闻" || variantIndex < window.baiduVariantLimit)
+      .filter((source) => source.name !== "东方财富" || variantIndex < window.eastmoneyVariantLimit)
       .map(async (source) => {
         try {
           const items = await source.run(variant, window, signal);
@@ -147,6 +156,40 @@ async function fetchBaiduNews(query: string, window: NewsWindow, signal: AbortSi
   const xml = decodeNewsResponse(await response.arrayBuffer(), response.headers.get("content-type"));
   if (/百度安全验证|网络不给力|请输入验证码/.test(xml)) throw new Error("百度新闻触发安全验证");
   return decorateNewsSentiment(selectRecentOrBestEffort(parseGoogleNewsRss(xml, 32, "百度新闻"), window.days, window.limit * 2));
+}
+
+async function fetchEastmoneyNews(query: string, window: NewsWindow, signal: AbortSignal) {
+  const param = JSON.stringify({
+    keyword: plainNewsQuery(query),
+    type: ["cmsTopicWebHome"],
+    client: "web",
+    clientVersion: "curr",
+    clientType: "web",
+    param: { cmsTopicWebHome: { pageSize: window.limit * 2, pageIndex: 1, postTag: "", preTag: "" } },
+  });
+  const response = await fetch(`https://search-api-web.eastmoney.com/search/jsonp?cb=cstd&param=${encodeURIComponent(param)}`, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (compatible; CSTDAlpha/1.0; +https://alpha.custard.top)",
+      accept: "application/javascript, application/json, text/plain,*/*",
+      referer: "https://so.eastmoney.com/",
+    },
+    signal,
+  });
+  if (!response.ok) throw new Error(`东方财富新闻读取失败：${response.status}`);
+  const text = await response.text();
+  const jsonText = text.replace(/^[^(]*\(/, "").replace(/\);\s*$/, "");
+  const data = JSON.parse(jsonText) as { result?: { cmsTopicWebHome?: Array<{ id?: string; name?: string; url?: string; introduction?: string }> } };
+  const rows: Array<Omit<NewsItem, "sentiment" | "sentimentLabel" | "sentimentReason" | "confidence">> = (data.result?.cmsTopicWebHome ?? [])
+    .map((item) => ({
+      id: `eastmoney:${item.id || item.url || item.name}`,
+      title: stripSearchHtml(item.name || ""),
+      url: item.url || "",
+      source: "东方财富",
+      publishedAt: undefined,
+      summary: stripSearchHtml(item.introduction || ""),
+    }))
+    .filter((item) => item.title && item.url);
+  return decorateNewsSentiment(selectRecentOrBestEffort(rows, window.days, window.limit * 2));
 }
 
 function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[], days: number, limit: number) {
@@ -251,6 +294,14 @@ function decodeNewsResponse(buffer: ArrayBuffer, contentType: string | null) {
 
 function plainNewsQuery(query: string) {
   return query.replace(/\s+OR\s+/gi, " ").replace(/[;；:：]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function stripSearchHtml(value: string) {
+  return value
+    .replace(/<em>|<\/em>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function newsQueryVariants(query: string) {
