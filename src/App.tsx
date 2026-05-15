@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, searchCompanies, type ReportProgress } from "./api";
+import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, logout, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
@@ -65,6 +65,13 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败。");
     }
+  }
+
+  async function submitLogout() {
+    await logout();
+    setAuthenticated(false);
+    setUser(null);
+    setPassword("");
   }
 
   async function submitSearch(event: React.FormEvent) {
@@ -281,13 +288,14 @@ function App() {
           <p className="brand">CSTD Alpha</p>
           <h1 id="auth-title">私人公司深度研究工具</h1>
           <form onSubmit={submitLogin} className="auth-form">
-            <label htmlFor="username">用户名</label>
+            <label htmlFor="username">账号</label>
             <input
               id="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
-              placeholder="用于区分我的自选股"
+              placeholder="请输入预设账号"
+              required
             />
             <label htmlFor="password">访问密码</label>
             <input
@@ -315,6 +323,10 @@ function App() {
           <p className="brand">CSTD Alpha</p>
           <h1>中文深度评分报告</h1>
           <p className="rail-copy">先确认上市主体，再生成完整模板报告，避免同名公司或错误代码。</p>
+          <p className="muted">当前账号：{user?.displayName || user?.username}</p>
+          <button type="button" className="ghost-button" onClick={() => void submitLogout()}>
+            退出登录
+          </button>
         </div>
 
         <nav className="view-tabs" aria-label="工作区">

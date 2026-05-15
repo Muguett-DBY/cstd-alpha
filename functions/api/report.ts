@@ -32,7 +32,7 @@ const REPORT_GENERATION_LOCK_STALE_MS = 6 * 60 * 1000;
 const REPORT_GENERATION_LOCK_MESSAGE = "同一家公司报告正在生成中，正在等待共享缓存写入，本次不会重复调用 DeepSeek。";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
+  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const body = (await request.json().catch(() => null)) as ReportRequest | null;

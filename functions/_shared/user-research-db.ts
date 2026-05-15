@@ -8,7 +8,7 @@ export type UserResearchEnv = {
 };
 
 export async function requireUserSession(request: Request, env: UserResearchEnv) {
-  const session = await readSessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
+  const session = await readSessionCookie(request.headers.get("cookie"), env);
   if (!session) return null;
   return session;
 }
@@ -19,6 +19,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
       .prepare(
         `CREATE TABLE IF NOT EXISTS user_watchlist (
           id TEXT PRIMARY KEY,
+          user_id TEXT,
           user_key TEXT NOT NULL,
           company_name TEXT NOT NULL,
           ticker TEXT NOT NULL,
@@ -37,6 +38,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
       .prepare(
         `CREATE TABLE IF NOT EXISTS template_analysis (
           id TEXT PRIMARY KEY,
+          user_id TEXT,
           user_key TEXT NOT NULL,
           watchlist_id TEXT NOT NULL,
           template_id TEXT NOT NULL,
@@ -45,23 +47,38 @@ export async function ensureUserResearchSchema(db: D1Database) {
           ticker TEXT NOT NULL,
           market TEXT NOT NULL,
           model TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'completed',
           title TEXT NOT NULL,
           score REAL,
           verdict TEXT NOT NULL,
           summary TEXT NOT NULL,
           content_json TEXT NOT NULL,
+          object_key TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          error_message TEXT,
           UNIQUE(user_key, watchlist_id, template_id)
         )`,
       ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_template_analysis_user ON template_analysis (user_key, updated_at DESC)`),
+  ]);
+  await Promise.all([
+    ensureColumn(db, "user_watchlist", "user_id", "TEXT"),
+    ensureColumn(db, "template_analysis", "user_id", "TEXT"),
+    ensureColumn(db, "template_analysis", "status", "TEXT NOT NULL DEFAULT 'completed'"),
+    ensureColumn(db, "template_analysis", "object_key", "TEXT"),
+    ensureColumn(db, "template_analysis", "started_at", "TEXT"),
+    ensureColumn(db, "template_analysis", "completed_at", "TEXT"),
+    ensureColumn(db, "template_analysis", "error_message", "TEXT"),
   ]);
 }
 
 export function watchlistRowToItem(row: WatchlistRow): WatchlistItem {
   return {
     id: row.id,
+    userId: row.user_id || row.user_key,
     company: {
       id: `watchlist:${row.market}:${row.ticker}`,
       name: row.company_name,
@@ -80,6 +97,7 @@ export function analysisRowToResult(row: AnalysisRow): TemplateAnalysisResult {
   const content = parseAnalysisContent(row.content_json);
   return {
     id: row.id,
+    userId: row.user_id || row.user_key,
     watchlistId: row.watchlist_id,
     templateId: row.template_id,
     templateTitle: row.template_title,
@@ -87,16 +105,21 @@ export function analysisRowToResult(row: AnalysisRow): TemplateAnalysisResult {
     ticker: row.ticker,
     market: row.market,
     model: row.model,
+    status: templateStatus(row.status),
     title: row.title,
     score: row.score ?? undefined,
     verdict: row.verdict,
     summary: row.summary,
+    objectKey: row.object_key || undefined,
+    errorMessage: row.error_message || undefined,
     keyPoints: content.keyPoints,
     riskFlags: content.riskFlags,
     followUps: content.followUps,
     sections: content.sections,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    startedAt: row.started_at || undefined,
+    completedAt: row.completed_at || undefined,
   };
 }
 
@@ -139,6 +162,7 @@ export function json(data: unknown, status = 200) {
 
 export type WatchlistRow = {
   id: string;
+  user_id?: string | null;
   user_key: string;
   company_name: string;
   ticker: string;
@@ -153,6 +177,7 @@ export type WatchlistRow = {
 
 export type AnalysisRow = {
   id: string;
+  user_id?: string | null;
   user_key: string;
   watchlist_id: string;
   template_id: string;
@@ -161,13 +186,18 @@ export type AnalysisRow = {
   ticker: string;
   market: string;
   model: string;
+  status?: string | null;
   title: string;
   score: number | null;
   verdict: string;
   summary: string;
   content_json: string;
+  object_key?: string | null;
   created_at: string;
   updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error_message?: string | null;
 };
 
 function parseAnalysisContent(raw: string) {
@@ -201,6 +231,18 @@ function candidateSource(value: unknown): CompanyCandidate["source"] {
   return value === "yahoo" ? "yahoo" : "eastmoney";
 }
 
+function templateStatus(value: unknown) {
+  return value === "pending" || value === "running" || value === "completed" || value === "failed_retryable" || value === "failed" ? value : "completed";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+async function ensureColumn(db: D1Database, table: string, column: string, definition: string) {
+  try {
+    await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  } catch {
+    // D1/SQLite throws when the column already exists; migrations also create these columns.
+  }
 }

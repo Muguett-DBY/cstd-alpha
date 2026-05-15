@@ -20,14 +20,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
   const result = await env.REPORT_LIBRARY_DB.prepare(
-    `SELECT id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
+    `SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
      FROM user_watchlist
      WHERE user_key = ?1
      ORDER BY added_at DESC`,
   )
-    .bind(session.userKey)
+    .bind(session.userId)
     .all<WatchlistRow>();
-  return json({ items: (result.results ?? []).map(watchlistRowToItem), user: { username: session.username, userKey: session.userKey } });
+  return json({ items: (result.results ?? []).map(watchlistRowToItem), user: { userId: session.userId, username: session.username, displayName: session.displayName, role: session.role } });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -41,12 +41,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!company) return json({ error: "公司信息不完整，无法加入自选。" }, 400);
 
   const now = new Date().toISOString();
-  const id = await sha256(`${session.userKey}:${company.listingPlace}:${company.code}`);
+  const id = await sha256(`${session.userId}:${company.listingPlace}:${company.code}`);
   await env.REPORT_LIBRARY_DB.prepare(
     `INSERT INTO user_watchlist (
-      id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+      id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
     ON CONFLICT(user_key, ticker, market) DO UPDATE SET
+      user_id = excluded.user_id,
       company_name = excluded.company_name,
       exchange_name = excluded.exchange_name,
       listing_place = excluded.listing_place,
@@ -54,10 +55,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       source = excluded.source,
       report_library_id = COALESCE(excluded.report_library_id, user_watchlist.report_library_id)`,
   )
-    .bind(id, session.userKey, company.name, company.code, company.listingPlace, company.exchange, company.listingPlace, company.marketType, company.source, body?.reportLibraryId || null, now)
+    .bind(id, session.userId, session.userId, company.name, company.code, company.listingPlace, company.exchange, company.listingPlace, company.marketType, company.source, body?.reportLibraryId || null, now)
     .run();
 
-  const row = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userKey, id);
+  const row = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, id);
   return json({ item: row ? watchlistRowToItem(row) : null });
 };
 
@@ -68,14 +69,14 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
   const id = new URL(request.url).searchParams.get("id")?.trim();
   if (!id) return json({ error: "缺少自选股 ID。" }, 400);
-  await env.REPORT_LIBRARY_DB.prepare(`DELETE FROM user_watchlist WHERE user_key = ?1 AND id = ?2`).bind(session.userKey, id).run();
+  await env.REPORT_LIBRARY_DB.prepare(`DELETE FROM user_watchlist WHERE user_key = ?1 AND id = ?2`).bind(session.userId, id).run();
   return json({ ok: true });
 };
 
 async function readWatchlistRow(db: D1Database, userKey: string, id: string) {
   return db
     .prepare(
-      `SELECT id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
+      `SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
        FROM user_watchlist
        WHERE user_key = ?1 AND id = ?2`,
     )

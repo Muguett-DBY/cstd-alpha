@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { addWatchlistItem, fetchTemplateAnalyses, fetchWatchlist, generateTemplateAnalysis, removeWatchlistItem } from "./api";
+import { addWatchlistItem, fetchTemplateAnalyses, fetchTemplateAnalysis, fetchWatchlist, generateTemplateAnalysis, removeWatchlistItem } from "./api";
 import type { CompanyCandidate } from "./shared/report";
-import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES, type TemplateAnalysisResult, type UserSession, type WatchlistItem } from "./shared/user-research";
+import {
+  FULL_ANALYSIS_TEMPLATE_ID,
+  RESEARCH_TEMPLATES,
+  isRetryableTemplateStatus,
+  type TemplateAnalysisResult,
+  type TemplateAnalysisStatus,
+  type UserSession,
+  type WatchlistItem,
+} from "./shared/user-research";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -13,7 +21,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [analyses, setAnalyses] = useState<TemplateAnalysisResult[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState(FULL_ANALYSIS_TEMPLATE_ID);
+  const [activeAnalysis, setActiveAnalysis] = useState<TemplateAnalysisResult | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "generating" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -38,9 +46,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     };
   }, []);
 
-  const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0], [items, selectedWatchlistId]);
+  const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
-  const latestAnalysis = selectedAnalyses[0];
+  const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
 
   async function addCurrentCompany() {
     if (!selectedCompany) return;
@@ -50,6 +58,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       const item = await addWatchlistItem({ company: selectedCompany });
       setItems((current) => mergeWatchlistItems(current, item));
       setSelectedWatchlistId(item.id);
+      setActiveAnalysis(null);
       setNotice(`已加入自选：${item.company.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加入自选失败。");
@@ -63,27 +72,77 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       await removeWatchlistItem(item.id);
       setItems((current) => current.filter((candidate) => candidate.id !== item.id));
       setAnalyses((current) => current.filter((analysis) => analysis.watchlistId !== item.id));
-      if (selectedWatchlistId === item.id) setSelectedWatchlistId("");
+      if (selectedWatchlistId === item.id) {
+        setSelectedWatchlistId("");
+        setActiveAnalysis(null);
+      }
       setNotice(`已移除：${item.company.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "移除自选失败。");
     }
   }
 
-  async function generate() {
+  async function generate(templateId: string, forceRefresh = false) {
     const target = selectedItem;
     if (!target) return;
     setPhase("generating");
     setError("");
     setNotice("");
     try {
-      const analysis = await generateTemplateAnalysis({ watchlistId: target.id, templateId: selectedTemplateId });
-      setAnalyses((current) => [analysis, ...current.filter((item) => item.id !== analysis.id)]);
-      setNotice(`已生成：${analysis.templateTitle}`);
+      if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
+        await generateFullAnalysisFromClient(target, forceRefresh);
+        setPhase("ready");
+        return;
+      }
+      const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh });
+      const nextAnalyses = result.analyses ?? (result.analysis ? [result.analysis] : []);
+      setAnalyses((current) => mergeAnalyses(current, nextAnalyses));
+      const completed = nextAnalyses.find((analysis) => analysis.status === "completed") ?? nextAnalyses[0];
+      if (completed) setActiveAnalysis(completed);
+      setNotice(
+        templateId === FULL_ANALYSIS_TEMPLATE_ID
+          ? "全面分析任务已更新：十个模板会逐项生成，已完成的模板会直接复用缓存。"
+          : completed?.fromCache
+            ? `已打开缓存报告：${completed.templateTitle}`
+            : `已生成：${completed?.templateTitle ?? "模板报告"}`,
+      );
       setPhase("ready");
     } catch (err) {
       setPhase("error");
       setError(err instanceof Error ? err.message : "模板分析生成失败。");
+    }
+  }
+
+  async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
+    for (const template of RESEARCH_TEMPLATES) {
+      setNotice(`全面分析进行中：正在生成 ${template.shortTitle}。已完成的模板会自动复用缓存。`);
+      const partial = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id, forceRefresh });
+      const partialAnalyses = partial.analyses ?? (partial.analysis ? [partial.analysis] : []);
+      setAnalyses((current) => mergeAnalyses(current, partialAnalyses));
+      const failed = partialAnalyses.find((analysis) => analysis.status === "failed" || analysis.status === "failed_retryable");
+      if (failed) {
+        setActiveAnalysis(failed);
+        setNotice(`全面分析暂停：${failed.templateTitle} 未完成，可稍后重试。`);
+        return;
+      }
+    }
+    setNotice("十个模板已完成，正在生成最终综合汇总。");
+    const finalResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh });
+    const finalAnalyses = finalResult.analyses ?? (finalResult.analysis ? [finalResult.analysis] : []);
+    setAnalyses((current) => mergeAnalyses(current, finalAnalyses));
+    const finalAnalysis = finalAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID) ?? finalAnalyses[0];
+    if (finalAnalysis) setActiveAnalysis(finalAnalysis);
+    setNotice("全面分析已更新：十个专项模板和综合汇总已写入报告库。");
+  }
+
+  async function openAnalysis(analysis: TemplateAnalysisResult) {
+    setError("");
+    try {
+      const hydrated = await fetchTemplateAnalysis(analysis.id);
+      setActiveAnalysis(hydrated);
+      setAnalyses((current) => mergeAnalyses(current, [hydrated]));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板报告读取失败。");
     }
   }
 
@@ -92,13 +151,13 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       <header className="ranking-header">
         <div>
           <p className="eyebrow">我的研究</p>
-          <h2 id="my-title">自选股与多模板分析</h2>
-          <p className="muted">{user?.username || "默认用户"} 的自选股、专项模板分析和十模板全面分析。</p>
+          <h2 id="my-title">自选股公司工作台</h2>
+          <p className="muted">{user?.displayName || user?.username || "固定账号"} 的自选股、公司级操作台和十模板深度分析。</p>
         </div>
         <div className="ranking-summary">
           <Metric label="自选股" value={`${items.length}`} />
-          <Metric label="分析数" value={`${analyses.length}`} />
-          <Metric label="当前公司" value={selectedCompany?.name || "未选择"} />
+          <Metric label="分析任务" value={`${analyses.length}`} />
+          <Metric label="当前公司" value={selectedItem?.company.name || selectedCompany?.name || "未选择"} />
           <Metric label="状态" value={phase === "generating" ? "生成中" : "就绪"} />
         </div>
       </header>
@@ -107,27 +166,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         <button type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void addCurrentCompany()}>
           加入当前公司
         </button>
-        <select value={selectedWatchlistId} onChange={(event) => setSelectedWatchlistId(event.target.value)} aria-label="选择自选股">
-          {items.length ? (
-            items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.company.name} / {item.company.code}
-              </option>
-            ))
-          ) : (
-            <option value="">暂无自选股</option>
-          )}
-        </select>
-        <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)} aria-label="选择模板">
-          <option value={FULL_ANALYSIS_TEMPLATE_ID}>十模板全面分析</option>
-          {RESEARCH_TEMPLATES.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.shortTitle}
-            </option>
-          ))}
-        </select>
-        <button type="button" disabled={!selectedItem || phase === "generating"} onClick={() => void generate()}>
-          {phase === "generating" ? "正在分析..." : "生成模板分析"}
+        <button type="button" disabled={!selectedItem || phase === "generating"} onClick={() => void generate(FULL_ANALYSIS_TEMPLATE_ID)}>
+          十模板全面分析
         </button>
       </div>
       {notice ? <p className="cache-notice">{notice}</p> : null}
@@ -139,7 +179,14 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           {items.length ? (
             items.map((item) => (
               <article key={item.id} className={item.id === selectedItem?.id ? "active" : ""}>
-                <button type="button" className="ranking-company" onClick={() => setSelectedWatchlistId(item.id)}>
+                <button
+                  type="button"
+                  className="ranking-company"
+                  onClick={() => {
+                    setSelectedWatchlistId(item.id);
+                    setActiveAnalysis(null);
+                  }}
+                >
                   <strong>{item.company.name}</strong>
                   <small>
                     {item.company.code} / {item.company.listingPlace}
@@ -147,7 +194,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
                 </button>
                 <div>
                   <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
-                    打开
+                    基础报告
                   </button>
                   <button type="button" className="ghost-button" onClick={() => void deleteItem(item)}>
                     移除
@@ -161,11 +208,21 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         </section>
 
         <section className="analysis-panel">
-          <h3>{latestAnalysis ? latestAnalysis.title : "模板分析"}</h3>
-          {latestAnalysis ? (
-            <AnalysisResultView analysis={latestAnalysis} />
+          {selectedItem ? (
+            <CompanyWorkbench
+              item={selectedItem}
+              analysisByTemplate={analysisByTemplate}
+              activeAnalysis={activeAnalysis}
+              phase={phase}
+              onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
+              onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
+              onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
+            />
           ) : (
-            <p className="muted">选择自选股和模板后生成分析。单模板用于专项判断，十模板全面分析会把十个框架合并为一份更完整的报告。</p>
+            <>
+              <h3>公司工作台</h3>
+              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告或十模板全面分析。</p>
+            </>
           )}
         </section>
       </div>
@@ -173,15 +230,127 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   );
 }
 
-function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult }) {
+function CompanyWorkbench({
+  item,
+  analysisByTemplate,
+  activeAnalysis,
+  phase,
+  onGenerate,
+  onOpenAnalysis,
+  onOpenBaseReport,
+}: {
+  item: WatchlistItem;
+  analysisByTemplate: Map<string, TemplateAnalysisResult>;
+  activeAnalysis: TemplateAnalysisResult | null;
+  phase: "loading" | "ready" | "generating" | "error";
+  onGenerate: (templateId: string, forceRefresh?: boolean) => void;
+  onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
+  onOpenBaseReport: () => void;
+}) {
+  const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
   return (
-    <div className="analysis-result">
+    <>
+      <div className="company-workbench-header">
+        <div>
+          <p className="eyebrow">公司工作台</p>
+          <h3>{item.company.name}</h3>
+          <p className="muted">
+            {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
+          </p>
+        </div>
+        <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
+          打开基础深度报告
+        </button>
+      </div>
+
+      <section className="template-grid" aria-label="十模板深度分析">
+        <TemplateCard
+          title="十模板全面分析"
+          focus="先生成十个专项深度报告，再汇总成最终全面分析。"
+          analysis={fullAnalysis}
+          disabled={phase === "generating"}
+          onGenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}
+          onRegenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID, true)}
+          onOpen={onOpenAnalysis}
+        />
+        {RESEARCH_TEMPLATES.map((template) => (
+          <TemplateCard
+            key={template.id}
+            title={template.title}
+            focus={template.focus}
+            analysis={analysisByTemplate.get(template.id)}
+            disabled={phase === "generating"}
+            onGenerate={() => onGenerate(template.id)}
+            onRegenerate={() => onGenerate(template.id, true)}
+            onOpen={onOpenAnalysis}
+          />
+        ))}
+      </section>
+
+      <AnalysisResultView analysis={activeAnalysis ?? fullAnalysis ?? null} />
+    </>
+  );
+}
+
+function TemplateCard({
+  title,
+  focus,
+  analysis,
+  disabled,
+  onGenerate,
+  onRegenerate,
+  onOpen,
+}: {
+  title: string;
+  focus: string;
+  analysis?: TemplateAnalysisResult;
+  disabled: boolean;
+  onGenerate: () => void;
+  onRegenerate: () => void;
+  onOpen: (analysis: TemplateAnalysisResult) => void;
+}) {
+  const status = analysis?.status ?? "pending";
+  return (
+    <article className={`template-card status-${status}`}>
+      <div>
+        <strong>{title}</strong>
+        <span>{statusLabel(status)}</span>
+      </div>
+      <p>{analysis?.summary || focus}</p>
+      {analysis?.fromCache ? <small>来自已生成缓存</small> : null}
+      <footer>
+        {analysis?.status === "completed" ? (
+          <button type="button" className="secondary-button" onClick={() => onOpen(analysis)}>
+            查看
+          </button>
+        ) : null}
+        <button type="button" disabled={disabled} onClick={analysis ? onRegenerate : onGenerate}>
+          {analysis && (analysis.status === "completed" || isRetryableTemplateStatus(analysis.status)) ? "重新生成" : "生成"}
+        </button>
+      </footer>
+    </article>
+  );
+}
+
+function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult | null }) {
+  if (!analysis) {
+    return (
+      <section className="analysis-result">
+        <h3>模板报告</h3>
+        <p className="muted">点击任一模板生成后，完整 Markdown 深度报告会保存到 R2，并在这里展示。</p>
+      </section>
+    );
+  }
+  return (
+    <section className="analysis-result">
       <div className="dashboard-grid">
         <Info label="模板" value={analysis.templateTitle} />
         <Info label="模型" value={analysis.model} />
+        <Info label="状态" value={statusLabel(analysis.status)} />
         <Info label="评分" value={analysis.score === undefined ? "待验证" : analysis.score.toFixed(1)} />
         <Info label="结论" value={analysis.verdict} />
       </div>
+      {analysis.errorMessage ? <p className="error-text">{analysis.errorMessage}</p> : null}
       <p>{analysis.summary}</p>
       <div className="analysis-lists">
         <section>
@@ -197,13 +366,8 @@ function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult }) 
           <ul>{listItems(analysis.followUps)}</ul>
         </section>
       </div>
-      {analysis.sections.map((section) => (
-        <section key={section.heading} className="report-section">
-          <h3>{section.heading}</h3>
-          <p>{section.body}</p>
-        </section>
-      ))}
-    </div>
+      {analysis.markdown ? <pre className="markdown-report">{analysis.markdown}</pre> : null}
+    </section>
   );
 }
 
@@ -225,6 +389,17 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
+function statusLabel(status: TemplateAnalysisStatus) {
+  const labels: Record<TemplateAnalysisStatus, string> = {
+    pending: "未生成",
+    running: "生成中",
+    completed: "已完成",
+    failed_retryable: "可重试失败",
+    failed: "失败",
+  };
+  return labels[status];
+}
+
 function listItems(items: string[]) {
   return (items.length ? items : ["模型未提供，需要复核。"]).map((item) => <li key={item}>{item}</li>);
 }
@@ -232,4 +407,10 @@ function listItems(items: string[]) {
 function mergeWatchlistItems(current: WatchlistItem[], incoming: WatchlistItem) {
   const next = current.filter((item) => item.id !== incoming.id);
   return [incoming, ...next];
+}
+
+function mergeAnalyses(current: TemplateAnalysisResult[], incoming: TemplateAnalysisResult[]) {
+  const byId = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, item);
+  return Array.from(byId.values()).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }

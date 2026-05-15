@@ -30,7 +30,7 @@ const REPORT_PREFIX = `report-library:${LIBRARY_VERSION}:report:`;
 const R2_REPORT_PREFIX = `report-library/${LIBRARY_VERSION}/reports/`;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
+  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const url = new URL(request.url);
@@ -61,7 +61,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
+  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
   if (!hasDurableLibrary(env)) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
 

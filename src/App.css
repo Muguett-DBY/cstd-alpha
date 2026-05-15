@@ -781,13 +781,17 @@ button:disabled {
 }
 
 .my-actions {
-  display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(180px, 1fr) minmax(180px, 240px) minmax(150px, 190px);
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
   background: var(--surface);
+}
+
+.my-actions button {
+  min-width: 180px;
 }
 
 .my-grid {
@@ -855,6 +859,114 @@ button:disabled {
 
 .analysis-lists h4 {
   margin: 0 0 8px;
+}
+
+.company-workbench-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.company-workbench-header h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.template-card {
+  display: grid;
+  gap: 12px;
+  min-height: 176px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfbf8;
+}
+
+.template-card > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.template-card strong,
+.template-card p,
+.template-card small,
+.markdown-report {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.template-card span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.template-card p {
+  margin: 0;
+  color: var(--body);
+  font-size: 14px;
+}
+
+.template-card small {
+  color: var(--teal);
+  font-weight: 800;
+}
+
+.template-card footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: end;
+}
+
+.template-card footer button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.template-card.status-running {
+  background: #f4f8ff;
+  border-color: #b7c9ec;
+}
+
+.template-card.status-completed {
+  background: #f5fbf6;
+  border-color: #b9d9c0;
+}
+
+.template-card.status-failed,
+.template-card.status-failed_retryable {
+  background: #fff7f5;
+  border-color: #e4bbb2;
+}
+
+.markdown-report {
+  max-height: 70vh;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #101418;
+  color: #f5f5ef;
+  font-family: "Consolas", "SFMono-Regular", monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .score-tile,
@@ -1112,7 +1224,9 @@ button:disabled {
   .ranking-tools,
   .my-actions,
   .my-grid,
-  .analysis-lists {
+  .analysis-lists,
+  .company-workbench-header,
+  .template-grid {
     grid-template-columns: 1fr;
   }
 

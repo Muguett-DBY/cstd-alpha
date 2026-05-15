@@ -4,6 +4,7 @@ import type { CompanyCandidate } from "../../src/shared/report";
 
 type Env = {
   AUTH_SECRET: string;
+  REPORT_LIBRARY_DB?: D1Database;
 };
 
 type EvidenceRequest = {
@@ -14,7 +15,7 @@ type EvidenceRequest = {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env.AUTH_SECRET);
+  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const body = (await request.json().catch(() => null)) as EvidenceRequest | null;

@@ -66,6 +66,10 @@ export async function login(password: string, username?: string): Promise<UserSe
   return data.user ?? null;
 }
 
+export async function logout(): Promise<void> {
+  await fetch("/api/session", { method: "DELETE", credentials: "include" });
+}
+
 export async function searchCompanies(query: string): Promise<CompanyCandidate[]> {
   const response = await fetch(`/api/company-search?q=${encodeURIComponent(query)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "公司搜索失败。");
@@ -196,7 +200,15 @@ export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ ana
   return { analyses: data.analyses ?? [], templates: data.templates ?? [] };
 }
 
-export async function generateTemplateAnalysis(input: { watchlistId: string; templateId: string }): Promise<TemplateAnalysisResult> {
+export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {
+  const response = await fetch(`/api/template-analysis?analysisId=${encodeURIComponent(analysisId)}`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "模板报告读取失败。");
+  const data = (await response.json()) as { analysis?: TemplateAnalysisResult };
+  if (!data.analysis) throw new Error("模板报告读取失败。");
+  return data.analysis;
+}
+
+export async function generateTemplateAnalysis(input: { watchlistId: string; templateId: string; forceRefresh?: boolean }): Promise<{ analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] }> {
   const response = await fetch("/api/template-analysis", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -204,9 +216,9 @@ export async function generateTemplateAnalysis(input: { watchlistId: string; tem
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板分析生成失败。");
-  const data = (await response.json()) as { analysis?: TemplateAnalysisResult };
-  if (!data.analysis) throw new Error("模板分析生成失败。");
-  return data.analysis;
+  const data = (await response.json()) as { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] };
+  if (!data.analysis && !data.analyses) throw new Error("模板分析生成失败。");
+  return data;
 }
 
 async function* readNdjson(response: Response): AsyncGenerator<Record<string, unknown>> {

@@ -1,22 +1,23 @@
 import { describe, expect, test } from "vitest";
-import { createSessionCookie, readSessionCookie, verifySessionCookie } from "./auth";
+import { createPasswordHash, hashSessionToken, verifyPasswordHash } from "./auth";
 
-describe("session auth", () => {
-  test("creates and verifies signed session cookies", async () => {
-    const cookie = await createSessionCookie("secret", "2026-05-10T00:00:00.000Z");
+describe("fixed-account auth primitives", () => {
+  test("hashes passwords with a salt and verifies only the original password", async () => {
+    const first = await createPasswordHash("correct horse battery staple", "fixed-salt-for-test");
+    const second = await createPasswordHash("correct horse battery staple", "another-fixed-salt");
 
-    await expect(verifySessionCookie(cookie, "secret")).resolves.toBe(true);
-    await expect(verifySessionCookie(cookie, "wrong")).resolves.toBe(false);
-    await expect(readSessionCookie(cookie, "secret")).resolves.toMatchObject({ username: "默认用户", userKey: "default" });
+    expect(first).toMatch(/^pbkdf2-sha256\$\d+\$/);
+    expect(first).not.toBe(second);
+    await expect(verifyPasswordHash("correct horse battery staple", first)).resolves.toBe(true);
+    await expect(verifyPasswordHash("wrong password", first)).resolves.toBe(false);
   });
 
-  test("stores the selected username in the signed session", async () => {
-    const cookie = await createSessionCookie("secret", "2026-05-10T00:00:00.000Z", { username: "Alice Chen" });
+  test("stores only a hash of the session token", async () => {
+    const token = "session-secret-token";
+    const hash = await hashSessionToken(token);
 
-    await expect(readSessionCookie(cookie, "secret")).resolves.toMatchObject({ username: "Alice Chen", userKey: "alice-chen" });
-  });
-
-  test("rejects malformed cookies", async () => {
-    await expect(verifySessionCookie("cstd_alpha_session=bad", "secret")).resolves.toBe(false);
+    expect(hash).not.toContain(token);
+    await expect(hashSessionToken(token)).resolves.toBe(hash);
+    await expect(hashSessionToken("other-token")).resolves.not.toBe(hash);
   });
 });

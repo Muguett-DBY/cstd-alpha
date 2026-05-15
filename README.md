@@ -4,11 +4,12 @@
 
 ## 工作流
 
-1. 密码门保护网页和 API。
+1. 固定账号登录保护网页和 API；账号保存在 D1，密码只保存哈希，session token 只保存哈希。
 2. 用户输入公司名或代码，系统返回候选公司：公司名、代码、上市地、交易所。
 3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
 4. OpenCode Zen `deepseek-v4-flash-free` 使用 thinking mode 和 `reasoning_effort: "max"` 生成完整报告。
-5. 前端实时显示 NDJSON 进度流，并支持 DOCX/JSON 导出。
+5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
+6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
 
 批量导入报告库使用 OpenCode CLI 模型 ID `opencode/deepseek-v4-flash-free` 生成报告，再导入 D1/R2 报告库。
 
@@ -16,6 +17,9 @@
 
 - `GET /api/company-search?q=万科A`：返回候选公司列表。
 - `POST /api/report`：请求体为 `{ "company": CompanyCandidate }`，响应为 NDJSON 进度流。
+- `GET/POST/DELETE /api/session`：固定账号登录、读取和退出。
+- `GET/POST/DELETE /api/watchlist`：按 `user_id` 隔离的自选股。
+- `GET/POST /api/template-analysis`：模板专项报告元数据存在 D1，正文 Markdown 存在 R2。
 
 ## 本地开发
 
@@ -34,6 +38,14 @@ npm test
 npm run build
 npm run pages:dev
 ```
+
+创建或重置固定账号：
+
+```bash
+CSTD_USER_PASSWORD="..." node scripts/create-fixed-user.mjs --username=alice --displayName=Alice --role=admin
+```
+
+不提供公开注册页。生产库没有任何账号时，可以用 `REPORT_PASSWORD` 登录任意首个账号完成一次管理员引导；之后建议用脚本维护固定账号。
 
 ## 部署
 
