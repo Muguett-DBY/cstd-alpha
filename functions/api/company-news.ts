@@ -162,7 +162,7 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   const relevantItems = titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
   const relevancePool = relevantItems.length ? relevantItems : items;
   const strictQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && isNotConflictingIndustryResearch(item, titleRequiredAny));
-  const looseQualityItems = relevancePool.filter(isUsefulNewsItem);
+  const looseQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && (!titleRequiredAny.length || isNotConflictingIndustryResearch(item, titleRequiredAny)));
   const qualityItems = strictQualityItems.length >= Math.min(3, limit) ? strictQualityItems : looseQualityItems.length ? looseQualityItems : relevancePool;
   const deduped = dedupeNewsItems(qualityItems);
   const recent = filterRecentNews(deduped, days, limit * 3);
