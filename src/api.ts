@@ -33,6 +33,14 @@ export type ReportGenerationResult = {
   metrics?: ReportGenerationMetrics;
 };
 
+export type TemplateAnalysisProgress = {
+  type: "progress";
+  stage: string;
+  label: string;
+  detail: string;
+  at?: string;
+};
+
 export type ReportLibraryRecord = {
   entry: ReportLibraryEntry;
   report: InvestmentReport;
@@ -215,7 +223,10 @@ export async function fetchCompanyNews(watchlistId: string): Promise<CompanyNews
   return (await response.json()) as CompanyNewsBundle;
 }
 
-export async function generateTemplateAnalysis(input: { watchlistId: string; templateId: string; forceRefresh?: boolean }): Promise<{ analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] }> {
+export async function generateTemplateAnalysis(
+  input: { watchlistId: string; templateId: string; forceRefresh?: boolean },
+  onProgress?: (progress: TemplateAnalysisProgress) => void,
+): Promise<{ analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] }> {
   const response = await fetch("/api/template-analysis", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -226,6 +237,7 @@ export async function generateTemplateAnalysis(input: { watchlistId: string; tem
   if (response.headers.get("content-type")?.includes("application/x-ndjson")) {
     let finalResult: { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] } | undefined;
     for await (const event of readNdjson(response)) {
+      if (event.type === "progress") onProgress?.(event as TemplateAnalysisProgress);
       if (event.type === "error") throw new Error(String(event.error || "模板分析生成失败。"));
       if (event.type === "final") {
         finalResult = {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   addWatchlistItem,
   fetchCompanyNews,
@@ -7,6 +7,7 @@ import {
   fetchWatchlist,
   generateTemplateAnalysis,
   removeWatchlistItem,
+  searchCompanies,
 } from "./api";
 import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
@@ -31,6 +32,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [analyses, setAnalyses] = useState<TemplateAnalysisResult[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
   const [activeAnalysis, setActiveAnalysis] = useState<TemplateAnalysisResult | null>(null);
+  const [companyQuery, setCompanyQuery] = useState("");
+  const [companyCandidates, setCompanyCandidates] = useState<CompanyCandidate[]>([]);
+  const [searchingCompany, setSearchingCompany] = useState(false);
   const [phase, setPhase] = useState<"loading" | "ready" | "generating" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -61,16 +65,38 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
 
   async function addCurrentCompany() {
     if (!selectedCompany) return;
+    await addCompanyToMine(selectedCompany);
+  }
+
+  async function addCompanyToMine(company: CompanyCandidate) {
     setError("");
     setNotice("");
     try {
-      const item = await addWatchlistItem({ company: selectedCompany });
+      const item = await addWatchlistItem({ company });
       setItems((current) => mergeWatchlistItems(current, item));
       setSelectedWatchlistId(item.id);
       setActiveAnalysis(null);
       setNotice(`已加入自选：${item.company.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加入自选失败。");
+    }
+  }
+
+  async function submitCompanySearch(event: React.FormEvent) {
+    event.preventDefault();
+    const query = companyQuery.trim();
+    if (!query) return;
+    setError("");
+    setNotice("");
+    setSearchingCompany(true);
+    try {
+      const candidates = await searchCompanies(query);
+      setCompanyCandidates(candidates);
+      if (!candidates.length) setNotice("没有找到候选公司，请换成股票代码或更完整的公司名。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "公司搜索失败。");
+    } finally {
+      setSearchingCompany(false);
     }
   }
 
@@ -103,7 +129,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         setPhase("ready");
         return;
       }
-      const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh });
+      const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh }, (progress) => {
+        if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
+      });
       const nextAnalyses = result.analyses ?? (result.analysis ? [result.analysis] : []);
       setAnalyses((current) => mergeAnalyses(current, nextAnalyses));
       const completed = nextAnalyses.find((analysis) => analysis.status === "completed") ?? nextAnalyses[0];
@@ -125,7 +153,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
     for (const template of RESEARCH_TEMPLATES) {
       setNotice(`全面分析进行中：正在生成 ${template.shortTitle}。已完成的模板会自动复用缓存。`);
-      const partial = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id, forceRefresh });
+      const partial = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id, forceRefresh }, (progress) => {
+        if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
+      });
       const partialAnalyses = partial.analyses ?? (partial.analysis ? [partial.analysis] : []);
       setAnalyses((current) => mergeAnalyses(current, partialAnalyses));
       const failed = partialAnalyses.find((analysis) => analysis.status === "failed" || analysis.status === "failed_retryable");
@@ -136,7 +166,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       }
     }
     setNotice("十个模板已完成，正在生成最终综合汇总。");
-    const finalResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh });
+    const finalResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
+      if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
+    });
     const finalAnalyses = finalResult.analyses ?? (finalResult.analysis ? [finalResult.analysis] : []);
     setAnalyses((current) => mergeAnalyses(current, finalAnalyses));
     const finalAnalysis = finalAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID) ?? finalAnalyses[0];
@@ -179,6 +211,30 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           十模板全面分析
         </button>
       </div>
+      <section className="mine-search-card" aria-label="搜索并加入自选股">
+        <div>
+          <h3>添加自选公司</h3>
+          <p className="muted">在这里直接搜索公司名或股票代码，确认上市主体后加入“我的”，不必先回到生成报告页。</p>
+        </div>
+        <form onSubmit={submitCompanySearch} className="mine-search-form">
+          <input value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} placeholder="例如：贵州茅台、000333、AMZN" />
+          <button type="submit" disabled={searchingCompany || phase === "generating"}>
+            {searchingCompany ? "搜索中..." : "搜索公司"}
+          </button>
+        </form>
+        {companyCandidates.length ? (
+          <div className="mine-candidate-list">
+            {companyCandidates.map((candidate) => (
+              <button key={candidate.id} type="button" onClick={() => void addCompanyToMine(candidate)}>
+                <strong>{candidate.name}</strong>
+                <span>
+                  {candidate.code} / {candidate.listingPlace} / {candidate.exchange}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
 
@@ -226,6 +282,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
               onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
               onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
+              onBackToTemplates={() => setActiveAnalysis(null)}
             />
           ) : (
             <>
@@ -247,6 +304,7 @@ function CompanyWorkbench({
   onGenerate,
   onOpenAnalysis,
   onOpenBaseReport,
+  onBackToTemplates,
 }: {
   item: WatchlistItem;
   analysisByTemplate: Map<string, TemplateAnalysisResult>;
@@ -255,8 +313,12 @@ function CompanyWorkbench({
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
   onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
   onOpenBaseReport: () => void;
+  onBackToTemplates: () => void;
 }) {
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
+  if (activeAnalysis) {
+    return <TemplateReportReader analysis={activeAnalysis} onBack={onBackToTemplates} />;
+  }
   return (
     <>
       <div className="company-workbench-header">
@@ -299,7 +361,15 @@ function CompanyWorkbench({
         ))}
       </section>
 
-      <AnalysisResultView analysis={activeAnalysis ?? fullAnalysis ?? null} />
+      {fullAnalysis ? (
+        <section className="analysis-result compact-analysis-result">
+          <h3>全面分析摘要</h3>
+          <p>{fullAnalysis.summary}</p>
+          <button type="button" className="secondary-button" onClick={() => onOpenAnalysis(fullAnalysis)}>
+            查看全面分析
+          </button>
+        </section>
+      ) : null}
     </>
   );
 }
@@ -344,17 +414,21 @@ function TemplateCard({
   );
 }
 
-function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult | null }) {
-  if (!analysis) {
-    return (
-      <section className="analysis-result">
-        <h3>模板报告</h3>
-        <p className="muted">点击任一模板生成后，完整 Markdown 深度报告会保存到 R2，并在这里展示。</p>
-      </section>
-    );
-  }
+function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysisResult; onBack: () => void }) {
   return (
-    <section className="analysis-result">
+    <section className="analysis-reader" aria-label="模板报告阅读页">
+      <header className="analysis-reader-header">
+        <div>
+          <p className="eyebrow">模板报告阅读页</p>
+          <h3>{analysis.title || analysis.templateTitle}</h3>
+          <p className="muted">
+            {analysis.companyName} / {analysis.ticker} / {analysis.market}
+          </p>
+        </div>
+        <button type="button" className="secondary-button" onClick={onBack}>
+          返回十模板
+        </button>
+      </header>
       <div className="dashboard-grid">
         <Info label="模板" value={analysis.templateTitle} />
         <Info label="模型" value={analysis.model} />
@@ -363,7 +437,10 @@ function AnalysisResultView({ analysis }: { analysis: TemplateAnalysisResult | n
         <Info label="结论" value={analysis.verdict} />
       </div>
       {analysis.errorMessage ? <p className="error-text">{analysis.errorMessage}</p> : null}
-      <p>{analysis.summary}</p>
+      <section className="analysis-summary">
+        <h4>摘要</h4>
+        <p>{analysis.summary}</p>
+      </section>
       <div className="analysis-meta">
         {analysis.completedAt ? <span>完成时间：{formatDateTime(analysis.completedAt)}</span> : null}
         {analysis.markdown ? <span>正文长度：{analysis.markdown.length.toLocaleString("zh-CN")} 字符</span> : null}
@@ -446,10 +523,38 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
             .join("；")}
         </p>
       ) : null}
+      {bundle ? (
+        <div className="news-sentiment-grid">
+          <SentimentMeter title="公司新闻情绪" summary={bundle.companySummary} />
+          <SentimentMeter title="行业新闻情绪" summary={bundle.industrySummary} />
+        </div>
+      ) : null}
       <div className="news-columns">
         <NewsColumn title={`${item.company.name} 相关新闻`} items={bundle?.companyNews ?? []} loading={phase === "loading"} />
         <NewsColumn title={`${bundle?.industryLabel || "所属行业"} 行业新闻`} items={bundle?.industryNews ?? []} loading={phase === "loading"} />
       </div>
+    </section>
+  );
+}
+
+function SentimentMeter({ title, summary }: { title: string; summary: CompanyNewsBundle["companySummary"] }) {
+  return (
+    <section className={`sentiment-meter sentiment-meter-${summary.overall}`}>
+      <div>
+        <span>{title}</span>
+        <strong>{summary.overallLabel}</strong>
+      </div>
+      <div className="sentiment-track" aria-label={`${title} 利好 ${summary.positivePct}% 利空 ${summary.negativePct}% 中性 ${summary.neutralPct}%`}>
+        <i className="meter-positive" style={{ width: `${summary.positivePct}%` }} />
+        <i className="meter-neutral" style={{ width: `${summary.neutralPct}%` }} />
+        <i className="meter-negative" style={{ width: `${summary.negativePct}%` }} />
+      </div>
+      <footer>
+        <span>利好 {summary.positivePct}%</span>
+        <span>中性 {summary.neutralPct}%</span>
+        <span>利空 {summary.negativePct}%</span>
+      </footer>
+      <small>样本 {summary.total} 条，按标题与摘要关键词自动归类。</small>
     </section>
   );
 }
@@ -478,13 +583,30 @@ function NewsColumn({ title, items, loading }: { title: string; items: NewsItem[
 }
 
 function MarkdownReport({ markdown }: { markdown: string }) {
-  const blocks = markdown.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const blocks = normalizeMarkdownForReading(markdown)
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
   return (
     <div className="markdown-report">
       {blocks.map((block, index) => {
         if (/^###\s+/.test(block)) return <h5 key={index}>{block.replace(/^###\s+/, "")}</h5>;
         if (/^##\s+/.test(block)) return <h4 key={index}>{block.replace(/^##\s+/, "")}</h4>;
         if (/^#\s+/.test(block)) return <h3 key={index}>{block.replace(/^#\s+/, "")}</h3>;
+        const numbered = block.match(/^(\d{1,2})\.\s+([\s\S]+)$/);
+        if (numbered) {
+          const body = numbered[2].trim();
+          const [heading, rest] = splitNumberedSection(body);
+          return (
+            <section key={index} className="markdown-numbered-section">
+              <h4>
+                <span>{numbered[1]}</span>
+                {renderInline(heading)}
+              </h4>
+              {rest ? <p>{renderInline(rest)}</p> : null}
+            </section>
+          );
+        }
         if (/^[-*]\s+/m.test(block)) {
           return (
             <ul key={index}>
@@ -498,10 +620,35 @@ function MarkdownReport({ markdown }: { markdown: string }) {
             </ul>
           );
         }
-        return <p key={index}>{block}</p>;
+        return <p key={index}>{renderInline(block)}</p>;
       })}
     </div>
   );
+}
+
+function normalizeMarkdownForReading(markdown: string) {
+  return markdown
+    .replace(/\r\n/g, "\n")
+    .replace(/\s+(?=\d{1,2}\.\s+)/g, "\n\n")
+    .replace(/\s+(?=(估值与仓位规则|待复核清单|总结)\b)/g, "\n\n## ")
+    .replace(/\s+(?=\*\*反证条件：\*\*)/g, "\n")
+    .replace(/\s+(?=\*\*待复核：\*\*)/g, "\n")
+    .trim();
+}
+
+function splitNumberedSection(body: string) {
+  const scoreIndex = body.search(/\s+\*\*评分：/);
+  const analysisIndex = body.search(/\s+\*\*分析：/);
+  const cut = [scoreIndex, analysisIndex].filter((index) => index > 0).sort((left, right) => left - right)[0];
+  if (!cut) return [body, ""] as const;
+  return [body.slice(0, cut).trim(), body.slice(cut).trim()] as const;
+}
+
+function renderInline(value: string): ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

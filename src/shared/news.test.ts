@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildIndustryNewsQuery, classifyNewsSentiment, parseGoogleNewsRss } from "./news";
+import { buildIndustryNewsQuery, classifyNewsSentiment, filterRecentNews, parseGoogleNewsRss, summarizeNewsSentiment } from "./news";
 
 describe("news helpers", () => {
   test("parses Google News RSS items into compact news rows", () => {
@@ -49,6 +49,25 @@ describe("news helpers", () => {
     expect(classifyNewsSentiment("公司业绩预增并宣布回购股份").sentiment).toBe("positive");
     expect(classifyNewsSentiment("公司遭监管处罚且利润大幅下滑").sentiment).toBe("negative");
     expect(classifyNewsSentiment("公司召开年度股东大会").sentiment).toBe("neutral");
+    expect(classifyNewsSentiment("公司召开年度股东大会").sentimentLabel).toBe("中性");
+  });
+
+  test("keeps recent news and summarizes positive/negative split", () => {
+    const rows = [
+      { title: "近期利好", publishedAt: "2026-05-01T00:00:00.000Z" },
+      { title: "旧闻", publishedAt: "2025-12-01T00:00:00.000Z" },
+      { title: "无日期" },
+    ];
+
+    expect(filterRecentNews(rows, 120, 8, new Date("2026-05-15T00:00:00.000Z")).map((item) => item.title)).toEqual(["近期利好", "无日期"]);
+
+    const summary = summarizeNewsSentiment([
+      { id: "1", title: "业绩增长", url: "#", source: "A", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "增长", confidence: 0.7 },
+      { id: "2", title: "处罚", url: "#", source: "B", sentiment: "negative", sentimentLabel: "偏利空", sentimentReason: "处罚", confidence: 0.7 },
+      { id: "3", title: "会议", url: "#", source: "C", sentiment: "neutral", sentimentLabel: "中性", sentimentReason: "中性", confidence: 0.4 },
+    ]);
+
+    expect(summary).toMatchObject({ total: 3, positive: 1, negative: 1, neutral: 1, overallLabel: "整体中性" });
   });
 
   test("falls back from placeholder industry labels to company-name inference", () => {

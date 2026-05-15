@@ -15,10 +15,24 @@ export type NewsItem = {
   confidence: number;
 };
 
+export type NewsSentimentSummary = {
+  total: number;
+  positive: number;
+  negative: number;
+  neutral: number;
+  positivePct: number;
+  negativePct: number;
+  neutralPct: number;
+  overall: NewsSentiment;
+  overallLabel: string;
+};
+
 export type CompanyNewsBundle = {
   company: CompanyCandidate;
   companyNews: NewsItem[];
   industryNews: NewsItem[];
+  companySummary: NewsSentimentSummary;
+  industrySummary: NewsSentimentSummary;
   companyQuery: string;
   industryQuery: string;
   industryLabel: string;
@@ -67,8 +81,8 @@ export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsIte
   }
   return {
     sentiment: "neutral",
-    sentimentLabel: "中性/待判",
-    sentimentReason: "标题没有明显方向性词，需结合正文和公告原文复核。",
+    sentimentLabel: "中性",
+    sentimentReason: "标题没有明显方向性词，按中性新闻处理。",
     confidence: 0.45,
   };
 }
@@ -101,14 +115,47 @@ export function decorateNewsSentiment(items: Array<Omit<NewsItem, "sentiment" | 
   return items.map((item) => ({ ...item, ...classifyNewsSentiment(item.title, item.summary) }));
 }
 
+export function filterRecentNews<T extends { publishedAt?: string }>(items: T[], days = 120, limit = 8, now = new Date()): T[] {
+  const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
+  const recentDated = items.filter((item) => {
+    if (!item.publishedAt) return false;
+    const time = Date.parse(item.publishedAt);
+    return Number.isFinite(time) && time >= cutoff;
+  });
+  const undated = items.filter((item) => !item.publishedAt);
+  return [...recentDated, ...undated].slice(0, limit);
+}
+
+export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary {
+  const total = items.length;
+  const positive = items.filter((item) => item.sentiment === "positive").length;
+  const negative = items.filter((item) => item.sentiment === "negative").length;
+  const neutral = Math.max(0, total - positive - negative);
+  const positivePct = percent(positive, total);
+  const negativePct = percent(negative, total);
+  const neutralPct = Math.max(0, 100 - positivePct - negativePct);
+  const overall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  return {
+    total,
+    positive,
+    negative,
+    neutral,
+    positivePct,
+    negativePct,
+    neutralPct,
+    overall,
+    overallLabel: overall === "positive" ? "整体偏利好" : overall === "negative" ? "整体偏利空" : "整体中性",
+  };
+}
+
 export function buildCompanyNewsQuery(company: Pick<CompanyCandidate, "name" | "code" | "listingPlace">) {
   const suffix = marketNewsSuffix(company.listingPlace);
-  return `${company.name} ${company.code} ${suffix} 业绩 OR 公告 OR 股价`;
+  return `${company.name} ${company.code} ${suffix} 近三个月 业绩 OR 公告 OR 股价`;
 }
 
 export function buildIndustryNewsQuery(industryLabel: string, company: Pick<CompanyCandidate, "name" | "listingPlace">) {
   const normalized = industryLabel && !isPlaceholderIndustry(industryLabel) ? industryLabel : inferIndustryFromCompanyName(company.name);
-  return `${normalized} 行业 上市公司 景气度 OR 政策 OR 价格`;
+  return `${normalized} 行业 近三个月 上市公司 景气度 OR 政策 OR 价格`;
 }
 
 export function inferIndustryFromCompanyName(companyName: string) {
@@ -178,6 +225,10 @@ function matchedReason(text: string, patterns: RegExp[]) {
 
 function confidenceScore(primary: number, opposite: number) {
   return Math.min(0.9, Math.max(0.55, 0.55 + (primary - opposite) * 0.15));
+}
+
+function percent(value: number, total: number) {
+  return total > 0 ? Math.round((value / total) * 100) : 0;
 }
 
 function escapeRegExp(value: string) {

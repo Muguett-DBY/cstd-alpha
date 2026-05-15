@@ -3,7 +3,9 @@ import {
   buildCompanyNewsQuery,
   buildIndustryNewsQuery,
   decorateNewsSentiment,
+  filterRecentNews,
   parseGoogleNewsRss,
+  summarizeNewsSentiment,
   type CompanyNewsBundle,
 } from "../../src/shared/news";
 import { formatIndustryLabel } from "../../src/shared/industry";
@@ -39,10 +41,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     fetchNewsWithFallback(industryQuery, request.signal),
   ]);
 
+  const companyNews = newsItemsFromResult(companyNewsResult);
+  const industryNews = newsItemsFromResult(industryNewsResult);
   const bundle: CompanyNewsBundle = {
     company: item.company,
-    companyNews: newsItemsFromResult(companyNewsResult),
-    industryNews: newsItemsFromResult(industryNewsResult),
+    companyNews,
+    industryNews,
+    companySummary: summarizeNewsSentiment(companyNews),
+    industrySummary: summarizeNewsSentiment(industryNews),
     companyQuery,
     industryQuery,
     industryLabel,
@@ -76,7 +82,7 @@ async function fetchNewsWithFallback(query: string, signal: AbortSignal) {
 }
 
 async function fetchGoogleNews(query: string, signal: AbortSignal) {
-  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:120d`)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
   const response = await fetch(rssUrl, {
     headers: {
       "user-agent": "CSTDAlpha/1.0 (+https://alpha.custard.top)",
@@ -85,11 +91,11 @@ async function fetchGoogleNews(query: string, signal: AbortSignal) {
     signal,
   });
   if (!response.ok) throw new Error(`Google News 读取失败：${response.status}`);
-  return decorateNewsSentiment(parseGoogleNewsRss(await response.text(), 8));
+  return decorateNewsSentiment(filterRecentNews(parseGoogleNewsRss(await response.text(), 16), 120, 8));
 }
 
 async function fetchBaiduNews(query: string, signal: AbortSignal) {
-  const rssUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(plainNewsQuery(query))}&tn=newsrss&ie=utf-8`;
+  const rssUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(`${plainNewsQuery(query)} 近三个月`)}&tn=newsrss&ie=utf-8`;
   const response = await fetch(rssUrl, {
     headers: {
       "user-agent": "Mozilla/5.0 (compatible; CSTDAlpha/1.0; +https://alpha.custard.top)",
@@ -100,7 +106,7 @@ async function fetchBaiduNews(query: string, signal: AbortSignal) {
   if (!response.ok) throw new Error(`百度新闻读取失败：${response.status}`);
   const xml = decodeNewsResponse(await response.arrayBuffer(), response.headers.get("content-type"));
   if (/百度安全验证|网络不给力|请输入验证码/.test(xml)) throw new Error("百度新闻触发安全验证");
-  return decorateNewsSentiment(parseGoogleNewsRss(xml, 8, "百度新闻"));
+  return decorateNewsSentiment(filterRecentNews(parseGoogleNewsRss(xml, 16, "百度新闻"), 120, 8));
 }
 
 function decodeNewsResponse(buffer: ArrayBuffer, contentType: string | null) {
