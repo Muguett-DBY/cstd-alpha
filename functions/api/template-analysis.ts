@@ -41,6 +41,7 @@ const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/compl
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MIN_TEMPLATE_MARKDOWN_CHARS = 6000;
 const MIN_FULL_MARKDOWN_CHARS = 5000;
+const MODEL_REQUEST_TIMEOUT_MS = 240_000;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -169,64 +170,74 @@ async function requestTemplateReportOnce(
   draftToExpand?: string,
 ) {
   const minLength = minimumMarkdownLength(template);
-  const response = await fetch(OPENCODE_ZEN_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      reasoning_effort: "max",
-      thinking: { type: "enabled" },
-      response_format: { type: "json_object" },
-      stream: false,
-      max_tokens: template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000,
-      messages: [
-        {
-          role: "system",
-          content:
-            "你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            task:
-              draftToExpand
-                ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
-                : template.id === FULL_ANALYSIS_TEMPLATE_ID
-                  ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
-                  : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
-            company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
-            template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
-            existingDeepReport: report ? compactReport(report) : null,
-            draftToExpand: draftToExpand || undefined,
-            childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
-              templateTitle,
-              summary,
-              verdict,
-              score,
-              keyPoints,
-              riskFlags,
-              followUps,
-            })),
-            expectedOutputShape: {
-              title: "报告标题",
-              score: "0-100 数字，可省略",
-              verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
-              summary: "300-600 字摘要",
-              keyPoints: ["5-10 条核心正面判断"],
-              riskFlags: ["5-10 条风险、反证或不确定性"],
-              followUps: ["5-10 条后续跟踪指标"],
-              markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，不足则不要结束。`,
-            },
-          }),
-        },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`模板分析生成失败：${response.status} ${(await response.text()).slice(0, 500)}`);
-  const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = payload.choices?.[0]?.message?.content;
-  if (!content?.trim()) throw new Error("模型未返回模板分析内容。");
-  return normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(OPENCODE_ZEN_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: MODEL,
+        reasoning_effort: "max",
+        thinking: { type: "enabled" },
+        response_format: { type: "json_object" },
+        stream: false,
+        max_tokens: template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000,
+        messages: [
+          {
+            role: "system",
+            content:
+              "你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                draftToExpand
+                  ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
+                  : template.id === FULL_ANALYSIS_TEMPLATE_ID
+                    ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
+                    : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
+              company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
+              template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
+              existingDeepReport: report ? compactReport(report) : null,
+              draftToExpand: draftToExpand || undefined,
+              childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
+                templateTitle,
+                summary,
+                verdict,
+                score,
+                keyPoints,
+                riskFlags,
+                followUps,
+              })),
+              expectedOutputShape: {
+                title: "报告标题",
+                score: "0-100 数字，可省略",
+                verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
+                summary: "300-600 字摘要",
+                keyPoints: ["5-10 条核心正面判断"],
+                riskFlags: ["5-10 条风险、反证或不确定性"],
+                followUps: ["5-10 条后续跟踪指标"],
+                markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，不足则不要结束。`,
+              },
+            }),
+          },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`模板分析生成失败：${response.status} ${(await response.text()).slice(0, 500)}`);
+    const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content?.trim()) throw new Error("模型未返回模板分析内容。");
+    return normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template);
+  } catch (error) {
+    if (isAbortLikeError(error)) throw new Error("模板分析模型请求超过 4 分钟未返回，已标记为可重试失败。", { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function minimumMarkdownLength(template: ResearchTemplate) {
@@ -466,7 +477,11 @@ function normalizeTemplateAnalysisError(error: unknown) {
 
 function isRetryableError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  return message.includes("FreeUsageLimitError") || message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || /\b5\d\d\b/.test(message);
+  return message.includes("FreeUsageLimitError") || message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || message.includes("超过 4 分钟") || /\b5\d\d\b/.test(message);
+}
+
+function isAbortLikeError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("abort"));
 }
 
 function markdownToSections(markdown: string) {

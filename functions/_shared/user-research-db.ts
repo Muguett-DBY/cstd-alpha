@@ -2,6 +2,8 @@ import { readSessionCookie } from "./auth";
 import type { CompanyCandidate } from "../../src/shared/report";
 import type { TemplateAnalysisResult, WatchlistItem } from "../../src/shared/user-research";
 
+const STALE_RUNNING_MS = 8 * 60 * 1000;
+
 export type UserResearchEnv = {
   AUTH_SECRET: string;
   REPORT_LIBRARY_DB?: D1Database;
@@ -95,6 +97,10 @@ export function watchlistRowToItem(row: WatchlistRow): WatchlistItem {
 
 export function analysisRowToResult(row: AnalysisRow): TemplateAnalysisResult {
   const content = parseAnalysisContent(row.content_json);
+  const status = templateStatus(row.status);
+  const staleRunning = status === "running" && Date.now() - new Date(row.updated_at).getTime() > STALE_RUNNING_MS;
+  const effectiveStatus = staleRunning ? "failed_retryable" : status;
+  const staleMessage = "上一次生成连接超时或被中断，任务已可重试。";
   return {
     id: row.id,
     userId: row.user_id || row.user_key,
@@ -105,13 +111,13 @@ export function analysisRowToResult(row: AnalysisRow): TemplateAnalysisResult {
     ticker: row.ticker,
     market: row.market,
     model: row.model,
-    status: templateStatus(row.status),
+    status: effectiveStatus,
     title: row.title,
     score: row.score ?? undefined,
     verdict: row.verdict,
-    summary: row.summary,
+    summary: staleRunning ? staleMessage : row.summary,
     objectKey: row.object_key || undefined,
-    errorMessage: row.error_message || undefined,
+    errorMessage: row.error_message || (staleRunning ? staleMessage : undefined),
     keyPoints: content.keyPoints,
     riskFlags: content.riskFlags,
     followUps: content.followUps,
