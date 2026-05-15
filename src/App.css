@@ -843,6 +843,10 @@ button:disabled {
   align-items: start;
 }
 
+.my-grid.reading-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .my-list,
 .analysis-panel {
   border: 1px solid var(--line);

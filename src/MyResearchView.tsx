@@ -238,39 +238,41 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
 
-      <div className="my-grid">
-        <section className="my-list">
-          <h3>我的自选股</h3>
-          {items.length ? (
-            items.map((item) => (
-              <article key={item.id} className={item.id === selectedItem?.id ? "active" : ""}>
-                <button
-                  type="button"
-                  className="ranking-company"
-                  onClick={() => {
-                    setSelectedWatchlistId(item.id);
-                    setActiveAnalysis(null);
-                  }}
-                >
-                  <strong>{item.company.name}</strong>
-                  <small>
-                    {item.company.code} / {item.company.listingPlace}
-                  </small>
-                </button>
-                <div>
-                  <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
-                    基础报告
+      <div className={`my-grid ${activeAnalysis ? "reading-mode" : ""}`}>
+        {!activeAnalysis ? (
+          <section className="my-list">
+            <h3>我的自选股</h3>
+            {items.length ? (
+              items.map((item) => (
+                <article key={item.id} className={item.id === selectedItem?.id ? "active" : ""}>
+                  <button
+                    type="button"
+                    className="ranking-company"
+                    onClick={() => {
+                      setSelectedWatchlistId(item.id);
+                      setActiveAnalysis(null);
+                    }}
+                  >
+                    <strong>{item.company.name}</strong>
+                    <small>
+                      {item.company.code} / {item.company.listingPlace}
+                    </small>
                   </button>
-                  <button type="button" className="ghost-button" onClick={() => void deleteItem(item)}>
-                    移除
-                  </button>
-                </div>
-              </article>
-            ))
-          ) : (
-            <p className="muted">先在报告页或排行榜打开一家公司，再加入当前公司。</p>
-          )}
-        </section>
+                  <div>
+                    <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
+                      基础报告
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => void deleteItem(item)}>
+                      移除
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="muted">先在报告页或排行榜打开一家公司，再加入当前公司。</p>
+            )}
+          </section>
+        ) : null}
 
         <section className="analysis-panel">
           {selectedItem ? (
