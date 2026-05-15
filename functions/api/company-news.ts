@@ -135,11 +135,19 @@ function selectRecentOrBestEffort<T extends { publishedAt?: string }>(items: T[]
   return recent.length ? recent : items.slice(0, limit);
 }
 
-function selectNewsPortfolio<T extends { id: string; publishedAt?: string; source?: string }>(items: T[], days: number, limit: number) {
-  const deduped = dedupeNewsItems(items);
+function selectNewsPortfolio<T extends { id: string; publishedAt?: string; source?: string; title?: string; summary?: string }>(items: T[], days: number, limit: number) {
+  const qualityItems = items.filter(isUsefulNewsItem);
+  const deduped = dedupeNewsItems(qualityItems.length >= Math.min(6, limit) ? qualityItems : items);
   const recent = filterRecentNews(deduped, days, limit * 3);
   const candidates = sortNewsByDate(recent.length ? recent : deduped);
   return diversifyBySource(candidates, limit);
+}
+
+function isUsefulNewsItem(item: { title?: string; summary?: string; source?: string }) {
+  const text = `${item.title || ""} ${item.summary || ""}`.trim();
+  const source = item.source || "";
+  if (/百度文库|股吧|问答|百科/.test(source)) return false;
+  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|个股资料|F10|实时行情|手机东方财富|估值水平|技术分析/.test(text);
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
