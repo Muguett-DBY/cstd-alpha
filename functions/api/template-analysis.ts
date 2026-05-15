@@ -88,7 +88,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ analyses: (result.results ?? []).map(analysisRowToResult), templates: RESEARCH_TEMPLATES });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
@@ -106,13 +106,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID) : null;
     if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
-    return streamTemplateGeneration(async (write) => {
-      write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据。" });
-      const evidence = await fetchTemplateEvidence(watchlist, request.signal);
-      write({ type: "progress", stage: "full_analysis", label: "十模板全面分析", detail: "正在逐项生成十个专项模板，已完成模板会复用缓存。" });
-      const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh, write);
-      write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
-    });
+    const fullTemplate = fullAnalysisTemplate();
+    const existingFull = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID);
+    const existingFullResult = existingFull ? analysisRowToResult(existingFull) : null;
+    if (!shouldStartFullAnalysis(existingFullResult, forceRefresh)) {
+      return json({ analyses: [existingFullResult], watchlistItem: watchlistRowToItem(watchlist) }, 202);
+    }
+    const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB, session.userId, watchlist, fullTemplate, "running");
+    waitUntil(
+      runFullAnalysisInBackground(durableEnv, session.userId, watchlist, forceRefresh).catch((error) =>
+        writeAnalysisFailure(
+          env.REPORT_LIBRARY_DB!,
+          session.userId,
+          watchlist,
+          fullTemplate,
+          normalizeTemplateAnalysisError(error),
+          isRetryableError(error) ? "failed_retryable" : "failed",
+          running.startedAt,
+        ),
+      ),
+    );
+    return json({ analyses: [running], watchlistItem: watchlistRowToItem(watchlist) }, 202);
   }
 
   const template = researchTemplateById(templateId);
@@ -179,6 +193,12 @@ async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSigna
   });
 }
 
+async function runFullAnalysisInBackground(env: DurableTemplateEnv, userId: string, watchlist: WatchlistRow, forceRefresh: boolean) {
+  const controller = new AbortController();
+  const evidence = await fetchTemplateEvidence(watchlist, controller.signal);
+  await generateFullAnalysis(env, userId, watchlist, evidence, forceRefresh);
+}
+
 async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string, watchlistId: string, templateId: string) {
   if (!env.REPORT_LIBRARY_DB) return null;
   const id = await analysisId(userId, watchlistId, templateId);
@@ -206,14 +226,7 @@ async function generateFullAnalysis(
       return generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write);
     },
   });
-  const fullTemplate: ResearchTemplate = {
-    id: FULL_ANALYSIS_TEMPLATE_ID,
-    title: "十模板全面分析",
-    shortTitle: "全面分析",
-    focus: "整合十个深度模板的核心判断，形成最终投资结论、关键分歧、反证条件和账户动作。",
-    prompt: "整合十个模板专项报告，输出最终综合结论。",
-    fullPrompt: "请阅读十个模板专项报告，进行交叉验证，保留分歧，输出最终综合结论、评分、风险反证和仓位规则。",
-  };
+  const fullTemplate = fullAnalysisTemplate();
   const completedChildren = completedTemplateAnalysesForFull(children);
   if (completedChildren.length < RESEARCH_TEMPLATES.length) {
     return [
@@ -223,6 +236,17 @@ async function generateFullAnalysis(
   }
   write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: "十个专项模板已完成，正在交叉验证并生成最终全面分析。" });
   return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write), ...children];
+}
+
+function fullAnalysisTemplate(): ResearchTemplate {
+  return {
+    id: FULL_ANALYSIS_TEMPLATE_ID,
+    title: "十模板全面分析",
+    shortTitle: "全面分析",
+    focus: "整合十个深度模板的核心判断，形成最终投资结论、关键分歧、反证条件和账户动作。",
+    prompt: "整合十个模板专项报告，输出最终综合结论。",
+    fullPrompt: "请阅读十个模板专项报告，进行交叉验证，保留分歧，输出最终综合结论、评分、风险反证和仓位规则。",
+  };
 }
 
 export async function runFullTemplateChildrenCacheAware<T>({
@@ -260,6 +284,11 @@ export async function runFullTemplateChildrenCacheAware<T>({
   );
   for (const item of concurrentResults) results[item.index] = item.result;
   return results;
+}
+
+export function shouldStartFullAnalysis(existing: TemplateAnalysisResult | null, forceRefresh: boolean) {
+  if (forceRefresh) return true;
+  return existing?.status !== "running";
 }
 
 async function generateSingleTemplateAnalysis(
@@ -513,14 +542,18 @@ async function writeCompletedAnalysis(
 
 async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, status: TemplateAnalysisStatus) {
   const now = new Date().toISOString();
-  const result = baseAnalysis(userId, watchlist, template, status, now);
+  const result = {
+    ...baseAnalysis(userId, watchlist, template, status, now),
+    id: await analysisId(userId, watchlist.id, template.id),
+    startedAt: status === "running" ? now : undefined,
+  };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [], followUps: [], sections: [] }), null);
   return result;
 }
 
 async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string) {
   const now = new Date().toISOString();
-  const result = { ...baseAnalysis(userId, watchlist, template, status, now), errorMessage, startedAt, completedAt: now, summary: errorMessage };
+  const result = { ...baseAnalysis(userId, watchlist, template, status, now), id: await analysisId(userId, watchlist.id, template.id), errorMessage, startedAt, completedAt: now, summary: errorMessage };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [errorMessage], followUps: ["稍后重试或切换可用模型通道。"], sections: [] }), errorMessage);
   return result;
 }
@@ -616,6 +649,17 @@ async function readAnalysisRow(db: D1Database, userId: string, id: string) {
        WHERE user_key = ?1 AND id = ?2`,
     )
     .bind(userId, id)
+    .first<AnalysisRow>();
+}
+
+async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, watchlistId: string, templateId: string) {
+  return db
+    .prepare(
+      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message
+       FROM template_analysis
+       WHERE user_key = ?1 AND watchlist_id = ?2 AND template_id = ?3`,
+    )
+    .bind(userId, watchlistId, templateId)
     .first<AnalysisRow>();
 }
 

@@ -154,16 +154,52 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
-    setNotice("全面分析进行中：后端会复用已完成模板，补齐缺失模板后生成最终汇总。");
-    const finalResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
+    setNotice("全面分析任务已提交：后端会复用已完成模板，补齐缺失模板后生成最终汇总。");
+    const initialResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
       if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
     });
-    const finalAnalyses = finalResult.analyses ?? (finalResult.analysis ? [finalResult.analysis] : []);
-    setAnalyses((current) => mergeAnalyses(current, finalAnalyses));
-    const finalAnalysis = finalAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID) ?? finalAnalyses[0];
-    if (finalAnalysis) setActiveAnalysis(finalAnalysis);
-    const failed = finalAnalyses.find((analysis) => analysis.status === "failed" || analysis.status === "failed_retryable");
-    setNotice(failed ? `全面分析暂停：${failed.templateTitle} 未完成，可稍后重试。` : "全面分析已更新：十个专项模板和综合汇总已写入报告库。");
+    const initialAnalyses = initialResult.analyses ?? (initialResult.analysis ? [initialResult.analysis] : []);
+    setAnalyses((current) => mergeAnalyses(current, initialAnalyses));
+    const full = initialAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID);
+    if (full?.status === "completed") {
+      const hydrated = await fetchTemplateAnalysis(full.id);
+      setAnalyses((current) => mergeAnalyses(current, [hydrated]));
+      setActiveAnalysis(hydrated);
+      setNotice(full.fromCache ? "已打开缓存中的全面分析。" : "全面分析已生成并写入报告库。");
+      return;
+    }
+    if (full && isRetryableTemplateStatus(full.status)) {
+      setActiveAnalysis(full);
+      setNotice("全面分析暂停：上一次生成未完成，可稍后重试。");
+      return;
+    }
+    await pollFullAnalysis(target);
+  }
+
+  async function pollFullAnalysis(target: WatchlistItem) {
+    const startedAt = Date.now();
+    const timeoutMs = 12 * 60 * 1000;
+    while (Date.now() - startedAt < timeoutMs) {
+      await wait(5000);
+      const data = await fetchTemplateAnalyses(target.id);
+      setAnalyses((current) => mergeAnalyses(current, data.analyses));
+      const full = data.analyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID);
+      if (!full || full.status === "pending" || full.status === "running") {
+        setNotice("全面分析仍在后台生成：页面会自动刷新状态，已完成模板会直接复用缓存。");
+        continue;
+      }
+      if (full.status === "completed") {
+        const hydrated = await fetchTemplateAnalysis(full.id);
+        setAnalyses((current) => mergeAnalyses(current, [hydrated]));
+        setActiveAnalysis(hydrated);
+        setNotice("全面分析已生成并写入报告库。");
+        return;
+      }
+      setActiveAnalysis(full);
+      setNotice("全面分析暂停：模型连接超时或通道限流，任务已可重试。");
+      return;
+    }
+    throw new Error("全面分析仍在后台生成，请稍后刷新我的研究查看。");
   }
 
   async function openAnalysis(analysis: TemplateAnalysisResult) {
@@ -807,4 +843,8 @@ function mergeAnalyses(current: TemplateAnalysisResult[], incoming: TemplateAnal
   const byId = new Map(current.map((item) => [item.id, item]));
   for (const item of incoming) byId.set(item.id, item);
   return Array.from(byId.values()).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

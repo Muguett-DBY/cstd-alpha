@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { RESEARCH_TEMPLATES } from "../../src/shared/user-research";
-import { runFullTemplateChildrenCacheAware } from "./template-analysis";
+import { runFullTemplateChildrenCacheAware, shouldStartFullAnalysis } from "./template-analysis";
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
@@ -12,7 +12,7 @@ describe("runFullTemplateChildrenCacheAware", () => {
     const resultPromise = runFullTemplateChildrenCacheAware({
       readCached: async (template) => (cachedIds.has(template.id) ? `cached:${template.id}` : null),
       runUncached: async (template) => {
-      started.push(template.id);
+        started.push(template.id);
         await new Promise<void>((resolve) => releaseJobs.set(template.id, resolve));
         released.push(template.id);
         return `fresh:${template.id}`;
@@ -37,6 +37,15 @@ describe("runFullTemplateChildrenCacheAware", () => {
     await expect(resultPromise).resolves.toEqual(
       RESEARCH_TEMPLATES.map((template) => (cachedIds.has(template.id) ? `cached:${template.id}` : `fresh:${template.id}`)),
     );
+  });
+});
+
+describe("shouldStartFullAnalysis", () => {
+  test("does not duplicate a running full analysis unless forced", () => {
+    expect(shouldStartFullAnalysis(null, false)).toBe(true);
+    expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(false);
+    expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], true)).toBe(true);
+    expect(shouldStartFullAnalysis({ status: "failed_retryable" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(true);
   });
 });
 
