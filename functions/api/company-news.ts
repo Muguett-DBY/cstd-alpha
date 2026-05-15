@@ -37,14 +37,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
   const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
-    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 3, requiredAny: [item.company.name, item.company.code] }, request.signal),
+    fetchNewsWithFallback(companyQuery, { days: 180, baiduWindow: "近六个月", limit: 12, variantLimit: 5, requiredAny: [item.company.name, item.company.code] }, request.signal),
     fetchNewsWithFallback(
       industryQuery,
       {
         days: 1095,
         baiduWindow: "近三年",
         limit: 16,
-        variantLimit: 4,
+        variantLimit: 5,
         requiredAny: industryRelevanceTerms(industryQuery),
         titleRequiredAny: industryRelevanceTerms(industryQuery),
       },
@@ -181,7 +181,7 @@ function isUsefulNewsItem(item: { title?: string; summary?: string; source?: str
   const text = `${item.title || ""} ${item.summary || ""}`.trim();
   const source = item.source || "";
   if (/百度文库|股吧|问答|百科/.test(source)) return false;
-  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|估值——|技术分析/.test(text);
+  return !/最新价格|走势图|历史数据|股票行情|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|数据报告|估值——|技术分析/.test(text);
 }
 
 function dedupeNewsItems<T extends { id: string; title?: string; url?: string }>(items: T[]) {
@@ -260,7 +260,18 @@ function newsQueryVariants(query: string) {
     .replace(/\s+/g, " ")
     .trim();
   const industryCore = compact.match(/^(.+?)\s+行业\b/)?.[1]?.trim();
-  return uniqueMessages([query, plain, compact, industryCore ? `${industryCore} 行业 新闻` : ""]).filter((item) => item.length > 1);
+  const tokens = compact.split(/\s+/).filter(Boolean);
+  const companyName = tokens[0] || "";
+  const companyCode = /\d|[A-Z]{1,6}/i.test(tokens[1] || "") ? tokens[1] : "";
+  const companyCore = [companyName, companyCode].filter(Boolean).join(" ");
+  return uniqueMessages([
+    query,
+    plain,
+    compact,
+    industryCore ? `${industryCore} 行业 新闻` : "",
+    companyCore ? `${companyCore} 新闻` : "",
+    companyName ? `${companyName} 业绩 公告 股价` : "",
+  ]).filter((item) => item.length > 1);
 }
 
 function industryRelevanceTerms(query: string) {
