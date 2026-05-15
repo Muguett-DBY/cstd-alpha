@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   addWatchlistItem,
   fetchCompanyNews,
@@ -32,6 +32,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [analyses, setAnalyses] = useState<TemplateAnalysisResult[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
   const [activeAnalysis, setActiveAnalysis] = useState<TemplateAnalysisResult | null>(null);
+  const [activeNews, setActiveNews] = useState(false);
   const [companyQuery, setCompanyQuery] = useState("");
   const [companyCandidates, setCompanyCandidates] = useState<CompanyCandidate[]>([]);
   const [searchingCompany, setSearchingCompany] = useState(false);
@@ -76,6 +77,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       setItems((current) => mergeWatchlistItems(current, item));
       setSelectedWatchlistId(item.id);
       setActiveAnalysis(null);
+      setActiveNews(false);
       setNotice(`已加入自选：${item.company.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加入自选失败。");
@@ -110,6 +112,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       if (selectedWatchlistId === item.id) {
         setSelectedWatchlistId("");
         setActiveAnalysis(null);
+        setActiveNews(false);
       }
       setNotice(`已移除：${item.company.name}`);
     } catch (err) {
@@ -238,8 +241,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
 
-      <div className={`my-grid ${activeAnalysis ? "reading-mode" : ""}`}>
-        {!activeAnalysis ? (
+      <div className={`my-grid ${activeAnalysis || activeNews ? "reading-mode" : ""}`}>
+        {!activeAnalysis && !activeNews ? (
           <section className="my-list">
             <h3>我的自选股</h3>
             {items.length ? (
@@ -251,12 +254,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
                     onClick={() => {
                       setSelectedWatchlistId(item.id);
                       setActiveAnalysis(null);
+                      setActiveNews(false);
                     }}
                   >
-                    <strong>{item.company.name}</strong>
-                    <small>
-                      {item.company.code} / {item.company.listingPlace}
-                    </small>
+                    <CompanyIdentity company={item.company} size="sm" />
                   </button>
                   <div>
                     <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
@@ -280,11 +281,14 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               item={selectedItem}
               analysisByTemplate={analysisByTemplate}
               activeAnalysis={activeAnalysis}
+              activeNews={activeNews}
               phase={phase}
               onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
               onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
               onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
+              onOpenNews={() => setActiveNews(true)}
               onBackToTemplates={() => setActiveAnalysis(null)}
+              onBackFromNews={() => setActiveNews(false)}
             />
           ) : (
             <>
@@ -302,31 +306,40 @@ function CompanyWorkbench({
   item,
   analysisByTemplate,
   activeAnalysis,
+  activeNews,
   phase,
   onGenerate,
   onOpenAnalysis,
   onOpenBaseReport,
+  onOpenNews,
   onBackToTemplates,
+  onBackFromNews,
 }: {
   item: WatchlistItem;
   analysisByTemplate: Map<string, TemplateAnalysisResult>;
   activeAnalysis: TemplateAnalysisResult | null;
+  activeNews: boolean;
   phase: "loading" | "ready" | "generating" | "error";
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
   onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
   onOpenBaseReport: () => void;
+  onOpenNews: () => void;
   onBackToTemplates: () => void;
+  onBackFromNews: () => void;
 }) {
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
   if (activeAnalysis) {
     return <TemplateReportReader analysis={activeAnalysis} onBack={onBackToTemplates} />;
+  }
+  if (activeNews) {
+    return <NewsReportReader item={item} onBack={onBackFromNews} />;
   }
   return (
     <>
       <div className="company-workbench-header">
         <div>
           <p className="eyebrow">公司工作台</p>
-          <h3>{item.company.name}</h3>
+          <CompanyIdentity company={item.company} size="lg" />
           <p className="muted">
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
@@ -337,7 +350,7 @@ function CompanyWorkbench({
         </button>
       </div>
 
-      <NewsRadar key={item.id} item={item} />
+      <NewsEntryCard item={item} onOpen={onOpenNews} />
 
       <section className="template-grid" aria-label="十模板深度分析">
         <TemplateCard
@@ -467,6 +480,47 @@ function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysis
   );
 }
 
+function NewsEntryCard({ item, onOpen }: { item: WatchlistItem; onOpen: () => void }) {
+  const cached = loadCachedNewsBundle(item);
+  const companyTotal = cached?.companySummary.total ?? 0;
+  const industryTotal = cached?.industrySummary.total ?? 0;
+  const sourceCount = (cached?.companySummary.sourceCount ?? 0) + (cached?.industrySummary.sourceCount ?? 0);
+  return (
+    <article className="news-entry-card">
+      <div>
+        <p className="eyebrow">新闻雷达</p>
+        <h4>公司与行业新闻</h4>
+        <p className="muted">
+          {cached
+            ? `已缓存 ${formatDateTime(cached.fetchedAt)} 的新闻。公司 ${companyTotal} 条，行业 ${industryTotal} 条，覆盖约 ${sourceCount} 个来源。`
+            : "单独进入新闻页后再刷新公开新闻源；切换自选股不会自动请求，避免浪费和误触发新闻源限制。"}
+        </p>
+      </div>
+      <button type="button" className="secondary-button" onClick={onOpen}>
+        查看新闻雷达
+      </button>
+    </article>
+  );
+}
+
+function NewsReportReader({ item, onBack }: { item: WatchlistItem; onBack: () => void }) {
+  return (
+    <section className="analysis-reader news-reader" aria-label="新闻雷达阅读页">
+      <header className="analysis-reader-header">
+        <div>
+          <p className="eyebrow">新闻雷达阅读页</p>
+          <CompanyIdentity company={item.company} size="lg" />
+          <p className="muted">公司新闻按近六个月事件跟踪；行业与细分产业按近三年周期、政策和供需趋势跟踪。</p>
+        </div>
+        <button type="button" className="secondary-button" onClick={onBack}>
+          返回公司工作台
+        </button>
+      </header>
+      <NewsRadar key={item.id} item={item} />
+    </section>
+  );
+}
+
 function NewsRadar({ item }: { item: WatchlistItem }) {
   const [bundle, setBundle] = useState<CompanyNewsBundle | null>(() => loadCachedNewsBundle(item));
   const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">(() => (loadCachedNewsBundle(item) ? "ready" : "idle"));
@@ -533,6 +587,24 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
         />
       </div>
     </section>
+  );
+}
+
+function CompanyIdentity({ company, size = "md" }: { company: CompanyCandidate; size?: "sm" | "md" | "lg" }) {
+  return (
+    <span className={`company-identity company-identity-${size}`}>
+      <span className="company-logo-mark" aria-hidden="true" style={{ "--logo-accent": companyLogoColor(company) } as CSSProperties}>
+        {companyLogoText(company)}
+      </span>
+      <span>
+        <strong>{company.name}</strong>
+        {size !== "lg" ? (
+          <small>
+            {company.code} / {company.listingPlace}
+          </small>
+        ) : null}
+      </span>
+    </span>
   );
 }
 
@@ -708,6 +780,27 @@ function statusLabel(status: TemplateAnalysisStatus) {
     failed: "失败",
   };
   return labels[status];
+}
+
+function companyLogoText(company: CompanyCandidate) {
+  const trimmed = company.name.trim();
+  if (/^[A-Za-z0-9 .-]+$/.test(trimmed)) {
+    return trimmed
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  }
+  return trimmed.replace(/[A-Za-z0-9（）() ]/g, "").slice(0, 1) || company.code.slice(0, 2);
+}
+
+function companyLogoColor(company: CompanyCandidate) {
+  const palette = ["#0f766e", "#2563eb", "#7c3aed", "#b45309", "#be123c", "#15803d", "#4338ca", "#0f766e"];
+  const key = `${company.name}${company.code}${company.listingPlace}`;
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+  return palette[hash % palette.length];
 }
 
 function listItems(items: string[]) {

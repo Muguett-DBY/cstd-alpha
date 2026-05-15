@@ -754,6 +754,54 @@ button:disabled {
   text-align: left;
 }
 
+.company-identity {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.company-identity-sm {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.company-identity-lg {
+  grid-template-columns: 50px minmax(0, 1fr);
+}
+
+.company-logo-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--logo-accent) 45%, white);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--logo-accent) 13%, white);
+  color: var(--logo-accent);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.company-identity-sm .company-logo-mark {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+}
+
+.company-identity-lg .company-logo-mark {
+  width: 50px;
+  height: 50px;
+  font-size: 24px;
+}
+
+.company-identity > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .ranking-company strong {
   font-size: 16px;
 }
@@ -873,6 +921,7 @@ button:disabled {
 
 .my-list article.active {
   background: #f6fbf8;
+  padding-inline: 10px;
 }
 
 .my-list article > div {
@@ -918,6 +967,13 @@ button:disabled {
 
 .analysis-reader-header h3 {
   margin: 0;
+  color: var(--ink);
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.08;
+}
+
+.analysis-reader-header .company-identity strong,
+.company-workbench-header .company-identity strong {
   color: var(--ink);
   font-size: clamp(28px, 4vw, 44px);
   line-height: 1.08;
@@ -986,6 +1042,32 @@ button:disabled {
   margin: 0;
   color: var(--ink);
   font-size: 28px;
+}
+
+.news-entry-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfff8;
+}
+
+.news-entry-card h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.news-entry-card p {
+  margin-bottom: 0;
+}
+
+.news-reader .news-radar {
+  margin-top: 0;
 }
 
 .news-radar {
@@ -1571,6 +1653,7 @@ button:disabled {
   .my-grid,
   .analysis-lists,
   .company-workbench-header,
+  .news-entry-card,
   .news-radar header,
   .news-sentiment-grid,
   .news-columns,
