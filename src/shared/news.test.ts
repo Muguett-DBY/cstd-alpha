@@ -74,6 +74,7 @@ describe("news helpers", () => {
     expect(classifyNewsSentiment("【行业研究】2026年房地产开发经营行业分析").sentiment).toBe("neutral");
     expect(classifyNewsSentiment("房地产政策改善但房企风险仍高，债务压力待化解").sentiment).toBe("negative");
     expect(classifyNewsSentiment("为何北京对房产崩盘数据讳莫如深？").sentiment).toBe("negative");
+    expect(classifyNewsSentiment("1300亿消费电子龙头业绩爆雷，市值蒸发近200亿").sentiment).toBe("negative");
   });
 
   test("keeps recent news and summarizes positive/negative split", () => {
