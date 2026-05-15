@@ -73,7 +73,7 @@ export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsIte
   };
 }
 
-export function parseGoogleNewsRss(xml: string, limit = 8): Array<Omit<NewsItem, "sentiment" | "sentimentLabel" | "sentimentReason" | "confidence">> {
+export function parseGoogleNewsRss(xml: string, limit = 8, defaultSource = "Google News"): Array<Omit<NewsItem, "sentiment" | "sentimentLabel" | "sentimentReason" | "confidence">> {
   return xml
     .split(/<item>/i)
     .slice(1)
@@ -81,7 +81,7 @@ export function parseGoogleNewsRss(xml: string, limit = 8): Array<Omit<NewsItem,
     .map((item) => {
       const title = decodeXml(readTag(item, "title"));
       const rawUrl = decodeXml(readTag(item, "link"));
-      const source = decodeXml(readTag(item, "source")) || sourceFromTitle(title) || "Google News";
+      const source = decodeXml(readTag(item, "source")) || sourceFromTitle(title) || defaultSource;
       const publishedAt = normalizeRssDate(decodeXml(readTag(item, "pubDate")));
       const summary = stripHtml(decodeXml(readTag(item, "description")));
       return {
