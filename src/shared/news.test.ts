@@ -101,4 +101,10 @@ describe("news helpers", () => {
     expect(buildCompanyNewsQuery({ name: "万科A", code: "000002", listingPlace: "深A" })).toContain("监管");
     expect(buildIndustryNewsQuery("房地产 / 房地产开发", { name: "万科A", listingPlace: "深A" })).toContain("房地产 房地产开发 行业 近三年");
   });
+
+  test("keeps detailed industry terms ahead of broad parent industries", () => {
+    const query = buildIndustryNewsQuery("电子 / 消费电子", { name: "小米集团-W", listingPlace: "港股" });
+    expect(query).toContain("电子 消费电子 行业");
+    expect(query).toContain("竞争格局");
+  });
 });

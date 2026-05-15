@@ -10,6 +10,7 @@ import {
   type NewsItem,
 } from "../../src/shared/news";
 import { formatIndustryLabel } from "../../src/shared/industry";
+import { formatLocalizedIndustry, localizedIndustry } from "../../src/shared/market-display";
 import { ensureUserResearchSchema, json, requireUserSession, watchlistRowToItem, type WatchlistRow } from "../_shared/user-research-db";
 
 type Env = {
@@ -52,8 +53,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         variantLimit: 5,
         baiduVariantLimit: 2,
         eastmoneyVariantLimit: 2,
-        requiredAny: industryRelevanceTerms(industryQuery),
-        titleRequiredAny: industryRelevanceTerms(industryQuery),
+        requiredAny: industryRelevanceTerms(industryQuery, item.company.name),
+        titleRequiredAny: industryRelevanceTerms(industryQuery, item.company.name),
+        excludedAny: unrelatedIndustryTerms(industryQuery, item.company.name),
       },
       request.signal,
     ),
@@ -94,6 +96,7 @@ type NewsWindow = {
   eastmoneyVariantLimit: number;
   requiredAny: string[];
   titleRequiredAny?: string[];
+  excludedAny?: string[];
 };
 
 async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: AbortSignal) {
@@ -125,6 +128,7 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
     window.limit,
     window.requiredAny,
     window.titleRequiredAny,
+    window.excludedAny,
   );
   if (items.length) return items;
   throw new Error(uniqueMessages(errors).slice(0, 6).join("；") || "新闻源暂时不可用。");
@@ -203,11 +207,13 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   limit: number,
   requiredAny: string[],
   titleRequiredAny: string[] = [],
+  excludedAny: string[] = [],
 ) {
-  const textRelevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny));
-  const titleRelevantItems = titleRequiredAny.length ? items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
+  const allowedItems = items.filter((item) => !hasExcludedIndustryTerms(item, excludedAny));
+  const textRelevantItems = allowedItems.filter((item) => isRelevantNewsItem(item, requiredAny));
+  const titleRelevantItems = titleRequiredAny.length ? allowedItems.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
   const relevantItems = titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
-  const relevancePool = relevantItems.length ? relevantItems : items;
+  const relevancePool = relevantItems.length ? relevantItems : allowedItems;
   const strictQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && isNotConflictingIndustryResearch(item, titleRequiredAny));
   const looseQualityItems = relevancePool.filter((item) => isUsefulNewsItem(item) && (!titleRequiredAny.length || isNotConflictingIndustryResearch(item, titleRequiredAny)));
   const qualityItems = strictQualityItems.length >= Math.min(3, limit) ? strictQualityItems : looseQualityItems.length ? looseQualityItems : relevancePool;
@@ -215,6 +221,13 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
   const recent = filterRecentNews(deduped, days, limit * 3);
   const candidates = sortNewsByDate(recent.length ? recent : deduped);
   return diversifyBySource(candidates, limit);
+}
+
+function hasExcludedIndustryTerms(item: { title?: string; summary?: string }, excludedAny: string[]) {
+  const terms = excludedAny.map((term) => normalizeRelevanceTerm(term)).filter((term) => term.length >= 2);
+  if (!terms.length) return false;
+  const text = normalizeRelevanceTerm(`${item.title || ""} ${item.summary || ""}`);
+  return terms.some((term) => text.includes(term));
 }
 
 function isRelevantNewsItem(item: { title?: string; summary?: string }, requiredAny: string[], titleRequiredAny: string[] = []) {
@@ -342,7 +355,7 @@ function newsQueryVariants(query: string) {
   ]).filter((item) => item.length > 1);
 }
 
-function industryRelevanceTerms(query: string) {
+export function industryRelevanceTerms(query: string, companyName = "") {
   const scope = query.split(/\s+行业(?:\s|$)/)[0] || query;
   const parts = scope
     .split(/[\s/／]+/)
@@ -351,8 +364,22 @@ function industryRelevanceTerms(query: string) {
   const broadTerms = new Set(["食品饮料", "消费", "大消费", "制造业", "工业", "服务业"]);
   const specificTerms = parts.filter((part) => !broadTerms.has(part));
   const primary = specificTerms.at(-1);
-  if (!primary) return parts;
-  return uniqueMessages([primary, ...specificTerms.filter((part) => part.length >= 4)]);
+  const companyTerms = inferredBusinessTerms(companyName);
+  if (!primary) return uniqueMessages([...companyTerms, ...parts]);
+  return uniqueMessages([primary, ...companyTerms, ...specificTerms.filter((part) => part.length >= 4)]);
+}
+
+export function unrelatedIndustryTerms(query: string, companyName = "") {
+  const relevant = new Set(industryRelevanceTerms(query, companyName).map(normalizeRelevanceTerm));
+  const candidates = ["猪", "猪业", "生猪", "养殖", "畜牧", "饲料", "水产", "煤炭", "钢铁", "化肥", "农药", "种业", "医疗器械", "医药", "房地产", "白酒", "乳制品", "银行", "保险", "证券"];
+  return candidates.filter((term) => !relevant.has(normalizeRelevanceTerm(term)));
+}
+
+function inferredBusinessTerms(companyName: string) {
+  if (/小米|苹果|Apple|Xiaomi/i.test(companyName)) return ["消费电子", "智能手机", "手机", "智能硬件", "IoT", "电动汽车"];
+  if (/腾讯|网易|快手|百度|阿里|京东|拼多多|美团/i.test(companyName)) return ["互联网", "平台经济", "云计算", "数字媒体"];
+  if (/茅台|五粮液|泸州老窖|汾酒|洋河|古井贡|酒鬼酒|水井坊|舍得/.test(companyName)) return ["白酒", "高端白酒"];
+  return [];
 }
 
 function normalizeRelevanceTerm(value: string) {
@@ -404,6 +431,9 @@ async function readBestReport(env: Env, watchlist: WatchlistRow): Promise<Invest
 }
 
 function inferIndustryLabel(report: InvestmentReport | null) {
+  const localized = localizedIndustry(report?.company.ticker, report?.company.market, report?.company.industry, report?.company.sector);
+  const localizedLabel = formatLocalizedIndustry(localized);
+  if (localizedLabel !== "未分类") return localizedLabel;
   const label = formatIndustryLabel(report?.company.industry, report?.company.sector);
   if (label !== "未分类") return label;
   return report?.moduleScores.find((item) => item.id === "industry")?.name || "所属行业";
