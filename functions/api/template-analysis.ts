@@ -320,7 +320,7 @@ async function requestTemplateReportOnce(
   try {
     const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
     let lastError: unknown;
-    for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY)) {
+    for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
       try {
         const messages = buildTemplateMessages(watchlist, evidence, template, childAnalyses, minLength, draftToExpand, route.isFree ? "free" : "paid");
         const response = await fetchTemplateModel(route.url, buildTemplateRequest(route, messages, maxTokens, controller.signal));
@@ -408,12 +408,14 @@ function templateCacheAnchor(cacheMode: "free" | "paid") {
   return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
 }
 
-function templateModelRoutes(apiKey: string | undefined): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
+function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
   const paidRoute = apiKey?.trim()
     ? ({ model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } as const)
     : undefined;
+  const freeRoute = { model: FREE_MODEL, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true } as const;
+  if (preferPaid && paidRoute) return [paidRoute, freeRoute];
   return [
-    { model: FREE_MODEL, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true },
+    freeRoute,
     ...(paidRoute ? [paidRoute] : []),
   ];
 }

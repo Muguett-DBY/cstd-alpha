@@ -154,21 +154,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
-    for (const template of RESEARCH_TEMPLATES) {
-      setNotice(`全面分析进行中：正在生成 ${template.shortTitle}。已完成的模板会自动复用缓存。`);
-      const partial = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id, forceRefresh }, (progress) => {
-        if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
-      });
-      const partialAnalyses = partial.analyses ?? (partial.analysis ? [partial.analysis] : []);
-      setAnalyses((current) => mergeAnalyses(current, partialAnalyses));
-      const failed = partialAnalyses.find((analysis) => analysis.status === "failed" || analysis.status === "failed_retryable");
-      if (failed) {
-        setActiveAnalysis(failed);
-        setNotice(`全面分析暂停：${failed.templateTitle} 未完成，可稍后重试。`);
-        return;
-      }
-    }
-    setNotice("十个模板已完成，正在生成最终综合汇总。");
+    setNotice("全面分析进行中：后端会复用已完成模板，补齐缺失模板后生成最终汇总。");
     const finalResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
       if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
     });
@@ -176,7 +162,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     setAnalyses((current) => mergeAnalyses(current, finalAnalyses));
     const finalAnalysis = finalAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID) ?? finalAnalyses[0];
     if (finalAnalysis) setActiveAnalysis(finalAnalysis);
-    setNotice("全面分析已更新：十个专项模板和综合汇总已写入报告库。");
+    const failed = finalAnalyses.find((analysis) => analysis.status === "failed" || analysis.status === "failed_retryable");
+    setNotice(failed ? `全面分析暂停：${failed.templateTitle} 未完成，可稍后重试。` : "全面分析已更新：十个专项模板和综合汇总已写入报告库。");
   }
 
   async function openAnalysis(analysis: TemplateAnalysisResult) {
