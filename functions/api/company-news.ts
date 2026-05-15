@@ -44,7 +44,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         days: 1095,
         baiduWindow: "近三年",
         limit: 16,
-        variantLimit: 5,
+        variantLimit: 7,
         requiredAny: industryRelevanceTerms(industryQuery),
         titleRequiredAny: industryRelevanceTerms(industryQuery),
       },
@@ -278,6 +278,8 @@ function newsQueryVariants(query: string) {
     plain,
     compact,
     industryCore ? `${industryCore} 行业 新闻` : "",
+    industryCore ? `${industryCore} 行业 竞争格局 市场规模 政策` : "",
+    industryCore ? `${industryCore} 产业 发展趋势 供需 价格` : "",
     companyCore ? `${companyCore} 新闻` : "",
     companyName ? `${companyName} 业绩 公告 股价` : "",
   ]).filter((item) => item.length > 1);
