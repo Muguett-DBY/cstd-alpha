@@ -159,7 +159,7 @@ function selectNewsPortfolio<T extends { id: string; publishedAt?: string; sourc
 ) {
   const textRelevantItems = items.filter((item) => isRelevantNewsItem(item, requiredAny));
   const titleRelevantItems = titleRequiredAny.length ? items.filter((item) => isRelevantNewsItem(item, requiredAny, titleRequiredAny)) : [];
-  const relevantItems = titleRelevantItems.length >= Math.min(3, limit) ? titleRelevantItems : textRelevantItems;
+  const relevantItems = titleRelevantItems.length >= Math.min(2, limit) ? titleRelevantItems : textRelevantItems;
   const relevancePool = relevantItems.length ? relevantItems : items;
   const qualityItems = relevancePool.filter(isUsefulNewsItem);
   const deduped = dedupeNewsItems(qualityItems.length ? qualityItems : relevancePool);
