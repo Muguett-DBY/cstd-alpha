@@ -62,7 +62,7 @@ export type TemplateAnalysisResult = {
 };
 
 export const FULL_ANALYSIS_TEMPLATE_ID = "full";
-export const TEMPLATE_MARKDOWN_MIN_CHARS = 4500;
+export const TEMPLATE_MARKDOWN_MIN_CHARS = 3500;
 export const FULL_ANALYSIS_MARKDOWN_MIN_CHARS = 5000;
 
 export const RESEARCH_TEMPLATES: ResearchTemplate[] = [
