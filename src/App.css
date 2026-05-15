@@ -842,6 +842,38 @@ button:disabled {
   min-width: 180px;
 }
 
+.generation-status {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid #b7d6cf;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #f3fbf8;
+  color: var(--body);
+}
+
+.generation-status strong {
+  display: block;
+  color: var(--teal);
+}
+
+.generation-status p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+
+.generation-pulse {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--teal);
+  box-shadow: 0 0 0 0 rgb(15 118 110 / 0.38);
+  animation: generation-pulse 1.4s ease-out infinite;
+}
+
 .mine-search-card {
   display: grid;
   gap: 12px;
@@ -1298,9 +1330,36 @@ button:disabled {
   padding: 0 12px;
 }
 
+.button-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  vertical-align: -0.1em;
+  animation: button-spin 0.8s linear infinite;
+}
+
 .template-card.status-running {
   background: #f4f8ff;
   border-color: #b7c9ec;
+}
+
+.template-card.is-generating {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px rgb(15 118 110 / 0.12);
+}
+
+.template-card.is-generating::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  animation: generation-sweep 1.6s ease-in-out infinite;
 }
 
 .template-card.status-completed {
@@ -1634,6 +1693,30 @@ button:disabled {
   color: var(--ink);
   font-size: clamp(36px, 7vw, 78px);
   line-height: 0.98;
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes generation-pulse {
+  70% {
+    box-shadow: 0 0 0 10px rgb(15 118 110 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(15 118 110 / 0);
+  }
+}
+
+@keyframes generation-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @media (max-width: 1100px) {

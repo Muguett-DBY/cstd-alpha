@@ -27,6 +27,12 @@ type MyResearchViewProps = {
   onOpenCompany: (company: CompanyCandidate) => void;
 };
 
+type ActiveGeneration = {
+  watchlistId: string;
+  templateId: string;
+  label: string;
+};
+
 export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResearchViewProps) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [analyses, setAnalyses] = useState<TemplateAnalysisResult[]>([]);
@@ -39,6 +45,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [phase, setPhase] = useState<"loading" | "ready" | "generating" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,12 +131,14 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     const target = selectedItem;
     if (!target) return;
     setPhase("generating");
+    setActiveGeneration({ watchlistId: target.id, templateId, label: generationLabel(templateId) });
     setError("");
     setNotice("");
     try {
       if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
         await generateFullAnalysisFromClient(target, forceRefresh);
         setPhase("ready");
+        setActiveGeneration(null);
         return;
       }
       const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh }, (progress) => {
@@ -147,8 +156,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
             : `已生成：${completed?.templateTitle ?? "模板报告"}`,
       );
       setPhase("ready");
+      setActiveGeneration(null);
     } catch (err) {
       setPhase("error");
+      setActiveGeneration(null);
       setError(err instanceof Error ? err.message : "模板分析生成失败。");
     }
   }
@@ -234,9 +245,24 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           加入当前公司
         </button>
         <button type="button" disabled={!selectedItem || phase === "generating"} onClick={() => void generate(FULL_ANALYSIS_TEMPLATE_ID)}>
-          十模板全面分析
+          {activeGeneration?.templateId === FULL_ANALYSIS_TEMPLATE_ID ? (
+            <>
+              <Spinner /> 全面分析中
+            </>
+          ) : (
+            "十模板全面分析"
+          )}
         </button>
       </div>
+      {activeGeneration ? (
+        <div className="generation-status" role="status" aria-live="polite">
+          <span className="generation-pulse" aria-hidden="true" />
+          <div>
+            <strong>{activeGeneration.label}正在生成</strong>
+            <p>已提交到后端任务队列，完成后会自动更新；已生成过的内容会优先复用缓存。</p>
+          </div>
+        </div>
+      ) : null}
       <section className="mine-search-card" aria-label="搜索并加入自选股">
         <div>
           <h3>添加自选公司</h3>
@@ -306,6 +332,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               activeAnalysis={activeAnalysis}
               activeNews={activeNews}
               phase={phase}
+              activeGeneration={activeGeneration}
               onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
               onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
               onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
@@ -331,6 +358,7 @@ function CompanyWorkbench({
   activeAnalysis,
   activeNews,
   phase,
+  activeGeneration,
   onGenerate,
   onOpenAnalysis,
   onOpenBaseReport,
@@ -343,6 +371,7 @@ function CompanyWorkbench({
   activeAnalysis: TemplateAnalysisResult | null;
   activeNews: boolean;
   phase: "loading" | "ready" | "generating" | "error";
+  activeGeneration: ActiveGeneration | null;
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
   onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
   onOpenBaseReport: () => void;
@@ -351,6 +380,7 @@ function CompanyWorkbench({
   onBackFromNews: () => void;
 }) {
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
+  const generatingTemplateId = activeGeneration?.watchlistId === item.id ? activeGeneration.templateId : "";
   if (activeAnalysis) {
     return <TemplateReportReader analysis={activeAnalysis} onBack={onBackToTemplates} />;
   }
@@ -380,6 +410,7 @@ function CompanyWorkbench({
           title="十模板全面分析"
           focus="先生成十个专项深度报告，再汇总成最终全面分析。"
           analysis={fullAnalysis}
+          isGenerating={generatingTemplateId === FULL_ANALYSIS_TEMPLATE_ID}
           disabled={phase === "generating"}
           onGenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}
           onRegenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID, true)}
@@ -391,6 +422,7 @@ function CompanyWorkbench({
             title={template.title}
             focus={template.focus}
             analysis={analysisByTemplate.get(template.id)}
+            isGenerating={generatingTemplateId === template.id}
             disabled={phase === "generating"}
             onGenerate={() => onGenerate(template.id)}
             onRegenerate={() => onGenerate(template.id, true)}
@@ -416,6 +448,7 @@ function TemplateCard({
   title,
   focus,
   analysis,
+  isGenerating,
   disabled,
   onGenerate,
   onRegenerate,
@@ -424,28 +457,38 @@ function TemplateCard({
   title: string;
   focus: string;
   analysis?: TemplateAnalysisResult;
+  isGenerating: boolean;
   disabled: boolean;
   onGenerate: () => void;
   onRegenerate: () => void;
   onOpen: (analysis: TemplateAnalysisResult) => void;
 }) {
   const status = analysis?.status ?? "pending";
+  const displayStatus = isGenerating ? "running" : status;
   return (
-    <article className={`template-card status-${status}`}>
+    <article className={`template-card status-${displayStatus} ${isGenerating ? "is-generating" : ""}`}>
       <div>
         <strong>{title}</strong>
-        <span>{statusLabel(status)}</span>
+        <span>{isGenerating ? "生成中" : statusLabel(status)}</span>
       </div>
-      <p>{analysis?.summary || focus}</p>
+      <p>{isGenerating ? "正在生成深度内容，完成后会自动更新到报告库。" : analysis?.summary || focus}</p>
       {analysis?.fromCache ? <small>来自已生成缓存</small> : null}
       <footer>
-        {analysis?.status === "completed" ? (
+        {analysis?.status === "completed" && !isGenerating ? (
           <button type="button" className="secondary-button" onClick={() => onOpen(analysis)}>
             查看
           </button>
         ) : null}
         <button type="button" disabled={disabled} onClick={analysis ? onRegenerate : onGenerate}>
-          {analysis && (analysis.status === "completed" || isRetryableTemplateStatus(analysis.status)) ? "重新生成" : "生成"}
+          {isGenerating ? (
+            <>
+              <Spinner /> 生成中
+            </>
+          ) : analysis && (analysis.status === "completed" || isRetryableTemplateStatus(analysis.status)) ? (
+            "重新生成"
+          ) : (
+            "生成"
+          )}
         </button>
       </footer>
     </article>
@@ -785,6 +828,10 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function Spinner() {
+  return <span className="button-spinner" aria-hidden="true" />;
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="info-tile">
@@ -803,6 +850,11 @@ function statusLabel(status: TemplateAnalysisStatus) {
     failed: "失败",
   };
   return labels[status];
+}
+
+function generationLabel(templateId: string) {
+  if (templateId === FULL_ANALYSIS_TEMPLATE_ID) return "十模板全面分析";
+  return RESEARCH_TEMPLATES.find((template) => template.id === templateId)?.shortTitle || "模板报告";
 }
 
 function companyLogoText(company: CompanyCandidate) {
