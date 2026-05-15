@@ -266,7 +266,7 @@ function CompanyWorkbench({
           <p className="muted">
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
-          <p className="muted">十模板分析会先读取该公司的基础深度评分报告；没有报告库证据时会拒绝生成，避免模型凭公司名编造数据。</p>
+          <p className="muted">十模板分析会独立读取公开公司证据并按完整模板生成；全面分析会先跑完十个专项模板，再做交叉整合。</p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
           打开基础深度报告
@@ -436,6 +436,16 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
         </button>
       </header>
       {phase === "error" ? <p className="error-text">{error}</p> : null}
+      {bundle?.companyNewsError || bundle?.industryNewsError ? (
+        <p className="cache-notice">
+          {[
+            bundle.companyNewsError ? `公司新闻源：${bundle.companyNewsError}` : "",
+            bundle.industryNewsError ? `行业新闻源：${bundle.industryNewsError}` : "",
+          ]
+            .filter(Boolean)
+            .join("；")}
+        </p>
+      ) : null}
       <div className="news-columns">
         <NewsColumn title={`${item.company.name} 相关新闻`} items={bundle?.companyNews ?? []} loading={phase === "loading"} />
         <NewsColumn title={`${bundle?.industryLabel || "所属行业"} 行业新闻`} items={bundle?.industryNews ?? []} loading={phase === "loading"} />

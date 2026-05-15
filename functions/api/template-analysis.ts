@@ -1,5 +1,5 @@
 import { jsonrepair } from "jsonrepair";
-import type { InvestmentReport } from "../../src/shared/report";
+import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../_shared/providers";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
@@ -23,11 +23,13 @@ import {
 
 type Env = {
   AUTH_SECRET: string;
+  DEEPSEEK_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
 type DurableTemplateEnv = {
+  DEEPSEEK_API_KEY?: string;
   REPORT_LIBRARY_DB: D1Database;
   REPORT_LIBRARY_BUCKET: R2Bucket;
 };
@@ -38,10 +40,12 @@ type GenerateBody = {
   forceRefresh?: boolean;
 };
 
-const MODEL = "deepseek-v4-flash-free";
-const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const MODEL = "deepseek-v4-flash";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 240_000;
+const TEMPLATE_CACHE_ANCHOR =
+  "CSTD Alpha ten-template direct DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ".repeat(180);
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -84,27 +88,48 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!watchlistId) return json({ error: "缺少自选股 ID。" }, 400);
   const watchlist = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, watchlistId);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
+  const forceRefresh = Boolean(body?.forceRefresh);
 
-  const report = await readBestReport(env, watchlist);
-  if (!report) {
-    return json({ error: "请先生成或打开该公司的基础深度评分报告；十模板分析必须基于已有深度报告和公开证据，不能只凭公司名称生成。" }, 409);
-  }
-  const durableEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
+  const durableEnv = { DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY, REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
-    const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, report, Boolean(body?.forceRefresh));
+    const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID) : null;
+    if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
+    const evidence = await fetchTemplateEvidence(watchlist, request.signal);
+    const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh);
     return json({ analyses, watchlistItem: watchlistRowToItem(watchlist) });
   }
 
   const template = researchTemplateById(templateId);
   if (!template) return json({ error: "未知模板。" }, 400);
-  const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, report, template, Boolean(body?.forceRefresh));
+  const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template.id) : null;
+  if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
+  const evidence = await fetchTemplateEvidence(watchlist, request.signal);
+  const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidence, template, forceRefresh);
   return json({ analysis, watchlistItem: watchlistRowToItem(watchlist) });
 };
 
-async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, watchlist: WatchlistRow, report: InvestmentReport | null, forceRefresh: boolean) {
+async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSignal) {
+  return fetchPublicCompanyEvidence({
+    companyName: watchlist.company_name,
+    ticker: watchlist.ticker,
+    market: watchlist.market,
+    company: watchlistRowToItem(watchlist).company,
+    signal,
+  });
+}
+
+async function readCompletedAnalysisCache(env: Env, userId: string, watchlistId: string, templateId: string) {
+  if (!env.REPORT_LIBRARY_DB) return null;
+  const id = await analysisId(userId, watchlistId, templateId);
+  const row = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
+  if (!row || row.status !== "completed" || !row.object_key) return null;
+  return { ...(await hydrateMarkdown(env, analysisRowToResult(row))), fromCache: true };
+}
+
+async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, watchlist: WatchlistRow, evidence: EvidenceBundle, forceRefresh: boolean) {
   const children: TemplateAnalysisResult[] = [];
   for (const template of RESEARCH_TEMPLATES) {
-    children.push(await generateSingleTemplateAnalysis(env, userId, watchlist, report, template, false));
+    children.push(await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false));
   }
   const fullTemplate: ResearchTemplate = {
     id: FULL_ANALYSIS_TEMPLATE_ID,
@@ -121,14 +146,14 @@ async function generateFullAnalysis(env: DurableTemplateEnv, userId: string, wat
       ...children,
     ];
   }
-  return [await generateSingleTemplateAnalysis(env, userId, watchlist, report, fullTemplate, forceRefresh, completedChildren), ...children];
+  return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren), ...children];
 }
 
 async function generateSingleTemplateAnalysis(
   env: DurableTemplateEnv,
   userId: string,
   watchlist: WatchlistRow,
-  report: InvestmentReport | null,
+  evidence: EvidenceBundle,
   template: ResearchTemplate,
   forceRefresh: boolean,
   childAnalyses: TemplateAnalysisResult[] = [],
@@ -142,7 +167,7 @@ async function generateSingleTemplateAnalysis(
   await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running");
   const startedAt = new Date().toISOString();
   try {
-    const generated = await requestTemplateReport(watchlist, report, template, childAnalyses);
+    const generated = await requestTemplateReport(env, watchlist, evidence, template, childAnalyses);
     const objectKey = `${TEMPLATE_REPORT_PREFIX}/${userId}/${watchlist.id}/${template.id}.md`;
     await env.REPORT_LIBRARY_BUCKET.put(objectKey, generated.markdown, {
       httpMetadata: { contentType: "text/markdown; charset=utf-8" },
@@ -156,42 +181,44 @@ async function generateSingleTemplateAnalysis(
   }
 }
 
-async function requestTemplateReport(watchlist: WatchlistRow, report: InvestmentReport | null, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
-  const first = await requestTemplateReportOnce(watchlist, report, template, childAnalyses);
+async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
+  const first = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
   const minLength = minimumMarkdownLength(template);
   if (first.markdown.length >= minLength) return first;
-  const expanded = await requestTemplateReportOnce(watchlist, report, template, childAnalyses, first.markdown);
+  const expanded = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses, first.markdown);
   if (expanded.markdown.length >= minLength) return expanded;
   throw new Error(`模型输出过短：${expanded.markdown.length}/${minLength} 字符，未保存为成功报告。`);
 }
 
 async function requestTemplateReportOnce(
+  env: DurableTemplateEnv,
   watchlist: WatchlistRow,
-  report: InvestmentReport | null,
+  evidence: EvidenceBundle,
   template: ResearchTemplate,
   childAnalyses: TemplateAnalysisResult[],
   draftToExpand?: string,
 ) {
+  if (!env.DEEPSEEK_API_KEY?.trim()) throw new Error("DeepSeek API Key 未配置，无法直连 Flash Max。");
   const minLength = minimumMarkdownLength(template);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(OPENCODE_ZEN_CHAT_COMPLETIONS_URL, {
+    const response = await fetchTemplateModel({
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
       signal: controller.signal,
       body: JSON.stringify({
         model: MODEL,
         reasoning_effort: "max",
-        thinking: { type: "enabled" },
         response_format: { type: "json_object" },
         stream: false,
+        temperature: 0.1,
         max_tokens: template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000,
         messages: [
           {
             role: "system",
             content:
-              "你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。",
+              `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。\n\n${TEMPLATE_CACHE_ANCHOR}`,
           },
           {
             role: "user",
@@ -202,9 +229,9 @@ async function requestTemplateReportOnce(
                   : template.id === FULL_ANALYSIS_TEMPLATE_ID
                     ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符。`
                     : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，并包含模板要求的所有关键模块。`,
-              company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
               template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
-              existingDeepReport: report ? compactReport(report) : null,
+              company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
+              publicEvidence: compactTemplateEvidence(evidence),
               draftToExpand: draftToExpand || undefined,
               childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
                 templateTitle,
@@ -241,6 +268,30 @@ async function requestTemplateReportOnce(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchTemplateModel(init: RequestInit) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, init);
+      if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
+      lastError = new Error(`模板分析通道暂时不可用：${response.status} ${(await response.text()).slice(0, 300)}`);
+    } catch (error) {
+      lastError = error;
+      if (isAbortLikeError(error) || attempt === 2) throw error;
+    }
+    await delay(800 * (attempt + 1));
+  }
+  throw lastError instanceof Error ? lastError : new Error("模板分析模型请求失败。");
+}
+
+function isRetryableHttpStatus(status: number) {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function minimumMarkdownLength(template: ResearchTemplate) {
@@ -406,31 +457,61 @@ async function readWatchlistRow(db: D1Database, userId: string, id: string) {
     .first<WatchlistRow>();
 }
 
-async function readBestReport(env: Env, watchlist: WatchlistRow): Promise<InvestmentReport | null> {
-  if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return null;
-  try {
-    const row = watchlist.report_library_id
-      ? await readReportIndexRowById(env.REPORT_LIBRARY_DB, watchlist.report_library_id)
-      : await readReportIndexRowByTicker(env.REPORT_LIBRARY_DB, watchlist.ticker, watchlist.market);
-    if (!row?.object_key) return null;
-    const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
-    return object ? ((await object.json()) as InvestmentReport) : null;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("no such table")) return null;
-    throw error;
-  }
-}
-
-async function readReportIndexRowById(db: D1Database, id: string) {
-  return db.prepare(`SELECT object_key FROM report_library WHERE id = ?1`).bind(id).first<{ object_key: string }>();
-}
-
-async function readReportIndexRowByTicker(db: D1Database, ticker: string, market: string) {
-  return db.prepare(`SELECT object_key FROM report_library WHERE ticker = ?1 ORDER BY CASE WHEN market = ?2 THEN 0 ELSE 1 END, imported_at DESC LIMIT 1`).bind(ticker, market).first<{ object_key: string }>();
-}
-
 async function analysisId(userId: string, watchlistId: string, templateId: string) {
   return sha256(`${userId}:${watchlistId}:${templateId}`);
+}
+
+function compactTemplateEvidence(evidence: EvidenceBundle) {
+  const facts = evidence.facts;
+  const summary = optionalRecord(facts.summary);
+  const eastmoney = optionalRecord(facts.eastmoney);
+  const sec = optionalRecord(facts.sec);
+  return {
+    company: evidence.company,
+    retrievedAt: evidence.retrievedAt,
+    sources: evidence.evidence.map(({ title, source, freshness, notes }) => ({ title, source, freshness, notes })),
+    facts: {
+      quote: pickKeys(optionalRecord(facts.quote), [
+        "regularMarketPrice",
+        "currency",
+        "marketCap",
+        "trailingPE",
+        "forwardPE",
+        "priceToBook",
+        "dividendYield",
+        "regularMarketChangePercent",
+        "fiftyTwoWeekHigh",
+        "fiftyTwoWeekLow",
+        "marketState",
+      ]),
+      selectedCompany: facts.selectedCompany,
+      financialTenYear: facts.financialTenYear,
+      eastmoney: {
+        quote: pickKeys(optionalRecord(eastmoney?.quote), ["f43", "f44", "f45", "f46", "f57", "f58", "f116", "f162", "f167", "f168", "f169", "f170", "f173"]),
+        incomeRows: latestRows(eastmoney?.incomeRows, 8),
+        cashflowRows: latestRows(eastmoney?.cashflowRows, 8),
+        balanceRows: latestRows(eastmoney?.balanceRows, 8),
+      },
+      sec: sec
+        ? {
+            cik: sec.cik,
+            title: sec.title,
+            latestAnnual: sec.latestAnnual,
+            latestQuarter: sec.latestQuarter,
+            normalizedFinancialTenYear: sec.normalizedFinancialTenYear,
+            summaryFinancialData: sec.summaryFinancialData,
+          }
+        : undefined,
+      summary: {
+        assetProfile: summary?.assetProfile,
+        price: summary?.price,
+        financialData: summary?.financialData,
+        summaryDetail: summary?.summaryDetail,
+        defaultKeyStatistics: summary?.defaultKeyStatistics,
+      },
+      fundamentals: facts.fundamentals,
+    },
+  };
 }
 
 function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) {
@@ -449,43 +530,17 @@ function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) 
   };
 }
 
-function compactReport(report: InvestmentReport) {
-  return {
-    company: report.company,
-    asOf: report.asOf,
-    cqs: report.cqs,
-    ias: report.ias,
-    conclusion: report.conclusion,
-    oneSentence: report.oneSentence,
-    summaryDashboard: report.summaryDashboard,
-    valuationAnalysis: report.valuationAnalysis,
-    financialTenYear: report.financialTenYear,
-    scoreItems20: report.scoreItems20.map(({ title, score, label, reason, evidence, deductions, recentChange }) => ({
-      title,
-      score,
-      label,
-      reason,
-      evidence,
-      deductions,
-      recentChange,
-    })),
-    sections: report.sections,
-    evidence: report.evidence.map(({ title, source, freshness, notes }) => ({ title, source, freshness, notes })),
-  };
-}
-
 function normalizeTemplateAnalysisError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  if (message.includes("FreeUsageLimitError") || message.includes("Rate limit exceeded")) {
-    return "opencode 免费 Flash 通道当前触发限流，请稍后重试；任务已保存为可重试失败。";
-  }
+  if (message.includes("DEEPSEEK_API_KEY")) return "DeepSeek API Key 未配置，无法直连 Flash Max。";
+  if (message.includes("Rate limit exceeded")) return "DeepSeek Flash Max 当前触发限流，请稍后重试；任务已保存为可重试失败。";
   if (message.includes("429")) return "模板分析模型通道当前限流，请稍后重试。";
   return message || "模板分析生成失败。";
 }
 
 function isRetryableError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  return message.includes("FreeUsageLimitError") || message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || message.includes("超过 4 分钟") || /\b5\d\d\b/.test(message);
+  return message.includes("Rate limit exceeded") || message.includes("429") || message.includes("输出过短") || message.includes("超过 4 分钟") || /\b5\d\d\b/.test(message);
 }
 
 function isAbortLikeError(error: unknown) {
@@ -518,4 +573,21 @@ function numberValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function optionalRecord(value: unknown) {
+  return isRecord(value) ? value : undefined;
+}
+
+function pickKeys(record: Record<string, unknown> | undefined, keys: string[]) {
+  if (!record) return undefined;
+  const picked = keys.reduce<Record<string, unknown>>((result, key) => {
+    if (record[key] !== undefined && record[key] !== null && record[key] !== "") result[key] = record[key];
+    return result;
+  }, {});
+  return Object.keys(picked).length ? picked : undefined;
+}
+
+function latestRows(value: unknown, limit: number) {
+  return Array.isArray(value) ? value.slice(0, limit) : undefined;
 }

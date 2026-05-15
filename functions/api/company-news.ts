@@ -34,19 +34,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const companyQuery = buildCompanyNewsQuery(item.company);
   const industryQuery = buildIndustryNewsQuery(industryLabel, item.company);
 
-  const [companyNews, industryNews] = await Promise.all([
+  const [companyNewsResult, industryNewsResult] = await Promise.allSettled([
     fetchGoogleNews(companyQuery, request.signal),
     fetchGoogleNews(industryQuery, request.signal),
   ]);
 
   const bundle: CompanyNewsBundle = {
     company: item.company,
-    companyNews,
-    industryNews,
+    companyNews: newsItemsFromResult(companyNewsResult),
+    industryNews: newsItemsFromResult(industryNewsResult),
     companyQuery,
     industryQuery,
     industryLabel,
     fetchedAt: new Date().toISOString(),
+    companyNewsError: errorFromResult(companyNewsResult),
+    industryNewsError: errorFromResult(industryNewsResult),
   };
 
   return new Response(JSON.stringify(bundle), {
@@ -70,6 +72,16 @@ async function fetchGoogleNews(query: string, signal: AbortSignal) {
   });
   if (!response.ok) throw new Error(`新闻读取失败：${response.status}`);
   return decorateNewsSentiment(parseGoogleNewsRss(await response.text(), 8));
+}
+
+function newsItemsFromResult(result: PromiseSettledResult<Awaited<ReturnType<typeof fetchGoogleNews>>>) {
+  return result.status === "fulfilled" ? result.value : [];
+}
+
+function errorFromResult(result: PromiseSettledResult<Awaited<ReturnType<typeof fetchGoogleNews>>>) {
+  if (result.status === "fulfilled") return undefined;
+  const message = result.reason instanceof Error ? result.reason.message : String(result.reason ?? "");
+  return message || "新闻源暂时不可用。";
 }
 
 async function readWatchlistRow(db: D1Database, userId: string, id: string) {

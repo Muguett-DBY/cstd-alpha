@@ -23,6 +23,8 @@ export type CompanyNewsBundle = {
   industryQuery: string;
   industryLabel: string;
   fetchedAt: string;
+  companyNewsError?: string;
+  industryNewsError?: string;
 };
 
 const POSITIVE_PATTERNS = [

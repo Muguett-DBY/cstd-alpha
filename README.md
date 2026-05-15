@@ -1,17 +1,17 @@
 # CSTD Alpha
 
-中文优先的私人公司研究工具。输入公司名后先确认上市主体，再用公开财务数据和 OpenCode Zen DeepSeek V4 Flash Free 生成“公司质量评分（CQS）+ 投资吸引力评分（IAS）”深度评分报告。
+中文优先的私人公司研究工具。输入公司名后先确认上市主体，再用公开财务数据和 DeepSeek Direct API `deepseek-v4-flash` 生成“公司质量评分（CQS）+ 投资吸引力评分（IAS）”深度评分报告。
 
 ## 工作流
 
 1. 固定账号登录保护网页和 API；账号保存在 D1，密码只保存哈希，session token 只保存哈希。
 2. 用户输入公司名或代码，系统返回候选公司：公司名、代码、上市地、交易所。
 3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
-4. OpenCode Zen `deepseek-v4-flash-free` 使用 thinking mode 和 `reasoning_effort: "max"` 生成完整报告。
+4. DeepSeek Direct API `deepseek-v4-flash` 使用 `reasoning_effort: "max"` 生成完整报告。
 5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
 6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
 
-批量导入报告库使用 OpenCode CLI 模型 ID `opencode/deepseek-v4-flash-free` 生成报告，再导入 D1/R2 报告库。
+批量导入报告库仍可使用 OpenCode CLI 或 Direct API 生成报告，再导入 D1/R2 报告库；在线生成默认走 Direct API。
 
 ## API
 
@@ -28,6 +28,7 @@
 ```env
 REPORT_PASSWORD="..."
 AUTH_SECRET="..."
+DEEPSEEK_API_KEY="..."
 ```
 
 然后运行：

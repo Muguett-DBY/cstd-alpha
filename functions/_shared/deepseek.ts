@@ -14,12 +14,12 @@ import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
-type DeepSeekModel = "deepseek-v4-flash-free";
+type DeepSeekModel = "deepseek-v4-flash";
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 export const DEEPSEEK_NETWORK_MESSAGE = "DeepSeek 网络连接不稳定，本次报告未完成，请重试。";
-const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["accountRules"],
@@ -239,7 +239,7 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: "deepseek-v4-flash",
     maxTokens: 12000,
     usageTracker,
     messages: [
@@ -291,7 +291,7 @@ async function requestNarrativeSections({
     onProgress?.({
       stage: `deepseek_narrative_${index + 1}`,
       label: "生成完整正文",
-      detail: `V4 Flash max thinking 正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
+      detail: `V4 Flash max reasoning 正在生成${keys.map((key) => FULL_SECTION_LABELS[key]).join("、")}。`,
       percent: 70 + Math.round((index * 15) / Math.max(1, NARRATIVE_SECTION_BATCHES.length - 1)),
     });
     return requestNarrativeBatch({
@@ -330,7 +330,7 @@ async function requestScoreItemDetails({
     onProgress?.({
       stage: `deepseek_score_detail_${index + 1}`,
       label: "补全评分证据",
-      detail: `V4 Flash max thinking 正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
+      detail: `V4 Flash max reasoning 正在补全第 ${index * 5 + 1}-${index * 5 + itemIds.length} 项评分的证据、扣分点和最近变化。`,
       percent: 64 + index,
     });
     return requestScoreItemDetailBatch({
@@ -451,7 +451,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: "deepseek-v4-flash",
     maxTokens: strictLength ? 2400 : 3600,
     timeoutMs: 90_000,
     usageTracker,
@@ -603,7 +603,7 @@ async function requestNarrativeBatchOnce({
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: "deepseek-v4-flash",
     maxTokens: strictLength ? 2600 : 4200,
     usageTracker,
     messages: [
@@ -651,19 +651,21 @@ async function requestDeepSeekJson({
   timeoutMs?: number;
   usageTracker: DeepSeekUsageTracker;
 }) {
-  void apiKey;
+  if (!apiKey?.trim()) {
+    throw new DeepSeekReportError("DeepSeek API Key 未配置，无法直连 Flash Max。", "DEEPSEEK_API_KEY_MISSING", false);
+  }
   const timeoutController = timeoutMs ? new AbortController() : undefined;
   const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
   const requestInit: RequestInit = {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     signal: timeoutController?.signal,
     body: JSON.stringify({
       model,
       reasoning_effort: "max",
-      thinking: { type: "enabled" },
       response_format: { type: "json_object" },
       stream: false,
+      temperature: 0.1,
       max_tokens: maxTokens,
       messages,
     }),
@@ -700,7 +702,7 @@ async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, init: RequestInit) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetchImpl(OPENCODE_ZEN_CHAT_COMPLETIONS_URL, init);
+      const response = await fetchImpl(DEEPSEEK_CHAT_COMPLETIONS_URL, init);
       if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
       lastError = new Error(`DeepSeek request failed: ${response.status}`);
     } catch (error) {

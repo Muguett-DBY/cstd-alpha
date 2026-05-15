@@ -67,7 +67,7 @@ function analysisFor(templateId: string, index: number): TemplateAnalysisResult 
     companyName: "贵州茅台",
     ticker: "600519",
     market: "SH-A",
-    model: "deepseek-v4-flash-free",
+    model: "deepseek-v4-flash",
     status: "completed",
     title: "贵州茅台专项分析",
     verdict: "观察",
