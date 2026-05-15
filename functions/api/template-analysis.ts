@@ -49,8 +49,10 @@ const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/compl
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
-const TEMPLATE_CACHE_ANCHOR =
-  "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ".repeat(180);
+const TEMPLATE_CACHE_ANCHOR_SENTENCE =
+  "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
+const FREE_TEMPLATE_CACHE_REPEAT = 180;
+const PAID_TEMPLATE_CACHE_REPEAT = 420;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -268,11 +270,11 @@ async function requestTemplateReportOnce(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
   try {
-    const messages = buildTemplateMessages(watchlist, evidence, template, childAnalyses, minLength, draftToExpand);
     const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
     let lastError: unknown;
     for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY)) {
       try {
+        const messages = buildTemplateMessages(watchlist, evidence, template, childAnalyses, minLength, draftToExpand, route.isFree ? "free" : "paid");
         const response = await fetchTemplateModel(route.url, buildTemplateRequest(route, messages, maxTokens, controller.signal));
         if (!response.ok) {
           lastError = new Error(`模板分析生成失败：${route.model} ${response.status} ${(await response.text()).slice(0, 500)}`);
@@ -311,11 +313,12 @@ function buildTemplateMessages(
   childAnalyses: TemplateAnalysisResult[],
   minLength: number,
   draftToExpand?: string,
+  cacheMode: "free" | "paid" = "free",
 ) {
   return [
     {
       role: "system" as const,
-      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。\n\n${TEMPLATE_CACHE_ANCHOR}`,
+      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数视为失败。\n\n${templateCacheAnchor(cacheMode)}\n\n## 本次模板原文\n模板 ID：${template.id}\n模板标题：${template.title}\n\n${template.fullPrompt}\n\n## 固定输出要求\n- 必须严格按上方完整模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，markdown 字段内放完整中文 Markdown 正文。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。`,
     },
     {
       role: "user" as const,
@@ -325,7 +328,7 @@ function buildTemplateMessages(
           : template.id === FULL_ANALYSIS_TEMPLATE_ID
             ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 7000-10000 个中文字符。`
             : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，并包含模板要求的所有关键模块。`,
-        template: { id: template.id, title: template.title, fullPrompt: template.fullPrompt },
+        template: { id: template.id, title: template.title, focus: template.focus },
         company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
         publicEvidence: compactTemplateEvidence(evidence),
         draftToExpand: draftToExpand || undefined,
@@ -351,6 +354,10 @@ function buildTemplateMessages(
       }),
     },
   ];
+}
+
+function templateCacheAnchor(cacheMode: "free" | "paid") {
+  return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
 }
 
 function templateModelRoutes(apiKey: string | undefined): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
