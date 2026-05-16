@@ -330,12 +330,13 @@ function App() {
         </div>
 
         <nav className="view-tabs" aria-label="工作区">
-          <button type="button" className={activeView === "report" ? "active" : ""} onClick={() => setActiveView("report")}>
+          <button type="button" className={activeView === "report" ? "active" : ""} aria-current={activeView === "report" ? "page" : undefined} onClick={() => setActiveView("report")}>
             生成报告
           </button>
           <button
             type="button"
             className={activeView === "ranking" && rankingMarket === "a-share" ? "active" : ""}
+            aria-current={activeView === "ranking" && rankingMarket === "a-share" ? "page" : undefined}
             onClick={() => {
               setRankingMarket("a-share");
               setActiveView("ranking");
@@ -346,6 +347,7 @@ function App() {
           <button
             type="button"
             className={activeView === "ranking" && rankingMarket === "us" ? "active" : ""}
+            aria-current={activeView === "ranking" && rankingMarket === "us" ? "page" : undefined}
             onClick={() => {
               setRankingMarket("us");
               setActiveView("ranking");
@@ -356,6 +358,7 @@ function App() {
           <button
             type="button"
             className={activeView === "ranking" && rankingMarket === "hk" ? "active" : ""}
+            aria-current={activeView === "ranking" && rankingMarket === "hk" ? "page" : undefined}
             onClick={() => {
               setRankingMarket("hk");
               setActiveView("ranking");
@@ -363,7 +366,7 @@ function App() {
           >
             港股排行
           </button>
-          <button type="button" className={activeView === "mine" ? "active" : ""} onClick={() => setActiveView("mine")}>
+          <button type="button" className={activeView === "mine" ? "active" : ""} aria-current={activeView === "mine" ? "page" : undefined} onClick={() => setActiveView("mine")}>
             我的
           </button>
         </nav>
