@@ -56,12 +56,12 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchWatchlist(), fetchTemplateAnalyses()])
-      .then(([watchlist, analysisData]) => {
+    Promise.all([fetchWatchlist(), fetchTemplateAnalyses(), fetchResearchTemplates()])
+      .then(([watchlist, analysisData, templateData]) => {
         if (cancelled) return;
         setItems(watchlist.items);
         setAnalyses(analysisData.analyses);
-        setTemplates(analysisData.templates);
+        setTemplates(templateData.length ? templateData : analysisData.templates);
         setSelectedWatchlistId((current) => current || watchlist.items[0]?.id || "");
         setPhase("ready");
       })
