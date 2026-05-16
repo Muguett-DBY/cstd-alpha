@@ -24,7 +24,7 @@ import {
   type UserSession,
   type WatchlistItem,
 } from "./shared/user-research";
-import { resolveTemplateManagerView, type TemplateManagerView } from "./template-manager-state";
+import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView, type TemplateGenerationPhase, type TemplateManagerView } from "./template-manager-state";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -680,7 +680,7 @@ function CompanyWorkbench({
   analysisByTemplate: Map<string, TemplateAnalysisResult>;
   activeAnalysis: TemplateAnalysisResult | null;
   activeNews: boolean;
-  phase: "loading" | "ready" | "generating" | "error";
+  phase: TemplateGenerationPhase;
   templates: ResearchTemplate[];
   activeGeneration: ActiveGeneration | null;
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
@@ -693,6 +693,7 @@ function CompanyWorkbench({
   const activeTemplates = templates.filter((template) => template.enabled !== false);
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
   const generatingTemplateId = activeGeneration?.watchlistId === item.id ? activeGeneration.templateId : "";
+  const fullAnalysisCard = buildFullAnalysisTemplateCardState(activeTemplates.length, phase);
   if (activeAnalysis) {
     return <TemplateReportReader analysis={activeAnalysis} onBack={onBackToTemplates} />;
   }
@@ -709,7 +710,7 @@ function CompanyWorkbench({
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
           <p className="muted">
-            已启用 {activeTemplates.length} 个模板；每个模板会独立读取公开公司证据并按完整模板生成。
+            已启用 {activeTemplates.length} 个模板；单模板会独立读取公开公司证据并按完整模板生成，全面分析会先跑完启用模板，再做最终交叉整合。
           </p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
@@ -719,7 +720,17 @@ function CompanyWorkbench({
 
       <NewsEntryCard item={item} onOpen={onOpenNews} />
 
-      <section className="template-grid" aria-label="模板深度分析">
+      <section className="template-grid" aria-label="全部模板深度分析">
+        <TemplateCard
+          title={fullAnalysisCard.title}
+          focus={fullAnalysisCard.focus}
+          analysis={fullAnalysis}
+          isGenerating={generatingTemplateId === FULL_ANALYSIS_TEMPLATE_ID}
+          disabled={fullAnalysisCard.disabled}
+          onGenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}
+          onRegenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID, true)}
+          onOpen={onOpenAnalysis}
+        />
         {activeTemplates.map((template) => (
           <TemplateCard
             key={template.id}
