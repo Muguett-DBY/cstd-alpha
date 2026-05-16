@@ -114,7 +114,7 @@ export async function authenticateUser(db: D1Database, usernameInput: string, pa
   return userRowToSessionUser(user);
 }
 
-export async function createAuthSession(db: D1Database, user: Omit<UserSession, "sessionId" | "expiresAt">, now = new Date()) {
+export async function createAuthSession(db: D1Database, user: Omit<UserSession, "sessionId" | "expiresAt">, now = new Date(), secureCookie = true) {
   await ensureAuthSchema(db);
   await cleanupExpiredSessions(db, now);
   const sessionId = randomBase64Url(18);
@@ -125,17 +125,17 @@ export async function createAuthSession(db: D1Database, user: Omit<UserSession, 
     .bind(sessionId, user.userId, await hashSessionToken(token), now.toISOString(), expiresAt, now.toISOString())
     .run();
   return {
-    cookie: createSessionCookie(sessionId, token),
+    cookie: createSessionCookie(sessionId, token, secureCookie),
     session: { ...user, sessionId, expiresAt },
   };
 }
 
-export function createSessionCookie(sessionId: string, token: string) {
-  return `${COOKIE_NAME}=${sessionId}.${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+export function createSessionCookie(sessionId: string, token: string, secure = true) {
+  return `${COOKIE_NAME}=${sessionId}.${token}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
 }
 
-export function clearSessionCookie() {
-  return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+export function clearSessionCookie(secure = true) {
+  return `${COOKIE_NAME}=; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Path=/; Max-Age=0`;
 }
 
 export async function readSessionCookie(cookieHeader: string | null | undefined, env: AuthEnv): Promise<UserSession | null> {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchChartData, fetchReportLibrary, generateReport, login, searchCompanies } from "./api";
+import { fetchChartData, fetchReportLibrary, fetchResearchTemplates, generateReport, login, resetResearchTemplatesToDefault, saveResearchTemplates, saveResearchTemplatesAsDefault, searchCompanies } from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -292,5 +292,44 @@ describe("API client", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("market=us"), expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("tickers=000333%2C603259"), expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("reads and saves user research templates through the template API", async () => {
+    const templates = [
+      {
+        id: "template-11-capital-allocation",
+        title: "模板11：资金配置原则与公司配置分析",
+        shortTitle: "资金配置",
+        focus: "配置分析",
+        prompt: "短提示",
+        fullPrompt: "完整提示",
+        enabled: true,
+        sortOrder: 11,
+      },
+    ];
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ templates }))));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchResearchTemplates()).resolves.toEqual(templates);
+    await saveResearchTemplates(templates);
+    await saveResearchTemplatesAsDefault();
+    await resetResearchTemplatesToDefault();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/research-templates", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/research-templates",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ templates }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/research-templates",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "save-defaults" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/research-templates",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "reset-defaults" }) }),
+    );
   });
 });

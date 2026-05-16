@@ -990,6 +990,105 @@ button:not(:disabled):active,
   font-size: 12px;
 }
 
+.template-manager {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.template-manager header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.template-manager h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.template-manager-actions,
+.template-manager-toolbar,
+.template-editor-topline > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.template-manager-toolbar {
+  justify-content: flex-start;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.template-editor-list {
+  display: grid;
+  gap: 12px;
+}
+
+.template-editor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfbf8;
+}
+
+.template-editor.is-disabled {
+  background: #f4f1ea;
+}
+
+.template-editor-topline,
+.template-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.35fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.template-editor-topline {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.template-editor-topline > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.template-toggle {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink);
+}
+
+.template-toggle input {
+  width: 18px;
+  height: 18px;
+  min-height: auto;
+  padding: 0;
+  accent-color: var(--teal);
+}
+
+.template-editor label:not(.template-toggle) {
+  display: grid;
+  gap: 6px;
+}
+
+.template-editor textarea {
+  min-height: 86px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .my-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.45fr) minmax(0, 1fr);
@@ -1886,6 +1985,9 @@ button:not(:disabled):active,
   .news-columns,
   .mine-search-form,
   .mine-candidate-list,
+  .template-manager header,
+  .template-editor-topline,
+  .template-editor-grid,
   .analysis-reader-header,
   .template-grid {
     grid-template-columns: 1fr;
@@ -1940,6 +2042,8 @@ button:not(:disabled):active,
   .ranking-pagination,
   .my-actions,
   .mine-search-card,
+  .template-manager,
+  .template-editor,
   .my-list,
   .analysis-panel,
   .news-radar,
@@ -1963,6 +2067,9 @@ button:not(:disabled):active,
   .ranking-pagination,
   .ranking-pagination div,
   .my-list article > div,
+  .template-manager-actions,
+  .template-manager-toolbar,
+  .template-editor-topline > div,
   .template-card footer,
   .ranking-actions {
     display: grid;
@@ -1971,6 +2078,8 @@ button:not(:disabled):active,
 
   .ranking-pagination button,
   .my-actions button,
+  .template-manager button,
+  .template-editor button,
   .my-list article button,
   .template-card footer button,
   .ranking-actions button,

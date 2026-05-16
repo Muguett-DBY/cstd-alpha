@@ -2,19 +2,23 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import {
   addWatchlistItem,
   fetchCompanyNews,
+  fetchResearchTemplates,
   fetchTemplateAnalyses,
   fetchTemplateAnalysis,
   fetchWatchlist,
   generateTemplateAnalysis,
   removeWatchlistItem,
+  resetResearchTemplatesToDefault,
+  saveResearchTemplates,
+  saveResearchTemplatesAsDefault,
   searchCompanies,
 } from "./api";
 import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
-  RESEARCH_TEMPLATES,
   isRetryableTemplateStatus,
+  type ResearchTemplate,
   type TemplateAnalysisResult,
   type TemplateAnalysisStatus,
   type UserSession,
@@ -47,6 +51,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
+  const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
   const selectedWatchlistIdRef = useRef(selectedWatchlistId);
 
   useEffect(() => {
@@ -56,6 +61,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         if (cancelled) return;
         setItems(watchlist.items);
         setAnalyses(analysisData.analyses);
+        setTemplates(analysisData.templates);
         setSelectedWatchlistId((current) => current || watchlist.items[0]?.id || "");
         setPhase("ready");
       })
@@ -72,6 +78,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
   const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
+  const enabledTemplateCount = useMemo(() => templates.filter((template) => template.enabled !== false).length, [templates]);
 
   useEffect(() => {
     selectedWatchlistIdRef.current = selectedItem?.id || "";
@@ -137,7 +144,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     const target = selectedItem;
     if (!target) return;
     setPhase("generating");
-    setActiveGeneration({ watchlistId: target.id, templateId, label: generationLabel(templateId), companyName: target.company.name });
+    setActiveGeneration({ watchlistId: target.id, templateId, label: generationLabel(templateId, templates), companyName: target.company.name });
     setError("");
     setNotice("");
     try {
@@ -156,7 +163,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       if (completed && selectedWatchlistIdRef.current === target.id) setActiveAnalysis(completed);
       setNotice(
         templateId === FULL_ANALYSIS_TEMPLATE_ID
-          ? "全面分析任务已更新：十个模板会逐项生成，已完成的模板会直接复用缓存。"
+          ? "全面分析任务已更新：启用模板会逐项生成，已完成的模板会直接复用缓存。"
           : completed?.fromCache
             ? `已打开 ${target.company.name} 的缓存报告：${completed.templateTitle}`
             : `已生成 ${target.company.name}：${completed?.templateTitle ?? "模板报告"}`,
@@ -230,13 +237,58 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     }
   }
 
+  async function saveTemplates(nextTemplates: ResearchTemplate[], successMessage = "模板设置已保存。") {
+    setError("");
+    setNotice("");
+    try {
+      const saved = await saveResearchTemplates(nextTemplates);
+      setTemplates(saved);
+      setNotice(successMessage);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板保存失败。");
+    }
+  }
+
+  async function saveCurrentTemplatesAsDefault() {
+    setError("");
+    setNotice("");
+    try {
+      const saved = await saveResearchTemplatesAsDefault();
+      setTemplates(saved);
+      setNotice("已把当前模板集保存为默认设置。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "默认模板保存失败。");
+    }
+  }
+
+  async function resetTemplates() {
+    setError("");
+    setNotice("");
+    try {
+      const saved = await resetResearchTemplatesToDefault();
+      setTemplates(saved);
+      setNotice("已重置为默认模板设置。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板重置失败。");
+    }
+  }
+
+  async function refreshTemplates() {
+    setError("");
+    try {
+      setTemplates(await fetchResearchTemplates());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板读取失败。");
+    }
+  }
+
   return (
     <section className="my-workspace" aria-labelledby="my-title">
       <header className="ranking-header">
         <div>
           <p className="eyebrow">我的研究</p>
           <h2 id="my-title">自选股公司工作台</h2>
-          <p className="muted">{user?.displayName || user?.username || "固定账号"} 的自选股、公司级操作台和十模板深度分析。</p>
+          <p className="muted">{user?.displayName || user?.username || "固定账号"} 的自选股、公司级操作台和全部模板深度分析。</p>
         </div>
         <div className="ranking-summary">
           <Metric label="自选股" value={`${items.length}`} />
@@ -250,13 +302,13 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         <button type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void addCurrentCompany()}>
           加入当前公司
         </button>
-        <button type="button" disabled={!selectedItem || phase === "generating"} onClick={() => void generate(FULL_ANALYSIS_TEMPLATE_ID)}>
+        <button type="button" disabled={!selectedItem || phase === "generating" || !enabledTemplateCount} onClick={() => void generate(FULL_ANALYSIS_TEMPLATE_ID)}>
           {activeGeneration?.templateId === FULL_ANALYSIS_TEMPLATE_ID ? (
             <>
               <Spinner /> 全面分析中
             </>
           ) : (
-            "十模板全面分析"
+            "全部模板全面分析"
           )}
         </button>
       </div>
@@ -295,6 +347,14 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           </div>
         ) : null}
       </section>
+      <TemplateManager
+        templates={templates}
+        disabled={phase === "generating"}
+        onSave={(nextTemplates) => void saveTemplates(nextTemplates)}
+        onSaveDefault={() => void saveCurrentTemplatesAsDefault()}
+        onResetDefault={() => void resetTemplates()}
+        onRefresh={() => void refreshTemplates()}
+      />
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
 
@@ -340,6 +400,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               activeAnalysis={activeAnalysis}
               activeNews={activeNews}
               phase={phase}
+              templates={templates}
               activeGeneration={activeGeneration}
               onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
               onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
@@ -351,11 +412,170 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           ) : (
             <>
               <h3>公司工作台</h3>
-              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告或十模板全面分析。</p>
+              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告或全部模板全面分析。</p>
             </>
           )}
         </section>
       </div>
+    </section>
+  );
+}
+
+function TemplateManager({
+  templates,
+  disabled,
+  onSave,
+  onSaveDefault,
+  onResetDefault,
+  onRefresh,
+}: {
+  templates: ResearchTemplate[];
+  disabled: boolean;
+  onSave: (templates: ResearchTemplate[]) => void;
+  onSaveDefault: () => void;
+  onResetDefault: () => void;
+  onRefresh: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [drafts, setDrafts] = useState<ResearchTemplate[]>(templates);
+
+  useEffect(() => {
+    setDrafts(templates);
+  }, [templates]);
+
+  const enabledCount = drafts.filter((template) => template.enabled !== false).length;
+  const hasInvalidTemplate = drafts.some((template) => !template.title.trim() || !template.prompt.trim() || !template.fullPrompt.trim());
+  const hasChanges = JSON.stringify(normalizeTemplateDrafts(drafts)) !== JSON.stringify(normalizeTemplateDrafts(templates));
+
+  function updateTemplate(id: string, patch: Partial<ResearchTemplate>) {
+    setDrafts((current) => current.map((template) => (template.id === id ? { ...template, ...patch } : template)));
+  }
+
+  function addTemplate() {
+    const nextNumber = drafts.length + 1;
+    setDrafts((current) => [
+      ...current,
+      {
+        id: `custom-template-${Date.now()}`,
+        title: `自定义模板${nextNumber}`,
+        shortTitle: "自定义",
+        focus: "按用户自定义框架分析公司的核心问题、证据、风险与结论。",
+        prompt: "请基于公开证据，按这个自定义模板完整分析公司。",
+        fullPrompt: "# 自定义公司分析模板\n\n请围绕（      ）公司，按以下维度完成分析：\n\n1. 核心问题\n2. 证据链\n3. 关键风险\n4. 投资结论\n5. 后续跟踪指标",
+        enabled: true,
+        sortOrder: nextNumber,
+        isSystem: false,
+      },
+    ]);
+    setExpanded(true);
+  }
+
+  function removeTemplate(id: string) {
+    setDrafts((current) => current.filter((template) => template.id !== id));
+  }
+
+  function moveTemplate(id: string, delta: -1 | 1) {
+    setDrafts((current) => {
+      const index = current.findIndex((template) => template.id === id);
+      const targetIndex = index + delta;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      next.splice(targetIndex, 0, item);
+      return next.map((template, sortIndex) => ({ ...template, sortOrder: sortIndex + 1 }));
+    });
+  }
+
+  return (
+    <section className="template-manager" aria-label="模板管理">
+      <header>
+        <div>
+          <p className="eyebrow">模板管理</p>
+          <h3>全局模板设置</h3>
+          <p className="muted">
+            当前启用 {enabledCount} / {drafts.length || templates.length} 个模板；保存后会同步用于所有公司分析，新闻雷达不受影响。
+          </p>
+        </div>
+        <div className="template-manager-actions">
+          <button type="button" className="secondary-button" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "收起编辑" : "编辑模板"}
+          </button>
+          <button type="button" className="secondary-button" disabled={disabled} onClick={addTemplate}>
+            新增模板
+          </button>
+        </div>
+      </header>
+      {expanded ? (
+        <>
+          <div className="template-manager-toolbar">
+            <button type="button" disabled={disabled || hasInvalidTemplate || !hasChanges} onClick={() => onSave(normalizeTemplateDrafts(drafts))}>
+              保存模板
+            </button>
+            <button type="button" className="secondary-button" disabled={disabled || hasChanges} onClick={onSaveDefault}>
+              保存当前为默认
+            </button>
+            <button type="button" className="secondary-button" disabled={disabled} onClick={onResetDefault}>
+              重置为默认
+            </button>
+            <button type="button" className="ghost-button" disabled={disabled} onClick={onRefresh}>
+              刷新
+            </button>
+          </div>
+          {hasInvalidTemplate ? <p className="error-text">模板标题、模型提示词和完整模板正文不能为空。</p> : null}
+          {!enabledCount ? <p className="cache-notice">当前没有启用模板；全部模板全面分析需要至少启用一个模板。</p> : null}
+          <div className="template-editor-list">
+            {drafts.map((template, index) => (
+              <article key={template.id} className={template.enabled === false ? "template-editor is-disabled" : "template-editor"}>
+                <div className="template-editor-topline">
+                  <label className="template-toggle">
+                    <input
+                      type="checkbox"
+                      checked={template.enabled !== false}
+                      disabled={disabled}
+                      onChange={(event) => updateTemplate(template.id, { enabled: event.target.checked })}
+                    />
+                    <span>{template.enabled === false ? "停用" : "启用"}</span>
+                  </label>
+                  <span>{template.isSystem ? "默认模板" : "自定义模板"}</span>
+                  <div>
+                    <button type="button" className="ghost-button" disabled={disabled || index === 0} onClick={() => moveTemplate(template.id, -1)}>
+                      上移
+                    </button>
+                    <button type="button" className="ghost-button" disabled={disabled || index === drafts.length - 1} onClick={() => moveTemplate(template.id, 1)}>
+                      下移
+                    </button>
+                    <button type="button" className="ghost-button" disabled={disabled} onClick={() => removeTemplate(template.id)}>
+                      移除
+                    </button>
+                  </div>
+                </div>
+                <div className="template-editor-grid">
+                  <label>
+                    <span>模板标题</span>
+                    <input value={template.title} disabled={disabled} onChange={(event) => updateTemplate(template.id, { title: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>短标题</span>
+                    <input value={template.shortTitle} disabled={disabled} onChange={(event) => updateTemplate(template.id, { shortTitle: event.target.value })} />
+                  </label>
+                </div>
+                <label>
+                  <span>卡片说明</span>
+                  <textarea value={template.focus} rows={2} disabled={disabled} onChange={(event) => updateTemplate(template.id, { focus: event.target.value })} />
+                </label>
+                <label>
+                  <span>模型提示词</span>
+                  <textarea value={template.prompt} rows={3} disabled={disabled} onChange={(event) => updateTemplate(template.id, { prompt: event.target.value })} />
+                </label>
+                <label>
+                  <span>完整模板正文</span>
+                  <textarea value={template.fullPrompt} rows={8} disabled={disabled} onChange={(event) => updateTemplate(template.id, { fullPrompt: event.target.value })} />
+                </label>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -366,6 +586,7 @@ function CompanyWorkbench({
   activeAnalysis,
   activeNews,
   phase,
+  templates,
   activeGeneration,
   onGenerate,
   onOpenAnalysis,
@@ -379,6 +600,7 @@ function CompanyWorkbench({
   activeAnalysis: TemplateAnalysisResult | null;
   activeNews: boolean;
   phase: "loading" | "ready" | "generating" | "error";
+  templates: ResearchTemplate[];
   activeGeneration: ActiveGeneration | null;
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
   onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
@@ -387,6 +609,7 @@ function CompanyWorkbench({
   onBackToTemplates: () => void;
   onBackFromNews: () => void;
 }) {
+  const activeTemplates = templates.filter((template) => template.enabled !== false);
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
   const generatingTemplateId = activeGeneration?.watchlistId === item.id ? activeGeneration.templateId : "";
   if (activeAnalysis) {
@@ -404,7 +627,9 @@ function CompanyWorkbench({
           <p className="muted">
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
-          <p className="muted">十模板分析会独立读取公开公司证据并按完整模板生成；全面分析会先跑完十个专项模板，再做交叉整合。</p>
+          <p className="muted">
+            已启用 {activeTemplates.length} 个模板；单模板会独立读取公开公司证据并按完整模板生成，全面分析会先跑完启用模板，再做最终交叉整合。
+          </p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
           打开基础深度报告
@@ -413,18 +638,18 @@ function CompanyWorkbench({
 
       <NewsEntryCard item={item} onOpen={onOpenNews} />
 
-      <section className="template-grid" aria-label="十模板深度分析">
+      <section className="template-grid" aria-label="全部模板深度分析">
         <TemplateCard
-          title="十模板全面分析"
-          focus="先生成十个专项深度报告，再汇总成最终全面分析。"
+          title="全部模板全面分析"
+          focus={`先生成 ${activeTemplates.length} 个启用模板的深度报告，再汇总成最终全面分析。`}
           analysis={fullAnalysis}
           isGenerating={generatingTemplateId === FULL_ANALYSIS_TEMPLATE_ID}
-          disabled={phase === "generating"}
+          disabled={phase === "generating" || !activeTemplates.length}
           onGenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}
           onRegenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID, true)}
           onOpen={onOpenAnalysis}
         />
-        {RESEARCH_TEMPLATES.map((template) => (
+        {activeTemplates.map((template) => (
           <TemplateCard
             key={template.id}
             title={template.title}
@@ -515,7 +740,7 @@ function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysis
           </p>
         </div>
         <button type="button" className="secondary-button" onClick={onBack}>
-          返回十模板
+          返回模板
         </button>
       </header>
       <div className="dashboard-grid">
@@ -861,9 +1086,22 @@ function statusLabel(status: TemplateAnalysisStatus) {
   return labels[status];
 }
 
-function generationLabel(templateId: string) {
-  if (templateId === FULL_ANALYSIS_TEMPLATE_ID) return "十模板全面分析";
-  return RESEARCH_TEMPLATES.find((template) => template.id === templateId)?.shortTitle || "模板报告";
+function generationLabel(templateId: string, templates: ResearchTemplate[]) {
+  if (templateId === FULL_ANALYSIS_TEMPLATE_ID) return "全部模板全面分析";
+  return templates.find((template) => template.id === templateId)?.shortTitle || "模板报告";
+}
+
+function normalizeTemplateDrafts(templates: ResearchTemplate[]) {
+  return templates.map((template, index) => ({
+    ...template,
+    title: template.title.trim(),
+    shortTitle: template.shortTitle.trim() || template.title.trim().slice(0, 12) || "模板",
+    focus: template.focus.trim(),
+    prompt: template.prompt.trim(),
+    fullPrompt: template.fullPrompt.trim(),
+    enabled: template.enabled !== false,
+    sortOrder: index + 1,
+  }));
 }
 
 function companyLogoText(company: CompanyCandidate) {

@@ -220,6 +220,49 @@ export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ ana
   return { analyses: data.analyses ?? [], templates: data.templates ?? [] };
 }
 
+export async function fetchResearchTemplates(): Promise<ResearchTemplate[]> {
+  const response = await fetch("/api/research-templates", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "模板读取失败。");
+  const data = (await response.json()) as { templates?: ResearchTemplate[] };
+  return data.templates ?? [];
+}
+
+export async function saveResearchTemplates(templates: ResearchTemplate[]): Promise<ResearchTemplate[]> {
+  const response = await fetch("/api/research-templates", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ templates }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "模板保存失败。");
+  const data = (await response.json()) as { templates?: ResearchTemplate[] };
+  return data.templates ?? [];
+}
+
+export async function saveResearchTemplatesAsDefault(): Promise<ResearchTemplate[]> {
+  const response = await fetch("/api/research-templates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ action: "save-defaults" }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "默认模板保存失败。");
+  const data = (await response.json()) as { templates?: ResearchTemplate[] };
+  return data.templates ?? [];
+}
+
+export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplate[]> {
+  const response = await fetch("/api/research-templates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ action: "reset-defaults" }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "模板重置失败。");
+  const data = (await response.json()) as { templates?: ResearchTemplate[] };
+  return data.templates ?? [];
+}
+
 export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {
   const response = await fetch(`/api/template-analysis?analysisId=${encodeURIComponent(analysisId)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板报告读取失败。");

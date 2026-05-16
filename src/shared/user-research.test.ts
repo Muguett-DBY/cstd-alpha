@@ -14,7 +14,11 @@ import {
 
 describe("user research templates", () => {
   test("uses full source templates for every deep template analysis", () => {
-    expect(RESEARCH_TEMPLATES).toHaveLength(10);
+    expect(RESEARCH_TEMPLATES).toHaveLength(11);
+    expect(RESEARCH_TEMPLATES.at(-1)).toMatchObject({
+      id: "template-11-capital-allocation",
+      shortTitle: "资金配置",
+    });
     expect(RESEARCH_TEMPLATES.reduce((sum, template) => sum + template.fullPrompt.length, 0)).toBeGreaterThan(18000);
     for (const template of RESEARCH_TEMPLATES) {
       expect(template.fullPrompt.length).toBeGreaterThan(400);
@@ -46,6 +50,16 @@ describe("user research templates", () => {
     ];
     expect(isFullAnalysisReady(withFailedAndFullSummaryOnly)).toBe(false);
     expect(completedTemplateAnalysesForFull(withFailedAndFullSummaryOnly)).toHaveLength(RESEARCH_TEMPLATES.length - 1);
+  });
+
+  test("can evaluate full analysis readiness against the user's enabled templates", () => {
+    const enabledTemplates = RESEARCH_TEMPLATES.slice(0, 2);
+    const completed = enabledTemplates.map((template, index) => analysisFor(template.id, index));
+
+    expect(isFullAnalysisReady(completed, enabledTemplates)).toBe(true);
+    expect(completedTemplateAnalysesForFull(completed, enabledTemplates).map((analysis) => analysis.templateId)).toEqual(enabledTemplates.map((template) => template.id));
+    expect(missingTemplateIdsForFull(completed, enabledTemplates)).toEqual([]);
+    expect(isFullAnalysisReady(completed.slice(0, 1), enabledTemplates)).toBe(false);
   });
 
   test("keeps long-form minimum lengths explicit for model quality gates", () => {

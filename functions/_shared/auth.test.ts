@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { cleanupExpiredSessions, createPasswordHash, hashSessionToken, verifyPasswordHash } from "./auth";
+import { cleanupExpiredSessions, createPasswordHash, createSessionCookie, hashSessionToken, verifyPasswordHash } from "./auth";
 
 describe("fixed-account auth primitives", () => {
   test("hashes passwords with a salt and verifies only the original password", async () => {
@@ -19,6 +19,11 @@ describe("fixed-account auth primitives", () => {
     expect(hash).not.toContain(token);
     await expect(hashSessionToken(token)).resolves.toBe(hash);
     await expect(hashSessionToken("other-token")).resolves.not.toBe(hash);
+  });
+
+  test("can create a local development session cookie without Secure", () => {
+    expect(createSessionCookie("session-id", "token", false)).not.toContain(" Secure;");
+    expect(createSessionCookie("session-id", "token")).toContain(" Secure;");
   });
 
   test("cleans expired sessions by timestamp", async () => {

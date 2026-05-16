@@ -3,9 +3,9 @@ import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../_shared/prov
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
+  activeResearchTemplates,
   completedTemplateAnalysesForFull,
   minimumResearchMarkdownChars,
-  researchTemplateById,
   type ResearchTemplate,
   type TemplateAnalysisResult,
   type TemplateAnalysisStatus,
@@ -14,6 +14,7 @@ import {
   analysisRowToResult,
   ensureUserResearchSchema,
   json,
+  readUserResearchTemplates,
   requireUserSession,
   sha256,
   watchlistRowToItem,
@@ -55,7 +56,7 @@ const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
 const TEMPLATE_CACHE_ANCHOR_SENTENCE =
-  "CSTD Alpha ten-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
+  "CSTD Alpha user-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
 const FREE_TEMPLATE_CACHE_REPEAT = 180;
 const PAID_TEMPLATE_CACHE_REPEAT = 420;
 const FULL_ANALYSIS_UNCACHED_WARMUP_COUNT = 2;
@@ -81,14 +82,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const filters = watchlistId ? "WHERE user_key = ?1 AND watchlist_id = ?2" : "WHERE user_key = ?1";
   const params = watchlistId ? [session.userId, watchlistId] : [session.userId];
   const result = await env.REPORT_LIBRARY_DB.prepare(
-    `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message
+    `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, template_snapshot_json
      FROM template_analysis
      ${filters}
      ORDER BY updated_at DESC`,
   )
     .bind(...params)
     .all<AnalysisRow>();
-  return json({ analyses: (result.results ?? []).map(analysisRowToResult), templates: RESEARCH_TEMPLATES });
+  return json({ analyses: (result.results ?? []).map(analysisRowToResult), templates: await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -104,10 +105,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const watchlist = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, watchlistId);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
   const forceRefresh = Boolean(body?.forceRefresh);
+  const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
+  const enabledTemplates = activeResearchTemplates(userTemplates);
 
   const durableEnv = { DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY, REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
-    const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID) : null;
+    if (!enabledTemplates.length) return json({ error: "没有启用任何模板，无法进行全部模板分析。" }, 400);
+    const fullTemplate = fullAnalysisTemplate(enabledTemplates);
+    const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, fullTemplate) : null;
     if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
     const existingFull = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID);
     const existingFullResult = existingFull ? analysisRowToResult(existingFull) : null;
@@ -115,13 +120,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ analyses: [existingFullResult], watchlistItem: watchlistRowToItem(watchlist) }, 202);
     }
     return streamTemplateGeneration(async (write) => {
-      const fullTemplate = fullAnalysisTemplate();
       const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB!, session.userId, watchlist, fullTemplate, "running");
-      write({ type: "progress", stage: "full_started", label: "十模板全面分析", detail: "正在复用已完成模板，并补齐缺失模板后生成最终汇总。" });
+      write({ type: "progress", stage: "full_started", label: "全部模板全面分析", detail: `正在复用已完成模板，并补齐 ${enabledTemplates.length} 个启用模板后生成最终汇总。` });
       try {
         write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据，供缺失模板和最终汇总使用。" });
         const evidence = await fetchTemplateEvidence(watchlist, request.signal);
-        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh, write);
+        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, enabledTemplates, forceRefresh, write);
         write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
       } catch (error) {
         await writeAnalysisFailure(
@@ -138,9 +142,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const template = researchTemplateById(templateId);
+  const template = userTemplates.find((item) => item.id === templateId);
   if (!template) return json({ error: "未知模板。" }, 400);
-  const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template.id) : null;
+  if (template.enabled === false) return json({ error: "该模板未启用。" }, 400);
+  const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template) : null;
   if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
   return streamTemplateGeneration(async (write) => {
     write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据。" });
@@ -202,11 +207,12 @@ async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSigna
   });
 }
 
-async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string, watchlistId: string, templateId: string) {
+async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string, watchlistId: string, template: ResearchTemplate) {
   if (!env.REPORT_LIBRARY_DB) return null;
-  const id = await analysisId(userId, watchlistId, templateId);
+  const id = await analysisId(userId, watchlistId, template.id);
+  const hash = await templateVersionHash(template);
   const row = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
-  if (!row || row.status !== "completed" || !row.object_key) return null;
+  if (!row || row.status !== "completed" || !row.object_key || row.template_hash !== hash) return null;
   const hydrated = await hydrateMarkdown(env, analysisRowToResult(row));
   if (!isUsableTemplateAnalysisCache(hydrated)) return null;
   return { ...hydrated, fromCache: true };
@@ -217,12 +223,14 @@ async function generateFullAnalysis(
   userId: string,
   watchlist: WatchlistRow,
   evidence: EvidenceBundle,
+  templates: ResearchTemplate[],
   forceRefresh: boolean,
   write?: TemplateProgressWriter,
 ) {
   const children = await runFullTemplateChildrenCacheAware({
+    templates,
     readCached: async (template) => {
-      const cached = await readCompletedAnalysisCache(env, userId, watchlist.id, template.id);
+      const cached = await readCompletedAnalysisCache(env, userId, watchlist.id, template);
       if (cached) write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
       return cached;
     },
@@ -231,46 +239,49 @@ async function generateFullAnalysis(
       return generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write);
     },
   });
-  const fullTemplate = fullAnalysisTemplate();
-  const completedChildren = completedTemplateAnalysesForFull(children);
-  if (completedChildren.length < RESEARCH_TEMPLATES.length) {
+  const fullTemplate = fullAnalysisTemplate(templates);
+  const completedChildren = completedTemplateAnalysesForFull(children, templates);
+  if (completedChildren.length < templates.length) {
     return [
-      await writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, fullTemplate, "十个模板尚未全部完成，全面分析暂不可生成。", "failed_retryable"),
+      await writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, fullTemplate, "启用模板尚未全部完成，全部模板分析暂不可生成。", "failed_retryable"),
       ...children,
     ];
   }
-  write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: "十个专项模板已完成，正在交叉验证并生成最终全面分析。" });
+  write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: `${templates.length} 个启用模板已完成，正在交叉验证并生成最终全面分析。` });
   return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write), ...children];
 }
 
-function fullAnalysisTemplate(): ResearchTemplate {
+function fullAnalysisTemplate(templates: ResearchTemplate[] = RESEARCH_TEMPLATES): ResearchTemplate {
+  const count = templates.length;
   return {
     id: FULL_ANALYSIS_TEMPLATE_ID,
-    title: "十模板全面分析",
+    title: "全部模板全面分析",
     shortTitle: "全面分析",
-    focus: "整合十个深度模板的核心判断，形成最终投资结论、关键分歧、反证条件和账户动作。",
-    prompt: "整合十个模板专项报告，输出最终综合结论。",
-    fullPrompt: "请阅读十个模板专项报告，进行交叉验证，保留分歧，输出最终综合结论、评分、风险反证和仓位规则。",
+    focus: `整合当前启用的 ${count} 个深度模板核心判断，形成最终投资结论、关键分歧、反证条件和账户动作。`,
+    prompt: "整合全部启用模板专项报告，输出最终综合结论。",
+    fullPrompt: `请阅读当前启用的 ${count} 个模板专项报告，进行交叉验证，保留分歧，输出最终综合结论、评分、风险反证和仓位规则。\n\n启用模板清单：\n${templates.map((template, index) => `${index + 1}. ${template.title}：${template.focus}`).join("\n")}`,
   };
 }
 
 export async function runFullTemplateChildrenCacheAware<T>({
+  templates = RESEARCH_TEMPLATES,
   readCached,
   runUncached,
   warmupCount = FULL_ANALYSIS_UNCACHED_WARMUP_COUNT,
 }: {
+  templates?: ResearchTemplate[];
   readCached: (template: ResearchTemplate) => Promise<T | null>;
   runUncached: (template: ResearchTemplate) => Promise<T>;
   warmupCount?: number;
 }) {
   const cacheChecks = await Promise.all(
-    RESEARCH_TEMPLATES.map(async (template, index) => ({
+    templates.map(async (template, index) => ({
       index,
       template,
       cached: await readCached(template),
     })),
   );
-  const results = new Array<T>(RESEARCH_TEMPLATES.length);
+  const results = new Array<T>(templates.length);
   const uncached: Array<{ index: number; template: ResearchTemplate }> = [];
   for (const item of cacheChecks) {
     if (item.cached) results[item.index] = item.cached;
@@ -306,7 +317,7 @@ async function generateSingleTemplateAnalysis(
   childAnalyses: TemplateAnalysisResult[] = [],
   write?: TemplateProgressWriter,
 ) {
-  const cached = !forceRefresh ? await readCompletedAnalysisCache(env, userId, watchlist.id, template.id) : null;
+  const cached = !forceRefresh ? await readCompletedAnalysisCache(env, userId, watchlist.id, template) : null;
   if (cached) {
     return cached;
   }
@@ -316,10 +327,11 @@ async function generateSingleTemplateAnalysis(
   try {
     write?.({ type: "progress", stage: "model", label: "DeepSeek 生成中", detail: `${template.shortTitle} 正在生成完整 Markdown 深度报告。` });
     const generated = await requestTemplateReport(env, watchlist, evidence, template, childAnalyses);
-    const objectKey = `${TEMPLATE_REPORT_PREFIX}/${userId}/${watchlist.id}/${template.id}.md`;
+    const templateHash = await templateVersionHash(template);
+    const objectKey = `${TEMPLATE_REPORT_PREFIX}/${userId}/${watchlist.id}/${template.id}-${templateHash.slice(0, 12)}.md`;
     await env.REPORT_LIBRARY_BUCKET.put(objectKey, generated.markdown, {
       httpMetadata: { contentType: "text/markdown; charset=utf-8" },
-      customMetadata: { templateId: template.id, ticker: watchlist.ticker },
+      customMetadata: { templateId: template.id, templateHash, ticker: watchlist.ticker },
     });
     const completedAt = new Date().toISOString();
     const result = await writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, generated, objectKey, startedAt, completedAt);
@@ -407,7 +419,7 @@ function buildTemplateMessages(
         task: draftToExpand
           ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
           : template.id === FULL_ANALYSIS_TEMPLATE_ID
-            ? `基于十个专项模板报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 7000-10000 个中文字符。`
+            ? `基于全部启用模板专项报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 7000-10000 个中文字符。`
             : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，并包含模板要求的所有关键模块。`,
         template: { id: template.id, title: template.title, focus: template.focus },
         company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
@@ -567,6 +579,8 @@ async function writeCompletedAnalysis(
     updatedAt: completedAt,
     startedAt,
     completedAt,
+    templateHash: await templateVersionHash(template),
+    templateSnapshot: snapshotTemplate(template),
   };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: result.keyPoints, riskFlags: result.riskFlags, followUps: result.followUps, sections: result.sections }), null);
   return result;
@@ -578,6 +592,8 @@ async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: Wa
     ...baseAnalysis(userId, watchlist, template, status, now),
     id: await analysisId(userId, watchlist.id, template.id),
     startedAt: status === "running" ? now : undefined,
+    templateHash: await templateVersionHash(template),
+    templateSnapshot: snapshotTemplate(template),
   };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [], followUps: [], sections: [] }), null);
   return result;
@@ -585,7 +601,16 @@ async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: Wa
 
 async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string) {
   const now = new Date().toISOString();
-  const result = { ...baseAnalysis(userId, watchlist, template, status, now), id: await analysisId(userId, watchlist.id, template.id), errorMessage, startedAt, completedAt: now, summary: errorMessage };
+  const result = {
+    ...baseAnalysis(userId, watchlist, template, status, now),
+    id: await analysisId(userId, watchlist.id, template.id),
+    errorMessage,
+    startedAt,
+    completedAt: now,
+    summary: errorMessage,
+    templateHash: await templateVersionHash(template),
+    templateSnapshot: snapshotTemplate(template),
+  };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [errorMessage], followUps: ["稍后重试或切换可用模型通道。"], sections: [] }), errorMessage);
   return result;
 }
@@ -611,6 +636,7 @@ function baseAnalysis(userId: string, watchlist: WatchlistRow, template: Researc
     sections: [],
     createdAt: now,
     updatedAt: now,
+    templateSnapshot: snapshotTemplate(template),
   };
 }
 
@@ -619,8 +645,8 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
   await db
     .prepare(
       `INSERT INTO template_analysis (
-        id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+        id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, template_snapshot_json
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
       ON CONFLICT(user_key, watchlist_id, template_id) DO UPDATE SET
         user_id = excluded.user_id,
         template_title = excluded.template_title,
@@ -638,7 +664,9 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
         updated_at = excluded.updated_at,
         started_at = COALESCE(excluded.started_at, template_analysis.started_at),
         completed_at = excluded.completed_at,
-        error_message = excluded.error_message`,
+        error_message = excluded.error_message,
+        template_hash = excluded.template_hash,
+        template_snapshot_json = excluded.template_snapshot_json`,
     )
     .bind(
       id,
@@ -663,6 +691,8 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
       result.startedAt ?? null,
       result.completedAt ?? null,
       errorMessage,
+      result.templateHash ?? null,
+      result.templateSnapshot ? JSON.stringify(result.templateSnapshot) : null,
     )
     .run();
 }
@@ -676,7 +706,7 @@ async function hydrateMarkdown(env: Pick<Env, "REPORT_LIBRARY_BUCKET">, analysis
 async function readAnalysisRow(db: D1Database, userId: string, id: string) {
   return db
     .prepare(
-      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message
+      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, template_snapshot_json
        FROM template_analysis
        WHERE user_key = ?1 AND id = ?2`,
     )
@@ -687,7 +717,7 @@ async function readAnalysisRow(db: D1Database, userId: string, id: string) {
 async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, watchlistId: string, templateId: string) {
   return db
     .prepare(
-      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message
+      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, template_snapshot_json
        FROM template_analysis
        WHERE user_key = ?1 AND watchlist_id = ?2 AND template_id = ?3`,
     )
@@ -708,6 +738,34 @@ async function readWatchlistRow(db: D1Database, userId: string, id: string) {
 
 async function analysisId(userId: string, watchlistId: string, templateId: string) {
   return sha256(`${userId}:${watchlistId}:${templateId}`);
+}
+
+async function templateVersionHash(template: ResearchTemplate) {
+  return sha256(
+    JSON.stringify({
+      id: template.id,
+      title: template.title,
+      shortTitle: template.shortTitle,
+      focus: template.focus,
+      prompt: template.prompt,
+      fullPrompt: template.fullPrompt,
+      enabled: template.enabled !== false,
+    }),
+  );
+}
+
+function snapshotTemplate(template: ResearchTemplate): ResearchTemplate {
+  return {
+    id: template.id,
+    title: template.title,
+    shortTitle: template.shortTitle,
+    focus: template.focus,
+    prompt: template.prompt,
+    fullPrompt: template.fullPrompt,
+    enabled: template.enabled !== false,
+    sortOrder: template.sortOrder,
+    isSystem: template.isSystem,
+  };
 }
 
 function compactTemplateEvidence(evidence: EvidenceBundle) {

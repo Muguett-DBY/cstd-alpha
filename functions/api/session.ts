@@ -25,13 +25,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!user) return json({ error: "账号或密码不正确。" }, 401);
 
-  const { cookie, session } = await createAuthSession(env.REPORT_LIBRARY_DB, user);
+  const { cookie, session } = await createAuthSession(env.REPORT_LIBRARY_DB, user, new Date(), isSecureRequest(request));
   return json({ authenticated: true, user: publicUser(session) }, 200, { "set-cookie": cookie });
 };
 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   await revokeSession(request.headers.get("cookie"), env);
-  return json({ authenticated: false, user: null }, 200, { "set-cookie": clearSessionCookie() });
+  return json({ authenticated: false, user: null }, 200, { "set-cookie": clearSessionCookie(isSecureRequest(request)) });
 };
 
 async function userCount(db: D1Database) {
@@ -48,4 +48,10 @@ function json(data: unknown, status = 200, headers: HeadersInit = {}) {
       ...headers,
     },
   });
+}
+
+function isSecureRequest(request: Request) {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto) return forwardedProto === "https";
+  return new URL(request.url).protocol === "https:";
 }

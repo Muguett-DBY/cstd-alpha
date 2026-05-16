@@ -4,12 +4,14 @@ import { buildChildTemplateReportsForPrompt, isUsableTemplateAnalysisCache, runF
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
-    const cachedIds = new Set([RESEARCH_TEMPLATES[0].id, RESEARCH_TEMPLATES[3].id]);
+    const activeTemplates = RESEARCH_TEMPLATES.slice(0, 3);
+    const cachedIds = new Set([activeTemplates[0].id]);
     const started: string[] = [];
     const released: string[] = [];
     const releaseJobs = new Map<string, () => void>();
 
     const resultPromise = runFullTemplateChildrenCacheAware({
+      templates: activeTemplates,
       readCached: async (template) => (cachedIds.has(template.id) ? `cached:${template.id}` : null),
       runUncached: async (template) => {
         started.push(template.id);
@@ -21,21 +23,21 @@ describe("runFullTemplateChildrenCacheAware", () => {
 
     await nextTick();
 
-    expect(started).toEqual([RESEARCH_TEMPLATES[1].id]);
-    releaseJobs.get(RESEARCH_TEMPLATES[1].id)?.();
+    expect(started).toEqual([activeTemplates[1].id]);
+    releaseJobs.get(activeTemplates[1].id)?.();
     await nextTick();
 
-    expect(started).toEqual([RESEARCH_TEMPLATES[1].id, RESEARCH_TEMPLATES[2].id]);
-    expect(released).toEqual([RESEARCH_TEMPLATES[1].id]);
-    releaseJobs.get(RESEARCH_TEMPLATES[2].id)?.();
+    expect(started).toEqual([activeTemplates[1].id, activeTemplates[2].id]);
+    expect(released).toEqual([activeTemplates[1].id]);
+    releaseJobs.get(activeTemplates[2].id)?.();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(started).toEqual(RESEARCH_TEMPLATES.filter((template) => !cachedIds.has(template.id)).map((template) => template.id));
-    for (const template of RESEARCH_TEMPLATES) releaseJobs.get(template.id)?.();
+    expect(started).toEqual(activeTemplates.filter((template) => !cachedIds.has(template.id)).map((template) => template.id));
+    for (const template of activeTemplates) releaseJobs.get(template.id)?.();
 
     await expect(resultPromise).resolves.toEqual(
-      RESEARCH_TEMPLATES.map((template) => (cachedIds.has(template.id) ? `cached:${template.id}` : `fresh:${template.id}`)),
+      activeTemplates.map((template) => (cachedIds.has(template.id) ? `cached:${template.id}` : `fresh:${template.id}`)),
     );
   });
 });

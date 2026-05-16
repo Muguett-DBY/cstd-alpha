@@ -23,6 +23,10 @@ export type ResearchTemplate = {
   focus: string;
   prompt: string;
   fullPrompt: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  isSystem?: boolean;
+  updatedAt?: string;
 };
 
 export type TemplateAnalysisStatus = "pending" | "running" | "completed" | "failed_retryable" | "failed";
@@ -59,6 +63,8 @@ export type TemplateAnalysisResult = {
   startedAt?: string;
   completedAt?: string;
   fromCache?: boolean;
+  templateHash?: string;
+  templateSnapshot?: ResearchTemplate;
 };
 
 export const FULL_ANALYSIS_TEMPLATE_ID = "full";
@@ -156,6 +162,87 @@ export const RESEARCH_TEMPLATES: ResearchTemplate[] = [
     prompt:
       "按五种回报模式模板输出：判断公司更像高分红低增长、成长型股权增值、强周期长波段、弱周期困境反转还是风险投资标的；明确主要回报来源、年化预期区间、核心风险和不投条件。",
   },
+  {
+    id: "template-11-capital-allocation",
+    title: "模板11：资金配置原则与公司配置分析",
+    shortTitle: "资金配置",
+    focus: "根据产业配置方向、获利模式、机会大小、风险大小、估值状态和红线条件，给出公司配置等级与仓位建议。",
+    fullPrompt: `# 第十一模板：资金配置原则与公司配置分析模板
+
+## 资金配置的原则
+
+### 1. 根据产业（细分产业）配置
+
+重点配置以下三大类：
+
+1. 极佳商业模式类；
+2. 顶级科技公司类，即拥有创造力强的科学家团队的公司；
+3. 优秀自然资源类。
+
+### 2. 根据获利模式配置
+
+对长期投资者而言，重要的五种获利模式分别是：
+
+1. 平稳产业里能够长期稳定分红的公司；
+2. 具有超长期增长潜力的公司，即长坡厚雪型公司；
+3. 强周期性产业公司之长波段操作；
+4. 弱周期性产业公司之困境反转；
+5. 具有风险投资标的属性的公司。
+
+通常情况下，应以具有超长期增长潜力的公司为主要配置方向。
+
+### 3. 根据机会大小配置
+
+对已经出现的五种获利模式机会进行比较：
+
+- 确定性越强，配置比例越高；
+- 获利空间越大，配置比例越高；
+- 确定性强且获利空间大的机会，应重点配置；
+- 确定性弱或获利空间有限的机会，应谨慎配置。
+
+### 4. 根据风险大小配置
+
+风险点多的少配，风险点少的多配。
+
+对长期投资者而言，有两个坚决不能投的红线：
+
+1. **产业红线**：根据产业大的生命周期，即初创期、成长期、成熟期、衰落期进行判断。如果公司所处细分产业已经处于衰落期，或者有明确证据证明即将进入衰落期，坚决不能投。
+2. **公司经营红线**：如果公司长期管理混乱、经营不善，导致业绩持续低迷甚至下滑，坚决不能投。
+
+### 5. 根据估值配置
+
+以估值合理作为重要参考标准：
+
+- 估值合理时，可以正常配置；
+- 严重低估时，可以适量多配；
+- 明显高估时，应降低配置比例或暂缓配置；
+- 估值泡沫严重时，应考虑回避或减仓。
+
+---
+
+## 分析任务
+
+首先，根据以上资金配置原则进行系统分析。
+
+另外，请按照以上模板分析（       ）公司。
+
+## 输出要求
+
+分析时应至少包括以下内容：
+
+1. 该公司属于哪一类产业配置方向：极佳商业模式类、顶级科技公司类、优秀自然资源类，或其他类型；
+2. 该公司更符合哪一种获利模式：高分红低增长、长坡厚雪成长、强周期长波段、弱周期困境反转、风险投资标的；
+3. 当前机会大小：确定性、获利空间、长期回报潜力；
+4. 当前风险大小：产业风险、经营风险、财务风险、治理风险、估值风险；
+5. 是否触碰两个不能投红线：产业衰退红线、长期经营恶化红线；
+6. 当前估值是否合理、偏低、偏高或存在泡沫；
+7. 建议配置等级：重配、适度配置、观察、回避；
+8. 适合的仓位建议与理由；
+9. 需要持续跟踪的关键指标；
+10. 最终结论。`,
+    prompt:
+      "按资金配置原则模板输出：判断产业配置方向、五种获利模式、机会大小、风险大小、两条不能投红线、估值状态、建议配置等级、仓位建议、持续跟踪指标和最终结论。",
+  },
 ];
 
 export function researchTemplateById(templateId: string) {
@@ -170,18 +257,24 @@ export function minimumResearchMarkdownChars(templateId: string) {
   return templateId === FULL_ANALYSIS_TEMPLATE_ID ? FULL_ANALYSIS_MARKDOWN_MIN_CHARS : TEMPLATE_MARKDOWN_MIN_CHARS;
 }
 
-export function completedTemplateAnalysesForFull(analyses: TemplateAnalysisResult[]) {
+export function activeResearchTemplates(templates: ResearchTemplate[]) {
+  return templates.filter((template) => template.enabled !== false);
+}
+
+export function completedTemplateAnalysesForFull(analyses: TemplateAnalysisResult[], templates: ResearchTemplate[] = RESEARCH_TEMPLATES) {
   const completedByTemplate = new Map(
     analyses.filter((analysis) => analysis.status === "completed").map((analysis) => [analysis.templateId, analysis]),
   );
-  return RESEARCH_TEMPLATES.map((template) => completedByTemplate.get(template.id)).filter((analysis): analysis is TemplateAnalysisResult => Boolean(analysis));
+  return activeResearchTemplates(templates).map((template) => completedByTemplate.get(template.id)).filter((analysis): analysis is TemplateAnalysisResult => Boolean(analysis));
 }
 
-export function missingTemplateIdsForFull(analyses: TemplateAnalysisResult[]) {
-  const completedIds = new Set(completedTemplateAnalysesForFull(analyses).map((analysis) => analysis.templateId));
-  return RESEARCH_TEMPLATES.map((template) => template.id).filter((templateId) => !completedIds.has(templateId));
+export function missingTemplateIdsForFull(analyses: TemplateAnalysisResult[], templates: ResearchTemplate[] = RESEARCH_TEMPLATES) {
+  const completedIds = new Set(completedTemplateAnalysesForFull(analyses, templates).map((analysis) => analysis.templateId));
+  return activeResearchTemplates(templates)
+    .map((template) => template.id)
+    .filter((templateId) => !completedIds.has(templateId));
 }
 
-export function isFullAnalysisReady(analyses: TemplateAnalysisResult[]) {
-  return missingTemplateIdsForFull(analyses).length === 0;
+export function isFullAnalysisReady(analyses: TemplateAnalysisResult[], templates: ResearchTemplate[] = RESEARCH_TEMPLATES) {
+  return missingTemplateIdsForFull(analyses, templates).length === 0;
 }

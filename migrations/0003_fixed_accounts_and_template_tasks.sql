@@ -23,11 +23,3 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user
 ON auth_sessions (user_id, expires_at DESC);
-
-ALTER TABLE user_watchlist ADD COLUMN user_id TEXT;
-ALTER TABLE template_analysis ADD COLUMN user_id TEXT;
-ALTER TABLE template_analysis ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';
-ALTER TABLE template_analysis ADD COLUMN object_key TEXT;
-ALTER TABLE template_analysis ADD COLUMN started_at TEXT;
-ALTER TABLE template_analysis ADD COLUMN completed_at TEXT;
-ALTER TABLE template_analysis ADD COLUMN error_message TEXT;
