@@ -19,6 +19,8 @@ type Env = {
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
+const NEWS_SOURCE_TIMEOUT_MS = 7_000;
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
@@ -113,13 +115,16 @@ async function fetchNewsWithFallback(query: string, window: NewsWindow, signal: 
       .filter((source) => source.name !== "百度新闻" || variantIndex < window.baiduVariantLimit)
       .filter((source) => source.name !== "东方财富" || variantIndex < window.eastmoneyVariantLimit)
       .map(async (source) => {
+        const sourceSignal = timeoutSignal(signal, NEWS_SOURCE_TIMEOUT_MS);
         try {
-          const items = await source.run(variant, window, signal);
+          const items = await source.run(variant, window, sourceSignal.signal);
           if (!items.length) errors.push(`${source.name} 返回空列表：${variant}`);
           return { source: source.name, variant, items };
         } catch (error) {
-          errors.push(error instanceof Error ? error.message : String(error ?? ""));
+          errors.push(sourceSignal.timedOut() ? `${source.name} 读取超时：${variant}` : error instanceof Error ? error.message : String(error ?? ""));
           return { source: source.name, variant, items: [] };
+        } finally {
+          sourceSignal.cleanup();
         }
       }),
   );
@@ -319,6 +324,29 @@ function stripSearchHtml(value: string) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromParent = () => controller.abort(parent.reason);
+  if (parent.aborted) {
+    controller.abort(parent.reason);
+  } else {
+    parent.addEventListener("abort", abortFromParent, { once: true });
+  }
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error("新闻源读取超时。"));
+  }, timeoutMs);
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timeout);
+      parent.removeEventListener("abort", abortFromParent);
+    },
+  };
 }
 
 function newsQueryVariants(query: string) {
