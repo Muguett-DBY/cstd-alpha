@@ -27,7 +27,7 @@ export type StoredReportEntry = {
 };
 
 export function saveLastReport(report: InvestmentReport, metrics?: ReportGenerationMetrics) {
-  localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
+  return safeSetLocalStorage(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
 }
 
 export function loadLastReport() {
@@ -66,7 +66,7 @@ export function saveCachedReport(company: CompanyCandidate, report: InvestmentRe
     expiresAt: now + CACHE_TTL_MS,
     metrics,
   };
-  localStorage.setItem(buildReportCacheKey(company), JSON.stringify(payload));
+  return safeSetLocalStorage(buildReportCacheKey(company), JSON.stringify(payload));
 }
 
 export function loadCachedReport(company: CompanyCandidate, now = Date.now()): CachedReport | null {
@@ -98,7 +98,7 @@ export function saveCachedChart(company: CompanyCandidate, priceMode: PriceMode,
     cachedAt: now,
     expiresAt: now + CACHE_TTL_MS,
   };
-  localStorage.setItem(buildChartCacheKey(company, priceMode), JSON.stringify(payload));
+  return safeSetLocalStorage(buildChartCacheKey(company, priceMode), JSON.stringify(payload));
 }
 
 export function loadCachedChart(company: CompanyCandidate, priceMode: PriceMode, now = Date.now()): CachedChart | null {
@@ -117,6 +117,26 @@ export function loadCachedChart(company: CompanyCandidate, priceMode: PriceMode,
     };
   } catch {
     return null;
+  }
+}
+
+export function clearLocalReportStorage() {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter(
+      (key): key is string => typeof key === "string" && (key === LAST_REPORT_KEY || key.startsWith(REPORT_CACHE_PREFIX) || key.startsWith(CHART_CACHE_PREFIX)),
+    );
+    for (const key of keys) localStorage.removeItem(key);
+  } catch {
+    // Local report caches are optional; ignore storage access failures.
+  }
+}
+
+function safeSetLocalStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
   }
 }
 

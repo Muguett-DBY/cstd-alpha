@@ -793,6 +793,12 @@ button:not(:disabled):active,
   font-weight: 800;
 }
 
+.ranking-row-loading {
+  color: var(--muted);
+  background: #fbfbf8;
+  font-weight: 750;
+}
+
 .ranking-row.is-report {
   background: #fbfff8;
 }

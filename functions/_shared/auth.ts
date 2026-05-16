@@ -153,7 +153,7 @@ export async function readSessionCookie(cookieHeader: string | null | undefined,
   )
     .bind(parsed.sessionId)
     .first<SessionRow & Pick<UserRow, "username" | "display_name" | "role" | "disabled_at">>();
-  if (!row || row.disabled_at || row.token_hash !== tokenHash || new Date(row.expires_at).getTime() <= Date.now()) return null;
+  if (!row || row.disabled_at || !timingSafeEqual(row.token_hash, tokenHash) || new Date(row.expires_at).getTime() <= Date.now()) return null;
   await env.REPORT_LIBRARY_DB.prepare(`UPDATE auth_sessions SET last_seen_at = ?1 WHERE id = ?2`).bind(new Date().toISOString(), row.id).run();
   return {
     userId: row.user_id,

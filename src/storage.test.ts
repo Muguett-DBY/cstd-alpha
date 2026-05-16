@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { buildChartCacheKey, buildReportCacheKey, loadCachedChart, loadCachedReport, loadLastReport, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import {
+  buildChartCacheKey,
+  buildReportCacheKey,
+  clearLocalReportStorage,
+  loadCachedChart,
+  loadCachedReport,
+  loadLastReport,
+  saveCachedChart,
+  saveCachedReport,
+  saveLastReport,
+} from "./storage";
 import { emptyReport, validateReportPayload } from "./shared/report";
 import type { ChartBundle } from "./shared/chart";
 
@@ -32,6 +42,40 @@ describe("report storage", () => {
     saveLastReport(report);
 
     expect(loadLastReport()?.company).toMatchObject({ name: "贵州茅台", ticker: "600519" });
+  });
+
+  test("treats local cache write failures as non-fatal", () => {
+    vi.stubGlobal("localStorage", throwingStorage());
+    const report = validateReportPayload({
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      oneSentence: "真实报告",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    });
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const chart: ChartBundle = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      priceMode: "adjusted",
+      priceSeries: [],
+      drawdownSeries: [],
+      marketSnapshot: {},
+      evidence: [],
+    };
+
+    expect(saveLastReport(report)).toBe(false);
+    expect(saveCachedReport(company, report)).toBe(false);
+    expect(saveCachedChart(company, "adjusted", chart)).toBe(false);
+    expect(() => clearLocalReportStorage()).not.toThrow();
   });
 
   test("loads a cached report for the same company within the TTL", () => {
@@ -187,5 +231,20 @@ function memoryStorage(): Storage {
     key: (index) => Array.from(values.keys())[index] ?? null,
     removeItem: (key) => values.delete(key),
     setItem: (key, value) => values.set(key, value),
+  };
+}
+
+function throwingStorage(): Storage {
+  return {
+    get length() {
+      return 0;
+    },
+    clear: () => undefined,
+    getItem: () => null,
+    key: () => null,
+    removeItem: () => undefined,
+    setItem: () => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    },
   };
 }

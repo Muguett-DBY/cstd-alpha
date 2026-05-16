@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, logout, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
-import { loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import { clearImportedRankingReports } from "./ranking-storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
@@ -39,6 +40,7 @@ function App() {
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>("report");
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
+  const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
   useEffect(() => {
     void checkSession()
@@ -54,6 +56,10 @@ function App() {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [startedAt]);
+
+  useEffect(() => {
+    selectedCompanyRef.current = selectedCompany;
+  }, [selectedCompany]);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -72,6 +78,14 @@ function App() {
     setAuthenticated(false);
     setUser(null);
     setPassword("");
+    setSelectedCompany(null);
+    setReport(null);
+    setReportMetrics(null);
+    setChartBundle(null);
+    setProgress([]);
+    setCacheNotice("");
+    clearLocalReportStorage();
+    clearImportedRankingReports();
   }
 
   async function submitSearch(event: React.FormEvent) {
@@ -100,6 +114,7 @@ function App() {
       setPhase("selecting");
       return;
     }
+    const requestCompany = selectedCompany;
 
     setError("");
     setCacheNotice("");
@@ -138,15 +153,21 @@ function App() {
     setReportAbortController(controller);
 
     try {
-      const result = await generateReport({ company: selectedCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache", signal: controller.signal }, (item) => {
+      const result = await generateReport({ company: requestCompany, forceRefresh, cacheMode: forceRefresh ? "refresh" : "prefer-cache", signal: controller.signal }, (item) => {
+        if (!isSameCompany(selectedCompanyRef.current, requestCompany)) return;
         if (typeof item.evidenceCount === "number") setEvidenceCount(item.evidenceCount);
         setProgress((current) => [...current.slice(-12), item]);
       });
+      if (!isSameCompany(selectedCompanyRef.current, requestCompany)) {
+        setPhase("idle");
+        return;
+      }
       const nextReport = result.report;
       setReport(nextReport);
       setReportMetrics(result.metrics ?? null);
-      saveLastReport(nextReport, result.metrics);
-      saveCachedReport(selectedCompany, nextReport, Date.now(), result.metrics);
+      const savedLastReport = saveLastReport(nextReport, result.metrics);
+      const savedReportCache = saveCachedReport(requestCompany, nextReport, Date.now(), result.metrics);
+      if (!savedLastReport || !savedReportCache) setCacheNotice("报告已生成；浏览器本地缓存写入失败，不影响服务端报告。");
       setPhase("ready");
     } catch (err) {
       if (isReportCancelled(err)) {
@@ -168,12 +189,17 @@ function App() {
       setPhase("selecting");
       return;
     }
+    const requestCompany = selectedCompany;
 
     setChartError("");
     setPriceMode(nextPriceMode);
     if (!forceRefresh) {
-      const cached = loadCachedChart(selectedCompany, nextPriceMode);
+      const cached = loadCachedChart(requestCompany, nextPriceMode);
       if (cached) {
+        if (!isSameCompany(selectedCompanyRef.current, requestCompany)) {
+          setChartPhase("idle");
+          return;
+        }
         setChartBundle(cached.chart);
         setChartPhase("ready");
         return;
@@ -181,9 +207,13 @@ function App() {
     }
     setChartPhase("loading");
     try {
-      const bundle = await fetchChartData({ company: selectedCompany, priceMode: nextPriceMode });
+      const bundle = await fetchChartData({ company: requestCompany, priceMode: nextPriceMode });
+      if (!isSameCompany(selectedCompanyRef.current, requestCompany)) {
+        setChartPhase("idle");
+        return;
+      }
       setChartBundle(bundle);
-      saveCachedChart(selectedCompany, nextPriceMode, bundle);
+      if (!saveCachedChart(requestCompany, nextPriceMode, bundle)) setChartError("图表已生成；浏览器本地缓存写入失败。");
       setChartPhase("ready");
     } catch (err) {
       setChartPhase("error");
@@ -1020,6 +1050,10 @@ function formatPercent(value: number | undefined) {
 
 function formatCacheTime(value: number) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function isSameCompany(left: CompanyCandidate | null, right: CompanyCandidate) {
+  return Boolean(left && left.code === right.code && left.listingPlace === right.listingPlace && left.marketType === right.marketType);
 }
 
 function formatDuration(ms: number) {

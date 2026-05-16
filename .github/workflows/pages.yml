@@ -1,6 +1,8 @@
 name: Deploy Cloudflare Pages
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -26,10 +28,17 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck Functions
+        run: npm run typecheck:functions
+
       - name: Build
         run: npm run build
 
       - name: Deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

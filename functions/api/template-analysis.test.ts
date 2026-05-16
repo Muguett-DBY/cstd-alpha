@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
-import { runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
+import { buildChildTemplateReportsForPrompt, runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
@@ -53,6 +53,27 @@ describe("templateReasoningEffort", () => {
   test("uses high for single templates and max for full synthesis", () => {
     expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("high");
     expect(templateReasoningEffort(FULL_ANALYSIS_TEMPLATE_ID)).toBe("max");
+  });
+});
+
+describe("buildChildTemplateReportsForPrompt", () => {
+  test("includes bounded child markdown excerpts for full synthesis", () => {
+    const reports = buildChildTemplateReportsForPrompt([
+      {
+        templateTitle: "模板一",
+        summary: "摘要",
+        verdict: "观察",
+        score: 70,
+        keyPoints: ["要点"],
+        riskFlags: ["风险"],
+        followUps: ["跟踪"],
+        markdown: "A".repeat(8000),
+      } as Parameters<typeof buildChildTemplateReportsForPrompt>[0][number],
+    ]);
+
+    expect(reports[0].markdownChars).toBe(8000);
+    expect(reports[0].markdownExcerpt).toContain("后文因上下文长度限制截断");
+    expect((reports[0].markdownExcerpt ?? "").length).toBeLessThanOrEqual(7050);
   });
 });
 

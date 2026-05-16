@@ -26,7 +26,7 @@ export function loadImportedRankingReports(): ImportedRankingReport[] {
 }
 
 export function saveImportedRankingReports(entries: ImportedRankingReport[]) {
-  localStorage.setItem(IMPORTED_REPORTS_KEY, JSON.stringify(entries));
+  return safeSetLocalStorage(IMPORTED_REPORTS_KEY, JSON.stringify(entries));
 }
 
 export function upsertImportedRankingReports(reports: InvestmentReport[], now = new Date().toISOString()) {
@@ -44,10 +44,27 @@ export function deleteImportedRankingReport(report: InvestmentReport) {
   return entries;
 }
 
+export function clearImportedRankingReports() {
+  try {
+    localStorage.removeItem(IMPORTED_REPORTS_KEY);
+  } catch {
+    // Local imported ranking cache is optional.
+  }
+}
+
 export function parseRankingReportJson(raw: string): InvestmentReport[] {
   return parseReportLibraryReportsJson(raw);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function safeSetLocalStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
 }

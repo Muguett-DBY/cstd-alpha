@@ -100,7 +100,12 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     let cancelled = false;
     const offset = (remoteLibraryPage - 1) * LIBRARY_PAGE_SIZE;
     queueMicrotask(() => {
-      if (!cancelled) setLibraryPhase("loading");
+      if (!cancelled) {
+        setLibraryPhase("loading");
+        setLibraryEntries([]);
+        setAnchorLibraryEntries([]);
+        setMatchedSeedCodes(new Set());
+      }
     });
     const seedCodes = config.seeds.map((seed) => seed.code);
     const request = usesClientSideLibrary
@@ -285,6 +290,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <button
             type="button"
             className={source === "all" ? "active" : ""}
+            aria-pressed={source === "all"}
             onClick={() => {
               setSource("all");
               setLibraryPage(1);
@@ -295,6 +301,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <button
             type="button"
             className={source === "deep-report" ? "active" : ""}
+            aria-pressed={source === "deep-report"}
             onClick={() => {
               setSource("deep-report");
               setLibraryPage(1);
@@ -305,6 +312,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <button
             type="button"
             className={source === "seed" ? "active" : ""}
+            aria-pressed={source === "seed"}
             onClick={() => {
               setSource("seed");
               setLibraryPage(1);
@@ -327,6 +335,19 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <span>来源</span>
           <span>操作</span>
         </div>
+        {libraryPhase === "loading" ? (
+          <div className="ranking-row ranking-row-loading" role="row">
+            <span>读取中</span>
+            <span>正在刷新报告库数据...</span>
+            <span>--</span>
+            <span>--</span>
+            <span>--</span>
+            <span>--</span>
+            <span>--</span>
+            <span>--</span>
+            <span>--</span>
+          </div>
+        ) : null}
         {visibleRows.map((entry, index) => (
           <div key={`${entry.id}-${entry.source}`} className={`ranking-row ${entry.source === "deep-report" ? "is-report" : "is-seed"}`} role="row">
             <span>#{entry.source === "deep-report" ? libraryOffset + index + 1 : entry.rank}</span>

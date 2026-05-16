@@ -144,7 +144,7 @@ describe("report API stream", () => {
     });
   });
 
-  test("refresh mode bypasses shared cache without storing the generated report in KV", async () => {
+  test("refresh mode bypasses reads but stores the generated report in KV for later shared cache hits", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
     vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
@@ -162,7 +162,7 @@ describe("report API stream", () => {
     expect(callDeepSeekReport).toHaveBeenCalledTimes(1);
     expect(callDeepSeekReport).toHaveBeenCalledWith(expect.objectContaining({ priorReport: previousReport }));
     expect(cache.get.mock.calls.some(([key]) => typeof key === "string" && key.startsWith("report:"))).toBe(true);
-    expect(cache.put.mock.calls.some(([key]) => typeof key === "string" && key.startsWith("report:"))).toBe(false);
+    expect(cache.put.mock.calls.some(([key, , options]) => typeof key === "string" && key.startsWith("report:") && options?.expirationTtl === 2_592_000)).toBe(true);
     expect(cache.put).toHaveBeenCalledWith(expect.stringMatching(/^report-lock:/), expect.any(String), expect.objectContaining({ expirationTtl: 1_800 }));
     expect(events.at(-1)).toMatchObject({ type: "final" });
   });

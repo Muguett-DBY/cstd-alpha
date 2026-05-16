@@ -596,8 +596,13 @@ async function writeReportCache(env: Env, cacheKey: string, payload: ReportCache
   const text = JSON.stringify(payload);
   await Promise.allSettled([
     writeReportLibraryCache(env, payload.report, payload.cachedAt),
+    writeKvReportCache(env, cacheKey, text),
     writeEdgeReportCache(cacheKey, text),
   ]);
+}
+
+async function writeKvReportCache(env: Env, cacheKey: string, text: string) {
+  await env.REPORT_CACHE?.put(cacheKey, text, { expirationTtl: SERVER_REPORT_CACHE_TTL_SECONDS });
 }
 
 async function writeReportLibraryCache(env: Env, report: InvestmentReport, importedAt: string) {

@@ -10,9 +10,10 @@ function Read-AccessConfig {
   param([string]$Path)
   $text = Get-Content -Raw -LiteralPath $Path
   $url = (($text -split "`r?`n") | Where-Object { $_ -match '^URL:' } | Select-Object -First 1) -replace '^URL:\s*',''
+  $username = (($text -split "`r?`n") | Where-Object { $_ -match '^(USERNAME|REPORT_USERNAME):' } | Select-Object -First 1) -replace '^(USERNAME|REPORT_USERNAME):\s*',''
   $password = (($text -split "`r?`n") | Where-Object { $_ -match '^REPORT_PASSWORD:' } | Select-Object -First 1) -replace '^REPORT_PASSWORD:\s*',''
-  if (-not $url -or -not $password) { throw "Access file is missing URL or REPORT_PASSWORD." }
-  [pscustomobject]@{ Url = $url.TrimEnd('/'); Password = $password }
+  if (-not $url -or -not $username -or -not $password) { throw "Access file is missing URL, USERNAME/REPORT_USERNAME, or REPORT_PASSWORD." }
+  [pscustomobject]@{ Url = $url.TrimEnd('/'); Username = $username; Password = $password }
 }
 
 function Invoke-Json {
@@ -203,7 +204,7 @@ $runDir = Join-Path $OutputDir $runId
 New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-Invoke-Json -Uri "$($access.Url)/api/session" -Method POST -Session $session -Body @{ password = $access.Password } | Out-Null
+Invoke-Json -Uri "$($access.Url)/api/session" -Method POST -Session $session -Body @{ username = $access.Username; password = $access.Password } | Out-Null
 Invoke-Json -Uri "$($access.Url)/api/session" -Method GET -Session $session | Out-Null
 
 $summary = New-Object System.Collections.Generic.List[object]

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
+import { clearImportedRankingReports, loadImportedRankingReports, parseRankingReportJson, saveImportedRankingReports, upsertImportedRankingReports } from "./ranking-storage";
 import { SCORE_ITEMS_20, validateReportPayload } from "./shared/report";
 
 describe("ranking report storage", () => {
@@ -47,6 +47,13 @@ describe("ranking report storage", () => {
     expect(loaded[0].report.ias).toBe(34);
     expect(loaded[0].importedAt).toBe("2026-05-13T01:00:00.000Z");
   });
+
+  test("does not throw when imported ranking cache cannot be written or cleared", () => {
+    vi.stubGlobal("localStorage", throwingStorage());
+
+    expect(saveImportedRankingReports([])).toBe(false);
+    expect(() => clearImportedRankingReports()).not.toThrow();
+  });
 });
 
 function sampleReport(name: string, ticker: string, ias: number) {
@@ -84,5 +91,22 @@ function memoryStorage(): Storage {
     key: (index) => Array.from(values.keys())[index] ?? null,
     removeItem: (key) => values.delete(key),
     setItem: (key, value) => values.set(key, value),
+  };
+}
+
+function throwingStorage(): Storage {
+  return {
+    get length() {
+      return 0;
+    },
+    clear: () => undefined,
+    getItem: () => null,
+    key: () => null,
+    removeItem: () => {
+      throw new DOMException("Blocked", "SecurityError");
+    },
+    setItem: () => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    },
   };
 }

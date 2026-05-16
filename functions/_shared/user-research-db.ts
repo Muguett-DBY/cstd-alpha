@@ -2,7 +2,7 @@ import { readSessionCookie } from "./auth";
 import type { CompanyCandidate } from "../../src/shared/report";
 import type { TemplateAnalysisResult, WatchlistItem } from "../../src/shared/user-research";
 
-const STALE_RUNNING_MS = 8 * 60 * 1000;
+const STALE_RUNNING_MS = 20 * 60 * 1000;
 
 export type UserResearchEnv = {
   AUTH_SECRET: string;

@@ -59,6 +59,8 @@ const TEMPLATE_CACHE_ANCHOR_SENTENCE =
 const FREE_TEMPLATE_CACHE_REPEAT = 180;
 const PAID_TEMPLATE_CACHE_REPEAT = 420;
 const FULL_ANALYSIS_UNCACHED_WARMUP_COUNT = 2;
+const CHILD_SYNTHESIS_MARKDOWN_CHARS = 7000;
+const CHILD_SYNTHESIS_TOTAL_MARKDOWN_CHARS = 60_000;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -89,7 +91,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ analyses: (result.results ?? []).map(analysisRowToResult), templates: RESEARCH_TEMPLATES });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
@@ -107,16 +109,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID) : null;
     if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
-    const fullTemplate = fullAnalysisTemplate();
     const existingFull = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID);
     const existingFullResult = existingFull ? analysisRowToResult(existingFull) : null;
     if (!shouldStartFullAnalysis(existingFullResult, forceRefresh)) {
       return json({ analyses: [existingFullResult], watchlistItem: watchlistRowToItem(watchlist) }, 202);
     }
-    const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB, session.userId, watchlist, fullTemplate, "running");
-    waitUntil(
-      runFullAnalysisInBackground(durableEnv, session.userId, watchlist, forceRefresh).catch((error) =>
-        writeAnalysisFailure(
+    return streamTemplateGeneration(async (write) => {
+      const fullTemplate = fullAnalysisTemplate();
+      const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB!, session.userId, watchlist, fullTemplate, "running");
+      write({ type: "progress", stage: "full_started", label: "十模板全面分析", detail: "正在复用已完成模板，并补齐缺失模板后生成最终汇总。" });
+      try {
+        write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据，供缺失模板和最终汇总使用。" });
+        const evidence = await fetchTemplateEvidence(watchlist, request.signal);
+        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, forceRefresh, write);
+        write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
+      } catch (error) {
+        await writeAnalysisFailure(
           env.REPORT_LIBRARY_DB!,
           session.userId,
           watchlist,
@@ -124,10 +132,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
           normalizeTemplateAnalysisError(error),
           isRetryableError(error) ? "failed_retryable" : "failed",
           running.startedAt,
-        ),
-      ),
-    );
-    return json({ analyses: [running], watchlistItem: watchlistRowToItem(watchlist) }, 202);
+        );
+        throw error;
+      }
+    });
   }
 
   const template = researchTemplateById(templateId);
@@ -192,12 +200,6 @@ async function fetchTemplateEvidence(watchlist: WatchlistRow, signal: AbortSigna
     company: watchlistRowToItem(watchlist).company,
     signal,
   });
-}
-
-async function runFullAnalysisInBackground(env: DurableTemplateEnv, userId: string, watchlist: WatchlistRow, forceRefresh: boolean) {
-  const controller = new AbortController();
-  const evidence = await fetchTemplateEvidence(watchlist, controller.signal);
-  await generateFullAnalysis(env, userId, watchlist, evidence, forceRefresh);
 }
 
 async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string, watchlistId: string, templateId: string) {
@@ -410,15 +412,7 @@ function buildTemplateMessages(
         company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
         publicEvidence: compactTemplateEvidence(evidence),
         draftToExpand: draftToExpand || undefined,
-        childTemplateReports: childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps }) => ({
-          templateTitle,
-          summary,
-          verdict,
-          score,
-          keyPoints,
-          riskFlags,
-          followUps,
-        })),
+        childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
         expectedOutputShape: {
           title: "报告标题",
           score: "0-100 数字，必填",
@@ -436,6 +430,31 @@ function buildTemplateMessages(
 
 function templateCacheAnchor(cacheMode: "free" | "paid") {
   return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
+}
+
+export function buildChildTemplateReportsForPrompt(childAnalyses: TemplateAnalysisResult[]) {
+  let remainingMarkdownChars = CHILD_SYNTHESIS_TOTAL_MARKDOWN_CHARS;
+  return childAnalyses.map(({ templateTitle, summary, verdict, score, keyPoints, riskFlags, followUps, markdown }) => {
+    const markdownExcerpt = markdown && remainingMarkdownChars > 0 ? clampMarkdownForSynthesis(markdown, Math.min(CHILD_SYNTHESIS_MARKDOWN_CHARS, remainingMarkdownChars)) : undefined;
+    if (markdownExcerpt) remainingMarkdownChars -= markdownExcerpt.length;
+    return {
+      templateTitle,
+      summary,
+      verdict,
+      score,
+      keyPoints,
+      riskFlags,
+      followUps,
+      markdownChars: markdown?.length ?? 0,
+      markdownExcerpt,
+    };
+  });
+}
+
+function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 60)).trim()}\n\n（后文因上下文长度限制截断，汇总时以已提供正文和结构化要点交叉验证。）`;
 }
 
 function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {

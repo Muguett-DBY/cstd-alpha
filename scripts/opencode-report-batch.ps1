@@ -2,6 +2,7 @@
   [string]$UniversePath = "E:\DEV\测试\cstd-alpha-opencode-batch\ashare-universe.json",
   [string]$OutputDir = "E:\DEV\测试\cstd-alpha-opencode-batch",
   [string]$BaseUrl = "http://127.0.0.1:8789",
+  [string]$Username,
   [string]$Password,
   [int]$Offset = 0,
   [int]$Limit = 1,
@@ -38,6 +39,18 @@ if (-not $Password) {
   }
 }
 if (-not $Password) { throw "Password is required. Pass -Password or provide E:\DEV\codex-tools\cstd-alpha-access.txt." }
+if (-not $Username) {
+  if ($env:REPORT_USERNAME) {
+    $Username = $env:REPORT_USERNAME
+  } elseif ($env:USERNAME) {
+    $Username = $env:USERNAME
+  }
+}
+if (-not $Username -and $accessLines.Count) {
+  $line = $accessLines | Where-Object { $_ -match "^(REPORT_USERNAME|USERNAME)[:=]" } | Select-Object -First 1
+  if ($line) { $Username = ($line -replace "^[^:=]+[:=]\s*", "").Trim() }
+}
+if (-not $Username) { throw "Username is required. Pass -Username or add REPORT_USERNAME to E:\DEV\codex-tools\cstd-alpha-access.txt." }
 if (-not (Test-Path $UniversePath)) { throw "Universe file not found: $UniversePath" }
 
 function Format-ProviderNumber {
@@ -158,6 +171,11 @@ function Get-FirstReportSentence {
 
 function New-CacheAnchor {
   param([int]$Repeat)
+  $maxRepeat = 800
+  if ($Repeat -gt $maxRepeat) {
+    Write-Warning "CacheAnchorRepeat=$Repeat is too large; capped at $maxRepeat to avoid prompt bloat and cache-miss cost spikes."
+    $Repeat = $maxRepeat
+  }
   if ($Repeat -le 0) { return "" }
   $line = "Fixed CSTD Alpha cache anchor: use the same evidence rules, scoring definitions, valuation safety margin, risk caps, and Chinese report schema; never fabricate facts; ordinary companies should not receive high scores easily."
   return (($line + "`n") * $Repeat)
@@ -255,6 +273,8 @@ function Invoke-DeepSeekChatCompletion {
     )
     stream = $false
     temperature = 0.1
+    response_format = [ordered]@{ type = "json_object" }
+    max_tokens = 16000
   }
   if ($Variant) {
     $payload.reasoning_effort = $Variant
@@ -271,7 +291,10 @@ function Invoke-DeepSeekChatCompletion {
     }
 
     $response = $body | ConvertFrom-Json
-    $content = [string]$response.choices[0].message.content
+    $choice = $response.choices[0]
+    $finishReason = [string]$choice.finish_reason
+    if ($finishReason -eq "length") { throw "DeepSeek API stopped because max_tokens was reached; retry with a smaller evidence payload or larger max_tokens." }
+    $content = [string]$choice.message.content
     if (-not $content) { throw "DeepSeek API returned empty content." }
 
     $usage = $response.usage
@@ -286,7 +309,7 @@ function Invoke-DeepSeekChatCompletion {
       [ordered]@{
         type = "step_finish"
         part = [ordered]@{
-          reason = "stop"
+          reason = if ($finishReason) { $finishReason } else { "stop" }
           tokens = [ordered]@{
             input = $cacheMiss
             output = [int]$usage.completion_tokens
@@ -572,7 +595,7 @@ function Invoke-OpenCodeRun {
   return $process.ExitCode
 }
 
-$loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ password = $Password } | ConvertTo-Json)
+$loginResponse = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$BaseUrl/api/session" -ContentType "application/json" -Body (@{ username = $Username; password = $Password } | ConvertTo-Json)
 $setCookie = @($loginResponse.Headers["Set-Cookie"])[0]
 if (-not $setCookie) { throw "Login succeeded but no session cookie was returned." }
 $cookieHeader = ($setCookie -split ";")[0]
