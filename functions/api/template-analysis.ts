@@ -62,6 +62,18 @@ const PAID_TEMPLATE_CACHE_REPEAT = 420;
 const FULL_ANALYSIS_UNCACHED_WARMUP_COUNT = 2;
 const CHILD_SYNTHESIS_MARKDOWN_CHARS = 7000;
 const CHILD_SYNTHESIS_TOTAL_MARKDOWN_CHARS = 60_000;
+const HARD_TEMPLATE_SCORE_CAP_FLAG = "后端保守评分约束：报告识别到重大经营、财务、治理、估值或产业红线，已限制模板总分。";
+const ITEM_AVERAGE_TEMPLATE_SCORE_CAP_FLAG = "后端保守评分约束：顶层分数明显高于正文分项平均，已按分项均值限制总分。";
+const HARD_TEMPLATE_RED_FLAG_PATTERNS = [
+  /行业(?:长期)?衰退|衰退期|需求(?:永久|长期)?萎缩/,
+  /主营收入持续下滑|营收持续下滑|利润持续下滑|业绩持续下滑|长期走下坡/,
+  /经营现金流为负|自由现金流为负|现金流恶化|现金流断裂/,
+  /负债率高|高负债|债务压力|资不抵债|偿债风险/,
+  /治理混乱|利益输送|关联交易严重|管理层失信|管理层变节/,
+  /明显高估|严重高估|估值泡沫|股价泡沫|透支未来/,
+  /退市风险|暴雷风险|财务造假|审计意见异常|无法持续经营/,
+  /无护城河|护城河(?:很弱|薄弱|坍塌)|商业模式弱|盈利能力差/,
+];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -821,10 +833,10 @@ function compactTemplateEvidence(evidence: EvidenceBundle) {
   };
 }
 
-function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) {
+export function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) {
   const record = isRecord(value) ? value : {};
   const markdown = stringValue(record.markdown) || stringValue(record.body);
-  return {
+  return applyTemplateScoreDiscipline({
     title: stringValue(record.title) || `${template.title}`,
     score: numberValue(record.score),
     verdict: stringValue(record.verdict) || "观察",
@@ -834,7 +846,82 @@ function normalizeGeneratedAnalysis(value: unknown, template: ResearchTemplate) 
     followUps: stringArray(record.followUps),
     sections: markdownToSections(markdown),
     markdown: markdown || `# ${template.title}\n\n模型未提供正文，需要重新生成。`,
+  });
+}
+
+type NormalizedTemplateAnalysis = {
+  title: string;
+  score?: number;
+  verdict: string;
+  summary: string;
+  keyPoints: string[];
+  riskFlags: string[];
+  followUps: string[];
+  sections: Array<{ heading: string; body: string }>;
+  markdown: string;
+};
+
+function applyTemplateScoreDiscipline(analysis: NormalizedTemplateAnalysis): NormalizedTemplateAnalysis {
+  if (analysis.score === undefined) return analysis;
+  const fullText = [analysis.verdict, analysis.summary, ...analysis.riskFlags, analysis.markdown].join("\n");
+  const caps: Array<{ score: number; flag: string }> = [];
+
+  if (hardTemplateRedFlagCount(fullText) >= 3 || hasAvoidConclusion(fullText)) {
+    caps.push({ score: 49, flag: HARD_TEMPLATE_SCORE_CAP_FLAG });
+  } else if (hardTemplateRedFlagCount(fullText) >= 2) {
+    caps.push({ score: 69, flag: HARD_TEMPLATE_SCORE_CAP_FLAG });
+  }
+
+  if (/减仓|低配|降低仓位|暂缓买入/.test(analysis.verdict)) {
+    caps.push({ score: 65, flag: HARD_TEMPLATE_SCORE_CAP_FLAG });
+  }
+
+  const averageItemScore = markdownItemScoreAverage(analysis.markdown);
+  if (averageItemScore !== undefined && analysis.score > averageItemScore + 8) {
+    caps.push({ score: roundTemplateScore(averageItemScore + 5), flag: ITEM_AVERAGE_TEMPLATE_SCORE_CAP_FLAG });
+  }
+
+  if (!caps.length) return analysis;
+  const cappedScore = Math.min(analysis.score, ...caps.map((cap) => cap.score));
+  const addedFlags = caps.map((cap) => cap.flag).filter((flag, index, flags) => flags.indexOf(flag) === index);
+  return {
+    ...analysis,
+    score: cappedScore,
+    verdict: disciplinedTemplateVerdict(analysis.verdict, cappedScore),
+    riskFlags: [...analysis.riskFlags, ...addedFlags.filter((flag) => !analysis.riskFlags.includes(flag))],
   };
+}
+
+function hardTemplateRedFlagCount(text: string) {
+  return HARD_TEMPLATE_RED_FLAG_PATTERNS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function hasAvoidConclusion(text: string) {
+  return /回避|规避|卖出|清仓|不建议(?:买入|持有|配置)|不适合长期股权投资|坚决不能投/.test(text);
+}
+
+function markdownItemScoreAverage(markdown: string) {
+  const scores = markdown
+    .split(/\n+/)
+    .map((line) => line.match(/^#+[^\n]*[（(]\s*([0-9０-９]{1,3}(?:\.[0-9]+)?)\s*分/) ?? line.match(/(?:评分|得分|评估)[^\n0-9０-９]{0,20}([0-9０-９]{1,3}(?:\.[0-9]+)?)\s*分/))
+    .map((match) => (match ? numberValue(normalizeAsciiNumber(match[1])) : undefined))
+    .filter((score): score is number => score !== undefined);
+  if (scores.length < 3) return undefined;
+  return roundTemplateScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+}
+
+function disciplinedTemplateVerdict(verdict: string, score: number) {
+  if (score <= 49 && /买入|重配|加仓|持有|配置/.test(verdict)) return "回避/重新复核";
+  if (score < 70 && /买入|重配|加仓/.test(verdict)) return "观察/等待";
+  return verdict;
+}
+
+function normalizeAsciiNumber(value: string) {
+  return value.replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xff10 + 48));
+}
+
+function roundTemplateScore(value: number) {
+  return Math.round(value * 10) / 10;
 }
 
 function normalizeTemplateAnalysisError(error: unknown) {

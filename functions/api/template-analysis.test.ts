@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
-import { buildChildTemplateReportsForPrompt, isUsableTemplateAnalysisCache, runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
+import {
+  buildChildTemplateReportsForPrompt,
+  isUsableTemplateAnalysisCache,
+  normalizeGeneratedAnalysis,
+  runFullTemplateChildrenCacheAware,
+  shouldStartFullAnalysis,
+  templateReasoningEffort,
+} from "./template-analysis";
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
@@ -95,6 +102,64 @@ describe("isUsableTemplateAnalysisCache", () => {
   });
 });
 
+describe("normalizeGeneratedAnalysis score discipline", () => {
+  test("caps high scores from custom templates when the report identifies hard red flags", () => {
+    const analysis = normalizeGeneratedAnalysis(
+      {
+        title: "差公司模板报告",
+        score: 92,
+        verdict: "买入",
+        summary: "公司处于行业衰退期，主营收入持续下滑，经营现金流为负，负债率高企，治理混乱。",
+        keyPoints: ["估值看似便宜"],
+        riskFlags: ["行业衰退", "经营现金流为负", "负债率高企", "治理混乱", "明显高估"],
+        followUps: ["复核现金流"],
+        markdown:
+          "## 结论\n公司处于行业衰退期，主营收入持续下滑，经营现金流为负，负债率高企，治理混乱，明显不适合长期股权投资。",
+      },
+      customTemplate(),
+    );
+
+    expect(analysis.score).toBeLessThanOrEqual(49);
+    expect(analysis.verdict).toContain("回避");
+    expect(analysis.riskFlags).toContain("后端保守评分约束：报告识别到重大经营、财务、治理、估值或产业红线，已限制模板总分。");
+  });
+
+  test("caps top-level scores that are far above the markdown item-score average", () => {
+    const analysis = normalizeGeneratedAnalysis(
+      {
+        title: "分项偏弱模板报告",
+        score: 88,
+        verdict: "持有",
+        summary: "分项评分整体偏弱，顶层分数不应明显高于分项平均。",
+        keyPoints: ["仍有少量资产价值"],
+        riskFlags: ["增长疲弱"],
+        followUps: ["跟踪利润修复"],
+        markdown: [
+          "## 1. 商业模式评估（35分）",
+          "## 2. 财务健康度（40分）",
+          "## 3. 治理质量（45分）",
+          "## 4. 估值安全边际（50分）",
+        ].join("\n\n"),
+      },
+      customTemplate(),
+    );
+
+    expect(analysis.score).toBeLessThanOrEqual(48);
+    expect(analysis.riskFlags).toContain("后端保守评分约束：顶层分数明显高于正文分项平均，已按分项均值限制总分。");
+  });
+});
+
 function nextTick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function customTemplate() {
+  return {
+    id: "custom-strict-template",
+    title: "自定义严格模板",
+    shortTitle: "自定义",
+    focus: "自定义模板也应继承后端评分约束。",
+    prompt: "给出评分。",
+    fullPrompt: "请严格评分。",
+  };
 }
