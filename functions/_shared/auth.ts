@@ -116,6 +116,7 @@ export async function authenticateUser(db: D1Database, usernameInput: string, pa
 
 export async function createAuthSession(db: D1Database, user: Omit<UserSession, "sessionId" | "expiresAt">, now = new Date()) {
   await ensureAuthSchema(db);
+  await cleanupExpiredSessions(db, now);
   const sessionId = randomBase64Url(18);
   const token = randomBase64Url(32);
   const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
@@ -153,7 +154,11 @@ export async function readSessionCookie(cookieHeader: string | null | undefined,
   )
     .bind(parsed.sessionId)
     .first<SessionRow & Pick<UserRow, "username" | "display_name" | "role" | "disabled_at">>();
-  if (!row || row.disabled_at || !timingSafeEqual(row.token_hash, tokenHash) || new Date(row.expires_at).getTime() <= Date.now()) return null;
+  if (!row || row.disabled_at || !timingSafeEqual(row.token_hash, tokenHash)) return null;
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    await env.REPORT_LIBRARY_DB.prepare(`DELETE FROM auth_sessions WHERE id = ?1`).bind(row.id).run();
+    return null;
+  }
   await env.REPORT_LIBRARY_DB.prepare(`UPDATE auth_sessions SET last_seen_at = ?1 WHERE id = ?2`).bind(new Date().toISOString(), row.id).run();
   return {
     userId: row.user_id,
@@ -184,6 +189,10 @@ export function normalizeUsername(value: unknown) {
 
 export function publicUser(session: Pick<UserSession, "userId" | "username" | "displayName" | "role">) {
   return { userId: session.userId, username: session.username, displayName: session.displayName, role: session.role };
+}
+
+export async function cleanupExpiredSessions(db: D1Database, now = new Date()) {
+  await db.prepare(`DELETE FROM auth_sessions WHERE expires_at <= ?1`).bind(now.toISOString()).run();
 }
 
 export function parseCookie(cookieHeader: string, name: string) {

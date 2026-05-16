@@ -1270,6 +1270,11 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 
+.sentiment-meter .sentiment-warning {
+  color: #8a5a14;
+  font-weight: 700;
+}
+
 .sentiment-track {
   display: flex;
   height: 14px;

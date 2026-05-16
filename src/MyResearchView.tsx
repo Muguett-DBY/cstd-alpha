@@ -31,6 +31,7 @@ type ActiveGeneration = {
   watchlistId: string;
   templateId: string;
   label: string;
+  companyName: string;
 };
 
 export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResearchViewProps) {
@@ -136,7 +137,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     const target = selectedItem;
     if (!target) return;
     setPhase("generating");
-    setActiveGeneration({ watchlistId: target.id, templateId, label: generationLabel(templateId) });
+    setActiveGeneration({ watchlistId: target.id, templateId, label: generationLabel(templateId), companyName: target.company.name });
     setError("");
     setNotice("");
     try {
@@ -147,7 +148,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         return;
       }
       const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh }, (progress) => {
-        if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
+        if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
       });
       const nextAnalyses = result.analyses ?? (result.analysis ? [result.analysis] : []);
       setAnalyses((current) => mergeAnalyses(current, nextAnalyses));
@@ -157,8 +158,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         templateId === FULL_ANALYSIS_TEMPLATE_ID
           ? "全面分析任务已更新：十个模板会逐项生成，已完成的模板会直接复用缓存。"
           : completed?.fromCache
-            ? `已打开缓存报告：${completed.templateTitle}`
-            : `已生成：${completed?.templateTitle ?? "模板报告"}`,
+            ? `已打开 ${target.company.name} 的缓存报告：${completed.templateTitle}`
+            : `已生成 ${target.company.name}：${completed?.templateTitle ?? "模板报告"}`,
       );
       setPhase("ready");
       setActiveGeneration(null);
@@ -170,9 +171,9 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
-    setNotice("全面分析任务已提交：后端会复用已完成模板，补齐缺失模板后生成最终汇总。");
+    setNotice(`${target.company.name} 全面分析任务已提交：后端会复用已完成模板，补齐缺失模板后生成最终汇总。`);
     const initialResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
-      if (progress.stage !== "heartbeat") setNotice(`${progress.label}：${progress.detail}`);
+      if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
     });
     const initialAnalyses = initialResult.analyses ?? (initialResult.analysis ? [initialResult.analysis] : []);
     setAnalyses((current) => mergeAnalyses(current, initialAnalyses));
@@ -181,12 +182,12 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       const hydrated = await fetchTemplateAnalysis(full.id);
       setAnalyses((current) => mergeAnalyses(current, [hydrated]));
       if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
-      setNotice(full.fromCache ? "已打开缓存中的全面分析。" : "全面分析已生成并写入报告库。");
+      setNotice(full.fromCache ? `已打开 ${target.company.name} 缓存中的全面分析。` : `${target.company.name} 全面分析已生成并写入报告库。`);
       return;
     }
     if (full && isRetryableTemplateStatus(full.status)) {
       if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
-      setNotice("全面分析暂停：上一次生成未完成，可稍后重试。");
+      setNotice(`${target.company.name} 全面分析暂停：上一次生成未完成，可稍后重试。`);
       return;
     }
     await pollFullAnalysis(target);
@@ -201,18 +202,18 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       setAnalyses((current) => mergeAnalyses(current, data.analyses));
       const full = data.analyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID);
       if (!full || full.status === "pending" || full.status === "running") {
-        setNotice("全面分析仍在后台生成：页面会自动刷新状态，已完成模板会直接复用缓存。");
+        if (selectedWatchlistIdRef.current === target.id) setNotice("全面分析仍在后台生成：页面会自动刷新状态，已完成模板会直接复用缓存。");
         continue;
       }
       if (full.status === "completed") {
         const hydrated = await fetchTemplateAnalysis(full.id);
         setAnalyses((current) => mergeAnalyses(current, [hydrated]));
         if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
-        setNotice("全面分析已生成并写入报告库。");
+        setNotice(`${target.company.name} 全面分析已生成并写入报告库。`);
         return;
       }
       if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
-      setNotice("全面分析暂停：模型连接超时或通道限流，任务已可重试。");
+      setNotice(`${target.company.name} 全面分析暂停：模型连接超时或通道限流，任务已可重试。`);
       return;
     }
     throw new Error("全面分析仍在后台生成，请稍后刷新我的研究查看。");
@@ -263,8 +264,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         <div className="generation-status" role="status" aria-live="polite">
           <span className="generation-pulse" aria-hidden="true" />
           <div>
-            <strong>{activeGeneration.label}正在生成</strong>
-            <p>已提交到后端任务队列，完成后会自动更新；已生成过的内容会优先复用缓存。</p>
+            <strong>
+              {activeGeneration.companyName}：{activeGeneration.label}正在生成
+            </strong>
+            <p>已提交到后端任务队列，完成后会自动更新；已生成过的内容会优先复用缓存。切换公司不会打断当前任务。</p>
           </div>
         </div>
       ) : null}
@@ -697,9 +700,10 @@ function SentimentMeter({ title, summary }: { title: string; summary: CompanyNew
         <span>利空 {summary.negativePct}%</span>
       </footer>
       <small>
-        样本 {summary.total} 条，覆盖 {summary.sourceCount || 0} 个来源
+        {summary.qualityLabel}；样本 {summary.total} 条，覆盖 {summary.sourceCount || 0} 个来源
         {summary.sources?.length ? `：${summary.sources.slice(0, 4).join("、")}` : ""}。
       </small>
+      {summary.qualityWarning ? <small className="sentiment-warning">{summary.qualityWarning}</small> : null}
     </section>
   );
 }

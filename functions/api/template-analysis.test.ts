@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
-import { buildChildTemplateReportsForPrompt, runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
+import { buildChildTemplateReportsForPrompt, isUsableTemplateAnalysisCache, runFullTemplateChildrenCacheAware, shouldStartFullAnalysis, templateReasoningEffort } from "./template-analysis";
 
 describe("runFullTemplateChildrenCacheAware", () => {
   test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
@@ -74,6 +74,22 @@ describe("buildChildTemplateReportsForPrompt", () => {
     expect(reports[0].markdownChars).toBe(8000);
     expect(reports[0].markdownExcerpt).toContain("后文因上下文长度限制截断");
     expect((reports[0].markdownExcerpt ?? "").length).toBeLessThanOrEqual(7050);
+  });
+});
+
+describe("isUsableTemplateAnalysisCache", () => {
+  test("requires completed status, object key and minimum markdown length", () => {
+    const base = {
+      templateId: RESEARCH_TEMPLATES[0].id,
+      status: "completed",
+      objectKey: "user-research/v1/u/w/template.md",
+      markdown: "深度报告正文".repeat(1200),
+    } as Parameters<typeof isUsableTemplateAnalysisCache>[0];
+
+    expect(isUsableTemplateAnalysisCache(base)).toBe(true);
+    expect(isUsableTemplateAnalysisCache({ ...base, markdown: "太短" })).toBe(false);
+    expect(isUsableTemplateAnalysisCache({ ...base, objectKey: undefined })).toBe(false);
+    expect(isUsableTemplateAnalysisCache({ ...base, status: "running" })).toBe(false);
   });
 });
 

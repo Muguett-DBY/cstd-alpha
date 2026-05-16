@@ -252,8 +252,8 @@ function isRelevantNewsItem(item: { title?: string; summary?: string }, required
 function isUsefulNewsItem(item: { title?: string; summary?: string; source?: string }) {
   const text = `${item.title || ""} ${item.summary || ""}`.trim();
   const source = item.source || "";
-  if (/百度文库|人人文库|文库|股吧|问答|百科/.test(source)) return false;
-  return !/最新价格|走势图|历史数据|股票行情|股票吧|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|行情_市值|财报研报数据|数据报告|公告列表\s*_|数据中心\s*_|估值——|技术分析|文库|课件|PPT|pptx|docx|下载/.test(text);
+  if (/百度文库|人人文库|文库|股吧|问答|百科|世界猪业之窗|pig333|3tre3s/i.test(source)) return false;
+  return !/最新价格|走势图|历史数据|股票行情|股票吧|行情首页|盘口|资金流向|主力资金|个股资料|个股分析|牛叉诊股|F10|实时行情|手机东方财富|手机同花顺财经|历史市盈率|历次上榜后表现|营业部买卖统计|股价行情|行情_市值|财报研报数据|数据报告|公告列表\s*_|数据中心\s*_|估值——|技术分析|文库|课件|PPT|pptx|docx|下载|猪繁殖|呼吸综合征|世界猪业之窗|pig333|3tre3s/i.test(text);
 }
 
 function isNotConflictingIndustryResearch(item: { title?: string }, titleRequiredAny: string[]) {

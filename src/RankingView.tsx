@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
@@ -77,6 +77,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const [importText, setImportText] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const deferredQuery = useDeferredValue(query);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -98,6 +99,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const offset = (remoteLibraryPage - 1) * LIBRARY_PAGE_SIZE;
     queueMicrotask(() => {
       if (!cancelled) {
@@ -109,7 +111,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     });
     const seedCodes = config.seeds.map((seed) => seed.code);
     const request = usesClientSideLibrary
-      ? fetchAllMarketLibraryEntries(config.marketParam, seedCodes)
+      ? fetchAllMarketLibraryEntries(config.marketParam, seedCodes, controller.signal)
       : fetchReportLibrary({
           limit: LIBRARY_PAGE_SIZE,
           offset,
@@ -118,6 +120,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           industry: remoteIndustry,
           market: config.marketParam,
           seedCodes,
+          signal: controller.signal,
         });
 
     void request
@@ -131,11 +134,13 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       })
       .catch((err) => {
         if (cancelled) return;
+        if (isAbortError(err)) return;
         setLibraryPhase("error");
         setError(err instanceof Error ? err.message : "报告库读取失败。");
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [config.marketParam, config.seeds, remoteIndustry, remoteLibraryPage, remoteSortDirection, remoteSortMode, usesClientSideLibrary]);
 
@@ -154,7 +159,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     return Array.from(seen);
   }, [config.industryGroups, entries]);
   const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
+    const keyword = deferredQuery.trim().toLowerCase();
     return entries
       .filter((entry) => {
         const keywordMatched = !keyword || `${entry.name} ${entry.code} ${entry.sector} ${entry.industryGroup}`.toLowerCase().includes(keyword);
@@ -163,7 +168,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
         return keywordMatched && sectorMatched && sourceMatched;
       })
       .sort((left, right) => compareRankingRows(left, right, sortMode, sortDirection));
-  }, [entries, query, sector, sortDirection, sortMode, source]);
+  }, [deferredQuery, entries, sector, sortDirection, sortMode, source]);
   const visibleRows = useMemo(() => {
     if (!usesClientSideLibrary) return filtered;
     const pageOffset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
@@ -414,7 +419,7 @@ function compareRankingRows(left: RankingEntry, right: RankingEntry, sortMode: S
   return left.rank - right.rank;
 }
 
-async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[]) {
+async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[], signal?: AbortSignal) {
   const entries: ReportLibraryEntry[] = [];
   const anchorEntries: ReportLibraryEntry[] = [];
   const matchedTickers = new Set<string>();
@@ -427,6 +432,7 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[])
       direction: "desc",
       market,
       seedCodes,
+      signal,
     });
     entries.push(...page.entries);
     for (const ticker of page.matchedTickers ?? []) matchedTickers.add(ticker);
@@ -443,10 +449,15 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[])
       direction: "desc",
       market: "cn",
       tickers: pageTickers,
+      signal,
     });
     anchorEntries.push(...page.entries);
   }
   return { entries, total, matchedTickers: Array.from(matchedTickers), anchorEntries };
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function compareRankingValue(left: RankingEntry, right: RankingEntry, sortMode: Exclude<SortMode, "rank">) {

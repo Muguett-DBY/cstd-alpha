@@ -27,6 +27,8 @@ export type NewsSentimentSummary = {
   overallLabel: string;
   sourceCount: number;
   sources: string[];
+  qualityLabel: string;
+  qualityWarning?: string;
 };
 
 export type CompanyNewsBundle = {
@@ -165,9 +167,10 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
   const positivePct = percent(positive, total);
   const negativePct = percent(negative, total);
   const neutralPct = Math.max(0, 100 - positivePct - negativePct);
-  const rawOverall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
-  const overall: NewsSentiment = conservativeOverall(rawOverall, { total, positive, negative });
   const sources = summarizeSources(items);
+  const rawOverall: NewsSentiment = positive > negative ? "positive" : negative > positive ? "negative" : "neutral";
+  const quality = summarizeNewsQuality({ total, sourceCount: sources.length });
+  const overall: NewsSentiment = conservativeOverall(rawOverall, { total, positive, negative, sourceCount: sources.length });
   return {
     total,
     positive,
@@ -177,9 +180,11 @@ export function summarizeNewsSentiment(items: NewsItem[]): NewsSentimentSummary 
     negativePct,
     neutralPct,
     overall,
-    overallLabel: overallLabel(overall, { total, positive, negative }),
+    overallLabel: overallLabel(overall, { total, positive, negative, sourceCount: sources.length }),
     sourceCount: sources.length,
     sources,
+    qualityLabel: quality.label,
+    qualityWarning: quality.warning,
   };
 }
 
@@ -342,18 +347,36 @@ function isLowSignalRatingText(text: string) {
   return LOW_SIGNAL_RATING_PATTERNS.some((pattern) => pattern.test(text)) && LOW_SIGNAL_RATING_QUALIFIERS.some((pattern) => pattern.test(text));
 }
 
-function conservativeOverall(rawOverall: NewsSentiment, counts: { total: number; positive: number; negative: number }): NewsSentiment {
+function conservativeOverall(rawOverall: NewsSentiment, counts: { total: number; positive: number; negative: number; sourceCount: number }): NewsSentiment {
   if (counts.total === 0) return "neutral";
+  if (counts.sourceCount < 2) {
+    if (counts.negative >= 2 && counts.negative > counts.positive) return "negative";
+    return "neutral";
+  }
   if (counts.total < 5) {
     if (counts.negative >= 2 && counts.negative > counts.positive) return "negative";
+    return "neutral";
+  }
+  if (counts.total < 8 && counts.sourceCount < 3) {
+    if (counts.negative >= 3 && counts.negative > counts.positive) return "negative";
     return "neutral";
   }
   return rawOverall;
 }
 
-function overallLabel(overall: NewsSentiment, counts: { total: number; positive: number; negative: number }) {
+function overallLabel(overall: NewsSentiment, counts: { total: number; positive: number; negative: number; sourceCount: number }) {
+  if (counts.total > 0 && counts.sourceCount < 2 && overall === "neutral") return "来源集中，整体中性";
   if (counts.total > 0 && counts.total < 5 && overall === "neutral") return "样本偏少，整体中性";
+  if (counts.total > 0 && counts.total < 8 && counts.sourceCount < 3 && overall === "neutral") return "样本/来源不足，整体中性";
   return overall === "positive" ? "整体偏利好" : overall === "negative" ? "整体偏利空" : "整体中性";
+}
+
+function summarizeNewsQuality({ total, sourceCount }: { total: number; sourceCount: number }) {
+  if (total === 0) return { label: "无样本", warning: "未读取到可用新闻，情绪统计不具备参考性。" };
+  if (sourceCount < 2) return { label: "来源集中", warning: "可用新闻来源过于集中，整体情绪按保守口径处理。" };
+  if (total < 5) return { label: "样本偏少", warning: "可用新闻少于 5 条，整体情绪按保守口径处理。" };
+  if (total < 8 && sourceCount < 3) return { label: "样本/来源不足", warning: "新闻数量和来源覆盖仍偏少，整体情绪只作弱参考。" };
+  return { label: "样本可用" };
 }
 
 function percent(value: number, total: number) {

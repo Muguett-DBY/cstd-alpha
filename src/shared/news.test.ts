@@ -108,7 +108,28 @@ describe("news helpers", () => {
       { id: "3", title: "行业回暖", url: "#", source: "C", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "回暖", confidence: 0.6 },
     ]);
 
-    expect(summary).toMatchObject({ positivePct: 100, overall: "neutral", overallLabel: "样本偏少，整体中性" });
+    expect(summary).toMatchObject({ positivePct: 100, overall: "neutral", overallLabel: "样本偏少，整体中性", qualityLabel: "样本偏少" });
+  });
+
+  test("keeps concentrated or thin source samples neutral", () => {
+    const concentrated = summarizeNewsSentiment([
+      { id: "1", title: "行业增长", url: "#", source: "百度新闻", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "增长", confidence: 0.6 },
+      { id: "2", title: "政策改善", url: "#", source: "百度新闻", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "改善", confidence: 0.6 },
+      { id: "3", title: "景气回暖", url: "#", source: "百度新闻", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "回暖", confidence: 0.6 },
+      { id: "4", title: "成交新高", url: "#", source: "百度新闻", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "新高", confidence: 0.6 },
+      { id: "5", title: "价格提升", url: "#", source: "百度新闻", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "提升", confidence: 0.6 },
+    ]);
+    const thinSources = summarizeNewsSentiment([
+      { id: "1", title: "政策改善", url: "#", source: "新浪", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "改善", confidence: 0.6 },
+      { id: "2", title: "成交新高", url: "#", source: "东方财富", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "新高", confidence: 0.6 },
+      { id: "3", title: "行业回暖", url: "#", source: "新浪", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "回暖", confidence: 0.6 },
+      { id: "4", title: "盈利提升", url: "#", source: "东方财富", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "提升", confidence: 0.6 },
+      { id: "5", title: "供需改善", url: "#", source: "新浪", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "改善", confidence: 0.6 },
+      { id: "6", title: "景气回升", url: "#", source: "东方财富", sentiment: "positive", sentimentLabel: "偏利好", sentimentReason: "回升", confidence: 0.6 },
+    ]);
+
+    expect(concentrated).toMatchObject({ sourceCount: 1, overall: "neutral", overallLabel: "来源集中，整体中性", qualityLabel: "来源集中" });
+    expect(thinSources).toMatchObject({ sourceCount: 2, overall: "neutral", overallLabel: "样本/来源不足，整体中性", qualityLabel: "样本/来源不足" });
   });
 
   test("falls back from placeholder industry labels to company-name inference", () => {

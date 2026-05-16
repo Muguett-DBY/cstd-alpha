@@ -207,7 +207,9 @@ async function readCompletedAnalysisCache(env: TemplateCacheEnv, userId: string,
   const id = await analysisId(userId, watchlistId, templateId);
   const row = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
   if (!row || row.status !== "completed" || !row.object_key) return null;
-  return { ...(await hydrateMarkdown(env, analysisRowToResult(row))), fromCache: true };
+  const hydrated = await hydrateMarkdown(env, analysisRowToResult(row));
+  if (!isUsableTemplateAnalysisCache(hydrated)) return null;
+  return { ...hydrated, fromCache: true };
 }
 
 async function generateFullAnalysis(
@@ -304,10 +306,9 @@ async function generateSingleTemplateAnalysis(
   childAnalyses: TemplateAnalysisResult[] = [],
   write?: TemplateProgressWriter,
 ) {
-  const id = await analysisId(userId, watchlist.id, template.id);
-  const existing = await readAnalysisRow(env.REPORT_LIBRARY_DB, userId, id);
-  if (existing && existing.status === "completed" && existing.object_key && !forceRefresh) {
-    return { ...(await hydrateMarkdown(env, analysisRowToResult(existing))), fromCache: true };
+  const cached = !forceRefresh ? await readCompletedAnalysisCache(env, userId, watchlist.id, template.id) : null;
+  if (cached) {
+    return cached;
   }
 
   await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running");
@@ -430,6 +431,12 @@ function buildTemplateMessages(
 
 function templateCacheAnchor(cacheMode: "free" | "paid") {
   return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
+}
+
+export function isUsableTemplateAnalysisCache(analysis: TemplateAnalysisResult) {
+  if (analysis.status !== "completed" || !analysis.objectKey) return false;
+  const markdownLength = analysis.markdown?.trim().length ?? 0;
+  return markdownLength >= minimumResearchMarkdownChars(analysis.templateId);
 }
 
 export function buildChildTemplateReportsForPrompt(childAnalyses: TemplateAnalysisResult[]) {

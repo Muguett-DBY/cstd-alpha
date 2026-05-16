@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { createPasswordHash, hashSessionToken, verifyPasswordHash } from "./auth";
+import { describe, expect, test, vi } from "vitest";
+import { cleanupExpiredSessions, createPasswordHash, hashSessionToken, verifyPasswordHash } from "./auth";
 
 describe("fixed-account auth primitives", () => {
   test("hashes passwords with a salt and verifies only the original password", async () => {
@@ -19,5 +19,18 @@ describe("fixed-account auth primitives", () => {
     expect(hash).not.toContain(token);
     await expect(hashSessionToken(token)).resolves.toBe(hash);
     await expect(hashSessionToken("other-token")).resolves.not.toBe(hash);
+  });
+
+  test("cleans expired sessions by timestamp", async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const bind = vi.fn().mockReturnValue({ run });
+    const prepare = vi.fn().mockReturnValue({ bind });
+    const db = { prepare } as unknown as D1Database;
+
+    await cleanupExpiredSessions(db, new Date("2026-05-16T00:00:00.000Z"));
+
+    expect(prepare).toHaveBeenCalledWith("DELETE FROM auth_sessions WHERE expires_at <= ?1");
+    expect(bind).toHaveBeenCalledWith("2026-05-16T00:00:00.000Z");
+    expect(run).toHaveBeenCalled();
   });
 });

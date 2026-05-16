@@ -139,7 +139,17 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
 }
 
 export async function fetchReportLibrary(
-  options: { limit?: number; offset?: number; sort?: string; direction?: string; industry?: string; market?: string; seedCodes?: string[]; tickers?: string[] } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    sort?: string;
+    direction?: string;
+    industry?: string;
+    market?: string;
+    seedCodes?: string[];
+    tickers?: string[];
+    signal?: AbortSignal;
+  } = {},
 ): Promise<ReportLibraryList> {
   const params = new URLSearchParams({
     limit: String(options.limit ?? 20),
@@ -151,7 +161,7 @@ export async function fetchReportLibrary(
   if (options.industry && options.industry !== "全部行业") params.set("industry", options.industry);
   if (options.seedCodes?.length) params.set("seedCodes", options.seedCodes.join(","));
   if (options.tickers?.length) params.set("tickers", options.tickers.join(","));
-  const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include" });
+  const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include", signal: options.signal });
   if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
   const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number; offset?: number; matchedTickers?: string[] };
   const entries = data.entries ?? [];
