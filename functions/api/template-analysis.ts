@@ -133,11 +133,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     return streamTemplateGeneration(async (write) => {
       const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB!, session.userId, watchlist, fullTemplate, "running");
-      write({ type: "progress", stage: "full_started", label: "全部模板全面分析", detail: `正在复用已完成模板，并补齐 ${enabledTemplates.length} 个启用模板后生成最终汇总。` });
+      write({ type: "progress", stage: "full_started", label: "全部模板全面分析", detail: "正在检查已完成模板；缺失模板会由前端分批生成，避免单次 Worker 请求超出 Cloudflare subrequest 限制。" });
       try {
-        write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据，供缺失模板和最终汇总使用。" });
+        const children = await readCompletedTemplateAnalysesForFull(env, session.userId, watchlist.id, enabledTemplates, write);
+        const completedChildren = completedTemplateAnalysesForFull(children, enabledTemplates);
+        if (completedChildren.length < enabledTemplates.length) {
+          const missingTitles = enabledTemplates
+            .filter((template) => !completedChildren.some((analysis) => analysis.templateId === template.id))
+            .map((template) => template.shortTitle)
+            .join("、");
+          const fullFailure = await writeAnalysisFailure(
+            env.REPORT_LIBRARY_DB!,
+            session.userId,
+            watchlist,
+            fullTemplate,
+            `启用模板尚未全部完成，缺失：${missingTitles || "未知模板"}。请先生成缺失模板后再生成全面分析。`,
+            "failed_retryable",
+            running.startedAt,
+          );
+          write({ type: "final", analyses: [fullFailure, ...children], watchlistItem: watchlistRowToItem(watchlist) });
+          return;
+        }
+        write({ type: "progress", stage: "evidence", label: "读取公开证据", detail: "正在整理公司财务、行情与公开证据，供最终汇总使用。" });
         const evidence = await fetchTemplateEvidence(watchlist, request.signal);
-        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, enabledTemplates, forceRefresh, write);
+        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidence, enabledTemplates, forceRefresh, children, write);
         write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
       } catch (error) {
         await writeAnalysisFailure(
@@ -237,20 +256,9 @@ async function generateFullAnalysis(
   evidence: EvidenceBundle,
   templates: ResearchTemplate[],
   forceRefresh: boolean,
+  children: TemplateAnalysisResult[],
   write?: TemplateProgressWriter,
 ) {
-  const children = await runFullTemplateChildrenCacheAware({
-    templates,
-    readCached: async (template) => {
-      const cached = await readCompletedAnalysisCache(env, userId, watchlist.id, template);
-      if (cached) write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
-      return cached;
-    },
-    runUncached: async (template) => {
-      write?.({ type: "progress", stage: "child_template", label: "生成专项模板", detail: `正在生成 ${template.shortTitle}。` });
-      return generateSingleTemplateAnalysis(env, userId, watchlist, evidence, template, false, [], write);
-    },
-  });
   const fullTemplate = fullAnalysisTemplate(templates);
   const completedChildren = completedTemplateAnalysesForFull(children, templates);
   if (completedChildren.length < templates.length) {
@@ -261,6 +269,24 @@ async function generateFullAnalysis(
   }
   write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: `${templates.length} 个启用模板已完成，正在交叉验证并生成最终全面分析。` });
   return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write), ...children];
+}
+
+async function readCompletedTemplateAnalysesForFull(
+  env: TemplateCacheEnv,
+  userId: string,
+  watchlistId: string,
+  templates: ResearchTemplate[],
+  write?: TemplateProgressWriter,
+) {
+  const analyses: TemplateAnalysisResult[] = [];
+  for (const template of templates) {
+    const cached = await readCompletedAnalysisCache(env, userId, watchlistId, template);
+    if (cached) {
+      write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
+      analyses.push(cached);
+    }
+  }
+  return analyses;
 }
 
 function fullAnalysisTemplate(templates: ResearchTemplate[] = RESEARCH_TEMPLATES): ResearchTemplate {
@@ -286,13 +312,10 @@ export async function runFullTemplateChildrenCacheAware<T>({
   runUncached: (template: ResearchTemplate) => Promise<T>;
   warmupCount?: number;
 }) {
-  const cacheChecks = await Promise.all(
-    templates.map(async (template, index) => ({
-      index,
-      template,
-      cached: await readCached(template),
-    })),
-  );
+  const cacheChecks: Array<{ index: number; template: ResearchTemplate; cached: T | null }> = [];
+  for (const [index, template] of templates.entries()) {
+    cacheChecks.push({ index, template, cached: await readCached(template) });
+  }
   const results = new Array<T>(templates.length);
   const uncached: Array<{ index: number; template: ResearchTemplate }> = [];
   for (const item of cacheChecks) {
@@ -300,17 +323,8 @@ export async function runFullTemplateChildrenCacheAware<T>({
     else uncached.push({ index: item.index, template: item.template });
   }
 
-  for (const item of uncached.slice(0, Math.max(0, warmupCount))) {
-    results[item.index] = await runUncached(item.template);
-  }
-
-  const concurrentResults = await Promise.all(
-    uncached.slice(Math.max(0, warmupCount)).map(async (item) => ({
-      index: item.index,
-      result: await runUncached(item.template),
-    })),
-  );
-  for (const item of concurrentResults) results[item.index] = item.result;
+  void warmupCount;
+  for (const item of uncached) results[item.index] = await runUncached(item.template);
   return results;
 }
 
@@ -354,13 +368,8 @@ async function generateSingleTemplateAnalysis(
   }
 }
 
-async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
-  const first = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
-  const minLength = minimumMarkdownLength(template);
-  if (first.markdown.length >= minLength) return first;
-  const expanded = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses, first.markdown);
-  if (expanded.markdown.length >= minLength) return expanded;
-  throw new Error(`模型输出过短：${expanded.markdown.length}/${minLength} 字符，未保存为成功报告。`);
+export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
+  return requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
 }
 
 async function requestTemplateReportOnce(
@@ -393,10 +402,6 @@ async function requestTemplateReportOnce(
           continue;
         }
         const generated = { ...normalizeGeneratedAnalysis(JSON.parse(jsonrepair(content)), template), modelUsed: route.model };
-        if (route.isFree && env.DEEPSEEK_API_KEY?.trim() && generated.markdown.length < minLength) {
-          lastError = new Error(`${route.model} 输出过短：${generated.markdown.length}/${minLength} 字符，改用付费 Flash Max 兜底。`);
-          continue;
-        }
         return generated;
       } catch (error) {
         lastError = error;
@@ -460,7 +465,7 @@ function templateCacheAnchor(cacheMode: "free" | "paid") {
 export function isUsableTemplateAnalysisCache(analysis: TemplateAnalysisResult) {
   if (analysis.status !== "completed" || !analysis.objectKey) return false;
   const markdownLength = analysis.markdown?.trim().length ?? 0;
-  return markdownLength >= minimumResearchMarkdownChars(analysis.templateId);
+  return markdownLength > 0;
 }
 
 export function buildChildTemplateReportsForPrompt(childAnalyses: TemplateAnalysisResult[]) {
@@ -488,12 +493,12 @@ function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
   return `${normalized.slice(0, Math.max(0, maxChars - 60)).trim()}\n\n（后文因上下文长度限制截断，汇总时以已提供正文和结构化要点交叉验证。）`;
 }
 
-function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
+export function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof FREE_MODEL | typeof PAID_MODEL; url: string; apiKey?: string; isFree: boolean }> {
   const paidRoute = apiKey?.trim()
     ? ({ model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } as const)
     : undefined;
   const freeRoute = { model: FREE_MODEL, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true } as const;
-  if (preferPaid && paidRoute) return [paidRoute, freeRoute];
+  void preferPaid;
   return [
     freeRoute,
     ...(paidRoute ? [paidRoute] : []),

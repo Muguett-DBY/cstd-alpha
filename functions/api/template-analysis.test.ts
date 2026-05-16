@@ -1,16 +1,22 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
 import {
   buildChildTemplateReportsForPrompt,
   isUsableTemplateAnalysisCache,
   normalizeGeneratedAnalysis,
+  requestTemplateReport,
   runFullTemplateChildrenCacheAware,
   shouldStartFullAnalysis,
+  templateModelRoutes,
   templateReasoningEffort,
 } from "./template-analysis";
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("runFullTemplateChildrenCacheAware", () => {
-  test("reuses cached templates and warms two uncached jobs before starting the rest concurrently", async () => {
+  test("reuses cached templates and runs uncached jobs sequentially to stay under Worker subrequest limits", async () => {
     const activeTemplates = RESEARCH_TEMPLATES.slice(0, 3);
     const cachedIds = new Set([activeTemplates[0].id]);
     const started: string[] = [];
@@ -37,8 +43,6 @@ describe("runFullTemplateChildrenCacheAware", () => {
     expect(started).toEqual([activeTemplates[1].id, activeTemplates[2].id]);
     expect(released).toEqual([activeTemplates[1].id]);
     releaseJobs.get(activeTemplates[2].id)?.();
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(started).toEqual(activeTemplates.filter((template) => !cachedIds.has(template.id)).map((template) => template.id));
     for (const template of activeTemplates) releaseJobs.get(template.id)?.();
@@ -87,7 +91,7 @@ describe("buildChildTemplateReportsForPrompt", () => {
 });
 
 describe("isUsableTemplateAnalysisCache", () => {
-  test("requires completed status, object key and minimum markdown length", () => {
+  test("reuses completed cached reports even when the free model returned short markdown", () => {
     const base = {
       templateId: RESEARCH_TEMPLATES[0].id,
       status: "completed",
@@ -96,9 +100,56 @@ describe("isUsableTemplateAnalysisCache", () => {
     } as Parameters<typeof isUsableTemplateAnalysisCache>[0];
 
     expect(isUsableTemplateAnalysisCache(base)).toBe(true);
-    expect(isUsableTemplateAnalysisCache({ ...base, markdown: "太短" })).toBe(false);
+    expect(isUsableTemplateAnalysisCache({ ...base, markdown: "太短" })).toBe(true);
     expect(isUsableTemplateAnalysisCache({ ...base, objectKey: undefined })).toBe(false);
     expect(isUsableTemplateAnalysisCache({ ...base, status: "running" })).toBe(false);
+  });
+});
+
+describe("template model routing", () => {
+  test("keeps OpenCode free first even for full synthesis when a paid key exists", () => {
+    const routes = templateModelRoutes("paid-key", true);
+
+    expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash-free", isFree: true });
+    expect(routes[1]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
+  });
+
+  test("accepts short free-model template output without retrying or switching to paid", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: JSON.stringify({
+                title: "短报告",
+                score: 60,
+                verdict: "观察",
+                summary: "免费模型返回较短，但仍应保存。",
+                keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                markdown: "## 短报告\n免费模型返回不足最低字数，也不应改走付费。",
+              }),
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const generated = await requestTemplateReport(
+      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[0],
+      [],
+    );
+
+    expect(generated.markdown).toContain("不足最低字数");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
   });
 });
 
@@ -161,5 +212,30 @@ function customTemplate() {
     focus: "自定义模板也应继承后端评分约束。",
     prompt: "给出评分。",
     fullPrompt: "请严格评分。",
+  };
+}
+
+function watchlistRow() {
+  return {
+    id: "watch-1",
+    user_id: "user-a",
+    user_key: "user-a",
+    company_name: "贵州茅台",
+    ticker: "600519",
+    market: "SH-A",
+    exchange_name: "上海证券交易所",
+    listing_place: "沪A",
+    market_type: "A股",
+    source: "eastmoney",
+    added_at: "2026-05-15T00:00:00.000Z",
+  };
+}
+
+function evidenceBundle() {
+  return {
+    company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+    retrievedAt: "2026-05-15T00:00:00.000Z",
+    evidence: [],
+    facts: { quote: { regularMarketPrice: 100 } },
   };
 }

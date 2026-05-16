@@ -18,6 +18,7 @@ import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
+  activeResearchTemplates,
   isRetryableTemplateStatus,
   type ResearchTemplate,
   type TemplateAnalysisResult,
@@ -174,7 +175,36 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
-    setNotice(`${target.company.name} 全面分析任务已提交：后端会复用已完成模板，补齐缺失模板后生成最终汇总。`);
+    setNotice(`${target.company.name} 全面分析任务已提交：会先逐个补齐缺失模板，再生成最终汇总。`);
+    const latest = await fetchTemplateAnalyses(target.id);
+    setAnalyses((current) => mergeAnalyses(current, latest.analyses));
+
+    const activeTemplates = activeResearchTemplates(templates);
+    const completedByTemplate = new Map(latest.analyses.filter((analysis) => analysis.status === "completed").map((analysis) => [analysis.templateId, analysis]));
+    for (const template of activeTemplates) {
+      if (completedByTemplate.has(template.id)) continue;
+      if (selectedWatchlistIdRef.current === target.id) {
+        setActiveGeneration({ watchlistId: target.id, templateId: template.id, label: template.shortTitle, companyName: target.company.name });
+        setNotice(`正在补齐 ${template.shortTitle}：全面分析需要先完成所有启用模板。`);
+      }
+      const childResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id }, (progress) => {
+        if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
+      });
+      const childAnalyses = childResult.analyses ?? (childResult.analysis ? [childResult.analysis] : []);
+      setAnalyses((current) => mergeAnalyses(current, childAnalyses));
+      const child = childAnalyses.find((analysis) => analysis.templateId === template.id);
+      if (child?.status === "completed") {
+        completedByTemplate.set(template.id, child);
+        continue;
+      }
+      if (child && selectedWatchlistIdRef.current === target.id) setActiveAnalysis(child);
+      throw new Error(`${template.shortTitle} 未完成：${child?.summary || "请稍后重试该模板。"}`);
+    }
+
+    if (selectedWatchlistIdRef.current === target.id) {
+      setActiveGeneration({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, label: "全面分析", companyName: target.company.name });
+      setNotice(`${target.company.name} 启用模板已完成，正在生成全面分析汇总。`);
+    }
     const initialResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
       if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
     });
