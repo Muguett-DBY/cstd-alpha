@@ -19,7 +19,7 @@ type Env = {
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
-const NEWS_SOURCE_TIMEOUT_MS = 12_000;
+const NEWS_SOURCE_TIMEOUT_MS = 20_000;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
