@@ -1026,6 +1026,68 @@ button:not(:disabled):active,
   padding-top: 14px;
 }
 
+.template-manager-view {
+  display: grid;
+  gap: 12px;
+}
+
+.template-list {
+  display: grid;
+  gap: 10px;
+}
+
+.template-list-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbf8;
+}
+
+.template-list-row.is-disabled {
+  background: #f4f1ea;
+}
+
+.template-list-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.template-list-main strong,
+.template-list-main p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.template-list-main span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.template-list-main p {
+  margin: 0;
+  color: var(--body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.template-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.template-list-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .template-editor-list {
   display: grid;
   gap: 12px;
@@ -1087,6 +1149,23 @@ button:not(:disabled):active,
   min-height: 86px;
   font-size: 14px;
   line-height: 1.55;
+}
+
+.template-edit-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.template-edit-header h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.template-edit-panel textarea[rows="12"] {
+  min-height: 360px;
 }
 
 .my-grid {
@@ -1986,8 +2065,10 @@ button:not(:disabled):active,
   .mine-search-form,
   .mine-candidate-list,
   .template-manager header,
+  .template-list-row,
   .template-editor-topline,
   .template-editor-grid,
+  .template-edit-header,
   .analysis-reader-header,
   .template-grid {
     grid-template-columns: 1fr;
@@ -2069,6 +2150,7 @@ button:not(:disabled):active,
   .my-list article > div,
   .template-manager-actions,
   .template-manager-toolbar,
+  .template-list-actions,
   .template-editor-topline > div,
   .template-card footer,
   .ranking-actions {
@@ -2079,6 +2161,7 @@ button:not(:disabled):active,
   .ranking-pagination button,
   .my-actions button,
   .template-manager button,
+  .template-list-actions button,
   .template-editor button,
   .my-list article button,
   .template-card footer button,

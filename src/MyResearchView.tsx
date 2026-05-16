@@ -24,6 +24,7 @@ import {
   type UserSession,
   type WatchlistItem,
 } from "./shared/user-research";
+import { resolveTemplateManagerView, type TemplateManagerView } from "./template-manager-state";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -78,16 +79,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
   const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
-  const enabledTemplateCount = useMemo(() => templates.filter((template) => template.enabled !== false).length, [templates]);
 
   useEffect(() => {
     selectedWatchlistIdRef.current = selectedItem?.id || "";
   }, [selectedItem?.id]);
-
-  async function addCurrentCompany() {
-    if (!selectedCompany) return;
-    await addCompanyToMine(selectedCompany);
-  }
 
   async function addCompanyToMine(company: CompanyCandidate) {
     setError("");
@@ -288,7 +283,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         <div>
           <p className="eyebrow">我的研究</p>
           <h2 id="my-title">自选股公司工作台</h2>
-          <p className="muted">{user?.displayName || user?.username || "固定账号"} 的自选股、公司级操作台和全部模板深度分析。</p>
+          <p className="muted">{user?.displayName || user?.username || "固定账号"} 的自选股、公司级操作台和模板深度分析。</p>
         </div>
         <div className="ranking-summary">
           <Metric label="自选股" value={`${items.length}`} />
@@ -298,20 +293,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         </div>
       </header>
 
-      <div className="my-actions">
-        <button type="button" disabled={!selectedCompany || phase === "generating"} onClick={() => void addCurrentCompany()}>
-          加入当前公司
-        </button>
-        <button type="button" disabled={!selectedItem || phase === "generating" || !enabledTemplateCount} onClick={() => void generate(FULL_ANALYSIS_TEMPLATE_ID)}>
-          {activeGeneration?.templateId === FULL_ANALYSIS_TEMPLATE_ID ? (
-            <>
-              <Spinner /> 全面分析中
-            </>
-          ) : (
-            "全部模板全面分析"
-          )}
-        </button>
-      </div>
       {activeGeneration ? (
         <div className="generation-status" role="status" aria-live="polite">
           <span className="generation-pulse" aria-hidden="true" />
@@ -412,7 +393,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           ) : (
             <>
               <h3>公司工作台</h3>
-              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告或全部模板全面分析。</p>
+              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告。</p>
             </>
           )}
         </section>
@@ -436,46 +417,68 @@ function TemplateManager({
   onResetDefault: () => void;
   onRefresh: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [drafts, setDrafts] = useState<ResearchTemplate[]>(templates);
+  const [view, setView] = useState<TemplateManagerView>("summary");
+  const [editingTemplateId, setEditingTemplateId] = useState("");
+  const [draftState, setDraftState] = useState(() => ({ source: templates, drafts: templates }));
 
-  useEffect(() => {
-    setDrafts(templates);
-  }, [templates]);
+  if (draftState.source !== templates) {
+    setDraftState({ source: templates, drafts: templates });
+  }
+
+  const drafts = draftState.source === templates ? draftState.drafts : templates;
+  const resolvedNavigation = resolveTemplateManagerView(view, editingTemplateId, drafts);
+  const currentView = resolvedNavigation.view;
+  const currentEditingTemplateId = resolvedNavigation.editingTemplateId;
 
   const enabledCount = drafts.filter((template) => template.enabled !== false).length;
   const hasInvalidTemplate = drafts.some((template) => !template.title.trim() || !template.prompt.trim() || !template.fullPrompt.trim());
   const hasChanges = JSON.stringify(normalizeTemplateDrafts(drafts)) !== JSON.stringify(normalizeTemplateDrafts(templates));
+  const editingTemplate = drafts.find((template) => template.id === currentEditingTemplateId) ?? null;
+
+  function updateDrafts(updater: (current: ResearchTemplate[]) => ResearchTemplate[]) {
+    setDraftState((current) => {
+      const currentDrafts = current.source === templates ? current.drafts : templates;
+      return { source: templates, drafts: updater(currentDrafts) };
+    });
+  }
 
   function updateTemplate(id: string, patch: Partial<ResearchTemplate>) {
-    setDrafts((current) => current.map((template) => (template.id === id ? { ...template, ...patch } : template)));
+    updateDrafts((current) => current.map((template) => (template.id === id ? { ...template, ...patch } : template)));
   }
 
   function addTemplate() {
-    const nextNumber = drafts.length + 1;
-    setDrafts((current) => [
-      ...current,
-      {
-        id: `custom-template-${Date.now()}`,
-        title: `自定义模板${nextNumber}`,
-        shortTitle: "自定义",
-        focus: "按用户自定义框架分析公司的核心问题、证据、风险与结论。",
-        prompt: "请基于公开证据，按这个自定义模板完整分析公司。",
-        fullPrompt: "# 自定义公司分析模板\n\n请围绕（      ）公司，按以下维度完成分析：\n\n1. 核心问题\n2. 证据链\n3. 关键风险\n4. 投资结论\n5. 后续跟踪指标",
-        enabled: true,
-        sortOrder: nextNumber,
-        isSystem: false,
-      },
-    ]);
-    setExpanded(true);
+    const id = `custom-template-${Date.now()}`;
+    updateDrafts((current) => {
+      const nextNumber = current.length + 1;
+      return [
+        ...current,
+        {
+          id,
+          title: `自定义模板${nextNumber}`,
+          shortTitle: "自定义",
+          focus: "按用户自定义框架分析公司的核心问题、证据、风险与结论。",
+          prompt: "请基于公开证据，按这个自定义模板完整分析公司。",
+          fullPrompt: "# 自定义公司分析模板\n\n请围绕（      ）公司，按以下维度完成分析：\n\n1. 核心问题\n2. 证据链\n3. 关键风险\n4. 投资结论\n5. 后续跟踪指标",
+          enabled: true,
+          sortOrder: nextNumber,
+          isSystem: false,
+        },
+      ];
+    });
+    setEditingTemplateId(id);
+    setView("edit");
   }
 
   function removeTemplate(id: string) {
-    setDrafts((current) => current.filter((template) => template.id !== id));
+    updateDrafts((current) => current.filter((template) => template.id !== id));
+    if (currentEditingTemplateId === id) {
+      setEditingTemplateId("");
+      setView("list");
+    }
   }
 
   function moveTemplate(id: string, delta: -1 | 1) {
-    setDrafts((current) => {
+    updateDrafts((current) => {
       const index = current.findIndex((template) => template.id === id);
       const targetIndex = index + delta;
       if (index < 0 || targetIndex < 0 || targetIndex >= current.length) return current;
@@ -486,95 +489,173 @@ function TemplateManager({
     });
   }
 
+  function renderToolbar() {
+    return (
+      <>
+        <div className="template-manager-toolbar">
+          <button type="button" disabled={disabled || hasInvalidTemplate || !hasChanges} onClick={() => onSave(normalizeTemplateDrafts(drafts))}>
+            保存模板
+          </button>
+          <button type="button" className="secondary-button" disabled={disabled || hasChanges} onClick={onSaveDefault}>
+            保存当前为默认
+          </button>
+          <button type="button" className="secondary-button" disabled={disabled} onClick={onResetDefault}>
+            重置为默认
+          </button>
+          <button type="button" className="ghost-button" disabled={disabled} onClick={onRefresh}>
+            刷新
+          </button>
+        </div>
+        {hasInvalidTemplate ? <p className="error-text">模板标题、模型提示词和完整模板正文不能为空。</p> : null}
+        {!enabledCount ? <p className="cache-notice">当前没有启用模板；公司工作台需要至少启用一个模板。</p> : null}
+      </>
+    );
+  }
+
+  function renderTemplateList() {
+    return (
+      <div className="template-list" aria-label="模板列表">
+        {drafts.map((template, index) => (
+          <article key={template.id} className={template.enabled === false ? "template-list-row is-disabled" : "template-list-row"}>
+            <label className="template-toggle template-list-toggle">
+              <input
+                type="checkbox"
+                checked={template.enabled !== false}
+                disabled={disabled}
+                onChange={(event) => updateTemplate(template.id, { enabled: event.target.checked })}
+              />
+              <span>{template.enabled === false ? "停用" : "启用"}</span>
+            </label>
+            <div className="template-list-main">
+              <strong>{template.title}</strong>
+              <span>
+                {template.shortTitle || "模板"} / {template.isSystem ? "默认模板" : "自定义模板"}
+              </span>
+              <p>{template.focus}</p>
+            </div>
+            <div className="template-list-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={disabled}
+                onClick={() => {
+                  setEditingTemplateId(template.id);
+                  setView("edit");
+                }}
+              >
+                编辑
+              </button>
+              <button type="button" className="ghost-button" disabled={disabled || index === 0} onClick={() => moveTemplate(template.id, -1)}>
+                上移
+              </button>
+              <button type="button" className="ghost-button" disabled={disabled || index === drafts.length - 1} onClick={() => moveTemplate(template.id, 1)}>
+                下移
+              </button>
+              <button type="button" className="ghost-button" disabled={disabled} onClick={() => removeTemplate(template.id)}>
+                移除
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <section className="template-manager" aria-label="模板管理">
       <header>
         <div>
           <p className="eyebrow">模板管理</p>
-          <h3>全局模板设置</h3>
+          <h3>{currentView === "summary" ? "全局模板设置" : currentView === "list" ? "模板列表" : "编辑单个模板"}</h3>
           <p className="muted">
             当前启用 {enabledCount} / {drafts.length || templates.length} 个模板；保存后会同步用于所有公司分析，新闻雷达不受影响。
           </p>
         </div>
         <div className="template-manager-actions">
-          <button type="button" className="secondary-button" onClick={() => setExpanded((value) => !value)}>
-            {expanded ? "收起编辑" : "编辑模板"}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setEditingTemplateId("");
+              setView(currentView === "summary" ? "list" : "summary");
+            }}
+          >
+            {currentView === "summary" ? "管理模板" : "返回概览"}
           </button>
           <button type="button" className="secondary-button" disabled={disabled} onClick={addTemplate}>
             新增模板
           </button>
         </div>
       </header>
-      {expanded ? (
-        <>
-          <div className="template-manager-toolbar">
-            <button type="button" disabled={disabled || hasInvalidTemplate || !hasChanges} onClick={() => onSave(normalizeTemplateDrafts(drafts))}>
-              保存模板
-            </button>
-            <button type="button" className="secondary-button" disabled={disabled || hasChanges} onClick={onSaveDefault}>
-              保存当前为默认
-            </button>
-            <button type="button" className="secondary-button" disabled={disabled} onClick={onResetDefault}>
-              重置为默认
-            </button>
-            <button type="button" className="ghost-button" disabled={disabled} onClick={onRefresh}>
-              刷新
-            </button>
-          </div>
-          {hasInvalidTemplate ? <p className="error-text">模板标题、模型提示词和完整模板正文不能为空。</p> : null}
-          {!enabledCount ? <p className="cache-notice">当前没有启用模板；全部模板全面分析需要至少启用一个模板。</p> : null}
-          <div className="template-editor-list">
-            {drafts.map((template, index) => (
-              <article key={template.id} className={template.enabled === false ? "template-editor is-disabled" : "template-editor"}>
-                <div className="template-editor-topline">
-                  <label className="template-toggle">
-                    <input
-                      type="checkbox"
-                      checked={template.enabled !== false}
-                      disabled={disabled}
-                      onChange={(event) => updateTemplate(template.id, { enabled: event.target.checked })}
-                    />
-                    <span>{template.enabled === false ? "停用" : "启用"}</span>
-                  </label>
-                  <span>{template.isSystem ? "默认模板" : "自定义模板"}</span>
-                  <div>
-                    <button type="button" className="ghost-button" disabled={disabled || index === 0} onClick={() => moveTemplate(template.id, -1)}>
-                      上移
-                    </button>
-                    <button type="button" className="ghost-button" disabled={disabled || index === drafts.length - 1} onClick={() => moveTemplate(template.id, 1)}>
-                      下移
-                    </button>
-                    <button type="button" className="ghost-button" disabled={disabled} onClick={() => removeTemplate(template.id)}>
-                      移除
-                    </button>
-                  </div>
-                </div>
-                <div className="template-editor-grid">
-                  <label>
-                    <span>模板标题</span>
-                    <input value={template.title} disabled={disabled} onChange={(event) => updateTemplate(template.id, { title: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>短标题</span>
-                    <input value={template.shortTitle} disabled={disabled} onChange={(event) => updateTemplate(template.id, { shortTitle: event.target.value })} />
-                  </label>
-                </div>
-                <label>
-                  <span>卡片说明</span>
-                  <textarea value={template.focus} rows={2} disabled={disabled} onChange={(event) => updateTemplate(template.id, { focus: event.target.value })} />
-                </label>
-                <label>
-                  <span>模型提示词</span>
-                  <textarea value={template.prompt} rows={3} disabled={disabled} onChange={(event) => updateTemplate(template.id, { prompt: event.target.value })} />
-                </label>
-                <label>
-                  <span>完整模板正文</span>
-                  <textarea value={template.fullPrompt} rows={8} disabled={disabled} onChange={(event) => updateTemplate(template.id, { fullPrompt: event.target.value })} />
-                </label>
-              </article>
-            ))}
-          </div>
-        </>
+      {currentView === "summary" && hasChanges ? <p className="cache-notice">模板有未保存更改，进入“管理模板”后可以保存或刷新。</p> : null}
+      {currentView === "list" ? (
+        <div className="template-manager-view">
+          {renderToolbar()}
+          {renderTemplateList()}
+        </div>
+      ) : null}
+      {currentView === "edit" && editingTemplate ? (
+        <div className="template-manager-view">
+          {renderToolbar()}
+          <article className={editingTemplate.enabled === false ? "template-editor template-edit-panel is-disabled" : "template-editor template-edit-panel"}>
+            <div className="template-edit-header">
+              <div>
+                <p className="eyebrow">{editingTemplate.isSystem ? "默认模板" : "自定义模板"}</p>
+                <h4>{editingTemplate.title || "未命名模板"}</h4>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setEditingTemplateId("");
+                  setView("list");
+                }}
+              >
+                返回模板列表
+              </button>
+            </div>
+            <label className="template-toggle">
+              <input
+                type="checkbox"
+                checked={editingTemplate.enabled !== false}
+                disabled={disabled}
+                onChange={(event) => updateTemplate(editingTemplate.id, { enabled: event.target.checked })}
+              />
+              <span>{editingTemplate.enabled === false ? "停用" : "启用"}</span>
+            </label>
+            <div className="template-editor-grid">
+              <label>
+                <span>模板标题</span>
+                <input value={editingTemplate.title} disabled={disabled} onChange={(event) => updateTemplate(editingTemplate.id, { title: event.target.value })} />
+              </label>
+              <label>
+                <span>短标题</span>
+                <input
+                  value={editingTemplate.shortTitle}
+                  disabled={disabled}
+                  onChange={(event) => updateTemplate(editingTemplate.id, { shortTitle: event.target.value })}
+                />
+              </label>
+            </div>
+            <label>
+              <span>卡片说明</span>
+              <textarea value={editingTemplate.focus} rows={2} disabled={disabled} onChange={(event) => updateTemplate(editingTemplate.id, { focus: event.target.value })} />
+            </label>
+            <label>
+              <span>模型提示词</span>
+              <textarea value={editingTemplate.prompt} rows={3} disabled={disabled} onChange={(event) => updateTemplate(editingTemplate.id, { prompt: event.target.value })} />
+            </label>
+            <label>
+              <span>完整模板正文</span>
+              <textarea
+                value={editingTemplate.fullPrompt}
+                rows={12}
+                disabled={disabled}
+                onChange={(event) => updateTemplate(editingTemplate.id, { fullPrompt: event.target.value })}
+              />
+            </label>
+          </article>
+        </div>
       ) : null}
     </section>
   );
@@ -628,7 +709,7 @@ function CompanyWorkbench({
             {item.company.code} / {item.company.listingPlace} / {item.company.exchange}
           </p>
           <p className="muted">
-            已启用 {activeTemplates.length} 个模板；单模板会独立读取公开公司证据并按完整模板生成，全面分析会先跑完启用模板，再做最终交叉整合。
+            已启用 {activeTemplates.length} 个模板；每个模板会独立读取公开公司证据并按完整模板生成。
           </p>
         </div>
         <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
@@ -638,17 +719,7 @@ function CompanyWorkbench({
 
       <NewsEntryCard item={item} onOpen={onOpenNews} />
 
-      <section className="template-grid" aria-label="全部模板深度分析">
-        <TemplateCard
-          title="全部模板全面分析"
-          focus={`先生成 ${activeTemplates.length} 个启用模板的深度报告，再汇总成最终全面分析。`}
-          analysis={fullAnalysis}
-          isGenerating={generatingTemplateId === FULL_ANALYSIS_TEMPLATE_ID}
-          disabled={phase === "generating" || !activeTemplates.length}
-          onGenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}
-          onRegenerate={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID, true)}
-          onOpen={onOpenAnalysis}
-        />
+      <section className="template-grid" aria-label="模板深度分析">
         {activeTemplates.map((template) => (
           <TemplateCard
             key={template.id}
