@@ -64,7 +64,9 @@ const STRONG_NEGATIVE_PATTERNS = [
 
 const WEAK_NEGATIVE_PATTERNS = [/库存|去化|担保|流动性|调整|分化|压力/];
 
-const GENERIC_RESEARCH_PATTERNS = [/行业研究|行业分析|市场分析|行业报告|市场规模|发展趋势|研究报告/];
+const GENERIC_RESEARCH_PATTERNS = [/行业研究|行业分析|市场分析|行业报告|行业报道|市场规模|发展趋势|研究报告|公告列表|数据中心/];
+const LOW_SIGNAL_RATING_PATTERNS = [/机构评级|给予.+评级|维持.+评级|增持.+评级|买入.+评级/];
+const LOW_SIGNAL_RATING_QUALIFIERS = [/未给出目标价|暂无目标价|维持|首次覆盖|评级列表/];
 
 export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsItem, "sentiment" | "sentimentLabel" | "sentimentReason" | "confidence"> {
   const text = `${title} ${summary}`.trim();
@@ -74,6 +76,15 @@ export function classifyNewsSentiment(title: string, summary = ""): Pick<NewsIte
   const weakNegative = WEAK_NEGATIVE_PATTERNS.filter((pattern) => pattern.test(text)).length;
   const positiveMatches = strongPositive * 2 + weakPositive;
   const negativeMatches = strongNegative * 2 + weakNegative;
+
+  if (isLowSignalRatingText(text)) {
+    return {
+      sentiment: "neutral",
+      sentimentLabel: "中性",
+      sentimentReason: "评级标题缺少目标价或上调等强验证信息，按中性处理。",
+      confidence: 0.45,
+    };
+  }
 
   if (positiveMatches > negativeMatches) {
     if (strongPositive === 0 && isGenericResearchText(text)) {
@@ -325,6 +336,10 @@ function confidenceScore(primary: number, opposite: number) {
 
 function isGenericResearchText(text: string) {
   return GENERIC_RESEARCH_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isLowSignalRatingText(text: string) {
+  return LOW_SIGNAL_RATING_PATTERNS.some((pattern) => pattern.test(text)) && LOW_SIGNAL_RATING_QUALIFIERS.some((pattern) => pattern.test(text));
 }
 
 function conservativeOverall(rawOverall: NewsSentiment, counts: { total: number; positive: number; negative: number }): NewsSentiment {

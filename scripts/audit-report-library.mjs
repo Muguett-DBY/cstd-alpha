@@ -14,12 +14,13 @@ const detailConcurrency = Math.max(1, Math.min(20, Number(args.detailConcurrency
 const access = parseAccessFile(await readFile(accessPath, "utf8"));
 const baseUrl = args.baseUrl || access.URL;
 const password = args.password || access.REPORT_PASSWORD;
+const username = args.username || access.REPORT_USERNAME || access.USERNAME || access.ADMIN_USERNAME || "admin";
 if (!baseUrl) throw new Error("Missing URL in access file or --base-url.");
 if (!password) throw new Error("Missing REPORT_PASSWORD in access file or --password.");
 
 await mkdir(outputDir, { recursive: true });
 
-const cookie = await login(baseUrl, password);
+const cookie = await login(baseUrl, username, password);
 const entries = await fetchAllEntries(baseUrl, cookie);
 const detailTargets = detailLimit > 0 ? entries.slice(detailOffset, detailOffset + detailLimit) : entries.slice(detailOffset);
 const detailAudits = await mapLimit(detailTargets, detailConcurrency, async (entry) => {
@@ -91,11 +92,11 @@ function parseAccessFile(raw) {
   return result;
 }
 
-async function login(baseUrl, password) {
+async function login(baseUrl, username, password) {
   const response = await fetch(`${baseUrl}/api/session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   });
   if (!response.ok) throw new Error(`login failed: HTTP ${response.status} ${await response.text()}`);
   const setCookie = response.headers.get("set-cookie");

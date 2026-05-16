@@ -72,6 +72,11 @@ describe("news helpers", () => {
 
   test("does not overstate generic or risk-heavy real estate industry headlines", () => {
     expect(classifyNewsSentiment("【行业研究】2026年房地产开发经营行业分析").sentiment).toBe("neutral");
+    expect(classifyNewsSentiment("【行业研究】2026年房地产开发经营行业分析|房地产市场_新浪财经", "增长大增提升回升复苏改善创新高新高").sentiment).toBe(
+      "neutral",
+    );
+    expect(classifyNewsSentiment("机构评级|长江证券给予万科A“增持”评级 未给出目标价").sentiment).toBe("neutral");
+    expect(classifyNewsSentiment("万科A(000002)公告列表 _ 数据中心 _ 东方财富网").sentiment).toBe("neutral");
     expect(classifyNewsSentiment("房地产政策改善但房企风险仍高，债务压力待化解").sentiment).toBe("negative");
     expect(classifyNewsSentiment("为何北京对房产崩盘数据讳莫如深？").sentiment).toBe("negative");
     expect(classifyNewsSentiment("1300亿消费电子龙头业绩爆雷，市值蒸发近200亿").sentiment).toBe("negative");

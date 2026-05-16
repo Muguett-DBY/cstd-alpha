@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   addWatchlistItem,
   fetchCompanyNews,
@@ -46,6 +46,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
+  const selectedWatchlistIdRef = useRef(selectedWatchlistId);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +71,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
   const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
+
+  useEffect(() => {
+    selectedWatchlistIdRef.current = selectedItem?.id || "";
+  }, [selectedItem?.id]);
 
   async function addCurrentCompany() {
     if (!selectedCompany) return;
@@ -147,7 +152,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       const nextAnalyses = result.analyses ?? (result.analysis ? [result.analysis] : []);
       setAnalyses((current) => mergeAnalyses(current, nextAnalyses));
       const completed = nextAnalyses.find((analysis) => analysis.status === "completed") ?? nextAnalyses[0];
-      if (completed) setActiveAnalysis(completed);
+      if (completed && selectedWatchlistIdRef.current === target.id) setActiveAnalysis(completed);
       setNotice(
         templateId === FULL_ANALYSIS_TEMPLATE_ID
           ? "全面分析任务已更新：十个模板会逐项生成，已完成的模板会直接复用缓存。"
@@ -175,12 +180,12 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     if (full?.status === "completed") {
       const hydrated = await fetchTemplateAnalysis(full.id);
       setAnalyses((current) => mergeAnalyses(current, [hydrated]));
-      setActiveAnalysis(hydrated);
+      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
       setNotice(full.fromCache ? "已打开缓存中的全面分析。" : "全面分析已生成并写入报告库。");
       return;
     }
     if (full && isRetryableTemplateStatus(full.status)) {
-      setActiveAnalysis(full);
+      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
       setNotice("全面分析暂停：上一次生成未完成，可稍后重试。");
       return;
     }
@@ -202,11 +207,11 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       if (full.status === "completed") {
         const hydrated = await fetchTemplateAnalysis(full.id);
         setAnalyses((current) => mergeAnalyses(current, [hydrated]));
-        setActiveAnalysis(hydrated);
+        if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
         setNotice("全面分析已生成并写入报告库。");
         return;
       }
-      setActiveAnalysis(full);
+      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
       setNotice("全面分析暂停：模型连接超时或通道限流，任务已可重试。");
       return;
     }

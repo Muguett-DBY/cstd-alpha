@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchChartData, fetchReportLibrary, generateReport, searchCompanies } from "./api";
+import { fetchChartData, fetchReportLibrary, generateReport, login, searchCompanies } from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -112,6 +112,12 @@ describe("API client", () => {
     );
 
     await expect(searchCompanies("万科A")).resolves.toMatchObject([{ name: "万科A", code: "000002", listingPlace: "深A" }]);
+  });
+
+  test("rejects login responses that omit the user payload", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }))));
+
+    await expect(login("pw", "admin")).rejects.toThrow("服务端未返回账号信息");
   });
 
   test("sends cache mode and force refresh flags when generating reports", async () => {

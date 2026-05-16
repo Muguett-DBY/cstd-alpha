@@ -72,6 +72,7 @@ export async function login(password: string, username?: string): Promise<UserSe
 
   if (!response.ok) throw new Error((await readError(response)) || "登录失败。");
   const data = (await response.json()) as { user?: UserSession | null };
+  if (!data.user) throw new Error("登录失败：服务端未返回账号信息。");
   return data.user ?? null;
 }
 
