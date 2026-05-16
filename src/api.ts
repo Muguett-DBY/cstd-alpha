@@ -41,6 +41,8 @@ export type TemplateAnalysisProgress = {
   at?: string;
 };
 
+export type ResearchTemplateCompletion = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt">;
+
 export type ReportLibraryRecord = {
   entry: ReportLibraryEntry;
   report: InvestmentReport;
@@ -261,6 +263,19 @@ export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplat
   if (!response.ok) throw new Error((await readError(response)) || "模板重置失败。");
   const data = (await response.json()) as { templates?: ResearchTemplate[] };
   return data.templates ?? [];
+}
+
+export async function completeResearchTemplateDraft(draft: ResearchTemplateCompletion): Promise<ResearchTemplateCompletion> {
+  const response = await fetch("/api/research-template-completion", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ draft }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "模板 AI 补全失败。");
+  const data = (await response.json()) as { completion?: ResearchTemplateCompletion };
+  if (!data.completion) throw new Error("模板 AI 补全失败。");
+  return data.completion;
 }
 
 export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {

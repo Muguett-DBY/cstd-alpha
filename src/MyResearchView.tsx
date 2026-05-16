@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   addWatchlistItem,
+  completeResearchTemplateDraft,
   fetchCompanyNews,
   fetchResearchTemplates,
   fetchTemplateAnalyses,
@@ -420,6 +421,12 @@ function TemplateManager({
   const [view, setView] = useState<TemplateManagerView>("summary");
   const [editingTemplateId, setEditingTemplateId] = useState("");
   const [draftState, setDraftState] = useState(() => ({ source: templates, drafts: templates }));
+  const [completionState, setCompletionState] = useState<{ templateId: string; messageTemplateId: string; error: string; notice: string }>({
+    templateId: "",
+    messageTemplateId: "",
+    error: "",
+    notice: "",
+  });
 
   if (draftState.source !== templates) {
     setDraftState({ source: templates, drafts: templates });
@@ -444,6 +451,28 @@ function TemplateManager({
 
   function updateTemplate(id: string, patch: Partial<ResearchTemplate>) {
     updateDrafts((current) => current.map((template) => (template.id === id ? { ...template, ...patch } : template)));
+  }
+
+  async function completeTemplateWithAi(template: ResearchTemplate) {
+    const source = template.fullPrompt.trim();
+    if (!source) {
+      setCompletionState({ templateId: "", messageTemplateId: template.id, error: "请先把草稿粘贴到完整模板正文，再点击 AI 补全。", notice: "" });
+      return;
+    }
+    setCompletionState({ templateId: template.id, messageTemplateId: template.id, error: "", notice: "" });
+    try {
+      const completion = await completeResearchTemplateDraft({
+        title: template.title,
+        shortTitle: template.shortTitle,
+        focus: template.focus,
+        prompt: template.prompt,
+        fullPrompt: template.fullPrompt,
+      });
+      updateTemplate(template.id, completion);
+      setCompletionState({ templateId: "", messageTemplateId: template.id, error: "", notice: "AI 已补齐并优化当前模板，确认后请保存模板。" });
+    } catch (err) {
+      setCompletionState({ templateId: "", messageTemplateId: template.id, error: err instanceof Error ? err.message : "模板 AI 补全失败。", notice: "" });
+    }
   }
 
   function addTemplate() {
@@ -654,6 +683,24 @@ function TemplateManager({
                 onChange={(event) => updateTemplate(editingTemplate.id, { fullPrompt: event.target.value })}
               />
             </label>
+            <div className="template-completion-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={disabled || completionState.templateId === editingTemplate.id || !editingTemplate.fullPrompt.trim()}
+                onClick={() => void completeTemplateWithAi(editingTemplate)}
+              >
+                {completionState.templateId === editingTemplate.id ? (
+                  <>
+                    <Spinner /> AI 补全中
+                  </>
+                ) : (
+                  "AI 一键补全"
+                )}
+              </button>
+              {completionState.messageTemplateId === editingTemplate.id && completionState.notice ? <span>{completionState.notice}</span> : null}
+            </div>
+            {completionState.messageTemplateId === editingTemplate.id && completionState.error ? <p className="error-text">{completionState.error}</p> : null}
           </article>
         </div>
       ) : null}

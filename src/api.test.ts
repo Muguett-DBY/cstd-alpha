@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchChartData, fetchReportLibrary, fetchResearchTemplates, generateReport, login, resetResearchTemplatesToDefault, saveResearchTemplates, saveResearchTemplatesAsDefault, searchCompanies } from "./api";
+import {
+  completeResearchTemplateDraft,
+  fetchChartData,
+  fetchReportLibrary,
+  fetchResearchTemplates,
+  generateReport,
+  login,
+  resetResearchTemplatesToDefault,
+  saveResearchTemplates,
+  saveResearchTemplatesAsDefault,
+  searchCompanies,
+} from "./api";
 
 describe("API client", () => {
   afterEach(() => {
@@ -330,6 +341,45 @@ describe("API client", () => {
       4,
       "/api/research-templates",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "reset-defaults" }) }),
+    );
+  });
+
+  test("sends a template draft to the AI completion endpoint", async () => {
+    const completion = {
+      title: "模板12：实体经营者思维公司分析",
+      shortTitle: "实体经营",
+      focus: "把投资视为低成本开公司，检查产业、商业模式、团队、估值与非理性回报。",
+      prompt: "按实体经营者思维模板输出公司分析。",
+      fullPrompt: "# 模板12：实体经营者思维公司分析\n\n请分析（      ）公司。",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ completion })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      completeResearchTemplateDraft({
+        title: "自定义模板12",
+        shortTitle: "自定义",
+        focus: "",
+        prompt: "",
+        fullPrompt: "第12模板\n\n实体经营者思维。",
+      }),
+    ).resolves.toEqual(completion);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/research-template-completion",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({
+          draft: {
+            title: "自定义模板12",
+            shortTitle: "自定义",
+            focus: "",
+            prompt: "",
+            fullPrompt: "第12模板\n\n实体经营者思维。",
+          },
+        }),
+      }),
     );
   });
 });
