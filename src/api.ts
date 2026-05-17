@@ -1,5 +1,6 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
+import type { RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
@@ -56,6 +57,25 @@ export type ReportLibraryList = {
   offset?: number;
   matchedTickers?: string[];
 };
+
+export async function fetchRadarScan(): Promise<RadarScan> {
+  const response = await fetch("/api/radar-scan", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "雷达扫描读取失败。");
+  const data = (await response.json()) as { radar?: RadarScan };
+  if (!data.radar) throw new Error("雷达扫描读取失败。");
+  return data.radar;
+}
+
+export async function refreshRadarScan(): Promise<RadarScan> {
+  const response = await fetch("/api/radar-scan", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "雷达扫描刷新失败。");
+  const data = (await response.json()) as { radar?: RadarScan };
+  if (!data.radar) throw new Error("雷达扫描刷新失败。");
+  return data.radar;
+}
 
 export async function checkSession(): Promise<UserSession | null> {
   const response = await fetch("/api/session", { credentials: "include" });

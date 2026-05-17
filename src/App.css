@@ -184,7 +184,7 @@ button:not(:disabled):active,
   color: white;
 }
 
-.view-tabs button:last-child {
+.view-tabs button.wide-tab {
   grid-column: 1 / -1;
 }
 
@@ -2030,6 +2030,178 @@ button:not(:disabled):active,
   line-height: 0.98;
 }
 
+.radar-view {
+  display: grid;
+  gap: 18px;
+}
+
+.radar-header,
+.radar-summary,
+.radar-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px rgb(18 20 23 / 0.04);
+}
+
+.radar-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 210px);
+  gap: 18px;
+  align-items: end;
+  padding: 20px;
+}
+
+.radar-header h2,
+.radar-summary h3,
+.radar-section h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.radar-header h2 {
+  font-size: clamp(26px, 3.5vw, 44px);
+}
+
+.radar-header p:not(.eyebrow),
+.radar-summary p {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.radar-scan-button {
+  margin-top: 0;
+}
+
+.radar-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.radar-summary,
+.radar-section {
+  padding: 18px;
+}
+
+.radar-summary ul,
+.radar-card ul {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--body);
+}
+
+.radar-grid,
+.radar-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.radar-card,
+.radar-list-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 16px;
+}
+
+.radar-card > div:first-child {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.radar-card h4,
+.radar-list-card h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.radar-card p,
+.radar-list-card p {
+  margin: 10px 0 0;
+  color: var(--body);
+  line-height: 1.75;
+}
+
+.risk-pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.risk-低 {
+  color: #18725d;
+  background: #e6f4f1;
+}
+
+.risk-中 {
+  color: #8a5b00;
+  background: #fff5d8;
+}
+
+.risk-高 {
+  color: var(--red);
+  background: #fff0ee;
+}
+
+.radar-card dl {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px 10px;
+  margin: 14px 0 0;
+}
+
+.radar-card dt {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.radar-card dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.radar-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.radar-columns strong {
+  color: var(--ink);
+}
+
+.radar-list-card div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.radar-list-card span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  padding: 5px 9px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.radar-empty {
+  min-height: 320px;
+}
+
 @keyframes button-spin {
   to {
     transform: rotate(360deg);
@@ -2083,6 +2255,11 @@ button:not(:disabled):active,
   .template-editor-grid,
   .template-edit-header,
   .analysis-reader-header,
+  .radar-header,
+  .radar-meta,
+  .radar-grid,
+  .radar-list-grid,
+  .radar-columns,
   .template-grid {
     grid-template-columns: 1fr;
   }

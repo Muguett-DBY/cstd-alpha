@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { checkSession, fetchChartData, fetchReportLibraryRecord, generateReport, login, logout, searchCompanies, type ReportProgress } from "./api";
+import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
@@ -7,12 +7,14 @@ import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastRep
 import { clearImportedRankingReports } from "./ranking-storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
+import type { RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
-type AppView = "report" | "ranking" | "mine";
+type AppView = "report" | "ranking" | "mine" | "radar";
+type RadarPhase = "idle" | "loading" | "ready" | "error";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -40,6 +42,9 @@ function App() {
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>("report");
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
+  const [radar, setRadar] = useState<RadarScan | null>(null);
+  const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
+  const [radarError, setRadarError] = useState("");
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
   useEffect(() => {
@@ -60,6 +65,11 @@ function App() {
   useEffect(() => {
     selectedCompanyRef.current = selectedCompany;
   }, [selectedCompany]);
+
+  useEffect(() => {
+    if (activeView !== "radar" || radar || radarPhase !== "idle") return;
+    void loadRadar(false);
+  }, [activeView, radar, radarPhase]);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -82,6 +92,9 @@ function App() {
     setReport(null);
     setReportMetrics(null);
     setChartBundle(null);
+    setRadar(null);
+    setRadarPhase("idle");
+    setRadarError("");
     setProgress([]);
     setCacheNotice("");
     clearLocalReportStorage();
@@ -180,6 +193,19 @@ function App() {
     } finally {
       setStartedAt(null);
       setReportAbortController(null);
+    }
+  }
+
+  async function loadRadar(forceRefresh: boolean) {
+    setRadarPhase("loading");
+    setRadarError("");
+    try {
+      const nextRadar = forceRefresh ? await refreshRadarScan() : await fetchRadarScan();
+      setRadar(nextRadar);
+      setRadarPhase("ready");
+    } catch (err) {
+      setRadarPhase("error");
+      setRadarError(err instanceof Error ? err.message : "雷达扫描失败。");
     }
   }
 
@@ -396,8 +422,11 @@ function App() {
           >
             港股排行
           </button>
-          <button type="button" className={activeView === "mine" ? "active" : ""} aria-current={activeView === "mine" ? "page" : undefined} onClick={() => setActiveView("mine")}>
+          <button type="button" className={`wide-tab ${activeView === "mine" ? "active" : ""}`} aria-current={activeView === "mine" ? "page" : undefined} onClick={() => setActiveView("mine")}>
             我的
+          </button>
+          <button type="button" className={`wide-tab ${activeView === "radar" ? "active" : ""}`} aria-current={activeView === "radar" ? "page" : undefined} onClick={() => setActiveView("radar")}>
+            扫描
           </button>
         </nav>
 
@@ -478,6 +507,8 @@ function App() {
           <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
         ) : activeView === "mine" ? (
           <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
+        ) : activeView === "radar" ? (
+          <RadarView radar={radar} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
         ) : (
           <>
             {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
@@ -1033,6 +1064,151 @@ function EmptyState() {
   );
 }
 
+function RadarView({
+  radar,
+  phase,
+  error,
+  onRefresh,
+}: {
+  radar: RadarScan | null;
+  phase: RadarPhase;
+  error: string;
+  onRefresh: () => void;
+}) {
+  const loading = phase === "loading";
+  return (
+    <section className="radar-view">
+      <header className="radar-header">
+        <div>
+          <p className="eyebrow">行业雷达</p>
+          <h2>全市场增长、泡沫与衰退扫描</h2>
+          <p>综合公开信息源与模型产业判断，优先识别可持续增长、短期透支、产业泡沫和衰退风险。</p>
+        </div>
+        <button className="generate-button radar-scan-button" type="button" disabled={loading} onClick={onRefresh}>
+          {loading ? "正在扫描..." : "雷达扫描"}
+        </button>
+      </header>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {radar?.reuseReason ? <p className="cache-notice">{radar.reuseReason}</p> : null}
+
+      {!radar && loading ? (
+        <section className="empty-state radar-empty">
+          <h2>正在生成行业雷达</h2>
+          <p>正在读取公开新闻源并让模型做稳定产业归类，首次扫描可能需要一些时间。</p>
+        </section>
+      ) : null}
+
+      {!radar && phase === "error" ? (
+        <section className="empty-state radar-empty">
+          <h2>雷达暂时不可用</h2>
+          <p>请稍后重试，或检查后端模型与缓存配置。</p>
+        </section>
+      ) : null}
+
+      {radar ? (
+        <>
+          <div className="radar-meta">
+            <InfoTile title="信息截止" value={radar.asOfDate} />
+            <InfoTile title="公开来源" value={`${radar.sourceCount} 条`} />
+            <InfoTile title="模型" value={radar.model} />
+            <InfoTile title="状态" value={radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
+          </div>
+
+          <section className="radar-summary">
+            <h3>{radar.title}</h3>
+            <p>
+              生成时间 {formatDateTime(radar.generatedAt)}，稳定窗口至 {formatDateTime(radar.validUntil)}。
+            </p>
+            <ul>{listItems(radar.executiveSummary)}</ul>
+          </section>
+
+          <RadarItemSection title="一、当前扎实增长的细分产业" items={radar.solidGrowth} />
+          <RadarItemSection title="二、增长可持续性" items={radar.sustainability} />
+          <RadarItemSection title="三、高增长陷阱与泡沫风险" items={radar.bubbleRisks} />
+          <RadarItemSection title="四、即将进入增长期的产业和公司" items={radar.upcomingGrowth} />
+          <RadarItemSection title="五、衰退产业识别" items={radar.decliningIndustries} />
+          <RadarListSection title="六、代表性公司清单" lists={radar.representativeCompanies} />
+          <RadarListSection title="七、不同产业阶段中的典型公司" lists={radar.stageCompanies} />
+
+          {radar.limitations.length ? (
+            <section className="radar-summary">
+              <h3>约束与待验证</h3>
+              <ul>{listItems(radar.limitations)}</ul>
+            </section>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function RadarItemSection({ title, items }: { title: string; items: RadarItem[] }) {
+  return (
+    <section className="radar-section">
+      <h3>{title}</h3>
+      <div className="radar-grid">
+        {items.length ? (
+          items.map((item) => <RadarCard key={`${title}-${item.title}-${item.companies.join(",")}`} item={item} />)
+        ) : (
+          <p className="muted">本轮扫描未给出足够稳定的结论。</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RadarCard({ item }: { item: RadarItem }) {
+  return (
+    <article className="radar-card">
+      <div>
+        <h4>{item.title || "待确认主题"}</h4>
+        <span className={`risk-pill risk-${item.riskLevel}`}>风险 {item.riskLevel}</span>
+      </div>
+      <p>{item.thesis || "模型未提供完整分析。"}</p>
+      <dl>
+        <dt>产业</dt>
+        <dd>{item.industries.join("、") || "待确认"}</dd>
+        <dt>公司</dt>
+        <dd>{item.companies.join("、") || "待确认"}</dd>
+        <dt>持续性</dt>
+        <dd>{item.durability}</dd>
+      </dl>
+      <div className="radar-columns">
+        <div>
+          <strong>驱动因素</strong>
+          <ul>{listItems(item.drivers)}</ul>
+        </div>
+        <div>
+          <strong>证据与拐点</strong>
+          <ul>{listItems([...item.evidence, ...item.turningPoints])}</ul>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function RadarListSection({ title, lists }: { title: string; lists: RadarList[] }) {
+  return (
+    <section className="radar-section">
+      <h3>{title}</h3>
+      <div className="radar-list-grid">
+        {lists.length ? (
+          lists.map((list) => (
+            <article key={`${title}-${list.label}`} className="radar-list-card">
+              <h4>{list.label}</h4>
+              <p>{list.note}</p>
+              <div>{list.companies.map((company) => <span key={company}>{company}</span>)}</div>
+            </article>
+          ))
+        ) : (
+          <p className="muted">本轮扫描未给出代表公司清单。</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function listItems(items: string[]) {
   const values = items.length ? items : ["数据不足，需要继续核验。"];
   return values.map((item) => <li key={item}>{item}</li>);
@@ -1050,6 +1226,12 @@ function formatPercent(value: number | undefined) {
 
 function formatCacheTime(value: number) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatDateTime(value: string) {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return value || "待验证";
+  return new Date(time).toLocaleString("zh-CN", { hour12: false });
 }
 
 function isSameCompany(left: CompanyCandidate | null, right: CompanyCandidate) {

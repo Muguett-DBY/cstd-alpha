@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   completeResearchTemplateDraft,
   fetchChartData,
+  fetchRadarScan,
   fetchReportLibrary,
   fetchResearchTemplates,
   generateReport,
@@ -10,6 +11,7 @@ import {
   saveResearchTemplates,
   saveResearchTemplatesAsDefault,
   searchCompanies,
+  refreshRadarScan,
 } from "./api";
 
 describe("API client", () => {
@@ -379,6 +381,46 @@ describe("API client", () => {
             fullPrompt: "第12模板\n\n实体经营者思维。",
           },
         }),
+      }),
+    );
+  });
+
+  test("reads and refreshes the industry radar scan", async () => {
+    const radar = {
+      id: "radar-1",
+      title: "行业雷达扫描",
+      generatedAt: "2026-05-17T00:00:00.000Z",
+      asOfDate: "2026-05-17",
+      validUntil: "2026-05-17T12:00:00.000Z",
+      model: "deepseek-v4-flash-free",
+      sourceCount: 12,
+      sourceQueries: ["A股 行业 景气"],
+      executiveSummary: ["电网设备增长扎实。"],
+      solidGrowth: [],
+      sustainability: [],
+      bubbleRisks: [],
+      upcomingGrowth: [],
+      decliningIndustries: [],
+      representativeCompanies: [],
+      stageCompanies: [],
+      limitations: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ radar })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ radar: { ...radar, fromCache: true } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchRadarScan()).resolves.toEqual(radar);
+    await expect(refreshRadarScan()).resolves.toEqual({ ...radar, fromCache: true });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/radar-scan", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/radar-scan",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
       }),
     );
   });
