@@ -150,7 +150,7 @@ describe("radar scan model routing", () => {
 
     expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(20);
     expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 4)).toBe(true);
-    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(72);
+    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(96);
     expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 140 && (source.summary?.length ?? 0) <= 180)).toBe(true);
   });
 
@@ -217,6 +217,48 @@ describe("radar scan evidence tiers", () => {
     expect(plan.filter((item) => item.tier === "market").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "news").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "research").length).toBeGreaterThan(0);
+  });
+
+  test("keeps news line clues in the compact digest even when structured sources have higher scores", () => {
+    const digest = buildRadarEvidenceDigest([
+      ...Array.from({ length: 80 }, (_, index) => ({
+        source: "新浪概念板块",
+        query: "新浪概念板块 涨跌幅 成交额",
+        title: `概念板块 ${index} 涨跌幅 ${index % 5}%`,
+        url: `https://example.com/sina-concept-${index}`,
+        sourceType: "market" as const,
+        weight: 3,
+      })),
+      ...Array.from({ length: 44 }, (_, index) => ({
+        source: "新浪行业板块",
+        query: "新浪行业板块 涨跌幅 成交额",
+        title: `行业板块 ${index} 涨跌幅 ${index % 4}%`,
+        url: `https://example.com/sina-industry-${index}`,
+        sourceType: "market" as const,
+        weight: 3,
+      })),
+      ...Array.from({ length: 40 }, (_, index) => ({
+        source: "BaoStock 行业分类",
+        query: "A股 行业分类 公司分布",
+        title: `行业分类 ${index} 覆盖上市公司`,
+        url: `https://example.com/baostock-${index}`,
+        sourceType: "official" as const,
+        weight: 4,
+      })),
+      ...Array.from({ length: 32 }, (_, index) => ({
+        source: "Google News",
+        query: "存储芯片 DRAM NAND 价格 库存",
+        title: `存储芯片价格和库存新闻线索 ${index}`,
+        url: `https://example.com/google-news-${index}`,
+        sourceType: "news" as const,
+        weight: 2,
+      })),
+    ]);
+
+    expect(digest.sourceCount).toBe(96);
+    expect(digest.evidenceBreakdown.news).toBeGreaterThanOrEqual(20);
+    expect(digest.evidenceBreakdown.market).toBeGreaterThan(0);
+    expect(digest.evidenceBreakdown.official).toBeGreaterThan(0);
   });
 
   test("tracks stable high-dividend industries as soft coverage instead of saying they were not covered", () => {
@@ -439,7 +481,7 @@ describe("radar scan caching", () => {
 
     expect(response.status).toBe(200);
     expect(json.radar?.fromCache).toBe(true);
-    expect(json.radar?.sourceCount).toBe(48);
+    expect(json.radar?.sourceCount).toBe(digest.sourceCount);
     expect(json.radar?.reuseReason).toContain("证据库未变化");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });

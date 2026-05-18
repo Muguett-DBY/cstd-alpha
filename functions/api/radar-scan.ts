@@ -54,6 +54,12 @@ type RadarSourceCachePayload = {
   sources: RadarSource[];
 };
 
+type ScoredRadarSource = RadarSource & {
+  sourceType: RadarEvidenceType;
+  weight: number;
+  score?: number;
+};
+
 type RadarDigestCachePayload = {
   version: typeof RADAR_DIGEST_CACHE_VERSION;
   cachedAt: string;
@@ -90,6 +96,10 @@ const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_CACHE_HOURS = 6;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 38;
+const RADAR_DIGEST_CITATION_LIMIT = 96;
+const RADAR_DIGEST_NEWS_FLOOR = 20;
+const RADAR_DIGEST_MAX_NEWS_SHARE = 0.3;
+const RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE = 0.46;
 
 const RADAR_QUERIES = [
   "A股 细分行业 业绩增长 景气度",
@@ -363,7 +373,7 @@ async function fetchRadarSources(signal: AbortSignal): Promise<RadarSource[]> {
 }
 
 export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): RadarEvidenceDigest {
-  const citations = dedupeSources(sources.map(classifyRadarSource))
+  const scoredSources = dedupeSources(sources.map(classifyRadarSource))
     .map((source) => {
       const sourceType = source.sourceType ?? "news";
       const weight = source.weight ?? evidenceWeight(sourceType);
@@ -374,8 +384,8 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
         score: radarSourceScore({ ...source, sourceType, weight }),
       };
     })
-    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
-    .slice(0, 96)
+    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
+  const citations = selectRadarCitationSources(scoredSources, RADAR_DIGEST_CITATION_LIMIT)
     .map((source, index): RadarCitation => ({ ...source, id: `S${index + 1}` }));
 
   const groups = new Map<string, RadarCitation[]>();
@@ -432,7 +442,7 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
       summary: packet.summary,
       signals: packet.signals.slice(0, 4).map((signal) => trimText(signal, 180)),
     })),
-    citations: digest.citations.slice(0, 72).map((source) => ({
+    citations: digest.citations.slice(0, RADAR_DIGEST_CITATION_LIMIT).map((source) => ({
       id: source.id,
       source: source.source,
       sourceType: source.sourceType,
@@ -443,6 +453,49 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
       summary: source.summary ? trimText(source.summary, 180) : undefined,
     })),
   };
+}
+
+function selectRadarCitationSources(sources: ScoredRadarSource[], limit: number): ScoredRadarSource[] {
+  const selected: ScoredRadarSource[] = [];
+  const seen = new Set<string>();
+  const newsSources = sources.filter((source) => source.sourceType === "news");
+  const nonNewsSources = sources.filter((source) => source.sourceType !== "news");
+  const reservedNews = nonNewsSources.length >= MIN_RADAR_SOURCE_COUNT ? Math.min(newsSources.length, RADAR_DIGEST_NEWS_FLOOR, Math.floor(limit * RADAR_DIGEST_MAX_NEWS_SHARE)) : 0;
+  const nonNewsLimit = limit - reservedNews;
+  const maxPerSource = Math.max(1, Math.floor(limit * RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE));
+  const minimumByType: Partial<Record<RadarEvidenceType, number>> = {
+    hard_data: 24,
+    announcement: 12,
+    official: 18,
+    market: 24,
+    research: 4,
+  };
+
+  for (const [sourceType, minimum] of Object.entries(minimumByType) as Array<[RadarEvidenceType, number]>) {
+    for (const source of nonNewsSources.filter((item) => item.sourceType === sourceType).slice(0, minimum)) {
+      addRadarCitationSource(source, selected, seen, nonNewsLimit, maxPerSource);
+    }
+  }
+  for (const source of nonNewsSources) {
+    addRadarCitationSource(source, selected, seen, nonNewsLimit, maxPerSource);
+  }
+  for (const source of newsSources) {
+    addRadarCitationSource(source, selected, seen, limit, maxPerSource, reservedNews);
+  }
+  for (const source of sources) {
+    addRadarCitationSource(source, selected, seen, limit, maxPerSource);
+  }
+  return selected.slice(0, limit);
+}
+
+function addRadarCitationSource(source: ScoredRadarSource, selected: ScoredRadarSource[], seen: Set<string>, limit: number, maxPerSource: number, maxNews?: number) {
+  if (selected.length >= limit) return;
+  const key = source.url || `${source.source}|${source.title}`;
+  if (!key || seen.has(key)) return;
+  if (maxNews !== undefined && source.sourceType === "news" && selected.filter((item) => item.sourceType === "news").length >= maxNews) return;
+  if (selected.filter((item) => item.source === source.source).length >= maxPerSource) return;
+  seen.add(key);
+  selected.push(source);
 }
 
 export function createRadarSourcePlan(): RadarSourcePlanItem[] {

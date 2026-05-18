@@ -20,6 +20,7 @@ DEFAULT_MIN_SOURCES = 36
 MAX_SELECTED_SOURCES = 128
 MAX_GOOGLE_NEWS_SHARE = 0.5
 MAX_SINGLE_SOURCE_SHARE = 0.38
+MIN_GOOGLE_NEWS_SOURCES = 24
 MIN_STRUCTURED_SOURCES = 50
 MIN_UNIQUE_SOURCES = 3
 
@@ -508,10 +509,14 @@ def dedupe_sources(items: Any) -> list[dict[str, Any]]:
 
 def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     sorted_items = sorted(items, key=lambda item: item["score"], reverse=True)
+    google_items = [source for source in sorted_items if source.get("source") == "Google News"]
+    non_google_items = [source for source in sorted_items if source.get("source") != "Google News"]
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
     max_google_news = max(1, int(limit * MAX_GOOGLE_NEWS_SHARE))
     max_per_source = max(1, int(limit * MAX_SINGLE_SOURCE_SHARE))
+    reserved_google_news = min(len(google_items), MIN_GOOGLE_NEWS_SOURCES, max_google_news) if len(non_google_items) >= MIN_STRUCTURED_SOURCES else 0
+    non_google_limit = limit - reserved_google_news
     minimum_by_type = {
         "hard_data": 24,
         "official": 18,
@@ -520,15 +525,15 @@ def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, An
         "research": 6,
     }
     for source_type, minimum in minimum_by_type.items():
-        for item in [source for source in sorted_items if source.get("source") != "Google News" and source.get("sourceType") == source_type][:minimum]:
-            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
-    for item in sorted_items:
-        if item.get("source") != "Google News":
-            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
-    max_google_news = min(max_google_news, len(selected))
-    for item in sorted_items:
-        if item.get("source") == "Google News":
-            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
+        for item in [source for source in non_google_items if source.get("sourceType") == source_type][:minimum]:
+            add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source)
+    for item in non_google_items:
+        add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source)
+    max_google_news = reserved_google_news if reserved_google_news else min(max_google_news, len(selected))
+    for item in google_items:
+        add_selected(item, selected, seen, limit, max_google_news, max_per_source)
+    for item in non_google_items:
+        add_selected(item, selected, seen, limit, max_google_news, max_per_source)
     return selected
 
 
