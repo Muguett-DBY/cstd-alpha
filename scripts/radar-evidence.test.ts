@@ -16,7 +16,7 @@ describe("rolling radar evidence collector", () => {
       version?: string;
       source?: string;
       evidenceHash?: string;
-      quality?: { googleNewsShare?: number; structuredShare?: number; uniqueSources?: number };
+      quality?: { googleNewsShare?: number; structuredShare?: number; uniqueSources?: number; largestSourceShare?: number };
       sources?: Array<{ source?: string; query?: string; title?: string; url?: string; sourceType?: string; weight?: number }>;
     };
     const sources = snapshot.sources ?? [];
@@ -34,12 +34,15 @@ describe("rolling radar evidence collector", () => {
     expect(sources.some((source) => source.sourceType === "market")).toBe(true);
     expect(googleSources.length / sources.length).toBeLessThanOrEqual(0.5);
     expect(googleSources.every((source) => source.sourceType === "news")).toBe(true);
-    expect(structuredSources.length).toBeGreaterThanOrEqual(30);
+    expect(structuredSources.length).toBeGreaterThanOrEqual(50);
     expect(snapshot.quality).toMatchObject({
       googleNewsShare: expect.any(Number),
       structuredShare: expect.any(Number),
       uniqueSources: expect.any(Number),
+      largestSourceShare: expect.any(Number),
     });
+    expect(snapshot.quality?.uniqueSources).toBeGreaterThanOrEqual(3);
+    expect(snapshot.quality?.largestSourceShare).toBeLessThanOrEqual(0.5);
   });
 
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
@@ -47,6 +50,13 @@ describe("rolling radar evidence collector", () => {
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
 
     expect(() => execFileSync("python", [script, "--offline-google-only", "--output", outputPath], { stdio: "pipe" })).toThrow();
+  });
+
+  test("refuses to emit a live-quality snapshot when structured evidence is too narrow", () => {
+    const script = "scripts/collect_radar_evidence.py";
+    const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
+
+    expect(() => execFileSync("python", [script, "--offline-single-structured", "--output", outputPath], { stdio: "pipe" })).toThrow();
   });
 
   test("has a scheduled GitHub Action that uploads evidence but does not call DeepSeek", () => {

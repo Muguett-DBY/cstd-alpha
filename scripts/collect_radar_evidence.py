@@ -19,8 +19,9 @@ EVIDENCE_VERSION = "v1"
 DEFAULT_MIN_SOURCES = 36
 MAX_SELECTED_SOURCES = 128
 MAX_GOOGLE_NEWS_SHARE = 0.5
-MIN_STRUCTURED_SOURCES = 30
-MIN_UNIQUE_SOURCES = 2
+MAX_SINGLE_SOURCE_SHARE = 0.38
+MIN_STRUCTURED_SOURCES = 50
+MIN_UNIQUE_SOURCES = 3
 
 TOPIC_QUERIES = [
     ("半导体/AI算力", "存储芯片 DRAM NAND HBM AI 服务器 价格 库存", "hard_data"),
@@ -57,10 +58,19 @@ def main() -> int:
     parser.add_argument("--gzip-output", default="", help="Optional path to write a gzip-compressed snapshot.")
     parser.add_argument("--offline-fixture", action="store_true", help="Generate deterministic fixture evidence without network calls.")
     parser.add_argument("--offline-google-only", action="store_true", help="Generate a bad all-news fixture and run the normal quality gate.")
+    parser.add_argument("--offline-single-structured", action="store_true", help="Generate a narrow one-structured-source fixture and run the normal quality gate.")
     parser.add_argument("--min-sources", type=int, default=DEFAULT_MIN_SOURCES, help="Minimum source count required for a live snapshot.")
     args = parser.parse_args()
 
-    raw_sources = google_only_fixture_sources() if args.offline_google_only else fixture_sources() if args.offline_fixture else collect_sources()
+    raw_sources = (
+        google_only_fixture_sources()
+        if args.offline_google_only
+        else single_structured_fixture_sources()
+        if args.offline_single_structured
+        else fixture_sources()
+        if args.offline_fixture
+        else collect_sources()
+    )
     sources = select_sources(dedupe_sources(classify_source(source) for source in raw_sources), limit=MAX_SELECTED_SOURCES)
     quality = evidence_quality(sources)
     print_quality_summary("selected", quality)
@@ -96,6 +106,7 @@ def collect_sources() -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     for label, fetcher in [
         ("eastmoney", fetch_eastmoney_boards),
+        ("sina_boards", fetch_sina_boards),
         ("google_news", fetch_google_news),
         ("akshare", fetch_akshare),
         ("baostock", fetch_baostock),
@@ -145,6 +156,56 @@ def fetch_eastmoney_boards() -> list[dict[str, Any]]:
                 }
             )
     return sources
+
+
+def fetch_sina_boards() -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    endpoints = [
+        ("新浪行业板块", "新浪行业板块 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php", 80),
+        ("新浪概念板块", "新浪概念板块 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=class", 80),
+        ("新浪证监会行业", "证监会行业 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=industry", 80),
+    ]
+    for label, query, url, limit in endpoints:
+        try:
+            text = read_text(url)
+            data = parse_js_object(text)
+        except (OSError, ValueError, URLError) as exc:
+            print(f"collector_warning sina_boards.{label}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+        sources.extend(sina_board_sources(label, query, url, data, limit))
+    return sources
+
+
+def sina_board_sources(label: str, query: str, base_url: str, data: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for key, value in data.items():
+        if not isinstance(value, str):
+            continue
+        parts = [clean_text(part) for part in value.split(",")]
+        if len(parts) < 6:
+            continue
+        code = parts[0] or clean_text(key)
+        name = parts[1]
+        stock_count = parts[2] if len(parts) > 2 else ""
+        pct_change = parts[5] if len(parts) > 5 else ""
+        amount = parts[7] if len(parts) > 7 else ""
+        lead_code = parts[8] if len(parts) > 8 else ""
+        lead_pct = parts[9] if len(parts) > 9 else ""
+        lead_name = parts[12] if len(parts) > 12 else ""
+        if not name:
+            continue
+        sources.append(
+            {
+                "source": label,
+                "query": query,
+                "title": f"{name} 涨跌幅 {number_text(pct_change)}%，成交额 {number_text(amount)}",
+                "url": f"{base_url}#{quote(code)}",
+                "summary": f"成分股 {number_text(stock_count)} 家，领涨股 {lead_name or '待验证'}{f'({lead_code})' if lead_code else ''}，领涨幅 {number_text(lead_pct)}%。",
+                "sourceType": "market",
+                "weight": SOURCE_WEIGHTS["market"],
+            }
+        )
+    return sources[:limit]
 
 
 def fetch_google_news() -> list[dict[str, Any]]:
@@ -339,6 +400,20 @@ def fixture_sources() -> list[dict[str, Any]]:
                 "weight": SOURCE_WEIGHTS["market"],
             }
         )
+    for index in range(35):
+        topic, query, _source_type = TOPIC_QUERIES[index % len(TOPIC_QUERIES)]
+        sources.append(
+            {
+                "source": "新浪行业板块",
+                "query": query,
+                "title": f"{topic} 新浪行业证据 {index + 1}：涨跌幅、成交额和领涨股更新",
+                "url": f"https://sina.example.com/radar-evidence/{index + 1}",
+                "publishedAt": "2026-05-19T00:00:00Z",
+                "summary": f"{topic} 结构化行业行情样本。",
+                "sourceType": "market",
+                "weight": SOURCE_WEIGHTS["market"],
+            }
+        )
     return sources
 
 
@@ -355,6 +430,25 @@ def google_only_fixture_sources() -> list[dict[str, Any]]:
         }
         for index in range(90)
     ]
+
+
+def single_structured_fixture_sources() -> list[dict[str, Any]]:
+    sources = google_only_fixture_sources()
+    for index in range(40):
+        topic, query, _source_type = TOPIC_QUERIES[index % len(TOPIC_QUERIES)]
+        sources.append(
+            {
+                "source": "BaoStock 行业分类",
+                "query": query,
+                "title": f"{topic} 行业分类覆盖 {20 + index} 家上市公司",
+                "url": f"https://baostock.example.com/single-structured/{index + 1}",
+                "publishedAt": "2026-05-19T00:00:00Z",
+                "summary": f"{topic} 结构化行业分类样本。",
+                "sourceType": "official",
+                "weight": SOURCE_WEIGHTS["official"],
+            }
+        )
+    return sources
 
 
 def classify_source(source: dict[str, Any]) -> dict[str, Any]:
@@ -417,6 +511,7 @@ def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, An
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
     max_google_news = max(1, int(limit * MAX_GOOGLE_NEWS_SHARE))
+    max_per_source = max(1, int(limit * MAX_SINGLE_SOURCE_SHARE))
     minimum_by_type = {
         "hard_data": 24,
         "official": 18,
@@ -426,21 +521,24 @@ def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, An
     }
     for source_type, minimum in minimum_by_type.items():
         for item in [source for source in sorted_items if source.get("source") != "Google News" and source.get("sourceType") == source_type][:minimum]:
-            add_selected(item, selected, seen, limit, max_google_news)
+            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
     for item in sorted_items:
         if item.get("source") != "Google News":
-            add_selected(item, selected, seen, limit, max_google_news)
+            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
     max_google_news = min(max_google_news, len(selected))
     for item in sorted_items:
         if item.get("source") == "Google News":
-            add_selected(item, selected, seen, limit, max_google_news)
+            add_selected(item, selected, seen, limit, max_google_news, max_per_source)
     return selected
 
 
-def add_selected(item: dict[str, Any], selected: list[dict[str, Any]], seen: set[str], limit: int, max_google_news: int) -> None:
+def add_selected(item: dict[str, Any], selected: list[dict[str, Any]], seen: set[str], limit: int, max_google_news: int, max_per_source: int) -> None:
     if len(selected) >= limit:
         return
     if item.get("source") == "Google News" and count_where(selected, lambda source: source.get("source") == "Google News") >= max_google_news:
+        return
+    source_name = item.get("source")
+    if source_name and count_where(selected, lambda source: source.get("source") == source_name) >= max_per_source:
         return
     key = item.get("url") or f"{item.get('source')}|{item.get('title')}"
     if key in seen:
@@ -469,9 +567,11 @@ def evidence_quality(sources: list[dict[str, Any]]) -> dict[str, Any]:
     by_type = count_by(sources, "sourceType")
     google_count = by_source.get("Google News", 0)
     structured_count = count_where(sources, lambda source: source.get("source") != "Google News" and source.get("sourceType") != "news")
+    largest_source_count = max(by_source.values(), default=0)
     return {
         "sourceCount": source_count,
         "uniqueSources": len(by_source),
+        "largestSourceShare": round(largest_source_count / source_count, 4) if source_count else 0,
         "googleNewsCount": google_count,
         "googleNewsShare": round(google_count / source_count, 4) if source_count else 0,
         "structuredCount": structured_count,
@@ -516,6 +616,16 @@ def read_text(url: str) -> str:
 
 def read_json(url: str) -> dict[str, Any]:
     return json.loads(read_text(url))
+
+
+def parse_js_object(text: str) -> dict[str, Any]:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("missing JavaScript object")
+    payload = text[start : end + 1]
+    parsed = json.loads(payload)
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def parse_rss_date(value: str | None) -> str:
