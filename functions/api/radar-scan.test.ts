@@ -155,7 +155,8 @@ describe("radar scan model routing", () => {
 
   test("filters non A-share and Hong Kong representatives from model output", async () => {
     const payload = cachedRadarPayload();
-    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(payload) };
+    const digest = buildRadarEvidenceDigest(manyRadarSources(40));
+    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(radarCacheStore(payload, digest)) };
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes("api.deepseek.com/chat/completions")) {
         return new Response(
@@ -314,6 +315,7 @@ describe("radar scan caching", () => {
     const payload = cachedRadarPayload();
     const digest = buildRadarEvidenceDigest([
       { source: "行业价格", query: "存储芯片 DRAM NAND 价格 库存", title: "DRAM 价格继续上涨", url: "https://example.com/memory", summary: "AI 服务器需求拉动。", sourceType: "hard_data", weight: 5 },
+      ...manyRadarSources(40),
     ]);
     const env = {
       AUTH_SECRET: "secret",
@@ -343,7 +345,7 @@ describe("radar scan caching", () => {
         const dynamicPayload = JSON.parse(body.messages[2].content) as Record<string, unknown>;
         expect(dynamicPayload).not.toHaveProperty("sources");
         expect(dynamicPayload.evidenceDigest).toMatchObject({
-          sourceCount: 1,
+          sourceCount: digest.sourceCount,
           packets: expect.any(Array),
         });
         return new Response(
@@ -365,13 +367,14 @@ describe("radar scan caching", () => {
     expect(fetchedUrls).toEqual(["https://api.deepseek.com/chat/completions"]);
     expect(env.REPORT_CACHE.get).toHaveBeenCalledWith(RADAR_SOURCE_CACHE_KEY, "json");
     expect(env.REPORT_CACHE.get).toHaveBeenCalledWith(RADAR_DIGEST_CACHE_KEY, "json");
-    expect(json.radar?.evidenceSources?.map((source) => source.id)).toEqual(["S1"]);
+    expect(json.radar?.evidenceSources?.map((source) => source.id)).toContain("S1");
     expect(json.radar?.solidGrowth?.[0]?.sourceIds).toEqual(["S1"]);
   });
 
   test("POST calls the DeepSeek paid API directly and caches the result", async () => {
     const payload = cachedRadarPayload();
-    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(payload) };
+    const digest = buildRadarEvidenceDigest(manyRadarSources(40));
+    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(radarCacheStore(payload, digest)) };
     const fetchedUrls: string[] = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -406,6 +409,7 @@ describe("radar scan caching", () => {
       { source: "行业价格", query: "汽车 销量 新能源车 出口 数据", title: "汽车出口保持增长", url: "https://example.com/auto", sourceType: "hard_data", weight: 5 },
       { source: "行业价格", query: "航运 运价 指数 供需", title: "集运运价分化", url: "https://example.com/shipping", sourceType: "hard_data", weight: 5 },
       { source: "公司公告", query: "A股 平稳产业 高股息 现金流 公用事业 电信 水电", title: "高股息公用事业现金流稳定", url: "https://example.com/stable", sourceType: "announcement", weight: 4 },
+      ...manyRadarSources(40),
     ]);
     const env = {
       AUTH_SECRET: "secret",
@@ -448,6 +452,49 @@ describe("radar scan caching", () => {
     expect(JSON.stringify(json.radar)).not.toContain("未能覆盖汽车");
     expect(JSON.stringify(json.radar)).not.toContain("没有覆盖平稳产业");
   });
+
+  test("POST preserves the cached radar when the evidence pack is too thin", async () => {
+    const payload = cachedRadarPayload();
+    const digest = buildRadarEvidenceDigest([
+      { source: "行业价格", query: "汽车 销量 新能源车 出口 数据", title: "汽车出口保持增长", url: "https://example.com/auto", sourceType: "hard_data", weight: 5 },
+    ]);
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({
+        [RADAR_CACHE_KEY]: payload,
+        [RADAR_SOURCE_CACHE_KEY]: {
+          version: "v2",
+          cachedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          sources: digest.citations,
+        },
+        [RADAR_DIGEST_CACHE_KEY]: {
+          version: "v2",
+          cachedAt: new Date().toISOString(),
+          sourceFingerprint: digest.sourceFingerprint,
+          digest,
+        },
+      }),
+    };
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      fetchedUrls.push(String(input));
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as { radar?: { fromCache?: boolean; sourceCount?: number }; warning?: string };
+
+    expect(response.status).toBe(200);
+    expect(json.radar?.fromCache).toBe(true);
+    expect(json.radar?.sourceCount).toBe(payload.radar.sourceCount);
+    expect(json.warning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
+    expect(fetchedUrls.some((url) => url.includes("api.deepseek.com/chat/completions"))).toBe(false);
+  });
 });
 
 function request(method: string) {
@@ -470,6 +517,24 @@ function kvWith(payload: RadarCachePayload | Record<string, unknown>) {
   return {
     get: vi.fn(async (key: string) => (key === RADAR_CACHE_KEY ? payload : null)),
     put: vi.fn(),
+  };
+}
+
+function radarCacheStore(payload: RadarCachePayload, digest: ReturnType<typeof buildRadarEvidenceDigest>) {
+  return {
+    [RADAR_CACHE_KEY]: payload,
+    [RADAR_SOURCE_CACHE_KEY]: {
+      version: "v2",
+      cachedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      sources: digest.citations,
+    },
+    [RADAR_DIGEST_CACHE_KEY]: {
+      version: "v2",
+      cachedAt: new Date().toISOString(),
+      sourceFingerprint: digest.sourceFingerprint,
+      digest,
+    },
   };
 }
 
@@ -592,6 +657,17 @@ function modelRadarPayloadWithMisleadingCoverage() {
     ],
     limitations: ["未能覆盖汽车、航运、钢铁等产业的反转或增长机会。"],
   };
+}
+
+function manyRadarSources(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    source: "行业价格",
+    query: index % 2 === 0 ? "A股 细分行业 业绩增长 景气度" : "A股 平稳产业 高股息 现金流",
+    title: `补充证据 ${index}`,
+    url: `https://example.com/source-${index}`,
+    sourceType: "hard_data" as const,
+    weight: 5,
+  }));
 }
 
 afterEach(() => {

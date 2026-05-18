@@ -67,6 +67,8 @@ export const RADAR_SOURCE_CACHE_VERSION = "v2";
 export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
 export const RADAR_DIGEST_CACHE_VERSION = "v2";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
+const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
+const MIN_RADAR_SOURCE_COUNT = 36;
 
 const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
 const RADAR_MODEL_REASONING: Record<RadarModel, "max"> = {
@@ -276,6 +278,9 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
 async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null): Promise<RadarScan> {
   const sources = await loadRadarSources(env, signal);
   const digest = await loadRadarEvidenceDigest(env, sources);
+  if (digest.sourceCount < MIN_RADAR_SOURCE_COUNT) {
+    throw new Error(`雷达证据包过薄：${digest.sourceCount}/${MIN_RADAR_SOURCE_COUNT}`);
+  }
   const routes = radarModelRoutes(env.DEEPSEEK_API_KEY);
   if (!routes.length) throw new Error("未配置 DeepSeek API Key，无法生成雷达扫描。");
   let lastError: unknown;
@@ -297,10 +302,20 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
 
 async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSource[]> {
   const cached = await readRadarSourceCache(env);
-  if (cached) return cached;
+  if (cached && cached.length >= MIN_RADAR_SOURCE_COUNT) return cached;
+
+  for (const key of LEGACY_RADAR_SOURCE_CACHE_KEYS) {
+    const legacy = await readRadarSourceCache(env, key, ["v1"]);
+    if (legacy && legacy.length >= MIN_RADAR_SOURCE_COUNT) {
+      await writeRadarSourceCache(env, legacy);
+      return legacy;
+    }
+  }
 
   const sources = await fetchRadarSources(signal);
-  await writeRadarSourceCache(env, sources);
+  if (sources.length >= MIN_RADAR_SOURCE_COUNT) await writeRadarSourceCache(env, sources);
+  if (sources.length >= (cached?.length ?? 0)) return sources;
+  if (cached) return cached;
   return sources;
 }
 
@@ -640,9 +655,9 @@ async function writeRadarCache(env: Env, radar: RadarScan) {
   await env.REPORT_CACHE?.put(RADAR_CACHE_KEY, JSON.stringify(payload));
 }
 
-async function readRadarSourceCache(env: Env): Promise<RadarSource[] | null> {
-  const value = await env.REPORT_CACHE?.get<RadarSourceCachePayload>(RADAR_SOURCE_CACHE_KEY, "json").catch(() => null);
-  if (!value || value.version !== RADAR_SOURCE_CACHE_VERSION || !Array.isArray(value.sources)) return null;
+async function readRadarSourceCache(env: Env, key = RADAR_SOURCE_CACHE_KEY, acceptedVersions = [RADAR_SOURCE_CACHE_VERSION]): Promise<RadarSource[] | null> {
+  const value = await env.REPORT_CACHE?.get<RadarSourceCachePayload>(key, "json").catch(() => null);
+  if (!value || !acceptedVersions.includes(value.version) || !Array.isArray(value.sources)) return null;
   if (Date.parse(value.expiresAt) <= Date.now()) return null;
   return value.sources;
 }
