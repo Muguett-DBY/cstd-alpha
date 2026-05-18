@@ -194,6 +194,43 @@ button:not(:disabled):active,
   grid-template-columns: clamp(300px, 23vw, 390px) minmax(0, 1fr);
 }
 
+.install-prompt {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--teal) 34%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 42px rgb(18 20 23 / 0.16);
+}
+
+.install-prompt strong,
+.install-prompt span {
+  display: block;
+}
+
+.install-prompt span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.install-prompt > div:last-child {
+  display: flex;
+  gap: 8px;
+}
+
+.install-prompt button {
+  min-height: 36px;
+}
+
 .input-rail {
   position: sticky;
   top: 0;
@@ -2037,7 +2074,8 @@ button:not(:disabled):active,
 
 .radar-header,
 .radar-summary,
-.radar-section {
+.radar-section,
+.radar-section-nav {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -2068,6 +2106,10 @@ button:not(:disabled):active,
   font-size: clamp(26px, 3.5vw, 44px);
 }
 
+.radar-header h2 span {
+  display: inline-block;
+}
+
 .radar-header p:not(.eyebrow),
 .radar-summary p {
   margin: 10px 0 0;
@@ -2076,6 +2118,34 @@ button:not(:disabled):active,
 
 .radar-scan-button {
   margin-top: 0;
+}
+
+.radar-section-nav {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px;
+  scrollbar-width: thin;
+}
+
+.radar-section-nav a {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  background: #fbfbf8;
+}
+
+.radar-section-nav a:hover {
+  border-color: var(--teal);
+  color: var(--teal);
 }
 
 .radar-refresh-notice {
@@ -2102,6 +2172,53 @@ button:not(:disabled):active,
 .radar-summary,
 .radar-section {
   padding: 18px;
+}
+
+.radar-brief {
+  display: grid;
+  gap: 16px;
+}
+
+.radar-brief-main {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.radar-focus-grid,
+.radar-change-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.radar-focus-grid article,
+.radar-change-groups > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 12px;
+}
+
+.radar-focus-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.radar-focus-grid strong,
+.radar-change-groups strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+}
+
+.radar-focus-grid p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .radar-evidence-panel {
@@ -2139,6 +2256,38 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 
+.radar-coverage {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.radar-coverage > strong {
+  color: var(--ink);
+}
+
+.radar-coverage > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.radar-coverage span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfbf8;
+  padding: 6px 10px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.radar-coverage small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .radar-summary ul,
 .radar-card ul {
   margin: 12px 0 0;
@@ -2162,7 +2311,7 @@ button:not(:disabled):active,
   padding: 16px;
 }
 
-.radar-card > div:first-child {
+.radar-card header {
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -2189,6 +2338,13 @@ button:not(:disabled):active,
   margin: 10px 0 0;
   color: var(--body);
   line-height: 1.75;
+}
+
+.radar-card header p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .risk-pill {
@@ -2254,9 +2410,22 @@ button:not(:disabled):active,
   font-size: 14px;
 }
 
+.radar-card-details {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.radar-card-details summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .radar-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
@@ -2280,6 +2449,76 @@ button:not(:disabled):active,
   color: var(--ink);
   font-size: 13px;
   font-weight: 700;
+}
+
+.radar-citation-block {
+  margin-top: 14px;
+}
+
+.radar-citation-block > strong {
+  color: var(--ink);
+}
+
+.radar-citation-grid,
+.radar-source-library {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.radar-citation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.radar-source-library {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.radar-citation-grid a,
+.radar-citation-grid article,
+.radar-source-library a,
+.radar-source-library article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.radar-citation-grid a:hover,
+.radar-source-library a:hover {
+  border-color: color-mix(in srgb, var(--teal) 48%, var(--line));
+}
+
+.radar-citation-grid span,
+.radar-source-library span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-citation-grid strong,
+.radar-source-library strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.radar-citation-grid small,
+.radar-source-library small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.radar-citation-grid p,
+.radar-source-library p {
+  margin: 0;
+  color: var(--body);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .radar-empty {
@@ -2341,9 +2580,14 @@ button:not(:disabled):active,
   .analysis-reader-header,
   .radar-header,
   .radar-meta,
+  .radar-brief-main,
+  .radar-focus-grid,
+  .radar-change-groups,
   .evidence-tier-grid,
   .radar-grid,
   .radar-list-grid,
+  .radar-citation-grid,
+  .radar-source-library,
   .radar-columns,
   .template-grid {
     grid-template-columns: 1fr;
@@ -2403,6 +2647,10 @@ button:not(:disabled):active,
   .my-list,
   .analysis-panel,
   .news-radar,
+  .radar-header,
+  .radar-summary,
+  .radar-section,
+  .radar-section-nav,
   .template-card,
   .markdown-report,
   .report-section,
@@ -2410,6 +2658,81 @@ button:not(:disabled):active,
   .score-items,
   .evidence-list {
     padding: 14px;
+  }
+
+  .app-shell.view-radar .report-form,
+  .app-shell.view-radar .selected-company,
+  .app-shell.view-radar .input-rail > .generate-button,
+  .app-shell.view-radar .input-rail > .refresh-button,
+  .app-shell.view-radar .chart-controls,
+  .app-shell.view-radar .progress-panel,
+  .app-shell.view-radar .input-rail > .cache-notice {
+    display: none;
+  }
+
+  .app-shell.view-radar .input-rail {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    padding-bottom: 12px;
+  }
+
+  .app-shell.view-radar .input-rail > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .app-shell.view-radar .input-rail h1 {
+    display: none;
+  }
+
+  .app-shell.view-radar .rail-copy,
+  .app-shell.view-radar .input-rail .muted {
+    display: none;
+  }
+
+  .app-shell.view-radar .input-rail .ghost-button {
+    min-height: 34px;
+    padding-inline: 10px;
+  }
+
+  .app-shell.view-radar .workspace {
+    padding-top: 12px;
+  }
+
+  .radar-header {
+    gap: 14px;
+  }
+
+  .radar-header h2 {
+    font-size: clamp(32px, 12vw, 52px);
+  }
+
+  .radar-section-nav {
+    top: 8px;
+    margin-inline: -2px;
+  }
+
+  .radar-card header {
+    display: grid;
+  }
+
+  .radar-card-pills {
+    justify-content: flex-start;
+  }
+
+  .install-prompt {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    grid-template-columns: 1fr;
+  }
+
+  .install-prompt > div:last-child,
+  .install-prompt button {
+    width: 100%;
   }
 
   .view-tabs {

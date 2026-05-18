@@ -1,7 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { verifySessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
-import type { RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan, RadarSource } from "../../src/shared/radar";
+import type { RadarCitation, RadarCoverageItem, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan, RadarSource } from "../../src/shared/radar";
 
 type Env = {
   AUTH_SECRET: string;
@@ -18,8 +18,44 @@ export type RadarCachePayload = {
   radar: RadarScan;
 };
 
+export type RadarEvidencePacket = {
+  topic: string;
+  score: number;
+  sourceIds: string[];
+  evidenceTypes: RadarEvidenceType[];
+  summary: string;
+  signals: string[];
+};
+
+export type RadarEvidenceDigest = {
+  sourceFingerprint: string;
+  sourceCount: number;
+  evidenceBreakdown: RadarEvidenceBreakdown;
+  citations: RadarCitation[];
+  packets: RadarEvidencePacket[];
+  softCoverage: RadarCoverageItem[];
+};
+
+type RadarSourceCachePayload = {
+  version: typeof RADAR_SOURCE_CACHE_VERSION;
+  cachedAt: string;
+  expiresAt: string;
+  sources: RadarSource[];
+};
+
+type RadarDigestCachePayload = {
+  version: typeof RADAR_DIGEST_CACHE_VERSION;
+  cachedAt: string;
+  sourceFingerprint: string;
+  digest: RadarEvidenceDigest;
+};
+
 export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
+export const RADAR_SOURCE_CACHE_VERSION = "v1";
+export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
+export const RADAR_DIGEST_CACHE_VERSION = "v1";
+export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 
 const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
 const RADAR_MODEL_REASONING: Record<RadarModel, "max"> = {
@@ -27,6 +63,7 @@ const RADAR_MODEL_REASONING: Record<RadarModel, "max"> = {
 };
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
+const RADAR_SOURCE_CACHE_HOURS = 6;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 38;
 
@@ -91,6 +128,21 @@ const NON_AH_REPRESENTATIVE_PATTERNS = [
   /SK海力士|SK Hynix|Hynix/i,
 ];
 
+const RADAR_TOPIC_RULES = [
+  { label: "半导体/AI算力", pattern: /半导体|存储|DRAM|NAND|HBM|芯片|算力|AI|服务器|数据中心|光模块|PCB|CPO/i },
+  { label: "战略有色金属", pattern: /有色|铜|铝|钨|稀土|金|银|锂|钴|镍|矿/i },
+  { label: "锂电储能", pattern: /锂电|电池|储能|碳酸锂|磷酸铁锂|固态电池/i },
+  { label: "光伏产业链", pattern: /光伏|硅料|硅片|组件|逆变器|电池片|TOPCon|BC电池/i },
+  { label: "生猪养殖", pattern: /猪价|生猪|能繁母猪|养殖|猪肉/i },
+  { label: "汽车/智能驾驶", pattern: /汽车|新能源车|乘用车|智能驾驶|出口|车企|销量/i },
+  { label: "创新药/医疗服务", pattern: /创新药|医药|医疗|临床|审批|CXO|医保|药监/i },
+  { label: "电力电网/能源基础设施", pattern: /电力|电网|发电量|装机|特高压|变压器|储能电站/i },
+  { label: "钢铁水泥/地产链", pattern: /钢铁|水泥|地产|房地产|玻璃|建材|开工率/i },
+  { label: "航运物流", pattern: /航运|运价|集运|港口|物流|BDI|CCFI|SCFI/i },
+  { label: "消费出海", pattern: /消费|品牌出海|跨境|家电|纺织|食品饮料|旅游/i },
+  { label: "机器人/AI应用", pattern: /机器人|人形机器人|具身智能|AI应用|大模型/i },
+];
+
 type RadarSourcePlanItem =
   | { kind: "google"; tier: RadarEvidenceType; query: string }
   | { kind: "baidu"; tier: RadarEvidenceType; query: string }
@@ -139,9 +191,8 @@ export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
   return paidKey ? [{ model: DEEPSEEK_PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: paidKey, isFree: false }] : [];
 }
 
-export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
+export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest, signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
   const asOfDate = new Date().toISOString().slice(0, 10);
-  const evidenceBreakdown = summarizeEvidenceBreakdown(sources);
   return {
     method: "POST",
     headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
@@ -167,12 +218,14 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
               "先按公开信息源归纳，再做模型自己的投资分析。",
               "优先使用多源交叉验证，避免只凭单条新闻判断。",
               "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
+              "本次输入已经是第一阶段证据摘要。你必须在每个行业结论中填写 sourceIds，引用 evidenceDigest.citations 里的 S1/S2 等证据编号。",
+              "只把证据强度足够的行业写入正式结论；被扫描但证据不足的方向写入 limitations，不要为了覆盖而强行输出。",
               "增长判断至少说明需求扩张、技术突破、价格提升、市占率提升、政策推动中的主要驱动。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
               "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
               ...RADAR_COMPANY_UNIVERSE_RULES,
             ],
-            evidenceBreakdown,
+            evidenceBreakdown: digest.evidenceBreakdown,
             evidenceWeights: {
               hard_data: 5,
               official: 4,
@@ -188,9 +241,8 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
           role: "user",
           content: JSON.stringify({
             asOfDate,
-            evidenceBreakdown,
             previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
-            sources,
+            evidenceDigest: compactRadarEvidenceDigest(digest),
           }),
         },
       ],
@@ -199,19 +251,20 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
 }
 
 async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null): Promise<RadarScan> {
-  const sources = await fetchRadarSources(signal);
+  const sources = await loadRadarSources(env, signal);
+  const digest = await loadRadarEvidenceDigest(env, sources);
   const routes = radarModelRoutes(env.DEEPSEEK_API_KEY);
   if (!routes.length) throw new Error("未配置 DeepSeek API Key，无法生成雷达扫描。");
   let lastError: unknown;
   for (const route of routes) {
     try {
-      const response = await fetch(route.url, buildRadarRequest(route, sources, signal, previousScan));
+      const response = await fetch(route.url, buildRadarRequest(route, digest, signal, previousScan));
       const text = await response.text();
       if (!response.ok) {
         lastError = new Error(`雷达扫描失败：${route.model} ${response.status} ${text.slice(0, 400)}`);
         continue;
       }
-      return normalizeRadarScan(JSON.parse(jsonrepair(contentFromModelResponse(text))), route.model, sources, previousScan);
+      return normalizeRadarScan(JSON.parse(jsonrepair(contentFromModelResponse(text))), route.model, digest, previousScan);
     } catch (error) {
       lastError = error;
     }
@@ -219,11 +272,113 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
   throw new Error(lastError instanceof Error ? lastError.message : "雷达扫描失败。");
 }
 
+async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSource[]> {
+  const cached = await readRadarSourceCache(env);
+  if (cached) return cached;
+
+  const sources = await fetchRadarSources(signal);
+  await writeRadarSourceCache(env, sources);
+  return sources;
+}
+
+async function loadRadarEvidenceDigest(env: Env, sources: RadarSource[]): Promise<RadarEvidenceDigest> {
+  const fingerprint = radarSourceFingerprint(sources);
+  const cached = await readRadarDigestCache(env, fingerprint);
+  if (cached) return cached;
+
+  const digest = buildRadarEvidenceDigest(sources);
+  await writeRadarDigestCache(env, digest);
+  return digest;
+}
+
 async function fetchRadarSources(signal: AbortSignal): Promise<RadarSource[]> {
   const results = await Promise.allSettled(createRadarSourcePlan().map((item) => fetchRadarSourcePlanItem(item, signal)));
   const items = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   const deduped = dedupeSources(items);
   return deduped.sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0)).slice(0, 96);
+}
+
+export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): RadarEvidenceDigest {
+  const citations = dedupeSources(sources.map(classifyRadarSource))
+    .map((source) => {
+      const sourceType = source.sourceType ?? "news";
+      const weight = source.weight ?? evidenceWeight(sourceType);
+      return {
+        ...source,
+        sourceType,
+        weight,
+        score: radarSourceScore({ ...source, sourceType, weight }),
+      };
+    })
+    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
+    .slice(0, 96)
+    .map((source, index): RadarCitation => ({ ...source, id: `S${index + 1}` }));
+
+  const groups = new Map<string, RadarCitation[]>();
+  for (const citation of citations) {
+    const topic = inferRadarTopic(citation);
+    groups.set(topic, [...(groups.get(topic) ?? []), citation]);
+  }
+
+  const packets = [...groups.entries()]
+    .map(([topic, group]): RadarEvidencePacket => {
+      const sorted = [...group].sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
+      const evidenceTypes = uniqueEvidenceTypes(sorted.map((source) => source.sourceType));
+      const sourceIds = sorted.slice(0, 5).map((source) => source.id);
+      const signals = sorted.slice(0, 6).map((source) => `${source.id} ${source.title}${source.summary ? `：${source.summary}` : ""}`);
+      return {
+        topic,
+        score: sorted.reduce((sum, source) => sum + (source.score ?? 0), 0),
+        sourceIds,
+        evidenceTypes,
+        summary: `${topic}共 ${group.length} 条公开来源，主要证据类型：${evidenceTypes.map(radarEvidenceTypeName).join("、") || "新闻线索"}。`,
+        signals,
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 24);
+
+  return {
+    sourceFingerprint: radarSourceFingerprint(citations),
+    sourceCount: citations.length,
+    evidenceBreakdown: summarizeEvidenceBreakdown(citations),
+    citations,
+    packets,
+    softCoverage: packets.slice(0, 16).map((packet): RadarCoverageItem => ({
+      label: packet.topic,
+      sourceCount: packet.sourceIds.length,
+      evidenceTypes: packet.evidenceTypes,
+      note: `${packet.topic}已有可核验证据，但是否进入正式结论由模型按证据强度决定。`,
+      topSourceIds: packet.sourceIds,
+    })),
+  };
+}
+
+function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
+  return {
+    sourceFingerprint: digest.sourceFingerprint,
+    sourceCount: digest.sourceCount,
+    evidenceBreakdown: digest.evidenceBreakdown,
+    softCoverage: digest.softCoverage.slice(0, 12),
+    packets: digest.packets.map((packet) => ({
+      topic: packet.topic,
+      score: Math.round(packet.score),
+      sourceIds: packet.sourceIds,
+      evidenceTypes: packet.evidenceTypes,
+      summary: packet.summary,
+      signals: packet.signals,
+    })),
+    citations: digest.citations.slice(0, 80).map((source) => ({
+      id: source.id,
+      source: source.source,
+      sourceType: source.sourceType,
+      title: source.title,
+      url: source.url,
+      publishedAt: source.publishedAt,
+      query: source.query,
+      summary: source.summary,
+    })),
+  };
 }
 
 export function createRadarSourcePlan(): RadarSourcePlanItem[] {
@@ -401,7 +556,7 @@ function sourceFromNews(query: string, item: NewsItem): RadarSource {
   });
 }
 
-function normalizeRadarScan(value: unknown, model: string, sources: RadarSource[], previousScan: RadarScan | null): RadarScan {
+function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidenceDigest, previousScan: RadarScan | null): RadarScan {
   const record = isRecord(value) ? value : {};
   const now = new Date();
   const generatedAt = now.toISOString();
@@ -414,19 +569,21 @@ function normalizeRadarScan(value: unknown, model: string, sources: RadarSource[
     asOfDate: stringValue(record.asOfDate) || generatedAt.slice(0, 10),
     validUntil,
     model,
-    sourceCount: sources.length,
+    sourceCount: digest.sourceCount,
     sourceQueries: allRadarQueries(),
-    evidenceBreakdown: summarizeEvidenceBreakdown(sources),
+    evidenceBreakdown: digest.evidenceBreakdown,
+    evidenceSources: digest.citations,
+    softCoverage: digest.softCoverage,
     confidenceSummary:
       stringValue(record.confidenceSummary) ||
       "置信度按硬数据、公告、市场数据、新闻和研报的交叉验证强弱生成；硬数据和公告权重最高。",
     fromCache: false,
     executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
-    solidGrowth: radarItems(record.solidGrowth, previousTitles),
-    sustainability: radarItems(record.sustainability, previousTitles),
-    bubbleRisks: radarItems(record.bubbleRisks, previousTitles),
-    upcomingGrowth: radarItems(record.upcomingGrowth, previousTitles),
-    decliningIndustries: radarItems(record.decliningIndustries, previousTitles),
+    solidGrowth: radarItems(record.solidGrowth, previousTitles, digest),
+    sustainability: radarItems(record.sustainability, previousTitles, digest),
+    bubbleRisks: radarItems(record.bubbleRisks, previousTitles, digest),
+    upcomingGrowth: radarItems(record.upcomingGrowth, previousTitles, digest),
+    decliningIndustries: radarItems(record.decliningIndustries, previousTitles, digest),
     representativeCompanies: radarLists(record.representativeCompanies),
     stageCompanies: radarLists(record.stageCompanies),
     limitations: stringArray(record.limitations).slice(0, 8),
@@ -448,6 +605,41 @@ async function writeRadarCache(env: Env, radar: RadarScan) {
   await env.REPORT_CACHE?.put(RADAR_CACHE_KEY, JSON.stringify(payload));
 }
 
+async function readRadarSourceCache(env: Env): Promise<RadarSource[] | null> {
+  const value = await env.REPORT_CACHE?.get<RadarSourceCachePayload>(RADAR_SOURCE_CACHE_KEY, "json").catch(() => null);
+  if (!value || value.version !== RADAR_SOURCE_CACHE_VERSION || !Array.isArray(value.sources)) return null;
+  if (Date.parse(value.expiresAt) <= Date.now()) return null;
+  return value.sources;
+}
+
+async function writeRadarSourceCache(env: Env, sources: RadarSource[]) {
+  if (!sources.length) return;
+  const payload: RadarSourceCachePayload = {
+    version: RADAR_SOURCE_CACHE_VERSION,
+    cachedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + RADAR_SOURCE_CACHE_HOURS * 60 * 60 * 1000).toISOString(),
+    sources,
+  };
+  await env.REPORT_CACHE?.put(RADAR_SOURCE_CACHE_KEY, JSON.stringify(payload), { expirationTtl: RADAR_SOURCE_CACHE_HOURS * 60 * 60 });
+}
+
+async function readRadarDigestCache(env: Env, sourceFingerprint: string): Promise<RadarEvidenceDigest | null> {
+  const value = await env.REPORT_CACHE?.get<RadarDigestCachePayload>(RADAR_DIGEST_CACHE_KEY, "json").catch(() => null);
+  if (!value || value.version !== RADAR_DIGEST_CACHE_VERSION || value.sourceFingerprint !== sourceFingerprint || !value.digest) return null;
+  return value.digest;
+}
+
+async function writeRadarDigestCache(env: Env, digest: RadarEvidenceDigest) {
+  if (!digest.sourceCount) return;
+  const payload: RadarDigestCachePayload = {
+    version: RADAR_DIGEST_CACHE_VERSION,
+    cachedAt: new Date().toISOString(),
+    sourceFingerprint: digest.sourceFingerprint,
+    digest,
+  };
+  await env.REPORT_CACHE?.put(RADAR_DIGEST_CACHE_KEY, JSON.stringify(payload), { expirationTtl: RADAR_SOURCE_CACHE_HOURS * 60 * 60 });
+}
+
 function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: string): RadarScan {
   return { ...radar, fromCache: true, ...(reuseReason ? { reuseReason } : {}), ...(refreshWarning ? { refreshWarning } : {}) };
 }
@@ -459,11 +651,12 @@ function contentFromModelResponse(text: string) {
   return content;
 }
 
-function radarItems(value: unknown, previousTitles = new Set<string>()): RadarItem[] {
+function radarItems(value: unknown, previousTitles = new Set<string>(), digest?: RadarEvidenceDigest): RadarItem[] {
   return arrayValue(value).map((item) => {
     const record = isRecord(item) ? item : {};
     const title = stringValue(record.title);
     const confidence = enumValue<NonNullable<RadarItem["confidence"]>>(record.confidence, ["低", "中", "高"], "中");
+    const sourceIds = radarItemSourceIds(record, digest);
     return {
       title,
       industries: stringArray(record.industries).slice(0, 6),
@@ -475,7 +668,8 @@ function radarItems(value: unknown, previousTitles = new Set<string>()): RadarIt
       riskLevel: enumValue(record.riskLevel, ["低", "中", "高"], "中"),
       confidence,
       evidenceTypes: evidenceTypes(record.evidenceTypes),
-      supportingSourceCount: numberValue(record.supportingSourceCount),
+      supportingSourceCount: numberValue(record.supportingSourceCount) ?? (sourceIds.length || undefined),
+      sourceIds,
       changeReason:
         stringValue(record.changeReason) ||
         (title && previousTitles.has(title) ? "延续上次稳定判断，本次证据未形成足够反转。" : "本次扫描基于新增公开证据或硬数据重新归类。"),
@@ -493,6 +687,27 @@ function radarLists(value: unknown): RadarList[] {
       note: stringValue(record.note),
     };
   });
+}
+
+function radarItemSourceIds(record: Record<string, unknown>, digest?: RadarEvidenceDigest) {
+  if (!digest?.citations.length) return stringArray(record.sourceIds).slice(0, 5);
+  const validIds = new Set(digest.citations.map((source) => source.id));
+  const explicit = stringArray(record.sourceIds).filter((id) => validIds.has(id)).slice(0, 5);
+  if (explicit.length) return explicit;
+
+  const itemText = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.evidence), ...stringArray(record.drivers)]
+    .map((value) => stringValue(value))
+    .join(" ");
+  const inferred = digest.citations
+    .map((source) => ({
+      id: source.id,
+      score: keywordOverlapScore(itemText, `${source.title} ${source.summary ?? ""} ${source.query}`) + (source.weight ?? 0),
+    }))
+    .filter((source) => source.score > 1)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 5)
+    .map((source) => source.id);
+  return inferred.length ? inferred : digest.citations.slice(0, 2).map((source) => source.id);
 }
 
 function ahRepresentativeCompanies(value: unknown) {
@@ -550,6 +765,74 @@ function evidenceWeight(sourceType: RadarEvidenceType) {
   }[sourceType];
 }
 
+function radarEvidenceTypeName(sourceType: RadarEvidenceType) {
+  return {
+    hard_data: "硬数据",
+    official: "官方/协会",
+    announcement: "公告/财报",
+    market: "市场数据",
+    news: "新闻线索",
+    research: "研报摘要",
+  }[sourceType];
+}
+
+function uniqueEvidenceTypes(values: RadarEvidenceType[]) {
+  return [...new Set(values)].sort((left, right) => evidenceWeight(right) - evidenceWeight(left)).slice(0, 6);
+}
+
+function radarSourceScore(source: Pick<RadarCitation, "source" | "query" | "title" | "summary" | "sourceType" | "weight" | "publishedAt">) {
+  const text = `${source.source} ${source.query} ${source.title} ${source.summary ?? ""}`;
+  const recency = source.publishedAt ? sourceRecencyScore(source.publishedAt) : 0;
+  const dataSignal = /(价格|库存|产能|订单|营收|净利润|毛利率|现金流|销量|装机|开工率|预增|亏损|同比|环比)/i.test(text) ? 8 : 0;
+  const riskSignal = /(泡沫|过剩|停牌|异动|亏损|下滑|衰退|减值|库存高企)/i.test(text) ? 4 : 0;
+  return source.weight * 10 + recency + dataSignal + riskSignal;
+}
+
+function sourceRecencyScore(value: string) {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return 0;
+  const days = (Date.now() - time) / 86_400_000;
+  if (days <= 30) return 8;
+  if (days <= 90) return 5;
+  if (days <= 180) return 3;
+  return 1;
+}
+
+function inferRadarTopic(source: RadarSource) {
+  const text = `${source.query} ${source.title} ${source.summary ?? ""}`;
+  const matched = RADAR_TOPIC_RULES.find((rule) => rule.pattern.test(text));
+  if (matched) return matched.label;
+  const query = plainNewsQuery(source.query);
+  return query.split(/\s+/).slice(0, 3).join("/") || "其他待验证方向";
+}
+
+export function radarSourceFingerprint(sources: ReadonlyArray<RadarSource>) {
+  const text = sources
+    .map((source) => `${source.url || source.title}|${source.title}|${source.source}|${source.query}|${source.publishedAt ?? ""}`)
+    .sort()
+    .join("\n");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function keywordOverlapScore(left: string, right: string) {
+  const rightText = right.toLocaleLowerCase();
+  return keywordTokens(left).reduce((score, token) => score + (rightText.includes(token.toLocaleLowerCase()) ? 1 : 0), 0);
+}
+
+function keywordTokens(text: string) {
+  const tokens = text
+    .split(/[\s,，、。；;:：()（）[\]【】"'“”]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+  const topicLabels = RADAR_TOPIC_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.label.split("/")[0]);
+  return [...new Set([...tokens, ...topicLabels])];
+}
+
 function allRadarQueries() {
   return [...RADAR_QUERIES, ...RADAR_HARD_DATA_QUERIES, ...RADAR_ANNOUNCEMENT_QUERIES, ...RADAR_RESEARCH_QUERIES];
 }
@@ -589,13 +872,8 @@ function buildChangeLog(previousScan: RadarScan | null, scan: RadarScan) {
   ].filter(Boolean);
 }
 
-function radarErrorMessage(error: unknown, mode: "read" | "refresh") {
-  const message = error instanceof Error ? error.message : String(error || "");
-  const prefix = mode === "refresh" ? "本次刷新失败，已保留上次扫描。" : "雷达扫描暂时不可用。";
-  if (/429|rate.?limit|限流|quota|FreeUsageLimit/i.test(message)) return `${prefix} 模型限流或额度暂时不可用，请稍后再试。`;
-  if (/timeout|Abort|timed out|超时/i.test(message)) return `${prefix} 外部数据源或模型请求超时，请稍后再试。`;
-  if (/JSON|jsonrepair|parse|格式|未返回内容/i.test(message)) return `${prefix} 模型返回格式不完整，请稍后重试。`;
-  return `${prefix} ${message.slice(0, 160) || "外部模型或数据源临时异常。"}`;
+function radarErrorMessage(_error: unknown, mode: "read" | "refresh") {
+  return mode === "refresh" ? "本次刷新失败，已保留上次扫描。请稍后重试。" : "雷达扫描暂时不可用，请稍后重试。";
 }
 
 function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
@@ -716,6 +994,7 @@ const RADAR_JSON_SHAPE = {
       thesis: "分析",
       drivers: ["驱动"],
       evidence: ["证据"],
+      sourceIds: ["S1", "S2"],
       evidenceTypes: ["hard_data", "announcement"],
       supportingSourceCount: 5,
       confidence: "高",
@@ -725,10 +1004,10 @@ const RADAR_JSON_SHAPE = {
       turningPoints: ["拐点"],
     },
   ],
-  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], evidenceTypes: ["hard_data"], supportingSourceCount: 3, confidence: "中", durability: "长期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], evidenceTypes: ["market"], supportingSourceCount: 3, confidence: "中", durability: "短期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], evidenceTypes: ["announcement"], supportingSourceCount: 2, confidence: "中", durability: "中期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], evidenceTypes: ["hard_data"], supportingSourceCount: 4, confidence: "高", durability: "长期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 3, confidence: "中", durability: "长期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["market"], supportingSourceCount: 3, confidence: "中", durability: "短期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["announcement"], supportingSourceCount: 2, confidence: "中", durability: "中期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 4, confidence: "高", durability: "长期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
   representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["公司"], note: "说明" }],
   stageCompanies: [{ label: "上升产业中的领军人物", companies: ["公司"], note: "说明" }],
   limitations: ["信息不足或需后续验证的地方"],

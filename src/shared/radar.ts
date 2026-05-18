@@ -13,6 +13,21 @@ export type RadarSource = {
   weight?: number;
 };
 
+export type RadarCitation = RadarSource & {
+  id: string;
+  sourceType: RadarEvidenceType;
+  weight: number;
+  score?: number;
+};
+
+export type RadarCoverageItem = {
+  label: string;
+  sourceCount: number;
+  evidenceTypes: RadarEvidenceType[];
+  note: string;
+  topSourceIds?: string[];
+};
+
 export type RadarItem = {
   title: string;
   industries: string[];
@@ -25,6 +40,7 @@ export type RadarItem = {
   confidence?: "低" | "中" | "高";
   evidenceTypes?: RadarEvidenceType[];
   supportingSourceCount?: number;
+  sourceIds?: string[];
   changeReason?: string;
   turningPoints: string[];
 };
@@ -45,6 +61,8 @@ export type RadarScan = {
   sourceCount: number;
   sourceQueries: string[];
   evidenceBreakdown?: RadarEvidenceBreakdown;
+  evidenceSources?: RadarCitation[];
+  softCoverage?: RadarCoverageItem[];
   confidenceSummary?: string;
   changeLog?: string[];
   fromCache?: boolean;

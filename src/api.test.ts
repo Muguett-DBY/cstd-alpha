@@ -392,7 +392,7 @@ describe("API client", () => {
       generatedAt: "2026-05-17T00:00:00.000Z",
       asOfDate: "2026-05-17",
       validUntil: "2026-05-17T12:00:00.000Z",
-      model: "deepseek-v4-flash-free",
+      model: "deepseek-v4-flash",
       sourceCount: 12,
       sourceQueries: ["A股 行业 景气"],
       executiveSummary: ["电网设备增长扎实。"],

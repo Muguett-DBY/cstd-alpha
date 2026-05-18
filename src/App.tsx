@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
@@ -7,7 +7,7 @@ import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastRep
 import { clearImportedRankingReports } from "./ranking-storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarCitation, RadarCoverageItem, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -15,8 +15,13 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type ChartPhase = "idle" | "loading" | "ready" | "error";
 type AppView = "report" | "ranking" | "mine" | "radar";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 export const DEFAULT_APP_VIEW: AppView = "radar";
+const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -47,6 +52,8 @@ function App() {
   const [radar, setRadar] = useState<RadarScan | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
   const [radarError, setRadarError] = useState("");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
   const loadRadar = useCallback(
@@ -97,6 +104,41 @@ function App() {
     const id = window.setTimeout(() => void loadRadar(false), 0);
     return () => window.clearTimeout(id);
   }, [activeView, loadRadar, radar, radarPhase]);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      if (window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY) === "1") return;
+      if (!window.matchMedia("(max-width: 820px), (pointer: coarse)").matches) return;
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      setShowInstallPrompt(true);
+    };
+    const onInstalled = () => {
+      setShowInstallPrompt(false);
+      setInstallPrompt(null);
+      window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  async function installMobileApp() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice.catch(() => ({ outcome: "dismissed" as const, platform: "" }));
+    if (choice.outcome !== "accepted") window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    setShowInstallPrompt(false);
+    setInstallPrompt(null);
+  }
+
+  function dismissInstallPrompt() {
+    window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    setShowInstallPrompt(false);
+  }
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -387,7 +429,7 @@ function App() {
   const elapsedSeconds = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell view-${activeView}`}>
       <aside className="input-rail">
         <div>
           <p className="brand">CSTD Alpha</p>
@@ -543,7 +585,28 @@ function App() {
           }}
         />
       ) : null}
+      <InstallPromptBanner visible={showInstallPrompt} onInstall={() => void installMobileApp()} onDismiss={dismissInstallPrompt} />
     </main>
+  );
+}
+
+function InstallPromptBanner({ visible, onInstall, onDismiss }: { visible: boolean; onInstall: () => void; onDismiss: () => void }) {
+  if (!visible) return null;
+  return (
+    <aside className="install-prompt" aria-label="添加到桌面">
+      <div>
+        <strong>CSTD Alpha</strong>
+        <span>添加到桌面，直接打开雷达扫描。</span>
+      </div>
+      <div>
+        <button type="button" onClick={onInstall}>
+          添加
+        </button>
+        <button type="button" className="ghost-button" onClick={onDismiss} aria-label="关闭添加到桌面提示">
+          关闭
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -1091,12 +1154,16 @@ function RadarView({
 }) {
   const loading = phase === "loading" || phase === "refreshing";
   const refreshing = phase === "refreshing";
+  const sourceMap = useMemo(() => new Map((radar?.evidenceSources ?? []).map((source) => [source.id, source])), [radar?.evidenceSources]);
   return (
     <section className="radar-view">
       <header className={`radar-header ${refreshing ? "is-refreshing" : ""}`}>
         <div>
           <p className="eyebrow">行业雷达</p>
-          <h2>全市场增长、泡沫与衰退扫描</h2>
+          <h2>
+            <span>全市场增长、</span>
+            <span>泡沫与衰退扫描</span>
+          </h2>
           <p>综合公开信息源与模型产业判断，优先识别可持续增长、短期透支、产业泡沫和衰退风险。</p>
         </div>
         <button className="generate-button radar-scan-button" type="button" disabled={loading} onClick={onRefresh}>
@@ -1132,26 +1199,21 @@ function RadarView({
             <InfoTile title="状态" value={refreshing ? "刷新中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
           </div>
 
-          <section className="radar-summary">
-            <h3>{radar.title}</h3>
-            <p>
-              生成时间 {formatDateTime(radar.generatedAt)}，稳定窗口至 {formatDateTime(radar.validUntil)}。
-            </p>
-            <ul>{listItems(radar.executiveSummary)}</ul>
-          </section>
+          <RadarSectionNav />
+          <RadarBrief radar={radar} />
+          <RadarEvidenceOverview breakdown={radar.evidenceBreakdown} confidenceSummary={radar.confidenceSummary} changeLog={radar.changeLog} softCoverage={radar.softCoverage} />
 
-          <RadarEvidenceOverview breakdown={radar.evidenceBreakdown} confidenceSummary={radar.confidenceSummary} changeLog={radar.changeLog} />
-
-          <RadarItemSection title="一、当前扎实增长的细分产业" items={radar.solidGrowth} />
-          <RadarItemSection title="二、增长可持续性" items={radar.sustainability} />
-          <RadarItemSection title="三、高增长陷阱与泡沫风险" items={radar.bubbleRisks} />
-          <RadarItemSection title="四、即将进入增长期的产业和公司" items={radar.upcomingGrowth} />
-          <RadarItemSection title="五、衰退产业识别" items={radar.decliningIndustries} />
-          <RadarListSection title="六、代表性公司清单" lists={radar.representativeCompanies} />
-          <RadarListSection title="七、不同产业阶段中的典型公司" lists={radar.stageCompanies} />
+          <RadarItemSection id="radar-growth" title="一、当前扎实增长的细分产业" items={radar.solidGrowth} sourceMap={sourceMap} />
+          <RadarItemSection id="radar-sustainability" title="二、增长可持续性" items={radar.sustainability} sourceMap={sourceMap} />
+          <RadarItemSection id="radar-bubble" title="三、高增长陷阱与泡沫风险" items={radar.bubbleRisks} sourceMap={sourceMap} />
+          <RadarItemSection id="radar-upcoming" title="四、即将进入增长期的产业和公司" items={radar.upcomingGrowth} sourceMap={sourceMap} />
+          <RadarItemSection id="radar-decline" title="五、衰退产业识别" items={radar.decliningIndustries} sourceMap={sourceMap} />
+          <RadarListSection id="radar-companies" title="六、代表性公司清单" lists={radar.representativeCompanies} />
+          <RadarListSection id="radar-stages" title="七、不同产业阶段中的典型公司" lists={radar.stageCompanies} />
+          <RadarSourceLibrary sources={radar.evidenceSources ?? []} />
 
           {radar.limitations.length ? (
-            <section className="radar-summary">
+            <section className="radar-summary" id="radar-limitations">
               <h3>约束与待验证</h3>
               <ul>{listItems(radar.limitations)}</ul>
             </section>
@@ -1162,13 +1224,77 @@ function RadarView({
   );
 }
 
-function RadarItemSection({ title, items }: { title: string; items: RadarItem[] }) {
+function RadarSectionNav() {
   return (
-    <section className="radar-section">
+    <nav className="radar-section-nav" aria-label="雷达章节">
+      <a href="#radar-overview">概览</a>
+      <a href="#radar-growth">增长</a>
+      <a href="#radar-sustainability">可持续性</a>
+      <a href="#radar-bubble">泡沫</a>
+      <a href="#radar-upcoming">增长期</a>
+      <a href="#radar-decline">衰退</a>
+      <a href="#radar-companies">代表公司</a>
+      <a href="#radar-sources">证据</a>
+    </nav>
+  );
+}
+
+function RadarBrief({ radar }: { radar: RadarScan }) {
+  const focusCards = [
+    { label: "高置信增长", item: highestPriorityRadarItem(radar.solidGrowth) },
+    { label: "泡沫/衰退风险", item: highestPriorityRadarItem([...radar.bubbleRisks, ...radar.decliningIndustries]) },
+    { label: "即将进入增长期", item: highestPriorityRadarItem(radar.upcomingGrowth) },
+  ].filter((entry): entry is { label: string; item: RadarItem } => Boolean(entry.item));
+  const changes = groupRadarChanges(radar.changeLog ?? []);
+  return (
+    <section className="radar-summary radar-brief" id="radar-overview">
+      <div className="radar-brief-main">
+        <div>
+          <p className="eyebrow">雷达简报</p>
+          <h3>{radar.title}</h3>
+          <p>
+            生成时间 {formatDateTime(radar.generatedAt)}，稳定窗口至 {formatDateTime(radar.validUntil)}。
+          </p>
+        </div>
+        <ul>{listItems(radar.executiveSummary.slice(0, 5))}</ul>
+      </div>
+      {focusCards.length ? (
+        <div className="radar-focus-grid">
+          {focusCards.map(({ label, item }) => (
+            <article key={label}>
+              <span>{label}</span>
+              <strong>{item.title || "待确认主题"}</strong>
+              <p>{item.thesis || "模型未提供完整分析。"}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      <div className="radar-change-groups">
+        <RadarChangeGroup title="新增/调整" items={changes.changed} />
+        <RadarChangeGroup title="延续" items={changes.retained} />
+        <RadarChangeGroup title="降级/未延续" items={changes.removed} />
+      </div>
+    </section>
+  );
+}
+
+function RadarChangeGroup({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <strong>{title}</strong>
+      <ul>{listItems(items.length ? items.slice(0, 3) : ["本轮无明确变化。"])}</ul>
+    </div>
+  );
+}
+
+function RadarItemSection({ id, title, items, sourceMap }: { id: string; title: string; items: RadarItem[]; sourceMap: Map<string, RadarCitation> }) {
+  const sortedItems = sortRadarItems(items);
+  return (
+    <section className="radar-section" id={id}>
       <h3>{title}</h3>
       <div className="radar-grid">
-        {items.length ? (
-          items.map((item) => <RadarCard key={`${title}-${item.title}-${item.companies.join(",")}`} item={item} />)
+        {sortedItems.length ? (
+          sortedItems.map((item) => <RadarCard key={`${title}-${item.title}-${item.companies.join(",")}`} item={item} sourceMap={sourceMap} />)
         ) : (
           <p className="muted">本轮扫描未给出足够稳定的结论。</p>
         )}
@@ -1181,14 +1307,16 @@ function RadarEvidenceOverview({
   breakdown,
   confidenceSummary,
   changeLog,
+  softCoverage,
 }: {
   breakdown?: RadarEvidenceBreakdown;
   confidenceSummary?: string;
   changeLog?: string[];
+  softCoverage?: RadarCoverageItem[];
 }) {
   const entries = radarEvidenceEntries(breakdown);
   return (
-    <section className="radar-summary radar-evidence-panel">
+    <section className="radar-summary radar-evidence-panel" id="radar-evidence-overview">
       <div>
         <h3>证据权重与稳定性</h3>
         <p>{confidenceSummary || "本轮扫描未返回置信度说明。"}</p>
@@ -1207,21 +1335,41 @@ function RadarEvidenceOverview({
           <ul>{listItems(changeLog)}</ul>
         </div>
       ) : null}
+      {softCoverage?.length ? <RadarCoverageOverview coverage={softCoverage} /> : null}
     </section>
   );
 }
 
-function RadarCard({ item }: { item: RadarItem }) {
+function RadarCoverageOverview({ coverage }: { coverage: RadarCoverageItem[] }) {
+  return (
+    <div className="radar-coverage">
+      <strong>软覆盖方向</strong>
+      <div>
+        {coverage.slice(0, 10).map((item) => (
+          <span key={item.label}>
+            {item.label}
+            <small>{item.sourceCount} 条</small>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string, RadarCitation> }) {
+  const sourceIds = item.sourceIds ?? [];
   return (
     <article className="radar-card">
-      <div>
-        <h4>{item.title || "待确认主题"}</h4>
+      <header>
+        <div>
+          <h4>{item.title || "待确认主题"}</h4>
+          <p>{item.thesis || "模型未提供完整分析。"}</p>
+        </div>
         <div className="radar-card-pills">
           <span className={`risk-pill risk-${item.riskLevel}`}>风险 {item.riskLevel}</span>
           <span className={`risk-pill confidence-${item.confidence || "中"}`}>置信 {item.confidence || "中"}</span>
         </div>
-      </div>
-      <p>{item.thesis || "模型未提供完整分析。"}</p>
+      </header>
       <dl>
         <dt>产业</dt>
         <dd>{item.industries.join("、") || "待确认"}</dd>
@@ -1236,23 +1384,63 @@ function RadarCard({ item }: { item: RadarItem }) {
         </dd>
       </dl>
       {item.changeReason ? <p className="radar-change-reason">{item.changeReason}</p> : null}
-      <div className="radar-columns">
-        <div>
-          <strong>驱动因素</strong>
-          <ul>{listItems(item.drivers)}</ul>
+      <details className="radar-card-details">
+        <summary>展开证据、驱动和拐点</summary>
+        <div className="radar-columns">
+          <div>
+            <strong>驱动因素</strong>
+            <ul>{listItems(item.drivers)}</ul>
+          </div>
+          <div>
+            <strong>模型证据</strong>
+            <ul>{listItems(item.evidence)}</ul>
+          </div>
+          <div>
+            <strong>潜在拐点</strong>
+            <ul>{listItems(item.turningPoints)}</ul>
+          </div>
         </div>
-        <div>
-          <strong>证据与拐点</strong>
-          <ul>{listItems([...item.evidence, ...item.turningPoints])}</ul>
-        </div>
-      </div>
+        <RadarCitationCards sourceIds={sourceIds} sourceMap={sourceMap} />
+      </details>
     </article>
   );
 }
 
-function RadarListSection({ title, lists }: { title: string; lists: RadarList[] }) {
+function RadarCitationCards({ sourceIds, sourceMap }: { sourceIds: string[]; sourceMap: Map<string, RadarCitation> }) {
+  const sources = sourceIds.map((id) => sourceMap.get(id)).filter((source): source is RadarCitation => Boolean(source));
   return (
-    <section className="radar-section">
+    <div className="radar-citation-block">
+      <strong>引用证据</strong>
+      <div className="radar-citation-grid">
+        {sources.length ? sources.map((source) => <RadarCitationCard key={source.id} source={source} />) : <p className="muted">本条结论暂未绑定公开来源编号。</p>}
+      </div>
+    </div>
+  );
+}
+
+function RadarCitationCard({ source }: { source: RadarCitation }) {
+  const body = (
+    <>
+      <span>
+        {source.id} / {radarEvidenceLabel(source.sourceType)}
+      </span>
+      <strong>{source.title}</strong>
+      <small>{source.source}{source.publishedAt ? ` · ${formatDateTime(source.publishedAt)}` : ""}</small>
+      {source.summary ? <p>{source.summary}</p> : null}
+    </>
+  );
+  return source.url ? (
+    <a href={source.url} target="_blank" rel="noreferrer">
+      {body}
+    </a>
+  ) : (
+    <article>{body}</article>
+  );
+}
+
+function RadarListSection({ id, title, lists }: { id: string; title: string; lists: RadarList[] }) {
+  return (
+    <section className="radar-section" id={id}>
       <h3>{title}</h3>
       <div className="radar-list-grid">
         {lists.length ? (
@@ -1268,6 +1456,49 @@ function RadarListSection({ title, lists }: { title: string; lists: RadarList[] 
         )}
       </div>
     </section>
+  );
+}
+
+function RadarSourceLibrary({ sources }: { sources: RadarCitation[] }) {
+  if (!sources.length) return null;
+  return (
+    <section className="radar-section" id="radar-sources">
+      <h3>证据引用库</h3>
+      <div className="radar-source-library">
+        {sources.slice(0, 30).map((source) => (
+          <RadarCitationCard key={source.id} source={source} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function highestPriorityRadarItem(items: RadarItem[]) {
+  return sortRadarItems(items)[0];
+}
+
+function sortRadarItems(items: RadarItem[]) {
+  return [...items].sort((left, right) => radarItemPriority(right) - radarItemPriority(left));
+}
+
+function radarItemPriority(item: RadarItem) {
+  const confidence = { 高: 3, 中: 2, 低: 1 }[item.confidence || "中"];
+  const risk = { 高: 3, 中: 2, 低: 1 }[item.riskLevel];
+  const evidence = item.supportingSourceCount ?? item.sourceIds?.length ?? 0;
+  const longTerm = item.durability === "长期" ? 2 : item.durability === "中期" ? 1 : 0;
+  return confidence * 20 + risk * 10 + evidence + longTerm;
+}
+
+function groupRadarChanges(changeLog: string[]) {
+  return changeLog.reduce(
+    (groups, item) => {
+      if (/新增|调整|升级|重新归类/.test(item)) groups.changed.push(item);
+      else if (/未延续|删除|降级/.test(item)) groups.removed.push(item);
+      else if (/延续|维持|保留/.test(item)) groups.retained.push(item);
+      else groups.changed.push(item);
+      return groups;
+    },
+    { changed: [] as string[], retained: [] as string[], removed: [] as string[] },
   );
 }
 

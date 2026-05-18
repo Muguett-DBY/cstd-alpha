@@ -6,6 +6,9 @@ vi.mock("../_shared/auth", () => ({
 
 import {
   RADAR_CACHE_KEY,
+  RADAR_DIGEST_CACHE_KEY,
+  RADAR_SOURCE_CACHE_KEY,
+  buildRadarEvidenceDigest,
   buildRadarRequest,
   classifyRadarSource,
   createRadarSourcePlan,
@@ -38,9 +41,12 @@ describe("radar scan model routing", () => {
   });
 
   test("builds a paid DeepSeek request with auth, max thinking, and stable JSON output", () => {
+    const digest = buildRadarEvidenceDigest([
+      { source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" },
+    ]);
     const request = buildRadarRequest(
       { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
-      [{ source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" }],
+      digest,
       new AbortController().signal,
     );
     const body = JSON.parse(String(request.body)) as Record<string, unknown>;
@@ -61,14 +67,14 @@ describe("radar scan model routing", () => {
 
   test("passes evidence tiers and previous scan context to the model request", () => {
     const previous = cachedRadarPayload().radar;
-    const sources = [
+    const digest = buildRadarEvidenceDigest([
       { source: "东方财富板块", query: "行业板块", title: "半导体设备 +3.2%", url: "https://example.com/board", sourceType: "market", weight: 3 },
       { source: "公司公告", query: "业绩预告", title: "某公司净利润预增", url: "https://example.com/ann", sourceType: "announcement", weight: 4 },
-    ] as const;
+    ]);
 
     const request = buildRadarRequest(
       { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
-      sources,
+      digest,
       new AbortController().signal,
       previous,
     );
@@ -76,15 +82,22 @@ describe("radar scan model routing", () => {
     const stablePayload = JSON.parse(body.messages[1].content) as Record<string, unknown>;
     const dynamicPayload = JSON.parse(body.messages[2].content) as Record<string, unknown>;
 
-    expect(dynamicPayload.evidenceBreakdown).toEqual({ announcement: 1, market: 1 });
+    expect(dynamicPayload.evidenceDigest).toMatchObject({
+      sourceCount: 2,
+      evidenceBreakdown: { announcement: 1, market: 1 },
+      packets: expect.any(Array),
+    });
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-1" });
     expect(JSON.stringify(stablePayload)).toContain("硬数据和公告证据优先于新闻与研报观点");
   });
 
-  test("separates stable scan instructions from dynamic evidence to improve provider cache hits", () => {
+  test("separates stable scan instructions from compact dynamic evidence to improve provider cache hits", () => {
+    const digest = buildRadarEvidenceDigest([
+      { source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" },
+    ]);
     const request = buildRadarRequest(
       { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
-      [{ source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" }],
+      digest,
       new AbortController().signal,
       cachedRadarPayload().radar,
     );
@@ -100,9 +113,13 @@ describe("radar scan model routing", () => {
     expect(stablePayload).not.toHaveProperty("asOfDate");
     expect(dynamicPayload).toMatchObject({
       asOfDate: expect.any(String),
-      sources: expect.any(Array),
+      evidenceDigest: expect.objectContaining({
+        packets: expect.any(Array),
+        citations: expect.any(Array),
+      }),
       previousScan: expect.objectContaining({ id: "radar-1" }),
     });
+    expect(dynamicPayload).not.toHaveProperty("sources");
   });
 
   test("filters non A-share and Hong Kong representatives from model output", async () => {
@@ -136,6 +153,26 @@ describe("radar scan model routing", () => {
 });
 
 describe("radar scan evidence tiers", () => {
+  test("builds a compact two-stage evidence digest with stable citation ids", () => {
+    const digest = buildRadarEvidenceDigest([
+      { source: "行业价格", query: "存储芯片 DRAM NAND 价格 库存", title: "DRAM 价格继续上涨", url: "https://example.com/memory", summary: "AI 服务器需求拉动。", sourceType: "hard_data", weight: 5 },
+      { source: "公司公告", query: "一季报 营收 净利润 毛利率 订单 产能", title: "半导体设备公司订单增长", url: "https://example.com/order", sourceType: "announcement", weight: 4 },
+      { source: "东方财富板块", query: "东方财富板块/行业/概念数据", title: "半导体设备 涨跌幅 4.2%", url: "https://example.com/board", sourceType: "market", weight: 3 },
+    ]);
+
+    expect(digest.sourceCount).toBe(3);
+    expect(digest.citations.map((source) => source.id)).toEqual(["S1", "S2", "S3"]);
+    expect(digest.packets[0]).toMatchObject({
+      topic: expect.stringContaining("半导体"),
+      sourceIds: expect.arrayContaining(["S1"]),
+      evidenceTypes: expect.arrayContaining(["hard_data", "announcement"]),
+    });
+    expect(digest.softCoverage[0]).toMatchObject({
+      label: expect.stringContaining("半导体"),
+      sourceCount: 3,
+    });
+  });
+
   test("keeps external source fetches within the Cloudflare Workers free-plan budget", () => {
     const plan = createRadarSourcePlan();
 
@@ -151,7 +188,7 @@ describe("radar scan evidence tiers", () => {
     const plan = createRadarSourcePlan();
     const sourceExternalFetches = plan.reduce((sum, item) => sum + (item.kind === "boards" ? 2 : 1), 0);
     const maxModelFallbackFetches = radarModelRoutes("paid-key").length;
-    const cacheReadAndWriteRequests = 2;
+    const cacheReadAndWriteRequests = 6;
 
     expect(sourceExternalFetches + maxModelFallbackFetches + cacheReadAndWriteRequests).toBeLessThanOrEqual(50);
   });
@@ -211,7 +248,7 @@ describe("radar scan caching", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  test("POST returns the previous cached radar with a clear warning when refresh generation fails", async () => {
+  test("POST returns the previous cached radar with a brief warning when refresh generation fails", async () => {
     const payload = cachedRadarPayload();
     const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(payload) };
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -227,8 +264,67 @@ describe("radar scan caching", () => {
 
     expect(response.status).toBe(200);
     expect(json.radar?.fromCache).toBe(true);
-    expect(json.radar?.refreshWarning).toContain("本次刷新失败");
-    expect(json.warning).toContain("模型限流");
+    expect(json.radar?.refreshWarning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
+    expect(json.warning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
+  });
+
+  test("POST reuses fresh source and digest caches while still creating a new model scan", async () => {
+    const payload = cachedRadarPayload();
+    const digest = buildRadarEvidenceDigest([
+      { source: "行业价格", query: "存储芯片 DRAM NAND 价格 库存", title: "DRAM 价格继续上涨", url: "https://example.com/memory", summary: "AI 服务器需求拉动。", sourceType: "hard_data", weight: 5 },
+    ]);
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({
+        [RADAR_CACHE_KEY]: payload,
+        [RADAR_SOURCE_CACHE_KEY]: {
+          version: "v1",
+          cachedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          sources: digest.citations,
+        },
+        [RADAR_DIGEST_CACHE_KEY]: {
+          version: "v1",
+          cachedAt: new Date().toISOString(),
+          sourceFingerprint: digest.sourceFingerprint,
+          digest,
+        },
+      }),
+    };
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchedUrls.push(url);
+      if (url.includes("api.deepseek.com/chat/completions")) {
+        const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+        const dynamicPayload = JSON.parse(body.messages[2].content) as Record<string, unknown>;
+        expect(dynamicPayload).not.toHaveProperty("sources");
+        expect(dynamicPayload.evidenceDigest).toMatchObject({
+          sourceCount: 1,
+          packets: expect.any(Array),
+        });
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(modelRadarPayloadWithSourceIds()) } }],
+          }),
+        );
+      }
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as { radar?: { evidenceSources?: Array<{ id: string }>; solidGrowth?: Array<{ sourceIds?: string[] }> } };
+
+    expect(response.status).toBe(200);
+    expect(fetchedUrls).toEqual(["https://api.deepseek.com/chat/completions"]);
+    expect(env.REPORT_CACHE.get).toHaveBeenCalledWith(RADAR_SOURCE_CACHE_KEY, "json");
+    expect(env.REPORT_CACHE.get).toHaveBeenCalledWith(RADAR_DIGEST_CACHE_KEY, "json");
+    expect(json.radar?.evidenceSources?.map((source) => source.id)).toEqual(["S1"]);
+    expect(json.radar?.solidGrowth?.[0]?.sourceIds).toEqual(["S1"]);
   });
 
   test("POST calls the DeepSeek paid API directly and caches the result", async () => {
@@ -270,7 +366,16 @@ function request(method: string) {
   });
 }
 
-function kvWith(payload: RadarCachePayload) {
+function kvWith(payload: RadarCachePayload | Record<string, unknown>) {
+  if (RADAR_CACHE_KEY in payload) {
+    const store = payload;
+    return {
+      get: vi.fn(async (key: string) => store[key] ?? null),
+      put: vi.fn(async (key: string, value: string) => {
+        store[key] = JSON.parse(value) as unknown;
+      }),
+    };
+  }
   return {
     get: vi.fn(async (key: string) => (key === RADAR_CACHE_KEY ? payload : null)),
     put: vi.fn(),
@@ -320,6 +425,30 @@ function modelRadarPayload() {
     representativeCompanies: [],
     stageCompanies: [],
     limitations: ["测试输出。"],
+  };
+}
+
+function modelRadarPayloadWithSourceIds() {
+  return {
+    ...modelRadarPayload(),
+    solidGrowth: [
+      {
+        title: "半导体设备增长",
+        industries: ["半导体设备"],
+        companies: ["北方华创"],
+        thesis: "测试证据 ID 绑定。",
+        drivers: ["订单增长"],
+        evidence: ["DRAM 价格继续上涨"],
+        sourceIds: ["S1"],
+        evidenceTypes: ["hard_data"],
+        supportingSourceCount: 1,
+        confidence: "高",
+        durability: "中期",
+        riskLevel: "中",
+        changeReason: "测试。",
+        turningPoints: ["订单放缓"],
+      },
+    ],
   };
 }
 
