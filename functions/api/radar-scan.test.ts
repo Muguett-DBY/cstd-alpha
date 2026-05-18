@@ -171,12 +171,21 @@ describe("radar scan evidence tiers", () => {
   test("keeps external source fetches within the Cloudflare Workers free-plan budget", () => {
     const plan = createRadarSourcePlan();
 
-    expect(plan).toHaveLength(42);
+    expect(plan).toHaveLength(38);
     expect(plan.filter((item) => item.tier === "hard_data").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "announcement").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "market").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "news").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "research").length).toBeGreaterThan(0);
+  });
+
+  test("reserves subrequest headroom for model fallbacks and cache writes on the Cloudflare free plan", () => {
+    const plan = createRadarSourcePlan();
+    const sourceExternalFetches = plan.reduce((sum, item) => sum + (item.kind === "boards" ? 2 : 1), 0);
+    const maxModelFallbackFetches = radarModelRoutes("paid-key").length;
+    const cacheReadAndWriteRequests = 2;
+
+    expect(sourceExternalFetches + maxModelFallbackFetches + cacheReadAndWriteRequests).toBeLessThanOrEqual(50);
   });
 
   test("classifies hard data, announcements, market data, news, and research", () => {

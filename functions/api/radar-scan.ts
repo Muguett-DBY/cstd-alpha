@@ -32,7 +32,7 @@ const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/compl
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
-const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 42;
+const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 38;
 
 const RADAR_QUERIES = [
   "A股 细分行业 业绩增长 景气度",
@@ -214,12 +214,12 @@ export function createRadarSourcePlan(): RadarSourcePlanItem[] {
       { kind: "eastmoney", tier: "announcement", query, sourceName: "公司公告", sourceType: "announcement" },
       { kind: "google", tier: "announcement", query },
     ]),
+    ...RADAR_RESEARCH_QUERIES.map<RadarSourcePlanItem>((query) => ({ kind: "eastmoney", tier: "research", query, sourceName: "研报摘要", sourceType: "research" })),
     ...RADAR_QUERIES.slice(0, 6).flatMap<RadarSourcePlanItem>((query) => [
       { kind: "google", tier: "news", query },
       { kind: "baidu", tier: "news", query },
       { kind: "eastmoney", tier: "news", query },
     ]),
-    ...RADAR_RESEARCH_QUERIES.map<RadarSourcePlanItem>((query) => ({ kind: "eastmoney", tier: "research", query, sourceName: "研报摘要", sourceType: "research" })),
   ];
   return plan.slice(0, RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET);
 }
