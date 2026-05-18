@@ -19,7 +19,7 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model routing", () => {
-  test("uses OpenCode Zen free model before paid fallback", () => {
+  test("uses only OpenCode Zen free models and never DeepSeek paid fallback", () => {
     const routes = radarModelRoutes("paid-key");
 
     expect(routes[0]).toMatchObject({
@@ -27,12 +27,10 @@ describe("radar scan model routing", () => {
       url: "https://opencode.ai/zen/v1/chat/completions",
       isFree: true,
     });
-    expect(routes[1]).toMatchObject({
-      model: "deepseek-v4-flash",
-      url: "https://api.deepseek.com/chat/completions",
-      apiKey: "paid-key",
-      isFree: false,
-    });
+    expect(routes.map((route) => route.model)).toEqual(["deepseek-v4-flash-free", "minimax-m2.5-free", "nemotron-3-super-free", "big-pickle"]);
+    expect(routes.every((route) => route.isFree)).toBe(true);
+    expect(routes.some((route) => route.url.includes("api.deepseek.com"))).toBe(false);
+    expect(routes.some((route) => route.apiKey)).toBe(false);
   });
 
   test("builds a stable JSON request with free-model thinking enabled and no auth header", () => {

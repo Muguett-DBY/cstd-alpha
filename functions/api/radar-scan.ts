@@ -9,7 +9,7 @@ type Env = {
   REPORT_CACHE?: KVNamespace;
 };
 
-type RadarModel = typeof FREE_MODEL | typeof PAID_MODEL;
+type RadarModel = (typeof ZEN_FREE_MODELS)[number];
 type RadarRoute = { model: RadarModel; url: string; apiKey?: string; isFree: boolean };
 
 export type RadarCachePayload = {
@@ -21,10 +21,8 @@ export type RadarCachePayload = {
 export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 
-const FREE_MODEL = "deepseek-v4-flash-free";
-const PAID_MODEL = "deepseek-v4-flash";
+const ZEN_FREE_MODELS = ["deepseek-v4-flash-free", "minimax-m2.5-free", "nemotron-3-super-free", "big-pickle"] as const;
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 42;
@@ -108,10 +106,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
-  return [
-    { model: FREE_MODEL, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true },
-    ...(apiKey?.trim() ? [{ model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } as const] : []),
-  ];
+  void apiKey;
+  return ZEN_FREE_MODELS.map((model) => ({ model, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true }));
 }
 
 export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
