@@ -424,4 +424,33 @@ describe("API client", () => {
       }),
     );
   });
+
+  test("preserves radar refresh warnings returned with cached fallback data", async () => {
+    const radar = {
+      id: "radar-1",
+      title: "行业雷达扫描",
+      generatedAt: "2026-05-17T00:00:00.000Z",
+      asOfDate: "2026-05-17",
+      validUntil: "2026-05-17T12:00:00.000Z",
+      model: "deepseek-v4-flash",
+      sourceCount: 72,
+      sourceQueries: ["A股 行业 景气"],
+      fromCache: true,
+      executiveSummary: ["旧扫描继续可用。"],
+      solidGrowth: [],
+      sustainability: [],
+      bubbleRisks: [],
+      upcomingGrowth: [],
+      decliningIndustries: [],
+      representativeCompanies: [],
+      stageCompanies: [],
+      limitations: [],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ radar, warning: "模型限流，已保留上次扫描。" }))));
+
+    await expect(refreshRadarScan()).resolves.toMatchObject({
+      id: "radar-1",
+      refreshWarning: "模型限流，已保留上次扫描。",
+    });
+  });
 });

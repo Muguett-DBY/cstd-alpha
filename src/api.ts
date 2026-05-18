@@ -72,9 +72,9 @@ export async function refreshRadarScan(): Promise<RadarScan> {
     credentials: "include",
   });
   if (!response.ok) throw new Error((await readError(response)) || "雷达扫描刷新失败。");
-  const data = (await response.json()) as { radar?: RadarScan };
+  const data = (await response.json()) as { radar?: RadarScan; warning?: string };
   if (!data.radar) throw new Error("雷达扫描刷新失败。");
-  return data.radar;
+  return data.warning ? { ...data.radar, refreshWarning: data.warning } : data.radar;
 }
 
 export async function checkSession(): Promise<UserSession | null> {

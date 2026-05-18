@@ -1,3 +1,7 @@
+export type RadarEvidenceType = "hard_data" | "official" | "announcement" | "market" | "news" | "research";
+
+export type RadarEvidenceBreakdown = Partial<Record<RadarEvidenceType, number>>;
+
 export type RadarSource = {
   source: string;
   query: string;
@@ -5,6 +9,8 @@ export type RadarSource = {
   url: string;
   publishedAt?: string;
   summary?: string;
+  sourceType?: RadarEvidenceType;
+  weight?: number;
 };
 
 export type RadarItem = {
@@ -16,6 +22,10 @@ export type RadarItem = {
   evidence: string[];
   durability: "短期" | "中期" | "长期" | "不确定";
   riskLevel: "低" | "中" | "高";
+  confidence?: "低" | "中" | "高";
+  evidenceTypes?: RadarEvidenceType[];
+  supportingSourceCount?: number;
+  changeReason?: string;
   turningPoints: string[];
 };
 
@@ -34,8 +44,12 @@ export type RadarScan = {
   model: string;
   sourceCount: number;
   sourceQueries: string[];
+  evidenceBreakdown?: RadarEvidenceBreakdown;
+  confidenceSummary?: string;
+  changeLog?: string[];
   fromCache?: boolean;
   reuseReason?: string;
+  refreshWarning?: string;
   executiveSummary: string[];
   solidGrowth: RadarItem[];
   sustainability: RadarItem[];

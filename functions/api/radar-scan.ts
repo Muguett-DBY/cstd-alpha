@@ -1,7 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { verifySessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
-import type { RadarItem, RadarList, RadarScan, RadarSource } from "../../src/shared/radar";
+import type { RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan, RadarSource } from "../../src/shared/radar";
 
 type Env = {
   AUTH_SECRET: string;
@@ -39,6 +39,30 @@ const RADAR_QUERIES = [
   "行业 衰退 技术替代 需求萎缩 产能过剩 公司",
 ];
 
+const RADAR_HARD_DATA_QUERIES = [
+  "碳酸锂 价格 库存 产能 锂电",
+  "硅料 光伏组件 价格 产能 开工率",
+  "存储芯片 DRAM NAND 价格 库存",
+  "铜 钨 稀土 价格 供需 库存",
+  "钢铁 水泥 价格 开工率 需求",
+  "航运 运价 指数 供需",
+  "猪价 产能 库存 周期",
+  "汽车 销量 新能源车 出口 数据",
+  "电力 发电量 装机量 数据中心 用电",
+  "创新药 审批 临床 商业化 数据",
+];
+
+const RADAR_ANNOUNCEMENT_QUERIES = [
+  "业绩预告 净利润 预增 订单 毛利率 现金流",
+  "一季报 营收 净利润 毛利率 订单 产能",
+  "年报 经营现金流 在手订单 资本开支",
+];
+
+const RADAR_RESEARCH_QUERIES = [
+  "行业研报 高景气 业绩增长 细分产业",
+  "券商研报 产能过剩 行业泡沫 估值",
+];
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
@@ -46,18 +70,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const cached = await readRadarCache(env);
   if (cached) return json({ radar: markCached(cached.radar) });
 
-  const radar = await generateRadarScan(env, request.signal);
-  await writeRadarCache(env, radar);
-  return json({ radar });
+  try {
+    const radar = await generateRadarScan(env, request.signal, null);
+    await writeRadarCache(env, radar);
+    return json({ radar });
+  } catch (error) {
+    return json({ error: radarErrorMessage(error, "read") }, 502);
+  }
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
-  const radar = await generateRadarScan(env, request.signal);
-  await writeRadarCache(env, radar);
-  return json({ radar });
+  const cached = await readRadarCache(env);
+  try {
+    const radar = await generateRadarScan(env, request.signal, cached?.radar ?? null);
+    await writeRadarCache(env, radar);
+    return json({ radar });
+  } catch (error) {
+    const warning = radarErrorMessage(error, "refresh");
+    if (cached) {
+      return json({
+        radar: markCached(cached.radar, "本次刷新失败，已保留上次稳定扫描。", warning),
+        warning,
+      });
+    }
+    return json({ error: warning }, 502);
+  }
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
@@ -67,8 +107,9 @@ export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
   ];
 }
 
-export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], signal: AbortSignal): RequestInit {
+export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
   const asOfDate = new Date().toISOString().slice(0, 10);
+  const evidenceBreakdown = summarizeEvidenceBreakdown(sources);
   return {
     method: "POST",
     headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
@@ -95,10 +136,21 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
             evidenceRules: [
               "先按公开信息源归纳，再做模型自己的投资分析。",
               "优先使用多源交叉验证，避免只凭单条新闻判断。",
+              "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
               "增长判断至少说明需求扩张、技术突破、价格提升、市占率提升、政策推动中的主要驱动。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
-              "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断。",
+              "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
             ],
+            evidenceBreakdown,
+            evidenceWeights: {
+              hard_data: 5,
+              official: 4,
+              announcement: 4,
+              market: 3,
+              news: 2,
+              research: 1,
+            },
+            previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
             expectedJsonShape: RADAR_JSON_SHAPE,
             sources,
           }),
@@ -108,18 +160,18 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
   };
 }
 
-async function generateRadarScan(env: Env, signal: AbortSignal): Promise<RadarScan> {
+async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null): Promise<RadarScan> {
   const sources = await fetchRadarSources(signal);
   let lastError: unknown;
   for (const route of radarModelRoutes(env.DEEPSEEK_API_KEY)) {
     try {
-      const response = await fetch(route.url, buildRadarRequest(route, sources, signal));
+      const response = await fetch(route.url, buildRadarRequest(route, sources, signal, previousScan));
       const text = await response.text();
       if (!response.ok) {
         lastError = new Error(`雷达扫描失败：${route.model} ${response.status} ${text.slice(0, 400)}`);
         continue;
       }
-      return normalizeRadarScan(JSON.parse(jsonrepair(contentFromModelResponse(text))), route.model, sources);
+      return normalizeRadarScan(JSON.parse(jsonrepair(contentFromModelResponse(text))), route.model, sources, previousScan);
     } catch (error) {
       lastError = error;
     }
@@ -129,15 +181,24 @@ async function generateRadarScan(env: Env, signal: AbortSignal): Promise<RadarSc
 
 async function fetchRadarSources(signal: AbortSignal): Promise<RadarSource[]> {
   const results = await Promise.allSettled(
-    RADAR_QUERIES.flatMap((query) => [
-      fetchGoogleNewsSources(query, signal),
-      fetchBaiduNewsSources(query, signal),
-      fetchEastmoneySources(query, signal),
-    ]),
+    [
+      ...RADAR_QUERIES.flatMap((query) => [
+        fetchGoogleNewsSources(query, signal),
+        fetchBaiduNewsSources(query, signal),
+        fetchEastmoneySources(query, signal),
+      ]),
+      fetchEastmoneyBoardSources(signal),
+      ...RADAR_HARD_DATA_QUERIES.flatMap((query) => [
+        fetchGoogleNewsSources(query, signal),
+        fetchEastmoneySources(query, signal, "行业价格", "hard_data"),
+      ]),
+      ...RADAR_ANNOUNCEMENT_QUERIES.map((query) => fetchEastmoneySources(query, signal, "公司公告", "announcement")),
+      ...RADAR_RESEARCH_QUERIES.map((query) => fetchEastmoneySources(query, signal, "研报摘要", "research")),
+    ],
   );
   const items = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   const deduped = dedupeSources(items);
-  return deduped.slice(0, 72);
+  return deduped.sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0)).slice(0, 96);
 }
 
 async function fetchGoogleNewsSources(query: string, signal: AbortSignal): Promise<RadarSource[]> {
@@ -182,7 +243,7 @@ async function fetchBaiduNewsSources(query: string, signal: AbortSignal): Promis
   }
 }
 
-async function fetchEastmoneySources(query: string, signal: AbortSignal): Promise<RadarSource[]> {
+async function fetchEastmoneySources(query: string, signal: AbortSignal, sourceName = "东方财富搜索", sourceType?: RadarEvidenceType): Promise<RadarSource[]> {
   const timeout = timeoutSignal(signal, RADAR_SOURCE_TIMEOUT_MS);
   try {
     const param = JSON.stringify({
@@ -207,13 +268,15 @@ async function fetchEastmoneySources(query: string, signal: AbortSignal): Promis
     const data = JSON.parse(jsonText) as { result?: { cmsTopicWebHome?: Array<{ id?: string; name?: string; url?: string; introduction?: string }> } };
     return (data.result?.cmsTopicWebHome ?? [])
       .map((item) => ({
-        source: "东方财富",
+        source: sourceName,
         query,
         title: stripSearchHtml(item.name || ""),
         url: item.url || "",
         summary: stripSearchHtml(item.introduction || ""),
+        sourceType,
       }))
       .filter((item) => item.title && item.url)
+      .map(classifyRadarSource)
       .slice(0, 12);
   } catch {
     return [];
@@ -222,23 +285,76 @@ async function fetchEastmoneySources(query: string, signal: AbortSignal): Promis
   }
 }
 
+async function fetchEastmoneyBoardSources(signal: AbortSignal): Promise<RadarSource[]> {
+  const timeout = timeoutSignal(signal, RADAR_SOURCE_TIMEOUT_MS);
+  try {
+    const endpoints = [
+      { label: "东方财富行业板块", fs: "m:90+t:2" },
+      { label: "东方财富概念板块", fs: "m:90+t:3" },
+    ];
+    const responses = await Promise.allSettled(
+      endpoints.map(async (endpoint) => {
+        const url = new URL("https://push2.eastmoney.com/api/qt/clist/get");
+        url.search = new URLSearchParams({
+          pn: "1",
+          pz: "24",
+          po: "1",
+          np: "1",
+          ut: "bd1d9ddb04089700cf9c27f6f7426281",
+          fltt: "2",
+          invt: "2",
+          fid: "f3",
+          fs: endpoint.fs,
+          fields: "f12,f14,f3,f62,f128,f136,f140,f184",
+        }).toString();
+        const response = await fetch(url, {
+          headers: {
+            "user-agent": "Mozilla/5.0 (compatible; CSTDAlpha/1.0; +https://alpha.custard.top)",
+            accept: "application/json,text/plain,*/*",
+            referer: "https://quote.eastmoney.com/",
+          },
+          signal: timeout.signal,
+        });
+        if (!response.ok) throw new Error(`${endpoint.label}读取失败：${response.status}`);
+        const data = (await response.json()) as { data?: { diff?: Array<Record<string, unknown>> } };
+        return (data.data?.diff ?? []).map((item) =>
+          classifyRadarSource({
+            source: endpoint.label,
+            query: "东方财富板块/行业/概念数据",
+            title: `${stringValue(item.f14)} 涨跌幅 ${formatSourceNumber(item.f3)}%，主力净流入 ${formatSourceNumber(item.f62)}`,
+            url: `https://quote.eastmoney.com/bk/${stringValue(item.f12)}.html`,
+            summary: `领涨股 ${stringValue(item.f128) || "待验证"}，资金占比 ${formatSourceNumber(item.f184)}。`,
+            sourceType: "market",
+          }),
+        );
+      }),
+    );
+    return responses.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  } catch {
+    return [];
+  } finally {
+    timeout.cleanup();
+  }
+}
+
 function sourceFromNews(query: string, item: NewsItem): RadarSource {
-  return {
+  return classifyRadarSource({
     source: item.source,
     query,
     title: item.title,
     url: item.url,
     publishedAt: item.publishedAt,
     summary: item.summary,
-  };
+  });
 }
 
-function normalizeRadarScan(value: unknown, model: string, sources: RadarSource[]): RadarScan {
+function normalizeRadarScan(value: unknown, model: string, sources: RadarSource[], previousScan: RadarScan | null): RadarScan {
   const record = isRecord(value) ? value : {};
   const now = new Date();
   const generatedAt = now.toISOString();
   const validUntil = new Date(now.getTime() + RADAR_VALID_HOURS * 60 * 60 * 1000).toISOString();
-  return {
+  const previousTitles = previousRadarTitles(previousScan);
+  const scan: RadarScan = {
     id: stringValue(record.id) || `radar-${generatedAt}`,
     title: stringValue(record.title) || "行业雷达扫描",
     generatedAt,
@@ -246,17 +362,25 @@ function normalizeRadarScan(value: unknown, model: string, sources: RadarSource[
     validUntil,
     model,
     sourceCount: sources.length,
-    sourceQueries: RADAR_QUERIES,
+    sourceQueries: allRadarQueries(),
+    evidenceBreakdown: summarizeEvidenceBreakdown(sources),
+    confidenceSummary:
+      stringValue(record.confidenceSummary) ||
+      "置信度按硬数据、公告、市场数据、新闻和研报的交叉验证强弱生成；硬数据和公告权重最高。",
     fromCache: false,
     executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
-    solidGrowth: radarItems(record.solidGrowth),
-    sustainability: radarItems(record.sustainability),
-    bubbleRisks: radarItems(record.bubbleRisks),
-    upcomingGrowth: radarItems(record.upcomingGrowth),
-    decliningIndustries: radarItems(record.decliningIndustries),
+    solidGrowth: radarItems(record.solidGrowth, previousTitles),
+    sustainability: radarItems(record.sustainability, previousTitles),
+    bubbleRisks: radarItems(record.bubbleRisks, previousTitles),
+    upcomingGrowth: radarItems(record.upcomingGrowth, previousTitles),
+    decliningIndustries: radarItems(record.decliningIndustries, previousTitles),
     representativeCompanies: radarLists(record.representativeCompanies),
     stageCompanies: radarLists(record.stageCompanies),
     limitations: stringArray(record.limitations).slice(0, 8),
+  };
+  return {
+    ...scan,
+    changeLog: stringArray(record.changeLog).slice(0, 8).length ? stringArray(record.changeLog).slice(0, 8) : buildChangeLog(previousScan, scan),
   };
 }
 
@@ -271,8 +395,8 @@ async function writeRadarCache(env: Env, radar: RadarScan) {
   await env.REPORT_CACHE?.put(RADAR_CACHE_KEY, JSON.stringify(payload));
 }
 
-function markCached(radar: RadarScan, reuseReason?: string): RadarScan {
-  return { ...radar, fromCache: true, ...(reuseReason ? { reuseReason } : {}) };
+function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: string): RadarScan {
+  return { ...radar, fromCache: true, ...(reuseReason ? { reuseReason } : {}), ...(refreshWarning ? { refreshWarning } : {}) };
 }
 
 function contentFromModelResponse(text: string) {
@@ -282,11 +406,13 @@ function contentFromModelResponse(text: string) {
   return content;
 }
 
-function radarItems(value: unknown): RadarItem[] {
+function radarItems(value: unknown, previousTitles = new Set<string>()): RadarItem[] {
   return arrayValue(value).map((item) => {
     const record = isRecord(item) ? item : {};
+    const title = stringValue(record.title);
+    const confidence = enumValue<NonNullable<RadarItem["confidence"]>>(record.confidence, ["低", "中", "高"], "中");
     return {
-      title: stringValue(record.title),
+      title,
       industries: stringArray(record.industries).slice(0, 6),
       companies: stringArray(record.companies).slice(0, 8),
       thesis: stringValue(record.thesis),
@@ -294,6 +420,12 @@ function radarItems(value: unknown): RadarItem[] {
       evidence: stringArray(record.evidence).slice(0, 8),
       durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
       riskLevel: enumValue(record.riskLevel, ["低", "中", "高"], "中"),
+      confidence,
+      evidenceTypes: evidenceTypes(record.evidenceTypes),
+      supportingSourceCount: numberValue(record.supportingSourceCount),
+      changeReason:
+        stringValue(record.changeReason) ||
+        (title && previousTitles.has(title) ? "延续上次稳定判断，本次证据未形成足够反转。" : "本次扫描基于新增公开证据或硬数据重新归类。"),
       turningPoints: stringArray(record.turningPoints).slice(0, 6),
     };
   });
@@ -318,6 +450,91 @@ function dedupeSources(items: RadarSource[]) {
     seen.add(key);
     return true;
   });
+}
+
+export function classifyRadarSource(source: RadarSource): RadarSource {
+  const text = `${source.source} ${source.query} ${source.title} ${source.summary ?? ""}`;
+  const sourceType =
+    source.sourceType ??
+    (/(价格|产能|库存|开工率|销量|装机|发电量|出口|订单|碳酸锂|硅料|运价|猪价|钢铁|水泥|DRAM|NAND)/i.test(text)
+      ? "hard_data"
+      : /(公告|业绩预告|财报|年报|季报|一季报|中报|毛利率|现金流)/i.test(text)
+        ? "announcement"
+        : /(统计局|协会|工信部|海关|发改委|中汽协|乘联会|药监局)/i.test(text)
+          ? "official"
+          : /(板块|概念|资金流|涨跌幅|主力净流入|估值|市盈率|成交额)/i.test(text)
+            ? "market"
+            : /(研报|研究报告|券商|评级|目标价)/i.test(text)
+              ? "research"
+              : "news");
+  return { ...source, sourceType, weight: source.weight ?? evidenceWeight(sourceType) };
+}
+
+export function summarizeEvidenceBreakdown(sources: ReadonlyArray<RadarSource>): RadarEvidenceBreakdown {
+  return sources.reduce<RadarEvidenceBreakdown>((sum, source) => {
+    const sourceType = source.sourceType ?? classifyRadarSource(source).sourceType ?? "news";
+    sum[sourceType] = (sum[sourceType] ?? 0) + 1;
+    return sum;
+  }, {});
+}
+
+function evidenceWeight(sourceType: RadarEvidenceType) {
+  return {
+    hard_data: 5,
+    official: 4,
+    announcement: 4,
+    market: 3,
+    news: 2,
+    research: 1,
+  }[sourceType];
+}
+
+function allRadarQueries() {
+  return [...RADAR_QUERIES, ...RADAR_HARD_DATA_QUERIES, ...RADAR_ANNOUNCEMENT_QUERIES, ...RADAR_RESEARCH_QUERIES];
+}
+
+function summarizePreviousScan(scan: RadarScan) {
+  return {
+    id: scan.id,
+    generatedAt: scan.generatedAt,
+    asOfDate: scan.asOfDate,
+    executiveSummary: scan.executiveSummary.slice(0, 5),
+    solidGrowth: scan.solidGrowth.map((item) => item.title).slice(0, 8),
+    bubbleRisks: scan.bubbleRisks.map((item) => item.title).slice(0, 8),
+    upcomingGrowth: scan.upcomingGrowth.map((item) => item.title).slice(0, 8),
+    decliningIndustries: scan.decliningIndustries.map((item) => item.title).slice(0, 8),
+  };
+}
+
+function previousRadarTitles(scan: RadarScan | null) {
+  return new Set(
+    scan
+      ? [...scan.solidGrowth, ...scan.sustainability, ...scan.bubbleRisks, ...scan.upcomingGrowth, ...scan.decliningIndustries].map((item) => item.title).filter(Boolean)
+      : [],
+  );
+}
+
+function buildChangeLog(previousScan: RadarScan | null, scan: RadarScan) {
+  if (!previousScan) return ["首次生成雷达扫描，后续刷新将与本次结果比较并说明变化原因。"];
+  const previousTitles = previousRadarTitles(previousScan);
+  const currentTitles = previousRadarTitles(scan);
+  const added = [...currentTitles].filter((title) => !previousTitles.has(title));
+  const retained = [...currentTitles].filter((title) => previousTitles.has(title));
+  const removed = [...previousTitles].filter((title) => !currentTitles.has(title));
+  return [
+    retained.length ? `延续判断：${retained.slice(0, 5).join("、")}。` : "",
+    added.length ? `新增或调整：${added.slice(0, 5).join("、")}。` : "",
+    removed.length ? `本次未延续：${removed.slice(0, 5).join("、")}，需看后续硬数据确认是否为阶段变化。` : "",
+  ].filter(Boolean);
+}
+
+function radarErrorMessage(error: unknown, mode: "read" | "refresh") {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const prefix = mode === "refresh" ? "本次刷新失败，已保留上次扫描。" : "雷达扫描暂时不可用。";
+  if (/429|rate.?limit|限流|quota|FreeUsageLimit/i.test(message)) return `${prefix} 模型限流或额度暂时不可用，请稍后再试。`;
+  if (/timeout|Abort|timed out|超时/i.test(message)) return `${prefix} 外部数据源或模型请求超时，请稍后再试。`;
+  if (/JSON|jsonrepair|parse|格式|未返回内容/i.test(message)) return `${prefix} 模型返回格式不完整，请稍后重试。`;
+  return `${prefix} ${message.slice(0, 160) || "外部模型或数据源临时异常。"}`;
 }
 
 function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
@@ -378,13 +595,28 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatSourceNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  return stringValue(value) || "待验证";
+}
+
 function stringArray(value: unknown) {
   return arrayValue(value)
     .map((item) => stringValue(item))
     .filter(Boolean);
 }
 
-function enumValue<T extends string>(value: unknown, values: T[], fallback: T): T {
+function evidenceTypes(value: unknown): RadarEvidenceType[] {
+  return stringArray(value)
+    .filter((item): item is RadarEvidenceType => ["hard_data", "official", "announcement", "market", "news", "research"].includes(item))
+    .slice(0, 6);
+}
+
+function enumValue<T extends string>(value: unknown, values: readonly T[], fallback: T): T {
   return values.includes(value as T) ? (value as T) : fallback;
 }
 
@@ -412,12 +644,30 @@ const RADAR_PROMPT = `一、当前扎实增长的细分产业
 const RADAR_JSON_SHAPE = {
   title: "行业雷达扫描",
   asOfDate: "YYYY-MM-DD",
+  confidenceSummary: "说明本轮结论的总体置信度和主要证据类型",
+  changeLog: ["相比上次扫描保留、新增、降级或删除了哪些判断，以及原因"],
   executiveSummary: ["3-8 条核心结论"],
-  solidGrowth: [{ title: "细分产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], durability: "长期", riskLevel: "中", turningPoints: ["拐点"] }],
-  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], durability: "长期", riskLevel: "中", turningPoints: ["拐点"] }],
-  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], durability: "短期", riskLevel: "高", turningPoints: ["拐点"] }],
-  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], durability: "中期", riskLevel: "中", turningPoints: ["拐点"] }],
-  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], durability: "长期", riskLevel: "高", turningPoints: ["拐点"] }],
+  solidGrowth: [
+    {
+      title: "细分产业",
+      industries: ["行业"],
+      companies: ["公司"],
+      thesis: "分析",
+      drivers: ["驱动"],
+      evidence: ["证据"],
+      evidenceTypes: ["hard_data", "announcement"],
+      supportingSourceCount: 5,
+      confidence: "高",
+      durability: "长期",
+      riskLevel: "中",
+      changeReason: "为什么延续或改变判断",
+      turningPoints: ["拐点"],
+    },
+  ],
+  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], evidenceTypes: ["hard_data"], supportingSourceCount: 3, confidence: "中", durability: "长期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], evidenceTypes: ["market"], supportingSourceCount: 3, confidence: "中", durability: "短期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], evidenceTypes: ["announcement"], supportingSourceCount: 2, confidence: "中", durability: "中期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], evidenceTypes: ["hard_data"], supportingSourceCount: 4, confidence: "高", durability: "长期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
   representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["公司"], note: "说明" }],
   stageCompanies: [{ label: "上升产业中的领军人物", companies: ["公司"], note: "说明" }],
   limitations: ["信息不足或需后续验证的地方"],

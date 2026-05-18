@@ -2052,6 +2052,11 @@ button:not(:disabled):active,
   padding: 20px;
 }
 
+.radar-header.is-refreshing {
+  border-color: rgb(22 126 115 / 0.45);
+  box-shadow: 0 12px 30px rgb(15 118 110 / 0.08);
+}
+
 .radar-header h2,
 .radar-summary h3,
 .radar-section h3 {
@@ -2073,6 +2078,21 @@ button:not(:disabled):active,
   margin-top: 0;
 }
 
+.radar-refresh-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-refresh-notice::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--teal);
+  animation: generation-pulse 1.2s ease-out infinite;
+}
+
 .radar-meta {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2082,6 +2102,41 @@ button:not(:disabled):active,
 .radar-summary,
 .radar-section {
   padding: 18px;
+}
+
+.radar-evidence-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.evidence-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.evidence-tier-grid span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.evidence-tier-grid strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.radar-change-log {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.radar-change-log strong {
+  color: var(--ink);
 }
 
 .radar-summary ul,
@@ -2112,6 +2167,14 @@ button:not(:disabled):active,
   gap: 10px;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.radar-card-pills {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .radar-card h4,
@@ -2152,6 +2215,21 @@ button:not(:disabled):active,
   background: #fff0ee;
 }
 
+.confidence-低 {
+  color: #75641b;
+  background: #fff8d8;
+}
+
+.confidence-中 {
+  color: #315f88;
+  background: #eaf4ff;
+}
+
+.confidence-高 {
+  color: #18725d;
+  background: #e6f4f1;
+}
+
 .radar-card dl {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
@@ -2168,6 +2246,12 @@ button:not(:disabled):active,
 .radar-card dd {
   margin: 0;
   color: var(--ink);
+}
+
+.radar-change-reason {
+  border-left: 3px solid var(--teal);
+  padding-left: 10px;
+  font-size: 14px;
 }
 
 .radar-columns {
@@ -2257,6 +2341,7 @@ button:not(:disabled):active,
   .analysis-reader-header,
   .radar-header,
   .radar-meta,
+  .evidence-tier-grid,
   .radar-grid,
   .radar-list-grid,
   .radar-columns,

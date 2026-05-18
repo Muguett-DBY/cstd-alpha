@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
@@ -7,14 +7,14 @@ import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastRep
 import { clearImportedRankingReports } from "./ranking-storage";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
 type AppView = "report" | "ranking" | "mine" | "radar";
-type RadarPhase = "idle" | "loading" | "ready" | "error";
+type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -47,6 +47,30 @@ function App() {
   const [radarError, setRadarError] = useState("");
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
+  const loadRadar = useCallback(
+    async (forceRefresh: boolean) => {
+      const hasExistingRadar = Boolean(radar);
+      setRadarPhase(forceRefresh && hasExistingRadar ? "refreshing" : "loading");
+      setRadarError("");
+      try {
+        const nextRadar = forceRefresh ? await refreshRadarScan() : await fetchRadarScan();
+        setRadar(nextRadar);
+        setRadarPhase("ready");
+        setRadarError(nextRadar.refreshWarning ?? "");
+      } catch (err) {
+        setRadarPhase(hasExistingRadar ? "ready" : "error");
+        setRadarError(
+          hasExistingRadar
+            ? `本次刷新失败，已保留上次扫描：${err instanceof Error ? err.message : "雷达扫描失败。"}`
+            : err instanceof Error
+              ? err.message
+              : "雷达扫描失败。",
+        );
+      }
+    },
+    [radar],
+  );
+
   useEffect(() => {
     void checkSession()
       .then((session) => {
@@ -68,8 +92,9 @@ function App() {
 
   useEffect(() => {
     if (activeView !== "radar" || radar || radarPhase !== "idle") return;
-    void loadRadar(false);
-  }, [activeView, radar, radarPhase]);
+    const id = window.setTimeout(() => void loadRadar(false), 0);
+    return () => window.clearTimeout(id);
+  }, [activeView, loadRadar, radar, radarPhase]);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -193,19 +218,6 @@ function App() {
     } finally {
       setStartedAt(null);
       setReportAbortController(null);
-    }
-  }
-
-  async function loadRadar(forceRefresh: boolean) {
-    setRadarPhase("loading");
-    setRadarError("");
-    try {
-      const nextRadar = forceRefresh ? await refreshRadarScan() : await fetchRadarScan();
-      setRadar(nextRadar);
-      setRadarPhase("ready");
-    } catch (err) {
-      setRadarPhase("error");
-      setRadarError(err instanceof Error ? err.message : "雷达扫描失败。");
     }
   }
 
@@ -1075,22 +1087,25 @@ function RadarView({
   error: string;
   onRefresh: () => void;
 }) {
-  const loading = phase === "loading";
+  const loading = phase === "loading" || phase === "refreshing";
+  const refreshing = phase === "refreshing";
   return (
     <section className="radar-view">
-      <header className="radar-header">
+      <header className={`radar-header ${refreshing ? "is-refreshing" : ""}`}>
         <div>
           <p className="eyebrow">行业雷达</p>
           <h2>全市场增长、泡沫与衰退扫描</h2>
           <p>综合公开信息源与模型产业判断，优先识别可持续增长、短期透支、产业泡沫和衰退风险。</p>
         </div>
         <button className="generate-button radar-scan-button" type="button" disabled={loading} onClick={onRefresh}>
+          {loading ? <span className="button-spinner" aria-hidden="true" /> : null}
           {loading ? "正在扫描..." : "雷达扫描"}
         </button>
       </header>
 
       {error ? <p className="error-text">{error}</p> : null}
       {radar?.reuseReason ? <p className="cache-notice">{radar.reuseReason}</p> : null}
+      {refreshing ? <p className="cache-notice radar-refresh-notice">正在刷新新扫描，当前页面继续显示上次稳定结果。</p> : null}
 
       {!radar && loading ? (
         <section className="empty-state radar-empty">
@@ -1112,7 +1127,7 @@ function RadarView({
             <InfoTile title="信息截止" value={radar.asOfDate} />
             <InfoTile title="公开来源" value={`${radar.sourceCount} 条`} />
             <InfoTile title="模型" value={radar.model} />
-            <InfoTile title="状态" value={radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
+            <InfoTile title="状态" value={refreshing ? "刷新中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
           </div>
 
           <section className="radar-summary">
@@ -1122,6 +1137,8 @@ function RadarView({
             </p>
             <ul>{listItems(radar.executiveSummary)}</ul>
           </section>
+
+          <RadarEvidenceOverview breakdown={radar.evidenceBreakdown} confidenceSummary={radar.confidenceSummary} changeLog={radar.changeLog} />
 
           <RadarItemSection title="一、当前扎实增长的细分产业" items={radar.solidGrowth} />
           <RadarItemSection title="二、增长可持续性" items={radar.sustainability} />
@@ -1158,12 +1175,49 @@ function RadarItemSection({ title, items }: { title: string; items: RadarItem[] 
   );
 }
 
+function RadarEvidenceOverview({
+  breakdown,
+  confidenceSummary,
+  changeLog,
+}: {
+  breakdown?: RadarEvidenceBreakdown;
+  confidenceSummary?: string;
+  changeLog?: string[];
+}) {
+  const entries = radarEvidenceEntries(breakdown);
+  return (
+    <section className="radar-summary radar-evidence-panel">
+      <div>
+        <h3>证据权重与稳定性</h3>
+        <p>{confidenceSummary || "本轮扫描未返回置信度说明。"}</p>
+      </div>
+      <div className="evidence-tier-grid">
+        {entries.map(([type, count]) => (
+          <span key={type}>
+            <strong>{radarEvidenceLabel(type)}</strong>
+            {count} 条
+          </span>
+        ))}
+      </div>
+      {changeLog?.length ? (
+        <div className="radar-change-log">
+          <strong>变化说明</strong>
+          <ul>{listItems(changeLog)}</ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function RadarCard({ item }: { item: RadarItem }) {
   return (
     <article className="radar-card">
       <div>
         <h4>{item.title || "待确认主题"}</h4>
-        <span className={`risk-pill risk-${item.riskLevel}`}>风险 {item.riskLevel}</span>
+        <div className="radar-card-pills">
+          <span className={`risk-pill risk-${item.riskLevel}`}>风险 {item.riskLevel}</span>
+          <span className={`risk-pill confidence-${item.confidence || "中"}`}>置信 {item.confidence || "中"}</span>
+        </div>
       </div>
       <p>{item.thesis || "模型未提供完整分析。"}</p>
       <dl>
@@ -1173,7 +1227,13 @@ function RadarCard({ item }: { item: RadarItem }) {
         <dd>{item.companies.join("、") || "待确认"}</dd>
         <dt>持续性</dt>
         <dd>{item.durability}</dd>
+        <dt>证据</dt>
+        <dd>
+          {item.supportingSourceCount ? `${item.supportingSourceCount} 条` : "待确认"}
+          {item.evidenceTypes?.length ? ` / ${item.evidenceTypes.map(radarEvidenceLabel).join("、")}` : ""}
+        </dd>
       </dl>
+      {item.changeReason ? <p className="radar-change-reason">{item.changeReason}</p> : null}
       <div className="radar-columns">
         <div>
           <strong>驱动因素</strong>
@@ -1212,6 +1272,22 @@ function RadarListSection({ title, lists }: { title: string; lists: RadarList[] 
 function listItems(items: string[]) {
   const values = items.length ? items : ["数据不足，需要继续核验。"];
   return values.map((item) => <li key={item}>{item}</li>);
+}
+
+function radarEvidenceEntries(breakdown?: RadarEvidenceBreakdown): Array<[RadarEvidenceType, number]> {
+  const order: RadarEvidenceType[] = ["hard_data", "official", "announcement", "market", "news", "research"];
+  return order.map((type): [RadarEvidenceType, number] => [type, breakdown?.[type] ?? 0]).filter(([, count]) => count > 0);
+}
+
+function radarEvidenceLabel(type: RadarEvidenceType) {
+  return {
+    hard_data: "硬数据",
+    official: "官方/协会",
+    announcement: "公告/财报",
+    market: "市场数据",
+    news: "新闻线索",
+    research: "研报摘要",
+  }[type];
 }
 
 function formatMetric(value: number | string | undefined, suffix = "") {
