@@ -2288,6 +2288,76 @@ button:not(:disabled):active,
   font-weight: 700;
 }
 
+.radar-coverage-review {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.radar-coverage-review > strong {
+  color: var(--ink);
+}
+
+.radar-coverage-review > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.radar-coverage-review article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfbf8;
+}
+
+.radar-coverage-review h4,
+.radar-coverage-review p {
+  margin: 0;
+}
+
+.radar-coverage-review h4 {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.radar-coverage-review p {
+  color: var(--body);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.radar-coverage-review small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.coverage-status {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.coverage-formal {
+  color: #18725d;
+  background: #e6f4f1;
+}
+
+.coverage-watched {
+  color: #315f88;
+  background: #eaf4ff;
+}
+
+.coverage-insufficient {
+  color: #8a5b00;
+  background: #fff5d8;
+}
+
 .radar-summary ul,
 .radar-card ul {
   margin: 12px 0 0;
@@ -2588,6 +2658,7 @@ button:not(:disabled):active,
   .radar-list-grid,
   .radar-citation-grid,
   .radar-source-library,
+  .radar-coverage-review > div,
   .radar-columns,
   .template-grid {
     grid-template-columns: 1fr;

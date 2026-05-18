@@ -111,6 +111,7 @@ describe("radar scan model routing", () => {
     });
     expect(stablePayload).not.toHaveProperty("sources");
     expect(stablePayload).not.toHaveProperty("asOfDate");
+    expect(stablePayload).not.toHaveProperty("evidenceBreakdown");
     expect(dynamicPayload).toMatchObject({
       asOfDate: expect.any(String),
       evidenceDigest: expect.objectContaining({
@@ -120,6 +121,36 @@ describe("radar scan model routing", () => {
       previousScan: expect.objectContaining({ id: "radar-1" }),
     });
     expect(dynamicPayload).not.toHaveProperty("sources");
+  });
+
+  test("caps dynamic evidence text while keeping broad coverage for lower DeepSeek input cost", () => {
+    const digest = buildRadarEvidenceDigest(
+      Array.from({ length: 120 }, (_, index) => ({
+        source: "Google News",
+        query: index % 2 === 0 ? "A股 平稳产业 高股息 现金流" : "A股 汽车 航运 钢铁 周期 反转",
+        title: `证据标题 ${index} ${"增长验证".repeat(20)}`,
+        summary: `摘要 ${index} ${"公开来源与硬数据交叉验证".repeat(30)}`,
+        url: `https://example.com/${index}`,
+      })),
+    );
+    const request = buildRadarRequest(
+      { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
+      digest,
+      new AbortController().signal,
+      cachedRadarPayload().radar,
+    );
+    const body = JSON.parse(String(request.body)) as { messages: Array<{ content: string }> };
+    const dynamicPayload = JSON.parse(body.messages[2].content) as {
+      evidenceDigest: {
+        packets: Array<{ signals: string[] }>;
+        citations: Array<{ title: string; summary?: string }>;
+      };
+    };
+
+    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(20);
+    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 4)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(72);
+    expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 140 && (source.summary?.length ?? 0) <= 180)).toBe(true);
   });
 
   test("filters non A-share and Hong Kong representatives from model output", async () => {
@@ -177,11 +208,22 @@ describe("radar scan evidence tiers", () => {
     const plan = createRadarSourcePlan();
 
     expect(plan).toHaveLength(38);
+    expect(JSON.stringify(plan)).toContain("平稳产业");
+    expect(JSON.stringify(plan)).toContain("高股息");
     expect(plan.filter((item) => item.tier === "hard_data").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "announcement").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "market").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "news").length).toBeGreaterThan(0);
     expect(plan.filter((item) => item.tier === "research").length).toBeGreaterThan(0);
+  });
+
+  test("tracks stable high-dividend industries as soft coverage instead of saying they were not covered", () => {
+    const digest = buildRadarEvidenceDigest([
+      { source: "行业价格", query: "A股 平稳产业 高股息 现金流 公用事业 电信 水电", title: "高股息公用事业现金流稳定", url: "https://example.com/stable", sourceType: "hard_data", weight: 5 },
+      { source: "公司公告", query: "A股 港股 平稳产业 分红 ROE 经营现金流", title: "电信运营商分红和经营现金流保持稳定", url: "https://example.com/dividend", sourceType: "announcement", weight: 4 },
+    ]);
+
+    expect(digest.softCoverage.some((item) => item.label.includes("平稳"))).toBe(true);
   });
 
   test("reserves subrequest headroom for model fallbacks and cache writes on the Cloudflare free plan", () => {
@@ -279,13 +321,13 @@ describe("radar scan caching", () => {
       REPORT_CACHE: kvWith({
         [RADAR_CACHE_KEY]: payload,
         [RADAR_SOURCE_CACHE_KEY]: {
-          version: "v1",
+          version: "v2",
           cachedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
           sources: digest.citations,
         },
         [RADAR_DIGEST_CACHE_KEY]: {
-          version: "v1",
+          version: "v2",
           cachedAt: new Date().toISOString(),
           sourceFingerprint: digest.sourceFingerprint,
           digest,
@@ -356,6 +398,55 @@ describe("radar scan caching", () => {
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_CACHE_KEY, expect.stringContaining("deepseek-v4-flash"));
     expect(fetchedUrls.filter((url) => url.includes("api.deepseek.com/chat/completions"))).toHaveLength(1);
     expect(fetchedUrls.some((url) => url.includes("opencode.ai"))).toBe(false);
+  });
+
+  test("POST returns coverage review and rewrites misleading not-covered wording", async () => {
+    const payload = cachedRadarPayload();
+    const digest = buildRadarEvidenceDigest([
+      { source: "行业价格", query: "汽车 销量 新能源车 出口 数据", title: "汽车出口保持增长", url: "https://example.com/auto", sourceType: "hard_data", weight: 5 },
+      { source: "行业价格", query: "航运 运价 指数 供需", title: "集运运价分化", url: "https://example.com/shipping", sourceType: "hard_data", weight: 5 },
+      { source: "公司公告", query: "A股 平稳产业 高股息 现金流 公用事业 电信 水电", title: "高股息公用事业现金流稳定", url: "https://example.com/stable", sourceType: "announcement", weight: 4 },
+    ]);
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({
+        [RADAR_CACHE_KEY]: payload,
+        [RADAR_SOURCE_CACHE_KEY]: {
+          version: "v2",
+          cachedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          sources: digest.citations,
+        },
+        [RADAR_DIGEST_CACHE_KEY]: {
+          version: "v2",
+          cachedAt: new Date().toISOString(),
+          sourceFingerprint: digest.sourceFingerprint,
+          digest,
+        },
+      }),
+    };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("api.deepseek.com/chat/completions")) {
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(modelRadarPayloadWithMisleadingCoverage()) } }],
+          }),
+        );
+      }
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as { radar?: { coverageReview?: Array<{ label: string; status: string }>; stageCompanies?: Array<{ label: string; note: string }>; limitations?: string[] } };
+
+    expect(response.status).toBe(200);
+    expect(json.radar?.coverageReview?.some((item) => item.label.includes("汽车") && item.status === "watched")).toBe(true);
+    expect(JSON.stringify(json.radar)).not.toContain("未能覆盖汽车");
+    expect(JSON.stringify(json.radar)).not.toContain("没有覆盖平稳产业");
   });
 });
 
@@ -486,6 +577,20 @@ function modelRadarPayloadWithOverseasCompanies() {
         note: "测试阶段公司清洗。",
       },
     ],
+  };
+}
+
+function modelRadarPayloadWithMisleadingCoverage() {
+  return {
+    ...modelRadarPayload(),
+    stageCompanies: [
+      {
+        label: "平稳产业中的杰出经营者",
+        companies: [],
+        note: "没有覆盖平稳产业，无法推荐。",
+      },
+    ],
+    limitations: ["未能覆盖汽车、航运、钢铁等产业的反转或增长机会。"],
   };
 }
 

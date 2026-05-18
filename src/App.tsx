@@ -5,9 +5,10 @@ import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
+import { radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarCitation, RadarCoverageItem, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -68,13 +69,7 @@ function App() {
         setRadarError(nextRadar.refreshWarning ?? "");
       } catch (err) {
         setRadarPhase(hasExistingRadar ? "ready" : "error");
-        setRadarError(
-          hasExistingRadar
-            ? `本次刷新失败，已保留上次扫描：${err instanceof Error ? err.message : "雷达扫描失败。"}`
-            : err instanceof Error
-              ? err.message
-              : "雷达扫描失败。",
-        );
+        setRadarError(radarRefreshFallbackMessage(hasExistingRadar, err));
       }
     },
     [radar],
@@ -1201,7 +1196,13 @@ function RadarView({
 
           <RadarSectionNav />
           <RadarBrief radar={radar} />
-          <RadarEvidenceOverview breakdown={radar.evidenceBreakdown} confidenceSummary={radar.confidenceSummary} changeLog={radar.changeLog} softCoverage={radar.softCoverage} />
+          <RadarEvidenceOverview
+            breakdown={radar.evidenceBreakdown}
+            confidenceSummary={radar.confidenceSummary}
+            changeLog={radar.changeLog}
+            softCoverage={radar.softCoverage}
+            coverageReview={radar.coverageReview}
+          />
 
           <RadarItemSection id="radar-growth" title="一、当前扎实增长的细分产业" items={radar.solidGrowth} sourceMap={sourceMap} />
           <RadarItemSection id="radar-sustainability" title="二、增长可持续性" items={radar.sustainability} sourceMap={sourceMap} />
@@ -1308,11 +1309,13 @@ function RadarEvidenceOverview({
   confidenceSummary,
   changeLog,
   softCoverage,
+  coverageReview,
 }: {
   breakdown?: RadarEvidenceBreakdown;
   confidenceSummary?: string;
   changeLog?: string[];
   softCoverage?: RadarCoverageItem[];
+  coverageReview?: RadarCoverageReview[];
 }) {
   const entries = radarEvidenceEntries(breakdown);
   return (
@@ -1336,6 +1339,7 @@ function RadarEvidenceOverview({
         </div>
       ) : null}
       {softCoverage?.length ? <RadarCoverageOverview coverage={softCoverage} /> : null}
+      {coverageReview?.length ? <RadarCoverageReviewPanel coverageReview={coverageReview} /> : null}
     </section>
   );
 }
@@ -1350,6 +1354,31 @@ function RadarCoverageOverview({ coverage }: { coverage: RadarCoverageItem[] }) 
             {item.label}
             <small>{item.sourceCount} 条</small>
           </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RadarCoverageReviewPanel({ coverageReview }: { coverageReview: RadarCoverageReview[] }) {
+  const labels = {
+    formal: "已成结论",
+    watched: "继续观察",
+    insufficient: "证据不足",
+  };
+  return (
+    <div className="radar-coverage-review">
+      <strong>覆盖复核</strong>
+      <div>
+        {coverageReview.slice(0, 12).map((item) => (
+          <article key={item.label}>
+            <span className={`coverage-status coverage-${item.status}`}>{labels[item.status]}</span>
+            <h4>{item.label}</h4>
+            <p>{item.note}</p>
+            <small>
+              {item.sourceCount} 条 / {item.evidenceTypes.map(radarEvidenceLabel).join("、") || "线索"}
+            </small>
+          </article>
         ))}
       </div>
     </div>

@@ -1,7 +1,18 @@
 import { jsonrepair } from "jsonrepair";
 import { verifySessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
-import type { RadarCitation, RadarCoverageItem, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan, RadarSource } from "../../src/shared/radar";
+import type {
+  RadarCitation,
+  RadarCoverageItem,
+  RadarCoverageReview,
+  RadarCoverageStatus,
+  RadarEvidenceBreakdown,
+  RadarEvidenceType,
+  RadarItem,
+  RadarList,
+  RadarScan,
+  RadarSource,
+} from "../../src/shared/radar";
 
 type Env = {
   AUTH_SECRET: string;
@@ -52,9 +63,9 @@ type RadarDigestCachePayload = {
 
 export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
-export const RADAR_SOURCE_CACHE_VERSION = "v1";
+export const RADAR_SOURCE_CACHE_VERSION = "v2";
 export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
-export const RADAR_DIGEST_CACHE_VERSION = "v1";
+export const RADAR_DIGEST_CACHE_VERSION = "v2";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 
 const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
@@ -102,6 +113,12 @@ const RADAR_RESEARCH_QUERIES = [
   "券商研报 产能过剩 行业泡沫 估值",
 ];
 
+const RADAR_STABLE_INDUSTRY_QUERIES = [
+  "A股 平稳产业 高股息 现金流 公用事业 电信 水电",
+  "A股 港股 平稳产业 分红 ROE 经营现金流",
+  "港股 高股息 稳定现金流 电信 公用事业 能源",
+];
+
 const RADAR_COMPANY_UNIVERSE_RULES = [
   "代表公司只能列 A 股或港股上市公司，包括 A 股主板、科创板、创业板、北交所和港股主板公司。",
   "可以参考全球产业链信息判断行业趋势，但 companies、representativeCompanies、stageCompanies 里不得输出美股、欧股、日股或未上市公司。",
@@ -129,6 +146,7 @@ const NON_AH_REPRESENTATIVE_PATTERNS = [
 ];
 
 const RADAR_TOPIC_RULES = [
+  { label: "平稳现金流/高股息", pattern: /平稳|高股息|分红|现金流|公用事业|电信|水电|运营商|煤炭|高速公路/i },
   { label: "半导体/AI算力", pattern: /半导体|存储|DRAM|NAND|HBM|芯片|算力|AI|服务器|数据中心|光模块|PCB|CPO/i },
   { label: "战略有色金属", pattern: /有色|铜|铝|钨|稀土|金|银|锂|钴|镍|矿/i },
   { label: "锂电储能", pattern: /锂电|电池|储能|碳酸锂|磷酸铁锂|固态电池/i },
@@ -161,6 +179,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     await writeRadarCache(env, radar);
     return json({ radar });
   } catch (error) {
+    logRadarFailure(error, "read", false);
     return json({ error: radarErrorMessage(error, "read") }, 502);
   }
 };
@@ -175,6 +194,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await writeRadarCache(env, radar);
     return json({ radar });
   } catch (error) {
+    logRadarFailure(error, "refresh", Boolean(cached));
     const warning = radarErrorMessage(error, "refresh");
     if (cached) {
       return json({
@@ -220,12 +240,15 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
               "本次输入已经是第一阶段证据摘要。你必须在每个行业结论中填写 sourceIds，引用 evidenceDigest.citations 里的 S1/S2 等证据编号。",
               "只把证据强度足够的行业写入正式结论；被扫描但证据不足的方向写入 limitations，不要为了覆盖而强行输出。",
+              "coverageReview 必须逐项复核 evidenceDigest.softCoverage：formal 表示进入正式结论，watched 表示已扫描但证据不足或方向分化，insufficient 表示来源太弱。不要把 softCoverage 里的方向写成“未覆盖”。",
+              "平稳产业中的杰出经营者优先从平稳现金流、高股息、公用事业、电信运营、能源、消费必需等证据中判断；如果证据不足，写入 coverageReview，不要写“没有覆盖平稳产业”。",
+              "汽车、航运、钢铁、水泥等周期方向如果只构成线索，应写为已扫描但未形成强结论，而不是写成未能覆盖。",
               "增长判断至少说明需求扩张、技术突破、价格提升、市占率提升、政策推动中的主要驱动。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
               "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
+              "控制输出冗余：每个正式数组最多 4 条，每条只保留最关键的 2-5 个驱动、证据、拐点，优先引用 sourceIds，不要重复长篇复制证据标题。",
               ...RADAR_COMPANY_UNIVERSE_RULES,
             ],
-            evidenceBreakdown: digest.evidenceBreakdown,
             evidenceWeights: {
               hard_data: 5,
               official: 4,
@@ -360,23 +383,23 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
     sourceCount: digest.sourceCount,
     evidenceBreakdown: digest.evidenceBreakdown,
     softCoverage: digest.softCoverage.slice(0, 12),
-    packets: digest.packets.map((packet) => ({
+    packets: digest.packets.slice(0, 20).map((packet) => ({
       topic: packet.topic,
       score: Math.round(packet.score),
       sourceIds: packet.sourceIds,
       evidenceTypes: packet.evidenceTypes,
       summary: packet.summary,
-      signals: packet.signals,
+      signals: packet.signals.slice(0, 4).map((signal) => trimText(signal, 180)),
     })),
-    citations: digest.citations.slice(0, 80).map((source) => ({
+    citations: digest.citations.slice(0, 72).map((source) => ({
       id: source.id,
       source: source.source,
       sourceType: source.sourceType,
-      title: source.title,
+      title: trimText(source.title, 140),
       url: source.url,
       publishedAt: source.publishedAt,
       query: source.query,
-      summary: source.summary,
+      summary: source.summary ? trimText(source.summary, 180) : undefined,
     })),
   };
 }
@@ -393,6 +416,10 @@ export function createRadarSourcePlan(): RadarSourcePlanItem[] {
       { kind: "google", tier: "announcement", query },
     ]),
     ...RADAR_RESEARCH_QUERIES.map<RadarSourcePlanItem>((query) => ({ kind: "eastmoney", tier: "research", query, sourceName: "研报摘要", sourceType: "research" })),
+    ...RADAR_STABLE_INDUSTRY_QUERIES.flatMap<RadarSourcePlanItem>((query) => [
+      { kind: "eastmoney", tier: "hard_data", query, sourceName: "平稳产业数据", sourceType: "hard_data" },
+      { kind: "google", tier: "hard_data", query },
+    ]),
     ...RADAR_QUERIES.slice(0, 6).flatMap<RadarSourcePlanItem>((query) => [
       { kind: "google", tier: "news", query },
       { kind: "baidu", tier: "news", query },
@@ -562,6 +589,13 @@ function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidence
   const generatedAt = now.toISOString();
   const validUntil = new Date(now.getTime() + RADAR_VALID_HOURS * 60 * 60 * 1000).toISOString();
   const previousTitles = previousRadarTitles(previousScan);
+  const solidGrowth = radarItems(record.solidGrowth, previousTitles, digest);
+  const sustainability = radarItems(record.sustainability, previousTitles, digest);
+  const bubbleRisks = radarItems(record.bubbleRisks, previousTitles, digest);
+  const upcomingGrowth = radarItems(record.upcomingGrowth, previousTitles, digest);
+  const decliningIndustries = radarItems(record.decliningIndustries, previousTitles, digest);
+  const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
+  const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
   const scan: RadarScan = {
     id: stringValue(record.id) || `radar-${generatedAt}`,
     title: stringValue(record.title) || "行业雷达扫描",
@@ -574,19 +608,20 @@ function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidence
     evidenceBreakdown: digest.evidenceBreakdown,
     evidenceSources: digest.citations,
     softCoverage: digest.softCoverage,
+    coverageReview,
     confidenceSummary:
       stringValue(record.confidenceSummary) ||
       "置信度按硬数据、公告、市场数据、新闻和研报的交叉验证强弱生成；硬数据和公告权重最高。",
     fromCache: false,
     executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
-    solidGrowth: radarItems(record.solidGrowth, previousTitles, digest),
-    sustainability: radarItems(record.sustainability, previousTitles, digest),
-    bubbleRisks: radarItems(record.bubbleRisks, previousTitles, digest),
-    upcomingGrowth: radarItems(record.upcomingGrowth, previousTitles, digest),
-    decliningIndustries: radarItems(record.decliningIndustries, previousTitles, digest),
-    representativeCompanies: radarLists(record.representativeCompanies),
-    stageCompanies: radarLists(record.stageCompanies),
-    limitations: stringArray(record.limitations).slice(0, 8),
+    solidGrowth,
+    sustainability,
+    bubbleRisks,
+    upcomingGrowth,
+    decliningIndustries,
+    representativeCompanies: radarLists(record.representativeCompanies, coverageReview),
+    stageCompanies: radarLists(record.stageCompanies, coverageReview),
+    limitations: sanitizeCoverageLanguageList(record.limitations, coverageReview).slice(0, 8),
   };
   return {
     ...scan,
@@ -678,15 +713,87 @@ function radarItems(value: unknown, previousTitles = new Set<string>(), digest?:
   });
 }
 
-function radarLists(value: unknown): RadarList[] {
+function radarLists(value: unknown, coverageReview: RadarCoverageReview[] = []): RadarList[] {
   return arrayValue(value).map((item) => {
     const record = isRecord(item) ? item : {};
     return {
       label: stringValue(record.label),
       companies: ahRepresentativeCompanies(record.companies).slice(0, 12),
-      note: stringValue(record.note),
+      note: sanitizeCoverageLanguage(stringValue(record.note), coverageReview),
     };
   });
+}
+
+function radarCoverageReview(value: unknown, digest: RadarEvidenceDigest, formalItems: RadarItem[]): RadarCoverageReview[] {
+  const derived = deriveCoverageReview(digest, formalItems);
+  const byLabel = new Map(derived.map((item) => [item.label, item]));
+  for (const item of arrayValue(value)) {
+    const record = isRecord(item) ? item : {};
+    const label = stringValue(record.label);
+    if (!label) continue;
+    const fallback = byLabel.get(label);
+    byLabel.set(label, {
+      label,
+      status: enumValue<RadarCoverageStatus>(record.status, ["formal", "watched", "insufficient"], fallback?.status ?? "watched"),
+      sourceCount: numberValue(record.sourceCount) ?? fallback?.sourceCount ?? 0,
+      evidenceTypes: evidenceTypes(record.evidenceTypes).length ? evidenceTypes(record.evidenceTypes) : fallback?.evidenceTypes ?? [],
+      note: sanitizeCoverageLanguage(stringValue(record.note) || fallback?.note || "已扫描该方向，证据强度决定是否进入正式结论。", derived),
+      sourceIds: coverageSourceIds(record.sourceIds, digest).length ? coverageSourceIds(record.sourceIds, digest) : fallback?.sourceIds,
+    });
+  }
+  return [...byLabel.values()].slice(0, 16);
+}
+
+function deriveCoverageReview(digest: RadarEvidenceDigest, formalItems: RadarItem[]): RadarCoverageReview[] {
+  const formalText = formalItems
+    .flatMap((item) => [item.title, ...item.industries, ...item.companies])
+    .join(" ");
+  return digest.softCoverage.map((item) => {
+    const status = coverageStatus(item, formalText);
+    return {
+      label: item.label,
+      status,
+      sourceCount: item.sourceCount,
+      evidenceTypes: item.evidenceTypes,
+      sourceIds: item.topSourceIds,
+      note:
+        status === "formal"
+          ? "已进入正式雷达结论。"
+          : status === "watched"
+            ? "已扫描到公开证据，但方向分化或证据强度不足，暂未升为正式结论。"
+            : "已扫描该方向，但来源数量或硬数据不足，继续等待验证。",
+    };
+  });
+}
+
+function coverageStatus(item: RadarCoverageItem, formalText: string): RadarCoverageStatus {
+  if (keywordOverlapScore(item.label, formalText) > 0) return "formal";
+  const hasHardEvidence = item.evidenceTypes.some((type) => ["hard_data", "official", "announcement", "market"].includes(type));
+  if (item.sourceCount >= 1 && hasHardEvidence) return "watched";
+  return "insufficient";
+}
+
+function coverageSourceIds(value: unknown, digest: RadarEvidenceDigest) {
+  const validIds = new Set(digest.citations.map((source) => source.id));
+  return stringArray(value).filter((id) => validIds.has(id)).slice(0, 5);
+}
+
+function sanitizeCoverageLanguageList(value: unknown, coverageReview: RadarCoverageReview[]) {
+  return stringArray(value).map((item) => sanitizeCoverageLanguage(item, coverageReview)).filter(Boolean);
+}
+
+function sanitizeCoverageLanguage(value: string, coverageReview: RadarCoverageReview[]) {
+  if (!value) return "";
+  const coveredText = coverageReview.map((item) => item.label).join(" ");
+  const shouldRewrite =
+    /(未能覆盖|没有覆盖|未覆盖|无法推荐)/.test(value) &&
+    (/(汽车|航运|钢铁|水泥|平稳|高股息|现金流|公用事业|电信)/.test(value) || keywordOverlapScore(value, coveredText) > 0);
+  if (!shouldRewrite) return value;
+  return value
+    .replace(/未能覆盖/g, "已扫描但未形成强结论")
+    .replace(/没有覆盖/g, "已扫描但证据不足")
+    .replace(/未覆盖/g, "已扫描但证据不足")
+    .replace(/无法推荐/g, "暂不列入正式推荐");
 }
 
 function radarItemSourceIds(record: Record<string, unknown>, digest?: RadarEvidenceDigest) {
@@ -834,7 +941,7 @@ function keywordTokens(text: string) {
 }
 
 function allRadarQueries() {
-  return [...RADAR_QUERIES, ...RADAR_HARD_DATA_QUERIES, ...RADAR_ANNOUNCEMENT_QUERIES, ...RADAR_RESEARCH_QUERIES];
+  return [...RADAR_QUERIES, ...RADAR_HARD_DATA_QUERIES, ...RADAR_ANNOUNCEMENT_QUERIES, ...RADAR_RESEARCH_QUERIES, ...RADAR_STABLE_INDUSTRY_QUERIES];
 }
 
 function summarizePreviousScan(scan: RadarScan) {
@@ -876,6 +983,15 @@ function radarErrorMessage(_error: unknown, mode: "read" | "refresh") {
   return mode === "refresh" ? "本次刷新失败，已保留上次扫描。请稍后重试。" : "雷达扫描暂时不可用，请稍后重试。";
 }
 
+function logRadarFailure(error: unknown, mode: "read" | "refresh", hasCache: boolean) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn("radar_scan_failed", {
+    mode,
+    hasCache,
+    message: message.slice(0, 500),
+  });
+}
+
 function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
   const controller = new AbortController();
   const abort = () => controller.abort(parent.reason);
@@ -909,6 +1025,11 @@ function stripSearchHtml(value: string) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function trimText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
 }
 
 function json(data: unknown, status = 200) {
@@ -986,6 +1107,16 @@ const RADAR_JSON_SHAPE = {
   confidenceSummary: "说明本轮结论的总体置信度和主要证据类型",
   changeLog: ["相比上次扫描保留、新增、降级或删除了哪些判断，以及原因"],
   executiveSummary: ["3-8 条核心结论"],
+  coverageReview: [
+    {
+      label: "软覆盖方向",
+      status: "formal | watched | insufficient",
+      sourceCount: 5,
+      evidenceTypes: ["hard_data"],
+      sourceIds: ["S1", "S2"],
+      note: "已扫描后是否形成正式结论及原因",
+    },
+  ],
   solidGrowth: [
     {
       title: "细分产业",

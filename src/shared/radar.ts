@@ -28,6 +28,17 @@ export type RadarCoverageItem = {
   topSourceIds?: string[];
 };
 
+export type RadarCoverageStatus = "formal" | "watched" | "insufficient";
+
+export type RadarCoverageReview = {
+  label: string;
+  status: RadarCoverageStatus;
+  sourceCount: number;
+  evidenceTypes: RadarEvidenceType[];
+  note: string;
+  sourceIds?: string[];
+};
+
 export type RadarItem = {
   title: string;
   industries: string[];
@@ -63,6 +74,7 @@ export type RadarScan = {
   evidenceBreakdown?: RadarEvidenceBreakdown;
   evidenceSources?: RadarCitation[];
   softCoverage?: RadarCoverageItem[];
+  coverageReview?: RadarCoverageReview[];
   confidenceSummary?: string;
   changeLog?: string[];
   fromCache?: boolean;
