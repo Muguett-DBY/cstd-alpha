@@ -19,94 +19,28 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model routing", () => {
-  test("uses OpenCode Zen free models before the DeepSeek paid fallback", () => {
+  test("uses only the DeepSeek paid API for radar scans", () => {
     const routes = radarModelRoutes("paid-key");
 
-    expect(routes[0]).toMatchObject({
-      model: "nemotron-3-super-free",
-      url: "https://opencode.ai/zen/v1/chat/completions",
-      isFree: true,
-    });
-    expect(routes.map((route) => route.model)).toEqual([
-      "nemotron-3-super-free",
-      "deepseek-v4-flash-free",
-      "minimax-m2.5-free",
-      "big-pickle",
-      "qwen3.6-plus-free",
-      "deepseek-v4-flash",
+    expect(routes).toEqual([
+      {
+        model: "deepseek-v4-flash",
+        url: "https://api.deepseek.com/chat/completions",
+        apiKey: "paid-key",
+        isFree: false,
+      },
     ]);
-    expect(routes.slice(0, -1).every((route) => route.isFree)).toBe(true);
-    expect(routes.at(-1)).toMatchObject({
-      model: "deepseek-v4-flash",
-      url: "https://api.deepseek.com/chat/completions",
-      apiKey: "paid-key",
-      isFree: false,
-    });
+    expect(routes.some((route) => route.url.includes("opencode.ai"))).toBe(false);
   });
 
-  test("does not include the DeepSeek paid fallback when no API key is configured", () => {
-    const routes = radarModelRoutes(undefined);
-
-    expect(routes.map((route) => route.model)).toEqual(["nemotron-3-super-free", "deepseek-v4-flash-free", "minimax-m2.5-free", "big-pickle", "qwen3.6-plus-free"]);
-    expect(routes.every((route) => route.isFree)).toBe(true);
-    expect(routes.some((route) => route.url.includes("api.deepseek.com"))).toBe(false);
-    expect(routes.some((route) => route.apiKey)).toBe(false);
+  test("does not call any model when the DeepSeek API key is not configured", () => {
+    expect(radarModelRoutes(undefined)).toEqual([]);
   });
 
-  test("builds a stable JSON request with free-model thinking enabled and no auth header", () => {
-    const request = buildRadarRequest(
-      { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
-      [{ source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" }],
-      new AbortController().signal,
-    );
-    const body = JSON.parse(String(request.body)) as Record<string, unknown>;
-
-    expect(request.headers).not.toHaveProperty("authorization");
-    expect(body).toMatchObject({
-      model: "deepseek-v4-flash-free",
-      reasoning_effort: "max",
-      thinking: { type: "enabled" },
-      response_format: { type: "json_object" },
-      stream: false,
-      temperature: 0.1,
-    });
-    expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
-  });
-
-  test("enables deep reasoning only for free Zen models that support it", () => {
-    const qwenRequest = buildRadarRequest(
-      { model: "qwen3.6-plus-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
-      [],
-      new AbortController().signal,
-    );
-    const deepseekRequest = buildRadarRequest(
-      { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
-      [],
-      new AbortController().signal,
-    );
-    const nemotronRequest = buildRadarRequest(
-      { model: "nemotron-3-super-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
-      [],
-      new AbortController().signal,
-    );
-    const pickleRequest = buildRadarRequest(
-      { model: "big-pickle", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
-      [],
-      new AbortController().signal,
-    );
-
-    expect(JSON.parse(String(deepseekRequest.body))).toMatchObject({ reasoning_effort: "max", thinking: { type: "enabled", budget_tokens: 8192 } });
-    expect(JSON.parse(String(nemotronRequest.body))).toMatchObject({ reasoning_effort: "high", thinking: { type: "enabled", budget_tokens: 8192 } });
-    expect(JSON.parse(String(qwenRequest.body))).not.toHaveProperty("reasoning_effort");
-    expect(JSON.parse(String(qwenRequest.body))).not.toHaveProperty("thinking");
-    expect(JSON.parse(String(pickleRequest.body))).not.toHaveProperty("reasoning_effort");
-    expect(JSON.parse(String(pickleRequest.body))).not.toHaveProperty("thinking");
-  });
-
-  test("keeps paid DeepSeek fallback in max thinking mode without shrinking the scan output", () => {
+  test("builds a paid DeepSeek request with auth, max thinking, and stable JSON output", () => {
     const request = buildRadarRequest(
       { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
-      [],
+      [{ source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" }],
       new AbortController().signal,
     );
     const body = JSON.parse(String(request.body)) as Record<string, unknown>;
@@ -116,8 +50,12 @@ describe("radar scan model routing", () => {
       model: "deepseek-v4-flash",
       reasoning_effort: "max",
       thinking: { type: "enabled", budget_tokens: 8192 },
+      response_format: { type: "json_object" },
+      stream: false,
+      temperature: 0.1,
       max_tokens: 14000,
     });
+    expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
   });
 
   test("passes evidence tiers and previous scan context to the model request", () => {
@@ -128,7 +66,7 @@ describe("radar scan model routing", () => {
     ] as const;
 
     const request = buildRadarRequest(
-      { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
+      { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
       sources,
       new AbortController().signal,
       previous,
@@ -221,7 +159,7 @@ describe("radar scan caching", () => {
 
     expect(response.status).toBe(200);
     expect(json.radar?.fromCache).toBe(true);
-    expect(json.radar?.model).toBe("deepseek-v4-flash-free");
+    expect(json.radar?.model).toBe("deepseek-v4-flash");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -263,14 +201,13 @@ describe("radar scan caching", () => {
     expect(json.warning).toContain("模型限流");
   });
 
-  test("POST falls back to DeepSeek paid API only after free Zen models fail and caches the result", async () => {
+  test("POST calls the DeepSeek paid API directly and caches the result", async () => {
     const payload = cachedRadarPayload();
     const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(payload) };
     const fetchedUrls: string[] = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       fetchedUrls.push(url);
-      if (url.includes("opencode.ai/zen/v1/chat/completions")) return new Response(JSON.stringify({ error: "free limit" }), { status: 429 });
       if (url.includes("api.deepseek.com/chat/completions")) {
         return new Response(
           JSON.stringify({
@@ -292,9 +229,7 @@ describe("radar scan caching", () => {
     expect(json.radar?.fromCache).toBe(false);
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_CACHE_KEY, expect.stringContaining("deepseek-v4-flash"));
     expect(fetchedUrls.filter((url) => url.includes("api.deepseek.com/chat/completions"))).toHaveLength(1);
-    expect(fetchedUrls.findIndex((url) => url.includes("api.deepseek.com/chat/completions"))).toBeGreaterThan(
-      Math.max(...fetchedUrls.map((url, index) => (url.includes("opencode.ai/zen/v1/chat/completions") ? index : -1))),
-    );
+    expect(fetchedUrls.some((url) => url.includes("opencode.ai"))).toBe(false);
   });
 });
 
@@ -323,7 +258,7 @@ function cachedRadarPayload(): RadarCachePayload {
       generatedAt: now,
       asOfDate: now.slice(0, 10),
       validUntil: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
-      model: "deepseek-v4-flash-free",
+      model: "deepseek-v4-flash",
       sourceCount: 1,
       sourceQueries: ["A股 行业 景气"],
       fromCache: false,
@@ -345,8 +280,8 @@ function modelRadarPayload() {
     title: "行业雷达扫描",
     asOfDate: "2026-05-18",
     confidenceSummary: "测试模型输出。",
-    changeLog: ["付费 fallback 在免费模型失败后生成。"],
-    executiveSummary: ["免费模型限流后使用 DeepSeek 官方 API 兜底。"],
+    changeLog: ["DeepSeek 官方 API 生成。"],
+    executiveSummary: ["雷达扫描直接使用 DeepSeek 官方 API。"],
     solidGrowth: [],
     sustainability: [],
     bubbleRisks: [],
