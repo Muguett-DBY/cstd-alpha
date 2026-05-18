@@ -23,11 +23,11 @@ describe("radar scan model routing", () => {
     const routes = radarModelRoutes("paid-key");
 
     expect(routes[0]).toMatchObject({
-      model: "deepseek-v4-flash-free",
+      model: "qwen3.6-plus-free",
       url: "https://opencode.ai/zen/v1/chat/completions",
       isFree: true,
     });
-    expect(routes.map((route) => route.model)).toEqual(["deepseek-v4-flash-free", "minimax-m2.5-free", "nemotron-3-super-free", "big-pickle"]);
+    expect(routes.map((route) => route.model)).toEqual(["qwen3.6-plus-free", "deepseek-v4-flash-free", "big-pickle", "nemotron-3-super-free", "minimax-m2.5-free"]);
     expect(routes.every((route) => route.isFree)).toBe(true);
     expect(routes.some((route) => route.url.includes("api.deepseek.com"))).toBe(false);
     expect(routes.some((route) => route.apiKey)).toBe(false);
@@ -51,6 +51,28 @@ describe("radar scan model routing", () => {
       temperature: 0.1,
     });
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
+  });
+
+  test("enables deep reasoning only for free Zen models that support it", () => {
+    const deepseekRequest = buildRadarRequest(
+      { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
+      [],
+      new AbortController().signal,
+    );
+    const nemotronRequest = buildRadarRequest(
+      { model: "nemotron-3-super-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
+      [],
+      new AbortController().signal,
+    );
+    const pickleRequest = buildRadarRequest(
+      { model: "big-pickle", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
+      [],
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(deepseekRequest.body))).toMatchObject({ reasoning_effort: "max", thinking: { type: "enabled", budget_tokens: 8192 } });
+    expect(JSON.parse(String(nemotronRequest.body))).toMatchObject({ reasoning_effort: "max", thinking: { type: "enabled", budget_tokens: 8192 } });
+    expect(JSON.parse(String(pickleRequest.body))).not.toHaveProperty("thinking");
   });
 
   test("passes evidence tiers and previous scan context to the model request", () => {
