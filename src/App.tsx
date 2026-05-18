@@ -16,6 +16,8 @@ type ChartPhase = "idle" | "loading" | "ready" | "error";
 type AppView = "report" | "ranking" | "mine" | "radar";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 
+export const DEFAULT_APP_VIEW: AppView = "radar";
+
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<UserSession | null>(null);
@@ -40,7 +42,7 @@ function App() {
   const [priceMode, setPriceMode] = useState<PriceMode>("adjusted");
   const [cacheNotice, setCacheNotice] = useState("");
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
-  const [activeView, setActiveView] = useState<AppView>("report");
+  const [activeView, setActiveView] = useState<AppView>(DEFAULT_APP_VIEW);
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
