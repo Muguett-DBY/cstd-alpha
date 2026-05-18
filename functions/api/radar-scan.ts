@@ -9,7 +9,7 @@ type Env = {
   REPORT_CACHE?: KVNamespace;
 };
 
-type RadarModel = (typeof ZEN_FREE_MODELS)[number];
+type RadarModel = (typeof ZEN_FREE_MODELS)[number] | typeof DEEPSEEK_PAID_MODEL;
 type RadarRoute = { model: RadarModel; url: string; apiKey?: string; isFree: boolean };
 
 export type RadarCachePayload = {
@@ -22,11 +22,14 @@ export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 
 const ZEN_FREE_MODELS = ["nemotron-3-super-free", "deepseek-v4-flash-free", "minimax-m2.5-free", "big-pickle", "qwen3.6-plus-free"] as const;
-const ZEN_MODEL_REASONING: Partial<Record<RadarModel, "high" | "max">> = {
+const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
+const RADAR_MODEL_REASONING: Partial<Record<RadarModel, "high" | "max">> = {
   "deepseek-v4-flash-free": "max",
   "nemotron-3-super-free": "high",
+  "deepseek-v4-flash": "max",
 };
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 42;
@@ -110,8 +113,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
-  void apiKey;
-  return ZEN_FREE_MODELS.map((model) => ({ model, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true }));
+  const routes: RadarRoute[] = ZEN_FREE_MODELS.map((model) => ({ model, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true }));
+  const paidKey = apiKey?.trim();
+  if (paidKey) routes.push({ model: DEEPSEEK_PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: paidKey, isFree: false });
+  return routes;
 }
 
 export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
@@ -123,7 +128,7 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
     signal,
     body: JSON.stringify({
       model: route.model,
-      ...(ZEN_MODEL_REASONING[route.model] ? { reasoning_effort: ZEN_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 8192 } } : {}),
+      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 8192 } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
@@ -137,7 +142,6 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
         {
           role: "user",
           content: JSON.stringify({
-            asOfDate,
             task: RADAR_PROMPT,
             evidenceRules: [
               "先按公开信息源归纳，再做模型自己的投资分析。",
@@ -156,8 +160,15 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
               news: 2,
               research: 1,
             },
-            previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
             expectedJsonShape: RADAR_JSON_SHAPE,
+          }),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            asOfDate,
+            evidenceBreakdown,
+            previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
             sources,
           }),
         },
