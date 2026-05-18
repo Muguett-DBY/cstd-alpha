@@ -21,7 +21,7 @@ export type RadarCachePayload = {
 export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 
-const ZEN_FREE_MODELS = ["qwen3.6-plus-free", "deepseek-v4-flash-free", "big-pickle", "nemotron-3-super-free", "minimax-m2.5-free"] as const;
+const ZEN_FREE_MODELS = ["nemotron-3-super-free", "deepseek-v4-flash-free", "minimax-m2.5-free", "big-pickle", "qwen3.6-plus-free"] as const;
 const ZEN_MODEL_REASONING: Partial<Record<RadarModel, "high" | "max">> = {
   "deepseek-v4-flash-free": "max",
   "nemotron-3-super-free": "high",

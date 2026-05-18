@@ -23,11 +23,11 @@ describe("radar scan model routing", () => {
     const routes = radarModelRoutes("paid-key");
 
     expect(routes[0]).toMatchObject({
-      model: "qwen3.6-plus-free",
+      model: "nemotron-3-super-free",
       url: "https://opencode.ai/zen/v1/chat/completions",
       isFree: true,
     });
-    expect(routes.map((route) => route.model)).toEqual(["qwen3.6-plus-free", "deepseek-v4-flash-free", "big-pickle", "nemotron-3-super-free", "minimax-m2.5-free"]);
+    expect(routes.map((route) => route.model)).toEqual(["nemotron-3-super-free", "deepseek-v4-flash-free", "minimax-m2.5-free", "big-pickle", "qwen3.6-plus-free"]);
     expect(routes.every((route) => route.isFree)).toBe(true);
     expect(routes.some((route) => route.url.includes("api.deepseek.com"))).toBe(false);
     expect(routes.some((route) => route.apiKey)).toBe(false);
