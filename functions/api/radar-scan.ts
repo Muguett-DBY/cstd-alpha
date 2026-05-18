@@ -37,7 +37,7 @@ const RADAR_QUERIES = [
   "中国 半导体 设备 算力 电网 创新药 业绩 增长",
   "中国 消费 出海 高端制造 周期复苏 行业",
   "港股 互联网 创新药 高股息 行业 景气",
-  "美股 AI 半导体 云计算 电力 数据中心 增长",
+  "A股 港股 AI 半导体 云计算 电力 数据中心 增长",
   "行业 衰退 技术替代 需求萎缩 产能过剩 公司",
 ];
 
@@ -63,6 +63,32 @@ const RADAR_ANNOUNCEMENT_QUERIES = [
 const RADAR_RESEARCH_QUERIES = [
   "行业研报 高景气 业绩增长 细分产业",
   "券商研报 产能过剩 行业泡沫 估值",
+];
+
+const RADAR_COMPANY_UNIVERSE_RULES = [
+  "代表公司只能列 A 股或港股上市公司，包括 A 股主板、科创板、创业板、北交所和港股主板公司。",
+  "可以参考全球产业链信息判断行业趋势，但 companies、representativeCompanies、stageCompanies 里不得输出美股、欧股、日股或未上市公司。",
+  "如果某个细分产业的核心代表主要是海外公司，不要用海外公司替代；改为列 A/H 对标公司，若找不到就留空并写入 limitations。",
+  "不得把美光、Micron、英伟达、NVIDIA、苹果、Apple、特斯拉、Tesla、ASML、台积电、TSMC 等海外上市主体作为代表公司。",
+];
+
+const NON_AH_REPRESENTATIVE_PATTERNS = [
+  /美光|Micron/i,
+  /英伟达|NVIDIA/i,
+  /苹果|Apple/i,
+  /特斯拉|Tesla/i,
+  /ASML/i,
+  /台积电|TSMC/i,
+  /微软|Microsoft/i,
+  /谷歌|Alphabet|Google/i,
+  /亚马逊|Amazon/i,
+  /Meta/i,
+  /博通|Broadcom/i,
+  /AMD/i,
+  /英特尔|Intel/i,
+  /超微电脑|Supermicro/i,
+  /三星|Samsung/i,
+  /SK海力士|SK Hynix|Hynix/i,
 ];
 
 type RadarSourcePlanItem =
@@ -144,6 +170,7 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
               "增长判断至少说明需求扩张、技术突破、价格提升、市占率提升、政策推动中的主要驱动。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
               "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
+              ...RADAR_COMPANY_UNIVERSE_RULES,
             ],
             evidenceBreakdown,
             evidenceWeights: {
@@ -440,7 +467,7 @@ function radarItems(value: unknown, previousTitles = new Set<string>()): RadarIt
     return {
       title,
       industries: stringArray(record.industries).slice(0, 6),
-      companies: stringArray(record.companies).slice(0, 8),
+      companies: ahRepresentativeCompanies(record.companies).slice(0, 8),
       thesis: stringValue(record.thesis),
       drivers: stringArray(record.drivers).slice(0, 8),
       evidence: stringArray(record.evidence).slice(0, 8),
@@ -462,10 +489,18 @@ function radarLists(value: unknown): RadarList[] {
     const record = isRecord(item) ? item : {};
     return {
       label: stringValue(record.label),
-      companies: stringArray(record.companies).slice(0, 12),
+      companies: ahRepresentativeCompanies(record.companies).slice(0, 12),
       note: stringValue(record.note),
     };
   });
+}
+
+function ahRepresentativeCompanies(value: unknown) {
+  return stringArray(value).filter((company) => !isNonAhRepresentative(company));
+}
+
+function isNonAhRepresentative(company: string) {
+  return NON_AH_REPRESENTATIVE_PATTERNS.some((pattern) => pattern.test(company));
 }
 
 function dedupeSources(items: RadarSource[]) {

@@ -56,6 +56,7 @@ describe("radar scan model routing", () => {
       max_tokens: 14000,
     });
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
+    expect(JSON.stringify(body.messages)).toContain("代表公司只能列 A 股或港股上市公司");
   });
 
   test("passes evidence tiers and previous scan context to the model request", () => {
@@ -102,6 +103,35 @@ describe("radar scan model routing", () => {
       sources: expect.any(Array),
       previousScan: expect.objectContaining({ id: "radar-1" }),
     });
+  });
+
+  test("filters non A-share and Hong Kong representatives from model output", async () => {
+    const payload = cachedRadarPayload();
+    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(payload) };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("api.deepseek.com/chat/completions")) {
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(modelRadarPayloadWithOverseasCompanies()) } }],
+          }),
+        );
+      }
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as { radar?: unknown };
+    const text = JSON.stringify(json.radar);
+
+    expect(response.status).toBe(200);
+    expect(text).toContain("兆易创新");
+    expect(text).toContain("中芯国际");
+    expect(text).not.toContain("美光");
+    expect(text).not.toContain("Micron");
+    expect(text).not.toContain("英伟达");
   });
 });
 
@@ -290,6 +320,43 @@ function modelRadarPayload() {
     representativeCompanies: [],
     stageCompanies: [],
     limitations: ["测试输出。"],
+  };
+}
+
+function modelRadarPayloadWithOverseasCompanies() {
+  return {
+    ...modelRadarPayload(),
+    solidGrowth: [
+      {
+        title: "存储芯片",
+        industries: ["存储芯片"],
+        companies: ["美光（Micron）", "兆易创新", "中芯国际", "英伟达"],
+        thesis: "测试海外代表公司过滤。",
+        drivers: ["AI需求"],
+        evidence: ["测试证据"],
+        evidenceTypes: ["hard_data"],
+        supportingSourceCount: 3,
+        confidence: "高",
+        durability: "长期",
+        riskLevel: "中",
+        changeReason: "测试。",
+        turningPoints: ["测试拐点"],
+      },
+    ],
+    representativeCompanies: [
+      {
+        label: "扎实增长产业中的代表公司",
+        companies: ["美光（Micron）", "兆易创新", "中芯国际", "NVIDIA"],
+        note: "测试代表公司清洗。",
+      },
+    ],
+    stageCompanies: [
+      {
+        label: "上升产业中的领军人物",
+        companies: ["英伟达", "中芯国际"],
+        note: "测试阶段公司清洗。",
+      },
+    ],
   };
 }
 
