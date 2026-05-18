@@ -8,6 +8,7 @@ import {
   RADAR_CACHE_KEY,
   buildRadarRequest,
   classifyRadarSource,
+  createRadarSourcePlan,
   onRequestGet,
   onRequestPost,
   radarModelRoutes,
@@ -77,6 +78,17 @@ describe("radar scan model routing", () => {
 });
 
 describe("radar scan evidence tiers", () => {
+  test("keeps external source fetches within the Cloudflare Workers free-plan budget", () => {
+    const plan = createRadarSourcePlan();
+
+    expect(plan).toHaveLength(42);
+    expect(plan.filter((item) => item.tier === "hard_data").length).toBeGreaterThan(0);
+    expect(plan.filter((item) => item.tier === "announcement").length).toBeGreaterThan(0);
+    expect(plan.filter((item) => item.tier === "market").length).toBeGreaterThan(0);
+    expect(plan.filter((item) => item.tier === "news").length).toBeGreaterThan(0);
+    expect(plan.filter((item) => item.tier === "research").length).toBeGreaterThan(0);
+  });
+
   test("classifies hard data, announcements, market data, news, and research", () => {
     expect(classifyRadarSource({ source: "公司公告", query: "业绩预告", title: "净利润预增", url: "" })).toMatchObject({ sourceType: "announcement", weight: 4 });
     expect(classifyRadarSource({ source: "东方财富板块", query: "行业资金流", title: "半导体设备", url: "" })).toMatchObject({ sourceType: "market", weight: 3 });

@@ -27,6 +27,7 @@ const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/compl
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
+const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 42;
 
 const RADAR_QUERIES = [
   "A股 细分行业 业绩增长 景气度",
@@ -62,6 +63,12 @@ const RADAR_RESEARCH_QUERIES = [
   "行业研报 高景气 业绩增长 细分产业",
   "券商研报 产能过剩 行业泡沫 估值",
 ];
+
+type RadarSourcePlanItem =
+  | { kind: "google"; tier: RadarEvidenceType; query: string }
+  | { kind: "baidu"; tier: RadarEvidenceType; query: string }
+  | { kind: "eastmoney"; tier: RadarEvidenceType; query: string; sourceName?: string; sourceType?: RadarEvidenceType }
+  | { kind: "boards"; tier: RadarEvidenceType };
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
@@ -180,25 +187,38 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
 }
 
 async function fetchRadarSources(signal: AbortSignal): Promise<RadarSource[]> {
-  const results = await Promise.allSettled(
-    [
-      ...RADAR_QUERIES.flatMap((query) => [
-        fetchGoogleNewsSources(query, signal),
-        fetchBaiduNewsSources(query, signal),
-        fetchEastmoneySources(query, signal),
-      ]),
-      fetchEastmoneyBoardSources(signal),
-      ...RADAR_HARD_DATA_QUERIES.flatMap((query) => [
-        fetchGoogleNewsSources(query, signal),
-        fetchEastmoneySources(query, signal, "行业价格", "hard_data"),
-      ]),
-      ...RADAR_ANNOUNCEMENT_QUERIES.map((query) => fetchEastmoneySources(query, signal, "公司公告", "announcement")),
-      ...RADAR_RESEARCH_QUERIES.map((query) => fetchEastmoneySources(query, signal, "研报摘要", "research")),
-    ],
-  );
+  const results = await Promise.allSettled(createRadarSourcePlan().map((item) => fetchRadarSourcePlanItem(item, signal)));
   const items = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   const deduped = dedupeSources(items);
   return deduped.sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0)).slice(0, 96);
+}
+
+export function createRadarSourcePlan(): RadarSourcePlanItem[] {
+  const plan: RadarSourcePlanItem[] = [
+    { kind: "boards", tier: "market" },
+    ...RADAR_HARD_DATA_QUERIES.slice(0, 8).flatMap<RadarSourcePlanItem>((query) => [
+      { kind: "eastmoney", tier: "hard_data", query, sourceName: "行业价格", sourceType: "hard_data" },
+      { kind: "google", tier: "hard_data", query },
+    ]),
+    ...RADAR_ANNOUNCEMENT_QUERIES.flatMap<RadarSourcePlanItem>((query) => [
+      { kind: "eastmoney", tier: "announcement", query, sourceName: "公司公告", sourceType: "announcement" },
+      { kind: "google", tier: "announcement", query },
+    ]),
+    ...RADAR_QUERIES.slice(0, 6).flatMap<RadarSourcePlanItem>((query) => [
+      { kind: "google", tier: "news", query },
+      { kind: "baidu", tier: "news", query },
+      { kind: "eastmoney", tier: "news", query },
+    ]),
+    ...RADAR_RESEARCH_QUERIES.map<RadarSourcePlanItem>((query) => ({ kind: "eastmoney", tier: "research", query, sourceName: "研报摘要", sourceType: "research" })),
+  ];
+  return plan.slice(0, RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET);
+}
+
+async function fetchRadarSourcePlanItem(item: RadarSourcePlanItem, signal: AbortSignal): Promise<RadarSource[]> {
+  if (item.kind === "google") return fetchGoogleNewsSources(item.query, signal);
+  if (item.kind === "baidu") return fetchBaiduNewsSources(item.query, signal);
+  if (item.kind === "boards") return fetchEastmoneyBoardSources(signal);
+  return fetchEastmoneySources(item.query, signal, item.sourceName, item.sourceType);
 }
 
 async function fetchGoogleNewsSources(query: string, signal: AbortSignal): Promise<RadarSource[]> {
