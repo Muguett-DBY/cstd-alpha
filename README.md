@@ -7,7 +7,7 @@
 1. 固定账号登录保护网页和 API；账号保存在 D1，密码只保存哈希，session token 只保存哈希。
 2. 用户输入公司名或代码，系统返回候选公司：公司名、代码、上市地、交易所。
 3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
-4. 在线生成和行业雷达使用 DeepSeek Direct API `deepseek-v4-flash`，并保持 `reasoning_effort: "max"`；行业雷达会先做公开来源聚合与证据摘要，再交给模型综合判断。
+4. 在线生成和行业雷达使用 DeepSeek Direct API `deepseek-v4-flash`，并保持 `reasoning_effort: "max"`；行业雷达优先读取 GitHub Actions 定时生成的公开证据库，再把精简证据摘要交给模型综合判断。
 5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
 6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
 
@@ -20,7 +20,7 @@
 - `GET/POST/DELETE /api/session`：固定账号登录、读取和退出。
 - `GET/POST/DELETE /api/watchlist`：按 `user_id` 隔离的自选股。
 - `GET/POST /api/template-analysis`：模板专项报告元数据存在 D1，正文 Markdown 存在 R2。
-- `GET/POST /api/radar-scan`：读取或刷新行业雷达；结果缓存长期保留，刷新时复用短期来源缓存与证据摘要缓存。
+- `GET/POST /api/radar-scan`：读取或刷新行业雷达；结果缓存长期保留，刷新时优先复用滚动证据库，证据 hash 未变化则不调用模型。
 
 ## 本地开发
 
@@ -52,6 +52,8 @@ CSTD_USER_PASSWORD="..." node scripts/create-fixed-user.mjs --username=alice --d
 ## 部署
 
 生产环境通过 GitHub Actions 使用 Cloudflare Pages Direct Upload。
+
+行业雷达证据库由 `.github/workflows/radar-evidence.yml` 每 6 小时运行一次：Python 脚本 `scripts/collect_radar_evidence.py` 抓取 AKShare、BaoStock、东方财富和公开新闻线索，生成 `radar-evidence.json` 与压缩产物，再写入现有 `REPORT_CACHE` KV 的 `radar-evidence:v1:latest`。这个步骤不读取也不调用 `DEEPSEEK_API_KEY`。
 
 GitHub 仓库 secrets：
 

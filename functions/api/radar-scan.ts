@@ -61,12 +61,23 @@ type RadarDigestCachePayload = {
   digest: RadarEvidenceDigest;
 };
 
+type RadarEvidenceSnapshotPayload = {
+  version: typeof RADAR_EVIDENCE_SNAPSHOT_VERSION;
+  generatedAt: string;
+  asOfDate: string;
+  source: string;
+  evidenceHash?: string;
+  sources: RadarSource[];
+};
+
 export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 export const RADAR_SOURCE_CACHE_VERSION = "v2";
 export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
 export const RADAR_DIGEST_CACHE_VERSION = "v2";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
+export const RADAR_EVIDENCE_SNAPSHOT_VERSION = "v1";
+export const RADAR_EVIDENCE_SNAPSHOT_KEY = `radar-evidence:${RADAR_EVIDENCE_SNAPSHOT_VERSION}:latest`;
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
 
@@ -191,8 +202,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
+  const rollingDigest = await loadRollingRadarEvidenceDigest(env);
+  if (cached && rollingDigest && cachedRadarMatchesDigest(cached.radar, rollingDigest)) {
+    return json({ radar: markCached(cached.radar, "证据库未变化，已复用上次稳定扫描。") });
+  }
   try {
-    const radar = await generateRadarScan(env, request.signal, cached?.radar ?? null);
+    const radar = await generateRadarScan(env, request.signal, cached?.radar ?? null, rollingDigest);
     await writeRadarCache(env, radar);
     return json({ radar });
   } catch (error) {
@@ -275,9 +290,8 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
   };
 }
 
-async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null): Promise<RadarScan> {
-  const sources = await loadRadarSources(env, signal);
-  const digest = await loadRadarEvidenceDigest(env, sources);
+async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null, preloadedDigest?: RadarEvidenceDigest | null): Promise<RadarScan> {
+  const digest = preloadedDigest ?? (await loadRadarEvidenceDigest(env, await loadRadarSources(env, signal)));
   if (digest.sourceCount < MIN_RADAR_SOURCE_COUNT) {
     throw new Error(`雷达证据包过薄：${digest.sourceCount}/${MIN_RADAR_SOURCE_COUNT}`);
   }
@@ -301,6 +315,12 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
 }
 
 async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSource[]> {
+  const rollingSnapshot = await readRadarEvidenceSnapshot(env);
+  if (rollingSnapshot && rollingSnapshot.length >= MIN_RADAR_SOURCE_COUNT) {
+    await writeRadarSourceCache(env, rollingSnapshot);
+    return rollingSnapshot;
+  }
+
   const cached = await readRadarSourceCache(env);
   if (cached && cached.length >= MIN_RADAR_SOURCE_COUNT) return cached;
 
@@ -317,6 +337,12 @@ async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSou
   if (sources.length >= (cached?.length ?? 0)) return sources;
   if (cached) return cached;
   return sources;
+}
+
+async function loadRollingRadarEvidenceDigest(env: Env): Promise<RadarEvidenceDigest | null> {
+  const sources = await readRadarEvidenceSnapshot(env);
+  if (!sources || sources.length < MIN_RADAR_SOURCE_COUNT) return null;
+  return loadRadarEvidenceDigest(env, sources);
 }
 
 async function loadRadarEvidenceDigest(env: Env, sources: RadarSource[]): Promise<RadarEvidenceDigest> {
@@ -690,8 +716,21 @@ async function writeRadarDigestCache(env: Env, digest: RadarEvidenceDigest) {
   await env.REPORT_CACHE?.put(RADAR_DIGEST_CACHE_KEY, JSON.stringify(payload), { expirationTtl: RADAR_SOURCE_CACHE_HOURS * 60 * 60 });
 }
 
+async function readRadarEvidenceSnapshot(env: Env): Promise<RadarSource[] | null> {
+  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotPayload>(RADAR_EVIDENCE_SNAPSHOT_KEY, "json").catch(() => null);
+  if (!value || value.version !== RADAR_EVIDENCE_SNAPSHOT_VERSION || !Array.isArray(value.sources)) return null;
+  const sources = dedupeSources(value.sources.map(radarSourceFromSnapshot).filter((source): source is RadarSource => Boolean(source)));
+  if (sources.length < MIN_RADAR_SOURCE_COUNT) return null;
+  return sources.sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0)).slice(0, 128);
+}
+
 function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: string): RadarScan {
   return { ...radar, fromCache: true, ...(reuseReason ? { reuseReason } : {}), ...(refreshWarning ? { refreshWarning } : {}) };
+}
+
+function cachedRadarMatchesDigest(radar: RadarScan, digest: RadarEvidenceDigest) {
+  if (!radar.evidenceSources?.length) return false;
+  return radar.sourceCount === digest.sourceCount && radarSourceFingerprint(radar.evidenceSources) === digest.sourceFingerprint;
 }
 
 function contentFromModelResponse(text: string) {
@@ -847,6 +886,24 @@ function dedupeSources(items: RadarSource[]) {
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
+  });
+}
+
+function radarSourceFromSnapshot(value: unknown): RadarSource | null {
+  if (!isRecord(value)) return null;
+  const source = stringValue(value.source);
+  const query = stringValue(value.query);
+  const title = stringValue(value.title);
+  if (!source || !query || !title) return null;
+  return classifyRadarSource({
+    source,
+    query,
+    title,
+    url: stringValue(value.url),
+    publishedAt: stringValue(value.publishedAt) || undefined,
+    summary: stringValue(value.summary) || undefined,
+    sourceType: evidenceTypeValue(value.sourceType),
+    weight: numberValue(value.weight),
   });
 }
 
@@ -1089,6 +1146,10 @@ function evidenceTypes(value: unknown): RadarEvidenceType[] {
   return stringArray(value)
     .filter((item): item is RadarEvidenceType => ["hard_data", "official", "announcement", "market", "news", "research"].includes(item))
     .slice(0, 6);
+}
+
+function evidenceTypeValue(value: unknown): RadarEvidenceType | undefined {
+  return evidenceTypes([value])[0];
 }
 
 function enumValue<T extends string>(value: unknown, values: readonly T[], fallback: T): T {

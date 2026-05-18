@@ -7,6 +7,7 @@ vi.mock("../_shared/auth", () => ({
 import {
   RADAR_CACHE_KEY,
   RADAR_DIGEST_CACHE_KEY,
+  RADAR_EVIDENCE_SNAPSHOT_KEY,
   RADAR_SOURCE_CACHE_KEY,
   buildRadarEvidenceDigest,
   buildRadarRequest,
@@ -371,6 +372,78 @@ describe("radar scan caching", () => {
     expect(json.radar?.solidGrowth?.[0]?.sourceIds).toEqual(["S1"]);
   });
 
+  test("POST prefers the rolling evidence snapshot and does not fetch live sources", async () => {
+    const payload = cachedRadarPayload();
+    const snapshotSources = manyRadarSources(48).map((source, index) => ({
+      ...source,
+      source: index % 2 === 0 ? "AKShare" : "BaoStock",
+      sourceType: index % 3 === 0 ? ("hard_data" as const) : ("market" as const),
+      weight: index % 3 === 0 ? 5 : 3,
+    }));
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({
+        [RADAR_CACHE_KEY]: payload,
+        [RADAR_EVIDENCE_SNAPSHOT_KEY]: radarEvidenceSnapshot(snapshotSources),
+      }),
+    };
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchedUrls.push(url);
+      if (url.includes("api.deepseek.com/chat/completions")) {
+        const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+        const dynamicPayload = JSON.parse(body.messages[2].content) as { evidenceDigest?: { sourceCount?: number; citations?: Array<{ source: string }> } };
+        expect(dynamicPayload.evidenceDigest?.sourceCount).toBe(48);
+        expect(dynamicPayload.evidenceDigest?.citations?.some((source) => source.source === "AKShare")).toBe(true);
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(modelRadarPayloadWithSourceIds()) } }],
+          }),
+        );
+      }
+      return new Response("unexpected live source fetch", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+
+    expect(response.status).toBe(200);
+    expect(fetchedUrls).toEqual(["https://api.deepseek.com/chat/completions"]);
+    expect(env.REPORT_CACHE.get).toHaveBeenCalledWith(RADAR_EVIDENCE_SNAPSHOT_KEY, "json");
+  });
+
+  test("POST reuses the cached radar without DeepSeek when the rolling evidence hash is unchanged", async () => {
+    const digest = buildRadarEvidenceDigest(manyRadarSources(48));
+    const payload = cachedRadarPayload();
+    payload.radar.evidenceSources = digest.citations;
+    payload.radar.sourceCount = digest.sourceCount;
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({
+        [RADAR_CACHE_KEY]: payload,
+        [RADAR_EVIDENCE_SNAPSHOT_KEY]: radarEvidenceSnapshot(digest.citations),
+      }),
+    };
+    globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as { radar?: { fromCache?: boolean; reuseReason?: string; sourceCount?: number } };
+
+    expect(response.status).toBe(200);
+    expect(json.radar?.fromCache).toBe(true);
+    expect(json.radar?.sourceCount).toBe(48);
+    expect(json.radar?.reuseReason).toContain("证据库未变化");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   test("POST calls the DeepSeek paid API directly and caches the result", async () => {
     const payload = cachedRadarPayload();
     const digest = buildRadarEvidenceDigest(manyRadarSources(40));
@@ -535,6 +608,16 @@ function radarCacheStore(payload: RadarCachePayload, digest: ReturnType<typeof b
       sourceFingerprint: digest.sourceFingerprint,
       digest,
     },
+  };
+}
+
+function radarEvidenceSnapshot(sources: ReturnType<typeof manyRadarSources>) {
+  return {
+    version: "v1",
+    generatedAt: new Date().toISOString(),
+    asOfDate: new Date().toISOString().slice(0, 10),
+    source: "github-actions",
+    sources,
   };
 }
 
