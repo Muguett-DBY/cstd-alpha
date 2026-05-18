@@ -267,6 +267,8 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
               "如果同一产业方向同时出现主题板块聚合、行业分类覆盖和多条新闻线索，可以形成中低置信观察或正式结论；不要只因为 sourceType 里没有 hard_data 就把所有方向清空。",
               "新浪主题板块聚合用于说明产业方向覆盖，Google News 用于提供价格、库存、财报和产能线索；正式结论仍需写清证据强弱和待验证项。",
+              "不要生成全空报告：如果没有高置信正式结论，也必须把证据较强的方向作为低/中置信观察条目放入 sustainability、upcomingGrowth 或 decliningIndustries，并在 thesis、confidence、limitations 里明确待验证。",
+              "solidGrowth 只放高或中置信增长；低置信增长线索放入 sustainability 或 upcomingGrowth。decliningIndustries 可放低/中置信衰退观察，但必须说明证据不足和拐点。",
               "本次输入已经是第一阶段证据摘要。你必须在每个行业结论中填写 sourceIds，引用 evidenceDigest.citations 里的 S1/S2 等证据编号。",
               "只把证据强度足够的行业写入正式结论；被扫描但证据不足的方向写入 limitations，不要为了覆盖而强行输出。",
               "coverageReview 必须逐项复核 evidenceDigest.softCoverage：formal 表示进入正式结论，watched 表示已扫描但证据不足或方向分化，insufficient 表示来源太弱。不要把 softCoverage 里的方向写成“未覆盖”。",
