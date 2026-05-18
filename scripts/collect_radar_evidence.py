@@ -51,6 +51,54 @@ SOURCE_WEIGHTS = {
 
 DATA_SIGNAL_WORDS = ("价格", "库存", "产能", "订单", "营收", "净利润", "毛利率", "现金流", "销量", "装机", "开工率", "同比", "环比")
 RISK_SIGNAL_WORDS = ("泡沫", "过剩", "亏损", "下滑", "衰退", "库存高企", "停牌", "异动")
+TOPIC_SIGNAL_WORDS = (
+    "半导体",
+    "芯片",
+    "存储",
+    "HBM",
+    "算力",
+    "光模块",
+    "PCB",
+    "铜",
+    "钨",
+    "稀土",
+    "锂",
+    "有色",
+    "光伏",
+    "硅料",
+    "储能",
+    "电池",
+    "猪",
+    "养殖",
+    "汽车",
+    "智能驾驶",
+    "创新药",
+    "医药",
+    "电力",
+    "电网",
+    "钢铁",
+    "水泥",
+    "地产",
+    "航运",
+    "高股息",
+    "煤炭",
+    "公用事业",
+    "机器人",
+)
+TOPIC_ROLLUP_KEYWORDS = {
+    "半导体/AI算力": ("半导体", "芯片", "存储", "HBM", "算力", "光模块", "PCB", "CPO", "服务器"),
+    "战略有色金属": ("有色", "铜", "钨", "稀土", "小金属", "黄金", "铝", "锂", "镍", "钴"),
+    "锂电储能": ("锂", "电池", "储能", "固态电池", "磷酸铁锂", "BC电池"),
+    "光伏产业链": ("光伏", "硅料", "硅片", "组件", "逆变器", "TOPCon", "BC电池"),
+    "生猪养殖": ("猪", "养殖", "畜牧"),
+    "汽车/智能驾驶": ("汽车", "新能源车", "智能驾驶", "华为汽车", "高压快充"),
+    "创新药/医疗服务": ("创新药", "医药", "医疗", "CXO", "药", "研发服务"),
+    "电力电网/能源基础设施": ("电力", "电网", "特高压", "变压器", "数据中心", "电气设备"),
+    "钢铁水泥/地产链": ("钢铁", "水泥", "地产", "房地产", "建材", "玻璃"),
+    "航运物流": ("航运", "港口", "物流", "船舶"),
+    "平稳现金流/高股息": ("高股息", "煤炭", "公用事业", "电力", "水电", "银行", "电信"),
+    "机器人/AI应用": ("机器人", "人形机器人", "具身智能", "AI应用", "人工智能"),
+}
 
 
 def main() -> int:
@@ -163,8 +211,8 @@ def fetch_sina_boards() -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     endpoints = [
         ("新浪行业板块", "新浪行业板块 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php", 80),
-        ("新浪概念板块", "新浪概念板块 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=class", 80),
-        ("新浪证监会行业", "证监会行业 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=industry", 80),
+        ("新浪概念板块", "新浪概念板块 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=class", 240),
+        ("新浪证监会行业", "证监会行业 涨跌幅 成交额 领涨股", "https://vip.stock.finance.sina.com.cn/q/view/newFLJK.php?param=industry", 120),
     ]
     for label, query, url, limit in endpoints:
         try:
@@ -174,7 +222,7 @@ def fetch_sina_boards() -> list[dict[str, Any]]:
             print(f"collector_warning sina_boards.{label}: {type(exc).__name__}: {str(exc)[:180]}")
             continue
         sources.extend(sina_board_sources(label, query, url, data, limit))
-    return sources
+    return sources + topic_rollup_sources("新浪主题板块聚合", sources)
 
 
 def sina_board_sources(label: str, query: str, base_url: str, data: dict[str, Any], limit: int) -> list[dict[str, Any]]:
@@ -207,6 +255,28 @@ def sina_board_sources(label: str, query: str, base_url: str, data: dict[str, An
             }
         )
     return sources[:limit]
+
+
+def topic_rollup_sources(label: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rollups: list[dict[str, Any]] = []
+    for topic, keywords in TOPIC_ROLLUP_KEYWORDS.items():
+        matched = [source for source in sources if any(keyword.lower() in source_text(source).lower() for keyword in keywords)]
+        if not matched:
+            continue
+        names = [clean_text(source.get("title")).split(" 涨跌幅")[0] for source in matched[:6]]
+        queries = [query for candidate_topic, query, _source_type in TOPIC_QUERIES if candidate_topic == topic]
+        rollups.append(
+            {
+                "source": label,
+                "query": queries[0] if queries else topic,
+                "title": f"{topic} 相关板块 {len(matched)} 个，代表：{'、'.join(names[:5])}",
+                "url": f"https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php#{quote(topic)}",
+                "summary": "基于新浪行业/概念/证监会行业板块的涨跌幅、成交额和领涨股聚合，用于识别产业方向和市场验证线索。",
+                "sourceType": "market",
+                "weight": SOURCE_WEIGHTS["market"],
+            }
+        )
+    return rollups
 
 
 def fetch_google_news() -> list[dict[str, Any]]:
@@ -486,11 +556,12 @@ def infer_source_type(source: dict[str, Any]) -> str:
 
 
 def score_source(source: dict[str, Any]) -> int:
-    text = " ".join(clean_text(source.get(key)) for key in ("source", "query", "title", "summary"))
+    text = source_text(source)
     is_google_news = source.get("source") == "Google News"
     data_signal = 0 if is_google_news else 8 if any(word in text for word in DATA_SIGNAL_WORDS) else 0
     risk_signal = 4 if any(word in text for word in RISK_SIGNAL_WORDS) else 0
-    return int(source.get("weight", 2)) * 10 + data_signal + risk_signal
+    topic_signal = 10 if any(word.lower() in text.lower() for word in TOPIC_SIGNAL_WORDS) else 0
+    return int(source.get("weight", 2)) * 10 + data_signal + risk_signal + topic_signal
 
 
 def dedupe_sources(items: Any) -> list[dict[str, Any]]:
@@ -606,6 +677,10 @@ def count_where(sources: list[dict[str, Any]], predicate: Any) -> int:
     return sum(1 for source in sources if predicate(source))
 
 
+def source_text(source: dict[str, Any]) -> str:
+    return " ".join(clean_text(source.get(key)) for key in ("source", "query", "title", "summary"))
+
+
 def evidence_hash(sources: list[dict[str, Any]]) -> str:
     payload = "\n".join(
         sorted(f"{item.get('url', '')}|{item.get('title', '')}|{item.get('source', '')}|{item.get('query', '')}|{item.get('publishedAt', '')}" for item in sources)
@@ -616,7 +691,21 @@ def evidence_hash(sources: list[dict[str, Any]]) -> str:
 def read_text(url: str) -> str:
     request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; CSTDAlphaEvidenceBot/1.0; +https://alpha.custard.top)"})
     with urlopen(request, timeout=20) as response:
-        return response.read().decode("utf-8", errors="ignore")
+        data = response.read()
+        content_type = response.headers.get("content-type", "")
+        charset = ""
+        if "charset=" in content_type:
+            charset = content_type.split("charset=", 1)[1].split(";", 1)[0].strip()
+        if charset.lower() in ("iso-8859-1", "latin1", "latin-1"):
+            charset = ""
+        for encoding in ["utf-8", "gb18030", charset]:
+            if not encoding:
+                continue
+            try:
+                return data.decode(encoding)
+            except (LookupError, UnicodeDecodeError):
+                continue
+        return data.decode("utf-8", errors="ignore")
 
 
 def read_json(url: str) -> dict[str, Any]:
