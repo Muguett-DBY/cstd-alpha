@@ -54,6 +54,11 @@ describe("radar scan model routing", () => {
   });
 
   test("enables deep reasoning only for free Zen models that support it", () => {
+    const qwenRequest = buildRadarRequest(
+      { model: "qwen3.6-plus-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
+      [],
+      new AbortController().signal,
+    );
     const deepseekRequest = buildRadarRequest(
       { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true },
       [],
@@ -71,7 +76,10 @@ describe("radar scan model routing", () => {
     );
 
     expect(JSON.parse(String(deepseekRequest.body))).toMatchObject({ reasoning_effort: "max", thinking: { type: "enabled", budget_tokens: 8192 } });
-    expect(JSON.parse(String(nemotronRequest.body))).toMatchObject({ reasoning_effort: "max", thinking: { type: "enabled", budget_tokens: 8192 } });
+    expect(JSON.parse(String(nemotronRequest.body))).toMatchObject({ reasoning_effort: "high", thinking: { type: "enabled", budget_tokens: 8192 } });
+    expect(JSON.parse(String(qwenRequest.body))).not.toHaveProperty("reasoning_effort");
+    expect(JSON.parse(String(qwenRequest.body))).not.toHaveProperty("thinking");
+    expect(JSON.parse(String(pickleRequest.body))).not.toHaveProperty("reasoning_effort");
     expect(JSON.parse(String(pickleRequest.body))).not.toHaveProperty("thinking");
   });
 

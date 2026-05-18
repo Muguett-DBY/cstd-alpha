@@ -22,7 +22,10 @@ export const RADAR_CACHE_VERSION = "v1";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 
 const ZEN_FREE_MODELS = ["qwen3.6-plus-free", "deepseek-v4-flash-free", "big-pickle", "nemotron-3-super-free", "minimax-m2.5-free"] as const;
-const DEEP_THINKING_MODELS = new Set<RadarModel>(["deepseek-v4-flash-free", "nemotron-3-super-free"]);
+const ZEN_MODEL_REASONING: Partial<Record<RadarModel, "high" | "max">> = {
+  "deepseek-v4-flash-free": "max",
+  "nemotron-3-super-free": "high",
+};
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
@@ -120,8 +123,7 @@ export function buildRadarRequest(route: RadarRoute, sources: RadarSource[], sig
     signal,
     body: JSON.stringify({
       model: route.model,
-      reasoning_effort: "max",
-      ...(DEEP_THINKING_MODELS.has(route.model) ? { thinking: { type: "enabled", budget_tokens: 8192 } } : {}),
+      ...(ZEN_MODEL_REASONING[route.model] ? { reasoning_effort: ZEN_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 8192 } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
