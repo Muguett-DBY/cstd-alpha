@@ -257,11 +257,11 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
     signal,
     body: JSON.stringify({
       model: route.model,
-      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 2048 } } : {}),
+      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 1024 } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 6000,
+      max_tokens: 4500,
       messages: [
         {
           role: "system",
@@ -455,21 +455,28 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
 }
 
 function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
+  const packets = digest.packets.slice(0, 8).map((packet) => ({
+    topic: packet.topic,
+    score: Math.round(packet.score),
+    sourceIds: packet.sourceIds.slice(0, 3),
+    evidenceTypes: packet.evidenceTypes,
+    signalTypes: packet.signalTypes,
+    summary: packet.summary,
+    signals: packet.signals.slice(0, 2).map((signal) => trimText(signal, 120)),
+  }));
+  const citationIds = new Set(packets.flatMap((packet) => packet.sourceIds));
+  const citationSources = [
+    ...digest.citations.filter((source) => citationIds.has(source.id)),
+    ...digest.citations.filter((source) => !citationIds.has(source.id)),
+  ].slice(0, 24);
+
   return {
     sourceFingerprint: digest.sourceFingerprint,
     sourceCount: digest.sourceCount,
     evidenceBreakdown: digest.evidenceBreakdown,
-    softCoverage: digest.softCoverage.slice(0, 8),
-    packets: digest.packets.slice(0, 10).map((packet) => ({
-      topic: packet.topic,
-      score: Math.round(packet.score),
-      sourceIds: packet.sourceIds,
-      evidenceTypes: packet.evidenceTypes,
-      signalTypes: packet.signalTypes,
-      summary: packet.summary,
-      signals: packet.signals.slice(0, 2).map((signal) => trimText(signal, 120)),
-    })),
-    citations: digest.citations.slice(0, RADAR_DIGEST_CITATION_LIMIT).map((source) => ({
+    softCoverage: digest.softCoverage.slice(0, 8).map((item) => ({ ...item, topSourceIds: item.topSourceIds?.slice(0, 3) ?? [] })),
+    packets,
+    citations: citationSources.map((source) => ({
       id: source.id,
       source: source.source,
       sourceType: source.sourceType,

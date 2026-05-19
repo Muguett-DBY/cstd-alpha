@@ -57,11 +57,11 @@ describe("radar scan model routing", () => {
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
       reasoning_effort: "max",
-      thinking: { type: "enabled", budget_tokens: 2048 },
+      thinking: { type: "enabled", budget_tokens: 1024 },
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 6000,
+      max_tokens: 4500,
     });
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
     expect(JSON.stringify(body.messages)).toContain("代表公司只能列 A 股或港股上市公司");
@@ -181,9 +181,10 @@ describe("radar scan model routing", () => {
       };
     };
 
-    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(10);
+    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(8);
     expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 2)).toBe(true);
-    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(48);
+    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.sourceIds.length <= 3)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(24);
     expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 90 && (source.summary?.length ?? 0) <= 100)).toBe(true);
   });
 
