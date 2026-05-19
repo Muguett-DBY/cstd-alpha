@@ -49,6 +49,18 @@ export type RadarCoverageItem = {
 
 export type RadarCoverageStatus = "formal" | "watched" | "insufficient";
 
+export type RadarAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
+
+export type RadarAnalysisJob = {
+  id: string;
+  status: RadarAnalysisJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  evidenceHash?: string;
+  message?: string;
+  radarGeneratedAt?: string;
+};
+
 export type RadarCoverageReview = {
   label: string;
   status: RadarCoverageStatus;

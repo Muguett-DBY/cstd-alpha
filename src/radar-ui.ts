@@ -81,30 +81,20 @@ export function radarCardInsights(item: RadarItem & Record<string, unknown>): Ra
   const sourceCount = item.supportingSourceCount ?? item.sourceIds?.length ?? 0;
   const confidence = item.confidence || "中";
   const evidenceTypes = item.evidenceTypes ?? [];
-  const hasPrimaryEvidence = evidenceTypes.some((type) => type === "hard_data" || type === "official" || type === "announcement");
   const strengthLabel = confidence === "高" && sourceCount >= 2 ? "高强度结论" : confidence === "低" || sourceCount <= 1 ? "低强度观察" : "中强度判断";
   const sourceDetail = sourceCount ? `${sourceCount} 条证据` : "证据待确认";
   const strengthDetail = [`${confidence}置信`, item.durability, sourceDetail, evidenceTypes.map(radarEvidenceTypeLabel).join("、")].filter(Boolean).join(" / ");
 
   const explicitGaps = firstStringArray(item.evidenceGaps, item.evidenceGap, item.evidenceWeaknesses);
-  const evidenceGaps = explicitGaps.length ? explicitGaps : inferredEvidenceGaps(sourceCount, confidence, hasPrimaryEvidence);
   const counterSignals = [...firstStringArray(item.counterEvidence, item.counterpoints, item.counterSignals, item.contraryEvidence), ...item.turningPoints].slice(0, 5);
 
   return {
     strengthLabel,
     strengthDetail,
-    evidenceGaps,
+    evidenceGaps: explicitGaps,
     counterSignals: counterSignals.length ? counterSignals : ["暂无明确反证，继续跟踪价格、订单和政策拐点。"],
     changeExplanation: item.changeReason || "本轮未提供单项变化说明。",
   };
-}
-
-function inferredEvidenceGaps(sourceCount: number, confidence: NonNullable<RadarItem["confidence"]>, hasPrimaryEvidence: boolean) {
-  const gaps: string[] = [];
-  if (sourceCount < 3) gaps.push("公开来源不足 3 条，需要补充交叉验证。");
-  if (!hasPrimaryEvidence) gaps.push("缺少硬数据、官方/协会或公告/财报交叉验证。");
-  if (confidence === "低") gaps.push("模型置信度偏低，暂不宜视为正式产业结论。");
-  return gaps.length ? gaps : ["暂无明显证据缺口，继续跟踪后续硬数据和公告验证。"];
 }
 
 function firstStringArray(...values: unknown[]) {

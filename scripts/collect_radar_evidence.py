@@ -18,11 +18,11 @@ from xml.etree import ElementTree
 
 EVIDENCE_VERSION = "v1"
 DEFAULT_MIN_SOURCES = 36
-MAX_SELECTED_SOURCES = 128
-MAX_GOOGLE_NEWS_SHARE = 0.5
+MAX_SELECTED_SOURCES = 220
+MAX_GOOGLE_NEWS_SHARE = 0.35
 MAX_SINGLE_SOURCE_SHARE = 0.38
-MIN_GOOGLE_NEWS_SOURCES = 24
-MIN_STRUCTURED_SOURCES = 50
+MIN_GOOGLE_NEWS_SOURCES = 18
+MIN_STRUCTURED_SOURCES = 80
 MIN_UNIQUE_SOURCES = 3
 
 TOPIC_QUERIES = [
@@ -233,6 +233,9 @@ def main() -> int:
     quality = evidence_quality(sources)
     print_quality_summary("selected", quality)
     validate_quality(quality, min_sources=args.min_sources)
+    financial_facts = financial_facts_from_sources(sources)
+    industry_facts = industry_facts_from_sources(sources)
+    company_candidates = company_candidates_from_sources(sources)
 
     now = datetime.now(timezone.utc)
     snapshot = {
@@ -244,6 +247,9 @@ def main() -> int:
         "sourceCount": len(sources),
         "quality": quality,
         "sources": sources,
+        "financialFacts": financial_facts,
+        "industryFacts": industry_facts,
+        "companyCandidates": company_candidates,
     }
 
     output = Path(args.output)
@@ -263,8 +269,8 @@ def main() -> int:
 def collect_sources() -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     for label, fetcher in [
+        ("eastmoney_financials", fetch_eastmoney_financials),
         ("eastmoney_industry_indexes", fetch_eastmoney_industry_indexes),
-        ("local_hard_data_signals", local_hard_data_signal_sources),
         ("eastmoney", fetch_eastmoney_boards),
         ("sina_boards", fetch_sina_boards),
         ("google_news", fetch_google_news),
@@ -291,6 +297,156 @@ def local_hard_data_signal_sources() -> list[dict[str, Any]]:
         }
         for signal in LOCAL_HARD_DATA_SIGNALS
     ]
+
+
+def fetch_eastmoney_financials() -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for report_date in recent_report_dates(include_next=True, count=4):
+        report_date_filter = f"{report_date[:4]}-{report_date[4:6]}-{report_date[6:]}"
+        for sort_column in ("SJLTZ", "YSTZ", "UPDATE_DATE"):
+            rows = fetch_eastmoney_report_rows(
+                report_name="RPT_LICO_FN_CPD",
+                report_filter=f'(SECURITY_TYPE_CODE="058001001")(REPORTDATE=\'{report_date_filter}\')',
+                sort_columns=f"{sort_column},SECURITY_CODE",
+                sort_types="-1,-1",
+                page_size=24,
+            )
+            sources.extend(financial_report_sources(rows, report_date_filter, "东方财富业绩报表"))
+        rows = fetch_eastmoney_report_rows(
+            report_name="RPT_FCI_PERFORMANCEE",
+            report_filter=f'(SECURITY_TYPE_CODE in ("058001001","058001008"))(REPORT_DATE=\'{report_date_filter}\')',
+            sort_columns="JLRTBZCL,SECURITY_CODE",
+            sort_types="-1,-1",
+            page_size=24,
+        )
+        sources.extend(financial_report_sources(rows, report_date_filter, "东方财富业绩快报"))
+
+    for report_date in recent_report_dates(include_next=True, count=3):
+        report_date_filter = f"{report_date[:4]}-{report_date[4:6]}-{report_date[6:]}"
+        rows = fetch_eastmoney_report_rows(
+            report_name="RPT_PUBLIC_OP_NEWPREDICT",
+            report_filter=f'(SECURITY_TYPE_CODE="058001001")(REPORT_DATE=\'{report_date_filter}\')',
+            sort_columns="NOTICE_DATE,SECURITY_CODE",
+            sort_types="-1,-1",
+            page_size=32,
+        )
+        sources.extend(financial_forecast_sources(rows, report_date_filter))
+    return dedupe_sources(sources)
+
+
+def fetch_eastmoney_report_rows(report_name: str, report_filter: str, sort_columns: str, sort_types: str, page_size: int) -> list[dict[str, Any]]:
+    params = {
+        "sortColumns": sort_columns,
+        "sortTypes": sort_types,
+        "pageSize": str(page_size),
+        "pageNumber": "1",
+        "reportName": report_name,
+        "columns": "ALL",
+        "filter": report_filter,
+    }
+    url = f"https://datacenter-web.eastmoney.com/api/data/v1/get?{urlencode(params)}"
+    try:
+        data = read_json(url)
+    except (OSError, ValueError, URLError) as exc:
+        print(f"collector_warning eastmoney_financials.{report_name}: {type(exc).__name__}: {str(exc)[:180]}")
+        return []
+    result = data.get("result") or {}
+    rows = result.get("data", []) or []
+    return rows if isinstance(rows, list) else []
+
+
+def financial_report_sources(rows: list[dict[str, Any]], report_date: str, source_name: str) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for row in rows:
+        code = first_text(row, ("SECUCODE", "股票代码", "SECURITY_CODE"))
+        name = first_text(row, ("SECURITY_NAME_ABBR", "股票简称"))
+        if not name or not is_a_or_h_market(row, code):
+            continue
+        industry = first_text(row, ("PUBLISHNAME", "BOARD_NAME", "所处行业")) or "行业待验证"
+        revenue = first_number(row, ("TOTAL_OPERATE_INCOME", "营业总收入-营业总收入", "营业收入-营业收入"))
+        profit = first_number(row, ("PARENT_NETPROFIT", "净利润-净利润"))
+        revenue_yoy = first_number(row, ("YSTZ", "营业总收入-同比增长", "营业收入-同比增长"))
+        profit_yoy = first_number(row, ("SJLTZ", "JLRTBZCL", "净利润-同比增长"))
+        gross_margin = first_number(row, ("XSMLL", "销售毛利率"))
+        cashflow_per_share = first_number(row, ("MGJYXJJE", "每股经营现金流量"))
+        published_at = iso_date(first_text(row, ("NOTICE_DATE", "UPDATE_DATE", "公告日期", "最新公告日期")))
+        market = market_name_from_row(row, code)
+        title = f"{name}({code}) {report_date} 营收同比 {format_percent(revenue_yoy)}，净利润同比 {format_percent(profit_yoy)}"
+        sources.append(
+            {
+                "source": source_name,
+                "query": f"{market} 财报 营收 净利润 毛利率 经营现金流 {industry}",
+                "title": title,
+                "url": f"https://data.eastmoney.com/bbsj/{report_date[:4]}{report_date[5:7]}/yjbb.html#{quote(code)}",
+                "publishedAt": published_at,
+                "summary": f"公司级财报：营收 {number_text(revenue)}，净利润 {number_text(profit)}，毛利率 {format_percent(gross_margin)}，每股经营现金流 {number_text(cashflow_per_share)}，行业 {industry}。",
+                "sourceType": "announcement",
+                "signalType": "financial_metric",
+                "weight": SOURCE_WEIGHTS["announcement"],
+                "factType": "financial",
+                "company": name,
+                "code": code,
+                "market": market,
+                "industry": industry,
+                "metric": "净利润",
+                "value": profit,
+                "yoy": profit_yoy,
+                "metrics": {
+                    "revenue": revenue,
+                    "netProfit": profit,
+                    "revenueYoy": revenue_yoy,
+                    "netProfitYoy": profit_yoy,
+                    "grossMargin": gross_margin,
+                    "operatingCashflowPerShare": cashflow_per_share,
+                },
+            }
+        )
+    return sources
+
+
+def financial_forecast_sources(rows: list[dict[str, Any]], report_date: str) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for row in rows:
+        code = first_text(row, ("SECUCODE", "SECURITY_CODE"))
+        name = first_text(row, ("SECURITY_NAME_ABBR",))
+        if not name or not is_a_or_h_market(row, code):
+            continue
+        market = market_name_from_row(row, code)
+        industry = first_text(row, ("PUBLISHNAME", "BOARD_NAME")) or "行业待验证"
+        lower = first_number(row, ("ADD_AMP_LOWER",))
+        upper = first_number(row, ("ADD_AMP_UPPER",))
+        amount_lower = first_number(row, ("PREDICT_AMT_LOWER",))
+        amount_upper = first_number(row, ("PREDICT_AMT_UPPER",))
+        predict_type = first_text(row, ("PREDICT_TYPE",))
+        reason = trim_text(first_text(row, ("CHANGE_REASON_EXPLAIN", "PREDICT_CONTENT")), 180)
+        sources.append(
+            {
+                "source": "东方财富业绩预告",
+                "query": f"{market} 业绩预告 净利润 预增 预减 {industry}",
+                "title": f"{name}({code}) {report_date} {predict_type or '业绩预告'}，净利润同比 {format_percent(lower)} 至 {format_percent(upper)}",
+                "url": f"https://data.eastmoney.com/bbsj/{report_date[:4]}{report_date[5:7]}/yjyg.html#{quote(code)}",
+                "publishedAt": iso_date(first_text(row, ("NOTICE_DATE",))),
+                "summary": reason or trim_text(first_text(row, ("PREDICT_CONTENT",)), 180),
+                "sourceType": "announcement",
+                "signalType": "financial_metric",
+                "weight": SOURCE_WEIGHTS["announcement"],
+                "factType": "financial",
+                "company": name,
+                "code": code,
+                "market": market,
+                "industry": industry,
+                "metric": "净利润预告",
+                "value": amount_upper if amount_upper is not None else amount_lower,
+                "yoy": upper if upper is not None else lower,
+                "metrics": {
+                    "forecastProfitLower": amount_lower,
+                    "forecastProfitUpper": amount_upper,
+                    "forecastYoyLower": lower,
+                    "forecastYoyUpper": upper,
+                },
+            }
+        )
+    return sources
 
 
 def fetch_eastmoney_industry_indexes() -> list[dict[str, Any]]:
@@ -729,7 +885,7 @@ def frame_rows_to_sources(frame: Any, label: str, query: str, source_type: str, 
 
 
 def fixture_sources() -> list[dict[str, Any]]:
-    sources: list[dict[str, Any]] = local_hard_data_signal_sources() + fixture_hard_data_sources()
+    sources: list[dict[str, Any]] = fixture_financial_sources() + fixture_hard_data_sources()
     for index in range(90):
         topic, query, _source_type = TOPIC_QUERIES[index % len(TOPIC_QUERIES)]
         sources.append(
@@ -801,6 +957,61 @@ def fixture_sources() -> list[dict[str, Any]]:
             }
         )
     return sources
+
+
+def fixture_financial_sources() -> list[dict[str, Any]]:
+    return [
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 化学制药",
+            "title": "百济神州(688235.SH) 2026-03-31 营收同比 31.02%，净利润同比 1801.30%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#688235.SH",
+            "publishedAt": "2026-05-07T00:00:00Z",
+            "summary": "公司级财报：营收 10,544,044,000.00，净利润 1,607,782,000.00，毛利率待验证，每股经营现金流待验证，行业 化学制药。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "百济神州",
+            "code": "688235.SH",
+            "market": "A股",
+            "industry": "化学制药",
+            "metric": "净利润",
+            "value": 1607782000,
+            "yoy": 1801.3,
+            "metrics": {
+                "revenue": 10544044000,
+                "netProfit": 1607782000,
+                "revenueYoy": 31.02,
+                "netProfitYoy": 1801.3,
+            },
+        },
+        {
+            "source": "东方财富业绩预告",
+            "query": "A股 业绩预告 净利润 预增 包装材料",
+            "title": "新天力(920218.BJ) 2026-06-30 略增，净利润同比 1.00% 至 8.05%",
+            "url": "https://data.eastmoney.com/bbsj/202606/yjyg.html#920218.BJ",
+            "publishedAt": "2026-05-18T00:00:00Z",
+            "summary": "预计2026年1-6月归属于上市公司股东的净利润盈利:4,300万元至4,600万元。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "新天力",
+            "code": "920218.BJ",
+            "market": "A股",
+            "industry": "包装材料",
+            "metric": "净利润预告",
+            "value": 46000000,
+            "yoy": 8.05,
+            "metrics": {
+                "forecastProfitLower": 43000000,
+                "forecastProfitUpper": 46000000,
+                "forecastYoyLower": 1,
+                "forecastYoyUpper": 8.05,
+            },
+        },
+    ]
 
 
 def fixture_hard_data_sources() -> list[dict[str, Any]]:
@@ -915,6 +1126,13 @@ def classify_source(source: dict[str, Any]) -> dict[str, Any]:
     signal_type = clean_text(source.get("signalType"))
     if signal_type:
         item["signalType"] = signal_type
+    for key in ("factType", "company", "code", "market", "industry", "metric"):
+        text_value = clean_text(source.get(key))
+        if text_value:
+            item[key] = text_value
+    for key in ("value", "yoy", "metrics"):
+        if key in source and source.get(key) is not None:
+            item[key] = source.get(key)
     item["score"] = score_source(item)
     return {key: value for key, value in item.items() if value not in ("", None)}
 
@@ -974,23 +1192,39 @@ def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, An
         "market": 28,
         "research": 6,
     }
+    max_by_type = {
+        "announcement": max(24, int(limit * 0.45)),
+        "market": max(28, int(limit * 0.34)),
+        "news": max_google_news,
+    }
     for source_type, minimum in minimum_by_type.items():
         for item in [source for source in non_google_items if source.get("sourceType") == source_type][:minimum]:
-            add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source)
+            add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source, max_by_type)
     for item in non_google_items:
-        add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source)
+        add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source, max_by_type)
     max_google_news = reserved_google_news if reserved_google_news else min(max_google_news, len(selected))
     for item in google_items:
-        add_selected(item, selected, seen, limit, max_google_news, max_per_source)
+        add_selected(item, selected, seen, limit, max_google_news, max_per_source, max_by_type)
     for item in non_google_items:
-        add_selected(item, selected, seen, limit, max_google_news, max_per_source)
+        add_selected(item, selected, seen, limit, max_google_news, max_per_source, max_by_type)
     return selected
 
 
-def add_selected(item: dict[str, Any], selected: list[dict[str, Any]], seen: set[str], limit: int, max_google_news: int, max_per_source: int) -> None:
+def add_selected(
+    item: dict[str, Any],
+    selected: list[dict[str, Any]],
+    seen: set[str],
+    limit: int,
+    max_google_news: int,
+    max_per_source: int,
+    max_by_type: dict[str, int] | None = None,
+) -> None:
     if len(selected) >= limit:
         return
     if item.get("source") == "Google News" and count_where(selected, lambda source: source.get("source") == "Google News") >= max_google_news:
+        return
+    source_type = clean_text(item.get("sourceType"))
+    if max_by_type and source_type in max_by_type and count_where(selected, lambda source: source.get("sourceType") == source_type) >= max_by_type[source_type]:
         return
     source_name = item.get("source")
     if source_name and count_where(selected, lambda source: source.get("source") == source_name) >= max_per_source:
@@ -1014,6 +1248,84 @@ def validate_quality(quality: dict[str, Any], min_sources: int) -> None:
         failures.append(f"structuredCount {quality['structuredCount']}/{MIN_STRUCTURED_SOURCES}")
     if failures:
         raise SystemExit(f"insufficient evidence quality: {', '.join(failures)}")
+
+
+def financial_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    for source in sources:
+        if source.get("factType") != "financial" and source.get("signalType") != "financial_metric":
+            continue
+        company = clean_text(source.get("company"))
+        if not company:
+            continue
+        facts.append(
+            compact_dict(
+                {
+                    "source": source.get("source"),
+                    "sourceId": source.get("url"),
+                    "company": company,
+                    "code": source.get("code"),
+                    "market": source.get("market"),
+                    "industry": source.get("industry"),
+                    "metric": source.get("metric") or "财务指标",
+                    "value": source.get("value"),
+                    "yoy": source.get("yoy"),
+                    "metrics": source.get("metrics"),
+                    "publishedAt": source.get("publishedAt"),
+                    "title": source.get("title"),
+                }
+            )
+        )
+    return facts[:80]
+
+
+def industry_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    for source in sources:
+        signal_type = clean_text(source.get("signalType"))
+        if not signal_type or signal_type == "financial_metric":
+            continue
+        facts.append(
+            compact_dict(
+                {
+                    "source": source.get("source"),
+                    "sourceId": source.get("url"),
+                    "industry": source.get("industry") or infer_topic_from_text(source_text(source)),
+                    "signalType": signal_type,
+                    "title": source.get("title"),
+                    "summary": source.get("summary"),
+                    "publishedAt": source.get("publishedAt"),
+                    "sourceType": source.get("sourceType"),
+                }
+            )
+        )
+    return facts[:120]
+
+
+def company_candidates_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: dict[str, dict[str, Any]] = {}
+    for source in sources:
+        company = clean_text(source.get("company"))
+        if not company:
+            continue
+        if "ST" in company.upper():
+            continue
+        key = clean_text(source.get("code")) or company
+        current = candidates.setdefault(
+            key,
+            {
+                "company": company,
+                "code": source.get("code"),
+                "market": source.get("market"),
+                "industry": source.get("industry"),
+                "triggerEvidence": source.get("title"),
+                "evidenceStrength": 0,
+                "sourceTypes": [],
+            },
+        )
+        current["evidenceStrength"] = int(current.get("evidenceStrength") or 0) + SOURCE_WEIGHTS.get(clean_text(source.get("sourceType")), 2)
+        current["sourceTypes"] = unique_strings([*current.get("sourceTypes", []), clean_text(source.get("sourceType"))])
+    return sorted(candidates.values(), key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True)[:80]
 
 
 def evidence_quality(sources: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1152,9 +1464,45 @@ def latest_year_month_row(frame: Any) -> tuple[str, int, float, float] | None:
     return None
 
 
+def recent_report_dates(include_next: bool, count: int) -> list[str]:
+    today = datetime.now(timezone.utc).date()
+    max_date = today + timedelta(days=120) if include_next else today
+    quarter_ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
+    dates: list[datetime] = []
+    for year in range(today.year, today.year - 3, -1):
+        for month, day in reversed(quarter_ends):
+            date = datetime(year, month, day, tzinfo=timezone.utc)
+            if date.date() <= max_date:
+                dates.append(date)
+    dates = sorted(dates, reverse=True)
+    return [date.strftime("%Y%m%d") for date in dates[:count]]
+
+
 def recent_yyyymmdd_dates(skip_today: bool, max_days: int) -> list[str]:
     start = datetime.now(timezone.utc).date() - (timedelta(days=1) if skip_today else timedelta(days=0))
     return [(start - timedelta(days=offset)).strftime("%Y%m%d") for offset in range(max_days)]
+
+
+def first_number(row: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = numeric(row.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def is_a_or_h_market(row: dict[str, Any], code: str) -> bool:
+    security_type = clean_text(row.get("SECURITY_TYPE"))
+    market = clean_text(row.get("TRADE_MARKET"))
+    return "A股" in security_type or "港股" in security_type or code.endswith((".SH", ".SZ", ".BJ", ".HK"))
+
+
+def market_name_from_row(row: dict[str, Any], code: str) -> str:
+    security_type = clean_text(row.get("SECURITY_TYPE"))
+    market = clean_text(row.get("TRADE_MARKET"))
+    if "港" in security_type or code.endswith(".HK") or "港" in market:
+        return "港股"
+    return "A股"
 
 
 def numeric(value: Any) -> float | None:
@@ -1216,11 +1564,35 @@ def clean_text(value: Any) -> str:
     return " ".join(str(value).replace("\n", " ").replace("\r", " ").split())
 
 
+def trim_text(value: Any, max_length: int) -> str:
+    text = clean_text(value)
+    return text if len(text) <= max_length else f"{text[: max_length - 1]}…"
+
+
 def number_text(value: Any) -> str:
     number = numeric(value)
     if number is not None:
         return f"{number:,.2f}"
     return clean_text(value) or "待验证"
+
+
+def compact_dict(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if item not in ("", None, [], {})}
+
+
+def unique_strings(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def infer_topic_from_text(text: str) -> str:
+    for topic, keywords in TOPIC_ROLLUP_KEYWORDS.items():
+        if any(keyword.lower() in text.lower() for keyword in keywords):
+            return topic
+    return "其他待验证方向"
 
 
 if __name__ == "__main__":

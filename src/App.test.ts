@@ -56,6 +56,21 @@ describe("app initial workspace", () => {
     expect(insights.changeExplanation).toBe("由观察条目升级为正式结论。");
   });
 
+  test("does not invent radar evidence gaps when the model leaves them empty", () => {
+    const insights = radarCardInsights(
+      radarItem({
+        title: "创新药利润拐点",
+        industries: ["创新药"],
+        evidenceTypes: ["announcement"],
+        supportingSourceCount: 4,
+        confidence: "高",
+        evidenceGaps: [],
+      }),
+    );
+
+    expect(insights.evidenceGaps).toEqual([]);
+  });
+
   test("filters radar source library by industry and evidence type", () => {
     const sources: RadarCitation[] = [
       { id: "S1", source: "协会", query: "储能", title: "储能装机增长", url: "", sourceType: "official", weight: 1 },

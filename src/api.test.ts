@@ -411,8 +411,8 @@ describe("API client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ radar: { ...radar, fromCache: true } })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchRadarScan()).resolves.toEqual(radar);
-    await expect(refreshRadarScan()).resolves.toEqual({ ...radar, fromCache: true });
+    await expect(fetchRadarScan()).resolves.toEqual({ radar, job: null, warning: undefined });
+    await expect(refreshRadarScan()).resolves.toEqual({ radar: { ...radar, fromCache: true }, job: null, warning: undefined });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/radar-scan", expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -449,8 +449,11 @@ describe("API client", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ radar, warning: "模型限流，已保留上次扫描。" }))));
 
     await expect(refreshRadarScan()).resolves.toMatchObject({
-      id: "radar-1",
-      refreshWarning: "模型限流，已保留上次扫描。",
+      radar: {
+        id: "radar-1",
+        refreshWarning: "模型限流，已保留上次扫描。",
+      },
+      warning: "模型限流，已保留上次扫描。",
     });
   });
 });

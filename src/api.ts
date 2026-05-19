@@ -1,6 +1,6 @@
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
-import type { RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
@@ -58,23 +58,28 @@ export type ReportLibraryList = {
   matchedTickers?: string[];
 };
 
-export async function fetchRadarScan(): Promise<RadarScan> {
+export type RadarScanResult = {
+  radar: RadarScan | null;
+  job?: RadarAnalysisJob | null;
+  warning?: string;
+};
+
+export async function fetchRadarScan(): Promise<RadarScanResult> {
   const response = await fetch("/api/radar-scan", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "雷达扫描读取失败。");
-  const data = (await response.json()) as { radar?: RadarScan };
-  if (!data.radar) throw new Error("雷达扫描读取失败。");
-  return data.radar;
+  const data = (await response.json()) as { radar?: RadarScan | null; job?: RadarAnalysisJob | null; warning?: string };
+  return { radar: data.radar ?? null, job: data.job ?? null, warning: data.warning };
 }
 
-export async function refreshRadarScan(): Promise<RadarScan> {
+export async function refreshRadarScan(): Promise<RadarScanResult> {
   const response = await fetch("/api/radar-scan", {
     method: "POST",
     credentials: "include",
   });
   if (!response.ok) throw new Error((await readError(response)) || "雷达扫描刷新失败。");
-  const data = (await response.json()) as { radar?: RadarScan; warning?: string };
-  if (!data.radar) throw new Error("雷达扫描刷新失败。");
-  return data.warning ? { ...data.radar, refreshWarning: data.warning } : data.radar;
+  const data = (await response.json()) as { radar?: RadarScan | null; job?: RadarAnalysisJob | null; warning?: string };
+  const radar = data.warning && data.radar ? { ...data.radar, refreshWarning: data.warning } : data.radar ?? null;
+  return { radar, job: data.job ?? null, warning: data.warning };
 }
 
 export async function checkSession(): Promise<UserSession | null> {

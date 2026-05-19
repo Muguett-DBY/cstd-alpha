@@ -8,7 +8,7 @@ import { clearImportedRankingReports } from "./ranking-storage";
 import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -51,6 +51,7 @@ function App() {
   const [activeView, setActiveView] = useState<AppView>(DEFAULT_APP_VIEW);
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
+  const [radarJob, setRadarJob] = useState<RadarAnalysisJob | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
   const [radarError, setRadarError] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -64,9 +65,15 @@ function App() {
       setRadarError("");
       try {
         const nextRadar = forceRefresh ? await refreshRadarScan() : await fetchRadarScan();
-        setRadar(nextRadar);
-        setRadarPhase("ready");
-        setRadarError(nextRadar.refreshWarning ?? "");
+        if (nextRadar.radar) setRadar(nextRadar.radar);
+        else if (!hasExistingRadar) setRadar(null);
+        setRadarJob(nextRadar.job ?? null);
+        if (nextRadar.job?.status === "queued" || nextRadar.job?.status === "running") {
+          setRadarPhase(nextRadar.radar || hasExistingRadar ? "refreshing" : "loading");
+        } else {
+          setRadarPhase(nextRadar.radar ? "ready" : "error");
+        }
+        setRadarError(nextRadar.warning ?? nextRadar.radar?.refreshWarning ?? "");
       } catch (err) {
         setRadarPhase(hasExistingRadar ? "ready" : "error");
         setRadarError(radarRefreshFallbackMessage(hasExistingRadar, err));
@@ -74,6 +81,28 @@ function App() {
     },
     [radar],
   );
+
+  useEffect(() => {
+    if (activeView !== "radar" || (radarJob?.status !== "queued" && radarJob?.status !== "running")) return;
+    const id = window.setInterval(() => {
+      void fetchRadarScan()
+        .then((result) => {
+          if (result.radar) setRadar(result.radar);
+          setRadarJob(result.job ?? null);
+          if (result.job?.status === "queued" || result.job?.status === "running") {
+            setRadarPhase(result.radar || radar ? "refreshing" : "loading");
+          } else {
+            setRadarPhase(result.radar || radar ? "ready" : "error");
+          }
+          setRadarError(result.warning ?? result.radar?.refreshWarning ?? "");
+        })
+        .catch((err) => {
+          setRadarPhase(radar ? "ready" : "error");
+          setRadarError(radarRefreshFallbackMessage(Boolean(radar), err));
+        });
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [activeView, radar, radarJob?.status]);
 
   useEffect(() => {
     void checkSession()
@@ -157,6 +186,7 @@ function App() {
     setReportMetrics(null);
     setChartBundle(null);
     setRadar(null);
+    setRadarJob(null);
     setRadarPhase("idle");
     setRadarError("");
     setProgress([]);
@@ -559,7 +589,7 @@ function App() {
         ) : activeView === "mine" ? (
           <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
         ) : activeView === "radar" ? (
-          <RadarView radar={radar} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
+          <RadarView radar={radar} job={radarJob} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
         ) : (
           <>
             {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
@@ -1138,17 +1168,20 @@ function EmptyState() {
 
 function RadarView({
   radar,
+  job,
   phase,
   error,
   onRefresh,
 }: {
   radar: RadarScan | null;
+  job: RadarAnalysisJob | null;
   phase: RadarPhase;
   error: string;
   onRefresh: () => void;
 }) {
   const loading = phase === "loading" || phase === "refreshing";
   const refreshing = phase === "refreshing";
+  const jobRunning = job?.status === "queued" || job?.status === "running";
   const sourceMap = useMemo(() => new Map((radar?.evidenceSources ?? []).map((source) => [source.id, source])), [radar?.evidenceSources]);
   const radarItems = useMemo(() => (radar ? allRadarItems(radar) : []), [radar]);
   return (
@@ -1164,13 +1197,13 @@ function RadarView({
         </div>
         <button className="generate-button radar-scan-button" type="button" disabled={loading} onClick={onRefresh}>
           {loading ? <span className="button-spinner" aria-hidden="true" /> : null}
-          {loading ? "正在扫描..." : "雷达扫描"}
+          {jobRunning ? "后台分析中" : loading ? "正在扫描..." : "雷达扫描"}
         </button>
       </header>
 
       {error ? <p className="error-text">{error}</p> : null}
       {radar?.reuseReason ? <p className="cache-notice">{radar.reuseReason}</p> : null}
-      {refreshing ? <p className="cache-notice radar-refresh-notice">正在刷新新扫描，当前页面继续显示上次稳定结果。</p> : null}
+      {jobRunning || refreshing ? <p className="cache-notice radar-refresh-notice">{job?.message || "后台深度分析中，当前页面继续显示上次稳定结果。"}</p> : null}
 
       {!radar && loading ? (
         <section className="empty-state radar-empty">
@@ -1192,7 +1225,7 @@ function RadarView({
             <InfoTile title="信息截止" value={radar.asOfDate} />
             <InfoTile title="公开来源" value={`${radar.sourceCount} 条`} />
             <InfoTile title="模型" value={radar.model} />
-            <InfoTile title="状态" value={refreshing ? "刷新中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
+            <InfoTile title="状态" value={jobRunning ? "后台分析中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
           </div>
 
           <RadarRoundChanges changeLog={radar.changeLog} />
@@ -1441,10 +1474,12 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
           <strong>{insights.strengthLabel}</strong>
           <small>{insights.strengthDetail}</small>
         </section>
-        <section>
-          <span>证据缺口</span>
-          <ul>{listItems(insights.evidenceGaps.slice(0, 3))}</ul>
-        </section>
+        {insights.evidenceGaps.length ? (
+          <section>
+            <span>证据缺口</span>
+            <ul>{listItems(insights.evidenceGaps.slice(0, 3))}</ul>
+          </section>
+        ) : null}
         <section>
           <span>反证/拐点</span>
           <ul>{listItems(insights.counterSignals.slice(0, 3))}</ul>

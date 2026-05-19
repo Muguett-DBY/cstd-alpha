@@ -1,0 +1,105 @@
+name: Analyze Radar Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Radar analysis job id stored in Workers KV
+        required: true
+        type: string
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      RADAR_EVIDENCE_KV_NAMESPACE_ID: d2c77bf9e7f14258af33e2efd3f59c60
+      RADAR_JOB_ID: ${{ inputs.job_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Mark radar job running
+        run: |
+          mkdir -p dist-radar
+          node -e "const fs=require('fs'); const now=new Date().toISOString(); const job={id:process.env.RADAR_JOB_ID,status:'running',createdAt:now,updatedAt:now,message:'后台深度分析运行中。'}; fs.writeFileSync('dist-radar/job-running.json', JSON.stringify(job));"
+          npx wrangler kv key put "radar-analysis:job:${RADAR_JOB_ID}" \
+            --path dist-radar/job-running.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote
+          npx wrangler kv key put "radar-analysis:job:latest" \
+            --path dist-radar/job-running.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote
+
+      - name: Download latest evidence and previous radar
+        run: |
+          npx wrangler kv key get "radar-evidence:v1:latest" \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote > dist-radar/radar-evidence.json
+          npx wrangler kv key get "radar-scan:v2:latest" \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote > dist-radar/previous-radar-cache.json || echo "null" > dist-radar/previous-radar-cache.json
+
+      - name: Run DeepSeek radar analysis
+        run: |
+          node scripts/run_radar_analysis.mjs \
+            --evidence dist-radar/radar-evidence.json \
+            --previous dist-radar/previous-radar-cache.json \
+            --job-id "$RADAR_JOB_ID" \
+            --output-radar dist-radar/radar-cache.json \
+            --output-job dist-radar/job-completed.json
+
+      - name: Upload radar result to Workers KV
+        run: |
+          npx wrangler kv key put "radar-scan:v2:latest" \
+            --path dist-radar/radar-cache.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote
+          npx wrangler kv key put "radar-analysis:job:${RADAR_JOB_ID}" \
+            --path dist-radar/job-completed.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote
+          npx wrangler kv key put "radar-analysis:job:latest" \
+            --path dist-radar/job-completed.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote
+
+      - name: Mark radar job failed
+        if: failure()
+        run: |
+          mkdir -p dist-radar
+          node -e "const fs=require('fs'); const now=new Date().toISOString(); const job={id:process.env.RADAR_JOB_ID,status:'failed',createdAt:now,updatedAt:now,message:'本次刷新失败，已保留上次扫描。'}; fs.writeFileSync('dist-radar/job-failed.json', JSON.stringify(job));"
+          npx wrangler kv key put "radar-analysis:job:${RADAR_JOB_ID}" \
+            --path dist-radar/job-failed.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote || true
+          npx wrangler kv key put "radar-analysis:job:latest" \
+            --path dist-radar/job-failed.json \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote || true
+
+      - name: Upload radar analysis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radar-analysis-${{ inputs.job_id }}
+          path: |
+            dist-radar/radar-cache.json
+            dist-radar/job-completed.json
+            dist-radar/job-failed.json
+            dist-radar/radar-evidence.json
+            dist-radar/previous-radar-cache.json

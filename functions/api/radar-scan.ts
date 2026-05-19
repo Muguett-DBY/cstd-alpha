@@ -3,6 +3,8 @@ import { verifySessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
 import type {
   RadarCitation,
+  RadarAnalysisJob,
+  RadarAnalysisJobStatus,
   RadarConclusionStrength,
   RadarCoverageItem,
   RadarCoverageReview,
@@ -21,6 +23,9 @@ import type {
 type Env = {
   AUTH_SECRET: string;
   DEEPSEEK_API_KEY?: string;
+  GITHUB_RADAR_DISPATCH_TOKEN?: string;
+  GITHUB_RADAR_REPOSITORY?: string;
+  GITHUB_RADAR_WORKFLOW?: string;
   REPORT_CACHE?: KVNamespace;
 };
 
@@ -89,6 +94,8 @@ export const RADAR_DIGEST_CACHE_VERSION = "v3";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 export const RADAR_EVIDENCE_SNAPSHOT_VERSION = "v1";
 export const RADAR_EVIDENCE_SNAPSHOT_KEY = `radar-evidence:${RADAR_EVIDENCE_SNAPSHOT_VERSION}:latest`;
+export const RADAR_ANALYSIS_JOB_PREFIX = "radar-analysis:job:";
+export const RADAR_ANALYSIS_JOB_LATEST_KEY = `${RADAR_ANALYSIS_JOB_PREFIX}latest`;
 const LEGACY_RADAR_CACHE_KEYS = ["radar-scan:v1:latest"];
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
@@ -96,6 +103,8 @@ const MIN_RADAR_SOURCE_COUNT = 36;
 const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
 const RADAR_MODEL_REASONING: Partial<Record<RadarModel, "max">> = {};
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const GITHUB_RADAR_REPOSITORY = "Muguett-DBY/cstd-alpha";
+const GITHUB_RADAR_WORKFLOW = "radar-analysis.yml";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_CACHE_HOURS = 6;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
@@ -204,16 +213,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
-  if (cached) return json({ radar: markCached(cached.radar) });
-
-  try {
-    const radar = await generateRadarScan(env, request.signal, null);
-    await writeRadarCache(env, radar);
-    return json({ radar });
-  } catch (error) {
-    logRadarFailure(error, "read", false);
-    return json({ error: radarErrorMessage(error, "read") }, 502);
-  }
+  const job = await readLatestRadarJob(env);
+  if (cached) return json({ radar: markCached(cached.radar), job });
+  return json({ radar: null, job, error: radarErrorMessage(null, "read") }, 200);
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -221,24 +223,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
-  const rollingDigest = await loadRollingRadarEvidenceDigest(env);
-  if (cached && rollingDigest && cachedRadarMatchesDigest(cached.radar, rollingDigest)) {
-    return json({ radar: markCached(cached.radar, "证据库未变化，已复用上次稳定扫描。") });
+  const activeJob = await readActiveRadarJob(env);
+  if (activeJob) {
+    return json({ radar: cached ? markCached(cached.radar) : null, job: activeJob }, 202);
   }
+
+  const evidenceHash = await readRadarEvidenceHash(env);
+  const job = createRadarAnalysisJob(evidenceHash);
+  await writeRadarJob(env, job);
+
   try {
-    const radar = await generateRadarScan(env, request.signal, cached?.radar ?? null, rollingDigest);
-    await writeRadarCache(env, radar);
-    return json({ radar });
+    await dispatchRadarAnalysisWorkflow(env, job.id);
+    return json({ radar: cached ? markCached(cached.radar) : null, job }, 202);
   } catch (error) {
     logRadarFailure(error, "refresh", Boolean(cached));
+    const failedJob = updateRadarJob(job, "failed", "本次刷新失败，已保留上次扫描。");
+    await writeRadarJob(env, failedJob);
     const warning = radarErrorMessage(error, "refresh");
     if (cached) {
       return json({
         radar: markCached(cached.radar, "本次刷新失败，已保留上次稳定扫描。", warning),
+        job: failedJob,
         warning,
       });
     }
-    return json({ error: warning }, 502);
+    return json({ radar: null, job: failedJob, error: warning }, 200);
   }
 };
 
@@ -274,6 +283,7 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "先按公开信息源归纳，再做模型自己的投资分析。",
               "优先使用多源交叉验证，避免只凭单条新闻判断。",
               "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
+              "信息差必须来自价格变化、财报拐点、业绩预告、销量/订单边际变化、产业链利润迁移，而不是新闻复述。",
               "证据里的 signalType 表示第一阶段硬数据信号：commodity_price 商品/价格，financial_metric 财报指标，industry_stat 行业统计，freight_rate 运价。正式结论优先引用这些信号。",
               "如果同一产业方向同时出现主题板块聚合、行业分类覆盖和多条新闻线索，可以形成中低置信观察或正式结论；不要只因为 sourceType 里没有 hard_data 就把所有方向清空。",
               "新浪主题板块聚合用于说明产业方向覆盖，Google News 用于提供价格、库存、财报和产能线索；正式结论仍需写清证据强弱和待验证项。",
@@ -319,7 +329,7 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
   };
 }
 
-async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null, preloadedDigest?: RadarEvidenceDigest | null): Promise<RadarScan> {
+export async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null, preloadedDigest?: RadarEvidenceDigest | null): Promise<RadarScan> {
   const digest = preloadedDigest ?? (await loadRadarEvidenceDigest(env, await loadRadarSources(env, signal)));
   if (digest.sourceCount < MIN_RADAR_SOURCE_COUNT) {
     throw new Error(`雷达证据包过薄：${digest.sourceCount}/${MIN_RADAR_SOURCE_COUNT}`);
@@ -371,7 +381,7 @@ async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSou
   return sources;
 }
 
-async function loadRollingRadarEvidenceDigest(env: Env): Promise<RadarEvidenceDigest | null> {
+export async function loadRollingRadarEvidenceDigest(env: Env): Promise<RadarEvidenceDigest | null> {
   const sources = await readRadarEvidenceSnapshot(env);
   if (!sources || sources.length < MIN_RADAR_SOURCE_COUNT) return null;
   return loadRadarEvidenceDigest(env, sources);
@@ -756,6 +766,93 @@ function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidence
   };
 }
 
+function createRadarAnalysisJob(evidenceHash?: string): RadarAnalysisJob {
+  const now = new Date().toISOString();
+  return {
+    id: `radar-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+    evidenceHash,
+    message: "后台分析已排队，页面会继续显示上次稳定结果。",
+  };
+}
+
+function updateRadarJob(job: RadarAnalysisJob, status: RadarAnalysisJobStatus, message?: string): RadarAnalysisJob {
+  return {
+    ...job,
+    status,
+    updatedAt: new Date().toISOString(),
+    ...(message ? { message } : {}),
+  };
+}
+
+async function readLatestRadarJob(env: Env): Promise<RadarAnalysisJob | null> {
+  const value = await env.REPORT_CACHE?.get<RadarAnalysisJob>(RADAR_ANALYSIS_JOB_LATEST_KEY, "json").catch(() => null);
+  return normalizeRadarJob(value);
+}
+
+async function readActiveRadarJob(env: Env): Promise<RadarAnalysisJob | null> {
+  const job = await readLatestRadarJob(env);
+  if (!job || (job.status !== "queued" && job.status !== "running")) return null;
+  const updatedAt = Date.parse(job.updatedAt);
+  if (Number.isFinite(updatedAt) && Date.now() - updatedAt > 20 * 60 * 1000) return null;
+  return job;
+}
+
+async function writeRadarJob(env: Env, job: RadarAnalysisJob) {
+  const payload = JSON.stringify(job);
+  await Promise.all([
+    env.REPORT_CACHE?.put(`${RADAR_ANALYSIS_JOB_PREFIX}${job.id}`, payload, { expirationTtl: 24 * 60 * 60 }),
+    env.REPORT_CACHE?.put(RADAR_ANALYSIS_JOB_LATEST_KEY, payload, { expirationTtl: 24 * 60 * 60 }),
+  ]);
+}
+
+function normalizeRadarJob(value: unknown): RadarAnalysisJob | null {
+  if (!isRecord(value)) return null;
+  const id = stringValue(value.id);
+  const status = stringValue(value.status) as RadarAnalysisJobStatus;
+  const createdAt = stringValue(value.createdAt);
+  const updatedAt = stringValue(value.updatedAt);
+  if (!id || !["queued", "running", "completed", "failed"].includes(status) || !createdAt || !updatedAt) return null;
+  return {
+    id,
+    status,
+    createdAt,
+    updatedAt,
+    evidenceHash: stringValue(value.evidenceHash) || undefined,
+    message: stringValue(value.message) || undefined,
+    radarGeneratedAt: stringValue(value.radarGeneratedAt) || undefined,
+  };
+}
+
+async function readRadarEvidenceHash(env: Env): Promise<string | undefined> {
+  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotPayload>(RADAR_EVIDENCE_SNAPSHOT_KEY, "json").catch(() => null);
+  return stringValue(value?.evidenceHash) || undefined;
+}
+
+async function dispatchRadarAnalysisWorkflow(env: Env, jobId: string) {
+  const token = env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
+  if (!token) throw new Error("missing GitHub radar dispatch token");
+  const repository = env.GITHUB_RADAR_REPOSITORY?.trim() || GITHUB_RADAR_REPOSITORY;
+  const workflow = env.GITHUB_RADAR_WORKFLOW?.trim() || GITHUB_RADAR_WORKFLOW;
+  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "CSTDAlphaRadar/1.0",
+      "x-github-api-version": "2022-11-28",
+    },
+    body: JSON.stringify({
+      ref: "main",
+      inputs: { job_id: jobId },
+    }),
+  });
+  if (!response.ok) throw new Error(`GitHub radar dispatch failed: ${response.status}`);
+}
+
 async function readRadarCache(env: Env): Promise<RadarCachePayload | null> {
   const value = await env.REPORT_CACHE?.get<RadarCachePayload>(RADAR_CACHE_KEY, "json").catch(() => null);
   if (value?.version === RADAR_CACHE_VERSION && value.radar) return value;
@@ -768,7 +865,7 @@ async function readRadarCache(env: Env): Promise<RadarCachePayload | null> {
   return null;
 }
 
-async function writeRadarCache(env: Env, radar: RadarScan) {
+export async function writeRadarCache(env: Env, radar: RadarScan) {
   const payload: RadarCachePayload = { version: RADAR_CACHE_VERSION, cachedAt: new Date().toISOString(), radar };
   await env.REPORT_CACHE?.put(RADAR_CACHE_KEY, JSON.stringify(payload));
 }
@@ -820,7 +917,7 @@ function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: str
   return { ...radar, fromCache: true, ...(reuseReason ? { reuseReason } : {}), ...(refreshWarning ? { refreshWarning } : {}) };
 }
 
-function cachedRadarMatchesDigest(radar: RadarScan, digest: RadarEvidenceDigest) {
+export function cachedRadarMatchesDigest(radar: RadarScan, digest: RadarEvidenceDigest) {
   if (!radar.evidenceSources?.length) return false;
   return radar.sourceCount === digest.sourceCount && radarSourceFingerprint(radar.evidenceSources) === digest.sourceFingerprint;
 }

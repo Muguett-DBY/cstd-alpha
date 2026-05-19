@@ -1,3 +1,4 @@
 DEEPSEEK_API_KEY="paste-deepseek-key-here"
+GITHUB_RADAR_DISPATCH_TOKEN="paste-fine-grained-token-with-actions-write"
 REPORT_PASSWORD="replace-with-local-password"
 AUTH_SECRET="replace-with-long-random-secret"
