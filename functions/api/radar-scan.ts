@@ -89,6 +89,7 @@ export const RADAR_DIGEST_CACHE_VERSION = "v3";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 export const RADAR_EVIDENCE_SNAPSHOT_VERSION = "v1";
 export const RADAR_EVIDENCE_SNAPSHOT_KEY = `radar-evidence:${RADAR_EVIDENCE_SNAPSHOT_VERSION}:latest`;
+const LEGACY_RADAR_CACHE_KEYS = ["radar-scan:v1:latest"];
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
 
@@ -101,8 +102,8 @@ const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_CACHE_HOURS = 6;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 38;
-const RADAR_DIGEST_CITATION_LIMIT = 96;
-const RADAR_DIGEST_NEWS_FLOOR = 20;
+const RADAR_DIGEST_CITATION_LIMIT = 72;
+const RADAR_DIGEST_NEWS_FLOOR = 16;
 const RADAR_DIGEST_MAX_NEWS_SHARE = 0.3;
 const RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE = 0.46;
 const RADAR_CONCLUSION_STRENGTHS: readonly RadarConclusionStrength[] = ["正式结论", "观察", "证据不足"];
@@ -255,11 +256,11 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
     signal,
     body: JSON.stringify({
       model: route.model,
-      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 8192 } } : {}),
+      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 4096 } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 14000,
+      max_tokens: 9000,
       messages: [
         {
           role: "system",
@@ -431,7 +432,7 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
       };
     })
     .sort((left, right) => right.score - left.score)
-    .slice(0, 24);
+    .slice(0, 18);
 
   return {
     sourceFingerprint: radarSourceFingerprint(citations),
@@ -439,7 +440,7 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
     evidenceBreakdown: summarizeEvidenceBreakdown(citations),
     citations,
     packets,
-    softCoverage: packets.slice(0, 16).map((packet): RadarCoverageItem => ({
+    softCoverage: packets.slice(0, 14).map((packet): RadarCoverageItem => ({
       label: packet.topic,
       sourceCount: packet.sourceIds.length,
       evidenceTypes: packet.evidenceTypes,
@@ -454,26 +455,26 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
     sourceFingerprint: digest.sourceFingerprint,
     sourceCount: digest.sourceCount,
     evidenceBreakdown: digest.evidenceBreakdown,
-    softCoverage: digest.softCoverage.slice(0, 12),
-    packets: digest.packets.slice(0, 20).map((packet) => ({
+    softCoverage: digest.softCoverage.slice(0, 10),
+    packets: digest.packets.slice(0, 16).map((packet) => ({
       topic: packet.topic,
       score: Math.round(packet.score),
       sourceIds: packet.sourceIds,
       evidenceTypes: packet.evidenceTypes,
       signalTypes: packet.signalTypes,
       summary: packet.summary,
-      signals: packet.signals.slice(0, 4).map((signal) => trimText(signal, 180)),
+      signals: packet.signals.slice(0, 3).map((signal) => trimText(signal, 150)),
     })),
     citations: digest.citations.slice(0, RADAR_DIGEST_CITATION_LIMIT).map((source) => ({
       id: source.id,
       source: source.source,
       sourceType: source.sourceType,
-      title: trimText(source.title, 140),
+      title: trimText(source.title, 110),
       url: source.url,
       publishedAt: source.publishedAt,
       query: source.query,
       signalType: source.signalType,
-      summary: source.summary ? trimText(source.summary, 180) : undefined,
+      summary: source.summary ? trimText(source.summary, 130) : undefined,
     })),
   };
 }
@@ -748,8 +749,14 @@ function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidence
 
 async function readRadarCache(env: Env): Promise<RadarCachePayload | null> {
   const value = await env.REPORT_CACHE?.get<RadarCachePayload>(RADAR_CACHE_KEY, "json").catch(() => null);
-  if (!value || value.version !== RADAR_CACHE_VERSION || !value.radar) return null;
-  return value;
+  if (value?.version === RADAR_CACHE_VERSION && value.radar) return value;
+  for (const key of LEGACY_RADAR_CACHE_KEYS) {
+    const legacy = await env.REPORT_CACHE?.get<{ cachedAt?: string; radar?: RadarScan }>(key, "json").catch(() => null);
+    if (legacy?.radar) {
+      return { version: RADAR_CACHE_VERSION, cachedAt: legacy.cachedAt || new Date().toISOString(), radar: legacy.radar };
+    }
+  }
+  return null;
 }
 
 async function writeRadarCache(env: Env, radar: RadarScan) {

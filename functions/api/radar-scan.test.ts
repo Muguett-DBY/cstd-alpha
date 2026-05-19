@@ -57,11 +57,11 @@ describe("radar scan model routing", () => {
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
       reasoning_effort: "max",
-      thinking: { type: "enabled", budget_tokens: 8192 },
+      thinking: { type: "enabled", budget_tokens: 4096 },
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 14000,
+      max_tokens: 9000,
     });
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
     expect(JSON.stringify(body.messages)).toContain("代表公司只能列 A 股或港股上市公司");
@@ -181,10 +181,10 @@ describe("radar scan model routing", () => {
       };
     };
 
-    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(20);
-    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 4)).toBe(true);
-    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(96);
-    expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 140 && (source.summary?.length ?? 0) <= 180)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(16);
+    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 3)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(72);
+    expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 110 && (source.summary?.length ?? 0) <= 130)).toBe(true);
   });
 
   test("filters non A-share and Hong Kong representatives from model output", async () => {
@@ -289,8 +289,8 @@ describe("radar scan evidence tiers", () => {
       })),
     ]);
 
-    expect(digest.sourceCount).toBe(96);
-    expect(digest.evidenceBreakdown.news).toBeGreaterThanOrEqual(20);
+    expect(digest.sourceCount).toBe(72);
+    expect(digest.evidenceBreakdown.news).toBeGreaterThanOrEqual(16);
     expect(digest.evidenceBreakdown.market).toBeGreaterThan(0);
     expect(digest.evidenceBreakdown.official).toBeGreaterThan(0);
   });
@@ -892,14 +892,29 @@ function modelRadarPayloadWithMisleadingCoverage() {
 }
 
 function manyRadarSources(count: number) {
-  return Array.from({ length: count }, (_, index) => ({
-    source: "行业价格",
-    query: index % 2 === 0 ? "A股 细分行业 业绩增长 景气度" : "A股 平稳产业 高股息 现金流",
-    title: `补充证据 ${index}`,
-    url: `https://example.com/source-${index}`,
-    sourceType: "hard_data" as const,
-    weight: 5,
-  }));
+  const templates = [
+    { source: "行业价格", query: "碳酸锂 价格 库存 产能 锂电", sourceType: "hard_data" as const, weight: 5 },
+    { source: "AKShare/Sina期货日线", query: "铜 钨 稀土 价格 供需 库存", sourceType: "hard_data" as const, weight: 5 },
+    { source: "AKShare/100ppi期现基差", query: "钢铁 水泥 价格 开工率 需求", sourceType: "hard_data" as const, weight: 5 },
+    { source: "AKShare/乘联会汽车统计", query: "汽车 销量 新能源车 出口 数据", sourceType: "official" as const, weight: 4 },
+    { source: "AKShare/生猪价格统计", query: "猪价 产能 库存 周期", sourceType: "hard_data" as const, weight: 5 },
+    { source: "东方财富行业指数", query: "航运 运价 指数 供需", sourceType: "market" as const, weight: 3 },
+    { source: "公司公告", query: "一季报 营收 净利润 毛利率 订单 产能", sourceType: "announcement" as const, weight: 4 },
+    { source: "BaoStock 行业分类", query: "A股 行业分类 公司分布", sourceType: "official" as const, weight: 4 },
+    { source: "新浪概念板块", query: "新浪概念板块 涨跌幅 成交额", sourceType: "market" as const, weight: 3 },
+    { source: "Google News", query: "存储芯片 DRAM NAND 价格 库存", sourceType: "news" as const, weight: 2 },
+    { source: "研报摘要", query: "行业研报 高景气 业绩增长 细分产业", sourceType: "research" as const, weight: 1 },
+    { source: "平稳产业数据", query: "A股 平稳产业 高股息 现金流 公用事业 电信 水电", sourceType: "hard_data" as const, weight: 5 },
+  ];
+  return Array.from({ length: count }, (_, index) => {
+    const template = templates[index % templates.length];
+    return {
+      ...template,
+      title: `补充证据 ${index} ${template.query}`,
+      url: `https://example.com/source-${index}`,
+      signalType: template.sourceType === "hard_data" ? ("commodity_price" as const) : undefined,
+    };
+  });
 }
 
 afterEach(() => {
