@@ -525,7 +525,7 @@ def fetch_akshare_futures_daily(ak: Any) -> list[dict[str, Any]]:
                 "title": f"{label} {date} 收盘 {number_text(close)}，结算 {number_text(latest.get('settle'))}，成交 {number_text(latest.get('volume'))}",
                 "url": f"https://finance.sina.com.cn/futures/quotes/{symbol}.shtml",
                 "publishedAt": iso_date(date),
-                "summary": f"主连日线硬数据，较上一交易日收盘变化 {format_percent(change)}，持仓 {number_text(latest.get('hold'))}。",
+                "summary": f"主连日线硬数据，较上一交易日收盘变化 {format_percent(change, ratio=True)}，持仓 {number_text(latest.get('hold'))}。",
                 "sourceType": source_type,
                 "signalType": signal_type,
                 "weight": SOURCE_WEIGHTS[source_type],
@@ -559,7 +559,7 @@ def spot_basis_source(row: dict[str, Any]) -> dict[str, Any]:
         "title": f"{name} {date} 现货 {number_text(row.get('spot_price'))}，主力 {dominant_contract or '待验证'} {number_text(row.get('dominant_contract_price'))}",
         "url": f"https://www.100ppi.com/sf/day-{date}.html#{quote(symbol)}",
         "publishedAt": iso_date(date),
-        "summary": f"期现硬数据：主力基差 {number_text(row.get('dom_basis'))}，基差率 {format_percent(row.get('dom_basis_rate'))}。",
+        "summary": f"期现硬数据：主力基差 {number_text(row.get('dom_basis'))}，基差率 {format_percent(row.get('dom_basis_rate'), ratio=True)}。",
         "sourceType": "hard_data",
         "signalType": signal_type,
         "weight": SOURCE_WEIGHTS["hard_data"],
@@ -581,7 +581,7 @@ def fetch_akshare_hog_stats(ak: Any) -> list[dict[str, Any]]:
                 {
                     "source": "AKShare/生猪价格统计",
                     "query": "生猪养殖 猪价 外三元 现货 产能 周期",
-                    "title": f"外三元猪价 {date} {number_text(value)} 元/斤，日变化 {format_percent(ratio_change(value, previous_value))}",
+                    "title": f"外三元猪价 {date} {number_text(value)} 元/斤，日变化 {format_percent(ratio_change(value, previous_value), ratio=True)}",
                     "url": "https://www.akshare.akfamily.xyz/data/futures/futures.html#futures-hog-core",
                     "publishedAt": iso_date(date),
                     "summary": "生猪现货价格硬数据，用于验证猪周期反转或衰退判断。",
@@ -634,7 +634,7 @@ def fetch_akshare_cpca_stats(ak: Any) -> list[dict[str, Any]]:
             {
                 "source": "AKShare/乘联会汽车统计",
                 "query": f"{topic} {query}",
-                "title": f"{symbol}{indicator} {current_year}年{month} {number_text(current_value)} 万辆，同比 {format_percent(yoy)}",
+                "title": f"{symbol}{indicator} {current_year}年{month} {number_text(current_value)} 万辆，同比 {format_percent(yoy, ratio=True)}",
                 "url": "http://data.cpcadata.com/TotalMarket",
                 "publishedAt": f"{current_year}-{month.replace('月', '').zfill(2)}-01T00:00:00Z",
                 "summary": f"乘联会月度行业统计，去年同期 {number_text(previous_value)} 万辆，用于验证汽车销量、出口和景气度。",
@@ -1183,11 +1183,11 @@ def ratio_change(current: float | None, previous: float | None) -> float | None:
     return (current - previous) / previous
 
 
-def format_percent(value: Any) -> str:
+def format_percent(value: Any, ratio: bool = False) -> str:
     number = numeric(value)
     if number is None:
         return "待验证"
-    if abs(number) <= 1:
+    if ratio:
         number *= 100
     return f"{number:.2f}%"
 
