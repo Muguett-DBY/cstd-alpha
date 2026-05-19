@@ -194,6 +194,81 @@ button:not(:disabled):active,
   grid-template-columns: clamp(300px, 23vw, 390px) minmax(0, 1fr);
 }
 
+@media (min-width: 1101px) {
+  .app-shell.view-radar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.view-radar .input-rail {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: minmax(230px, auto) minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+    height: auto;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 12px clamp(20px, 2.2vw, 34px);
+    background: rgba(247, 247, 244, 0.94);
+    backdrop-filter: blur(14px);
+  }
+
+  .app-shell.view-radar .input-rail > div:first-child {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .app-shell.view-radar .input-rail h1,
+  .app-shell.view-radar .rail-copy,
+  .app-shell.view-radar .input-rail .muted,
+  .app-shell.view-radar .report-form,
+  .app-shell.view-radar .selected-company,
+  .app-shell.view-radar .input-rail > .generate-button,
+  .app-shell.view-radar .input-rail > .refresh-button,
+  .app-shell.view-radar .input-rail > .cancel-button,
+  .app-shell.view-radar .chart-controls,
+  .app-shell.view-radar .progress-panel,
+  .app-shell.view-radar .input-rail > .cache-notice,
+  .app-shell.view-radar .input-rail > .error-text {
+    display: none;
+  }
+
+  .app-shell.view-radar .brand {
+    white-space: nowrap;
+  }
+
+  .app-shell.view-radar .input-rail .ghost-button {
+    min-height: 34px;
+    padding-inline: 10px;
+  }
+
+  .app-shell.view-radar .view-tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    min-width: 0;
+    margin-top: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .app-shell.view-radar .view-tabs button {
+    flex: 0 0 auto;
+    min-width: 96px;
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+
+  .app-shell.view-radar .view-tabs button.wide-tab {
+    grid-column: auto;
+  }
+}
+
 .install-prompt {
   position: fixed;
   right: 18px;
@@ -2070,6 +2145,8 @@ button:not(:disabled):active,
 .radar-view {
   display: grid;
   gap: 18px;
+  width: min(100%, 1720px);
+  margin: 0 auto;
 }
 
 .radar-header,
@@ -2177,6 +2254,91 @@ button:not(:disabled):active,
 .radar-brief {
   display: grid;
   gap: 16px;
+}
+
+.radar-signal-map {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbf8;
+}
+
+.radar-signal-map-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.radar-signal-map-head strong {
+  color: var(--ink);
+}
+
+.radar-signal-map-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.radar-signal-bars {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.radar-signal-bars span {
+  position: relative;
+  display: grid;
+  min-height: 78px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+}
+
+.radar-signal-bars span::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  width: var(--bar);
+  height: 5px;
+  border-radius: 0 999px 999px 0;
+  background: var(--signal-color);
+}
+
+.radar-signal-bars small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.radar-signal-bars strong {
+  align-self: end;
+  color: var(--ink);
+  font-size: 28px;
+}
+
+.signal-growth {
+  --signal-color: var(--teal);
+}
+
+.signal-sustain {
+  --signal-color: var(--blue);
+}
+
+.signal-bubble {
+  --signal-color: var(--red);
+}
+
+.signal-upcoming {
+  --signal-color: var(--amber);
+}
+
+.signal-decline {
+  --signal-color: #5b6168;
 }
 
 .radar-round-changes {
@@ -2319,6 +2481,55 @@ button:not(:disabled):active,
   font-size: 14px;
 }
 
+.radar-evidence-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.radar-evidence-bars > div {
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf2f0;
+}
+
+.radar-evidence-bars span {
+  display: block;
+  min-width: 5px;
+}
+
+.radar-evidence-bars p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.evidence-bar-hard_data {
+  background: var(--teal);
+}
+
+.evidence-bar-official {
+  background: var(--blue);
+}
+
+.evidence-bar-announcement {
+  background: #6f4e9b;
+}
+
+.evidence-bar-market {
+  background: var(--amber);
+}
+
+.evidence-bar-news {
+  background: #8c98a4;
+}
+
+.evidence-bar-research {
+  background: #7a6854;
+}
+
 .radar-change-log {
   border-top: 1px solid var(--line);
   padding-top: 12px;
@@ -2445,12 +2656,61 @@ button:not(:disabled):active,
   margin-top: 14px;
 }
 
+.radar-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.radar-section-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.radar-section-head > span {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #fbfbf8;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .radar-card,
 .radar-list-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfbf8;
   padding: 16px;
+}
+
+.radar-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.radar-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--card-accent, var(--line));
+}
+
+.radar-risk-高 {
+  --card-accent: var(--red);
+}
+
+.radar-risk-中 {
+  --card-accent: var(--amber);
+}
+
+.radar-risk-低 {
+  --card-accent: var(--teal);
 }
 
 .radar-card header {
@@ -2487,6 +2747,65 @@ button:not(:disabled):active,
   overflow: hidden;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.radar-card-meters {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.6fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.radar-confidence-meter {
+  display: grid;
+  grid-template-columns: auto minmax(54px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: white;
+}
+
+.radar-confidence-meter span,
+.radar-confidence-meter strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-confidence-meter div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.radar-confidence-meter i {
+  height: 6px;
+  border-radius: 999px;
+  background: #e7e9e5;
+}
+
+.radar-confidence-meter i.active {
+  background: var(--teal);
+}
+
+.radar-driver-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.radar-driver-tags span {
+  border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--line));
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f3f7fb;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .risk-pill {
@@ -2814,6 +3133,7 @@ button:not(:disabled):active,
   .radar-round-changes-head,
   .radar-round-change-grid,
   .radar-brief-main,
+  .radar-signal-bars,
   .radar-focus-grid,
   .evidence-tier-grid,
   .radar-grid,
@@ -2825,6 +3145,7 @@ button:not(:disabled):active,
   .radar-coverage-review > div,
   .radar-columns,
   .radar-card-insights,
+  .radar-card-meters,
   .template-grid {
     grid-template-columns: 1fr;
   }
@@ -2940,6 +3261,11 @@ button:not(:disabled):active,
 
   .radar-header {
     gap: 14px;
+  }
+
+  .radar-section-head,
+  .radar-signal-map-head {
+    display: grid;
   }
 
   .radar-header h2 {

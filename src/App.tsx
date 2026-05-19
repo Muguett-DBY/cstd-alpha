@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RankingView, type RankingMarket } from "./RankingView";
@@ -1328,6 +1328,7 @@ function RadarBrief({ radar }: { radar: RadarScan }) {
         </div>
         <ul>{listItems(radar.executiveSummary.slice(0, 5))}</ul>
       </div>
+      <RadarSignalMap radar={radar} />
       {focusCards.length ? (
         <div className="radar-focus-grid">
           {focusCards.map(({ label, item }) => (
@@ -1343,11 +1344,44 @@ function RadarBrief({ radar }: { radar: RadarScan }) {
   );
 }
 
+function RadarSignalMap({ radar }: { radar: RadarScan }) {
+  const groups = [
+    { label: "扎实增长", value: radar.solidGrowth.length, className: "growth" },
+    { label: "可持续性", value: radar.sustainability.length, className: "sustain" },
+    { label: "泡沫风险", value: radar.bubbleRisks.length, className: "bubble" },
+    { label: "增长期", value: radar.upcomingGrowth.length, className: "upcoming" },
+    { label: "衰退", value: radar.decliningIndustries.length, className: "decline" },
+  ];
+  const total = groups.reduce((sum, item) => sum + item.value, 0);
+  return (
+    <div className="radar-signal-map" aria-label="本轮结论分布">
+      <div className="radar-signal-map-head">
+        <strong>结论分布</strong>
+        <span>{total} 个雷达条目</span>
+      </div>
+      <div className="radar-signal-bars">
+        {groups.map((group) => (
+          <span key={group.label} className={`signal-${group.className}`} style={{ "--bar": `${total ? Math.max(8, (group.value / total) * 100) : 0}%` } as CSSProperties}>
+            <small>{group.label}</small>
+            <strong>{group.value}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RadarItemSection({ id, title, items, sourceMap }: { id: string; title: string; items: RadarItem[]; sourceMap: Map<string, RadarCitation> }) {
   const sortedItems = sortRadarItems(items);
   return (
     <section className="radar-section" id={id}>
-      <h3>{title}</h3>
+      <header className="radar-section-head">
+        <div>
+          <h3>{title}</h3>
+          <p>{radarSectionHint(id)}</p>
+        </div>
+        <span>{sortedItems.length} 条</span>
+      </header>
       <div className="radar-grid">
         {sortedItems.length ? (
           sortedItems.map((item) => <RadarCard key={`${title}-${item.title}-${item.companies.join(",")}`} item={item} sourceMap={sourceMap} />)
@@ -1356,6 +1390,18 @@ function RadarItemSection({ id, title, items, sourceMap }: { id: string; title: 
         )}
       </div>
     </section>
+  );
+}
+
+function radarSectionHint(id: string) {
+  return (
+    {
+      "radar-growth": "优先看硬数据、财报和多源验证支撑的增长。",
+      "radar-sustainability": "区分短期催化、中期景气和长期护城河。",
+      "radar-bubble": "关注股价透支、产能过剩和情绪退潮信号。",
+      "radar-upcoming": "跟踪价格、销量、订单或政策拐点是否启动。",
+      "radar-decline": "识别需求萎缩、技术替代和产能过剩风险。",
+    }[id] ?? "按证据强度和优先级排序。"
   );
 }
 
@@ -1387,6 +1433,7 @@ function RadarEvidenceOverview({
           </span>
         ))}
       </div>
+      <RadarEvidenceBars breakdown={breakdown} />
       {changeLog?.length ? (
         <div className="radar-change-log">
           <strong>变化说明</strong>
@@ -1396,6 +1443,22 @@ function RadarEvidenceOverview({
       {softCoverage?.length ? <RadarCoverageOverview coverage={softCoverage} /> : null}
       {coverageReview?.length ? <RadarCoverageReviewPanel coverageReview={coverageReview} /> : null}
     </section>
+  );
+}
+
+function RadarEvidenceBars({ breakdown }: { breakdown?: RadarEvidenceBreakdown }) {
+  const entries = radarEvidenceEntries(breakdown);
+  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  if (!total) return null;
+  return (
+    <div className="radar-evidence-bars" aria-label="证据类型占比">
+      <div>
+        {entries.map(([type, count]) => (
+          <span key={type} className={`evidence-bar-${type}`} style={{ width: `${(count / total) * 100}%` }} title={`${radarEvidenceLabel(type)} ${count} 条`} />
+        ))}
+      </div>
+      <p>{entries.map(([type, count]) => `${radarEvidenceLabel(type)} ${Math.round((count / total) * 100)}%`).join(" · ")}</p>
+    </div>
   );
 }
 
@@ -1444,7 +1507,7 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
   const sourceIds = item.sourceIds ?? [];
   const insights = radarCardInsights(item);
   return (
-    <article className="radar-card">
+    <article className={`radar-card radar-risk-${item.riskLevel} radar-strength-${item.conclusionStrength}`}>
       <header>
         <div>
           <h4>{item.title || "待确认主题"}</h4>
@@ -1455,6 +1518,16 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
           <span className={`risk-pill confidence-${item.confidence || "中"}`}>置信 {item.confidence || "中"}</span>
         </div>
       </header>
+      <div className="radar-card-meters">
+        <RadarConfidenceMeter confidence={item.confidence || "中"} />
+        {item.driverTags?.length ? (
+          <div className="radar-driver-tags" aria-label="驱动因素标签">
+            {item.driverTags.slice(0, 5).map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
       <dl>
         <dt>产业</dt>
         <dd>{item.industries.join("、") || "待确认"}</dd>
@@ -1508,6 +1581,21 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
         <RadarCitationCards sourceIds={sourceIds} sourceMap={sourceMap} />
       </details>
     </article>
+  );
+}
+
+function RadarConfidenceMeter({ confidence }: { confidence: "低" | "中" | "高" }) {
+  const score = { 低: 1, 中: 2, 高: 3 }[confidence];
+  return (
+    <div className="radar-confidence-meter" aria-label={`置信度 ${confidence}`}>
+      <span>置信度</span>
+      <div>
+        {[1, 2, 3].map((level) => (
+          <i key={level} className={level <= score ? "active" : ""} />
+        ))}
+      </div>
+      <strong>{confidence}</strong>
+    </div>
   );
 }
 
