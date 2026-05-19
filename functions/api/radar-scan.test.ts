@@ -57,11 +57,11 @@ describe("radar scan model routing", () => {
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
       reasoning_effort: "max",
-      thinking: { type: "enabled", budget_tokens: 4096 },
+      thinking: { type: "enabled", budget_tokens: 2048 },
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 9000,
+      max_tokens: 6000,
     });
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
     expect(JSON.stringify(body.messages)).toContain("代表公司只能列 A 股或港股上市公司");
@@ -181,10 +181,10 @@ describe("radar scan model routing", () => {
       };
     };
 
-    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(16);
-    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 3)).toBe(true);
-    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(72);
-    expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 110 && (source.summary?.length ?? 0) <= 130)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.packets.length).toBeLessThanOrEqual(10);
+    expect(dynamicPayload.evidenceDigest.packets.every((packet) => packet.signals.length <= 2)).toBe(true);
+    expect(dynamicPayload.evidenceDigest.citations.length).toBeLessThanOrEqual(48);
+    expect(dynamicPayload.evidenceDigest.citations.every((source) => source.title.length <= 90 && (source.summary?.length ?? 0) <= 100)).toBe(true);
   });
 
   test("filters non A-share and Hong Kong representatives from model output", async () => {
@@ -289,8 +289,8 @@ describe("radar scan evidence tiers", () => {
       })),
     ]);
 
-    expect(digest.sourceCount).toBe(72);
-    expect(digest.evidenceBreakdown.news).toBeGreaterThanOrEqual(16);
+    expect(digest.sourceCount).toBe(48);
+    expect(digest.evidenceBreakdown.news).toBeGreaterThanOrEqual(10);
     expect(digest.evidenceBreakdown.market).toBeGreaterThan(0);
     expect(digest.evidenceBreakdown.official).toBeGreaterThan(0);
   });
@@ -550,6 +550,34 @@ describe("radar scan caching", () => {
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_CACHE_KEY, expect.stringContaining("deepseek-v4-flash"));
     expect(fetchedUrls.filter((url) => url.includes("api.deepseek.com/chat/completions"))).toHaveLength(1);
     expect(fetchedUrls.some((url) => url.includes("opencode.ai"))).toBe(false);
+  });
+
+  test("POST times out a slow DeepSeek call before Cloudflare cancels the request", async () => {
+    vi.useFakeTimers();
+    const payload = cachedRadarPayload();
+    const digest = buildRadarEvidenceDigest(manyRadarSources(48));
+    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(radarCacheStore(payload, digest)) };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("api.deepseek.com/chat/completions")) {
+        return await new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("model timeout")), { once: true });
+        });
+      }
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const responsePromise = onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    await vi.advanceTimersByTimeAsync(90_000);
+    const response = await responsePromise;
+    const json = (await response.json()) as { radar?: { fromCache?: boolean; refreshWarning?: string }; warning?: string };
+
+    expect(response.status).toBe(200);
+    expect(json.radar?.fromCache).toBe(true);
+    expect(json.radar?.refreshWarning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
+    expect(json.warning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
   });
 
   test("POST normalizes investment-radar fields from model output", async () => {
@@ -919,5 +947,6 @@ function manyRadarSources(count: number) {
 
 afterEach(() => {
   globalThis.fetch = OLD_FETCH;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });

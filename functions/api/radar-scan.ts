@@ -101,9 +101,10 @@ const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_CACHE_HOURS = 6;
 const RADAR_SOURCE_TIMEOUT_MS = 18_000;
+const RADAR_MODEL_TIMEOUT_MS = 85_000;
 const RADAR_FREE_PLAN_SOURCE_REQUEST_BUDGET = 38;
-const RADAR_DIGEST_CITATION_LIMIT = 72;
-const RADAR_DIGEST_NEWS_FLOOR = 16;
+const RADAR_DIGEST_CITATION_LIMIT = 48;
+const RADAR_DIGEST_NEWS_FLOOR = 10;
 const RADAR_DIGEST_MAX_NEWS_SHARE = 0.3;
 const RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE = 0.46;
 const RADAR_CONCLUSION_STRENGTHS: readonly RadarConclusionStrength[] = ["正式结论", "观察", "证据不足"];
@@ -256,11 +257,11 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
     signal,
     body: JSON.stringify({
       model: route.model,
-      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 4096 } } : {}),
+      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 2048 } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
-      max_tokens: 9000,
+      max_tokens: 6000,
       messages: [
         {
           role: "system",
@@ -293,7 +294,7 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "每个行业条目必须填写反证条件 counterEvidenceConditions，写出哪些价格、销量、订单、财报、政策或供给信号出现后应下调或撤销该结论。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
               "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
-              "控制输出冗余：每个正式数组最多 4 条，每条只保留最关键的 2-5 个驱动、证据、拐点，优先引用 sourceIds，不要重复长篇复制证据标题。",
+              "控制输出冗余：每个正式数组最多 3 条，每条只保留最关键的 2-4 个驱动、证据、拐点，优先引用 sourceIds，不要重复长篇复制证据标题。",
               ...RADAR_COMPANY_UNIVERSE_RULES,
             ],
             evidenceWeights: {
@@ -329,8 +330,9 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
   if (!routes.length) throw new Error("未配置 DeepSeek API Key，无法生成雷达扫描。");
   let lastError: unknown;
   for (const route of routes) {
+    const modelTimeout = timeoutSignal(signal, RADAR_MODEL_TIMEOUT_MS);
     try {
-      const response = await fetch(route.url, buildRadarRequest(route, digest, signal, previousScan));
+      const response = await fetch(route.url, buildRadarRequest(route, digest, modelTimeout.signal, previousScan));
       const text = await response.text();
       if (!response.ok) {
         lastError = new Error(`雷达扫描失败：${route.model} ${response.status} ${text.slice(0, 400)}`);
@@ -339,6 +341,8 @@ async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: Ra
       return normalizeRadarScan(JSON.parse(jsonrepair(contentFromModelResponse(text))), route.model, digest, previousScan);
     } catch (error) {
       lastError = error;
+    } finally {
+      modelTimeout.cleanup();
     }
   }
   throw new Error(lastError instanceof Error ? lastError.message : "雷达扫描失败。");
@@ -432,7 +436,7 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
       };
     })
     .sort((left, right) => right.score - left.score)
-    .slice(0, 18);
+    .slice(0, 12);
 
   return {
     sourceFingerprint: radarSourceFingerprint(citations),
@@ -440,7 +444,7 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
     evidenceBreakdown: summarizeEvidenceBreakdown(citations),
     citations,
     packets,
-    softCoverage: packets.slice(0, 14).map((packet): RadarCoverageItem => ({
+    softCoverage: packets.slice(0, 10).map((packet): RadarCoverageItem => ({
       label: packet.topic,
       sourceCount: packet.sourceIds.length,
       evidenceTypes: packet.evidenceTypes,
@@ -455,26 +459,26 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
     sourceFingerprint: digest.sourceFingerprint,
     sourceCount: digest.sourceCount,
     evidenceBreakdown: digest.evidenceBreakdown,
-    softCoverage: digest.softCoverage.slice(0, 10),
-    packets: digest.packets.slice(0, 16).map((packet) => ({
+    softCoverage: digest.softCoverage.slice(0, 8),
+    packets: digest.packets.slice(0, 10).map((packet) => ({
       topic: packet.topic,
       score: Math.round(packet.score),
       sourceIds: packet.sourceIds,
       evidenceTypes: packet.evidenceTypes,
       signalTypes: packet.signalTypes,
       summary: packet.summary,
-      signals: packet.signals.slice(0, 3).map((signal) => trimText(signal, 150)),
+      signals: packet.signals.slice(0, 2).map((signal) => trimText(signal, 120)),
     })),
     citations: digest.citations.slice(0, RADAR_DIGEST_CITATION_LIMIT).map((source) => ({
       id: source.id,
       source: source.source,
       sourceType: source.sourceType,
-      title: trimText(source.title, 110),
+      title: trimText(source.title, 90),
       url: source.url,
       publishedAt: source.publishedAt,
       query: source.query,
       signalType: source.signalType,
-      summary: source.summary ? trimText(source.summary, 130) : undefined,
+      summary: source.summary ? trimText(source.summary, 100) : undefined,
     })),
   };
 }
