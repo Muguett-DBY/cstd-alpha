@@ -94,9 +94,7 @@ const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
 
 const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
-const RADAR_MODEL_REASONING: Record<RadarModel, "max"> = {
-  "deepseek-v4-flash": "max",
-};
+const RADAR_MODEL_REASONING: Partial<Record<RadarModel, "max">> = {};
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const RADAR_VALID_HOURS = 12;
 const RADAR_SOURCE_CACHE_HOURS = 6;

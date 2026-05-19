@@ -42,7 +42,7 @@ describe("radar scan model routing", () => {
     expect(radarModelRoutes(undefined)).toEqual([]);
   });
 
-  test("builds a paid DeepSeek request with auth, max thinking, and stable JSON output", () => {
+  test("builds a paid DeepSeek request with auth, compact payload, and stable JSON output", () => {
     const digest = buildRadarEvidenceDigest([
       { source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" },
     ]);
@@ -56,13 +56,13 @@ describe("radar scan model routing", () => {
     expect(request.headers).toMatchObject({ authorization: "Bearer paid-key" });
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
-      reasoning_effort: "max",
-      thinking: { type: "enabled", budget_tokens: 1024 },
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
       max_tokens: 4500,
     });
+    expect(body).not.toHaveProperty("reasoning_effort");
+    expect(body).not.toHaveProperty("thinking");
     expect(JSON.stringify(body.messages)).toContain("短时间内不要因为单条新闻改变结论");
     expect(JSON.stringify(body.messages)).toContain("代表公司只能列 A 股或港股上市公司");
   });
