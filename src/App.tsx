@@ -1397,7 +1397,7 @@ function RadarSignalMap({ radar }: { radar: RadarScan }) {
 }
 
 function RadarMarketOverview({ radar }: { radar: RadarScan }) {
-  const packets = radar.industryPackets ?? [];
+  const packets = buildRadarVisualPackets(radar);
   if (!packets.length) return null;
   return (
     <section className="radar-summary radar-market-overview" id="radar-market-map">
@@ -1862,6 +1862,109 @@ function radarStageBuckets(packets: RadarIndustryPacket[]) {
     const items = packets.filter((packet) => (packet.stage ?? "证据不足") === stage).sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
     return { stage, items, percent: Math.max(4, (items.length / total) * 100) };
   });
+}
+
+function buildRadarVisualPackets(radar: RadarScan): RadarIndustryPacket[] {
+  const staged = new Map<string, RadarIndustryPacket>();
+  const addPacket = (packet: RadarIndustryPacket) => {
+    const existing = staged.get(packet.industry);
+    if (!existing || radarPacketPriority(packet) > radarPacketPriority(existing)) staged.set(packet.industry, packet);
+  };
+  for (const packet of radar.industryPackets ?? []) addPacket({ ...packet, stage: packet.stage ?? inferPacketStage(packet), scores: packet.scores ?? visualScoresForPacket(packet) });
+  for (const [stage, items] of [
+    ["扎实增长", radar.solidGrowth],
+    ["继续观察", radar.sustainability],
+    ["泡沫风险", radar.bubbleRisks],
+    ["即将增长", radar.upcomingGrowth],
+    ["衰退", radar.decliningIndustries],
+  ] as const) {
+    for (const item of items) {
+      for (const industry of item.industries.length ? item.industries : [item.title]) {
+        addPacket({
+          group: stage,
+          industry,
+          status: "scanned",
+          changeStatus: item.changeReason?.includes("复用") ? "unchanged" : "changed",
+          stage,
+          evidenceHash: `${stage}-${industry}`,
+          sourceCount: item.supportingSourceCount ?? item.sourceIds?.length ?? 0,
+          evidenceTypes: item.evidenceTypes ?? [],
+          signalTypes: item.driverTags ?? [],
+          evidenceGaps: item.evidenceGaps ?? [],
+          themes: item.driverTags,
+          scores: visualScoresForRadarItem(item, stage),
+        });
+      }
+    }
+  }
+  for (const coverage of radar.coverageReview ?? []) {
+    addPacket({
+      group: "覆盖复核",
+      industry: coverage.label,
+      status: "scanned",
+      stage: coverage.status === "formal" ? "继续观察" : coverage.status === "watched" ? "继续观察" : "证据不足",
+      evidenceHash: `coverage-${coverage.label}`,
+      sourceCount: coverage.sourceCount,
+      evidenceTypes: coverage.evidenceTypes,
+      signalTypes: [],
+      evidenceGaps: coverage.status === "insufficient" ? ["缺多源验证"] : [],
+      scores: visualScoresForCoverage(coverage),
+    });
+  }
+  for (const coverage of radar.softCoverage ?? []) {
+    addPacket({
+      group: "软覆盖",
+      industry: coverage.label,
+      status: "scanned",
+      stage: coverage.sourceCount >= 2 ? "继续观察" : "证据不足",
+      evidenceHash: `soft-${coverage.label}`,
+      sourceCount: coverage.sourceCount,
+      evidenceTypes: coverage.evidenceTypes,
+      signalTypes: [],
+      evidenceGaps: coverage.sourceCount >= 2 ? [] : ["缺多源验证"],
+      scores: visualScoresForCoverage(coverage),
+    });
+  }
+  return [...staged.values()].sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+}
+
+function inferPacketStage(packet: RadarIndustryPacket) {
+  const scores = packet.scores ?? visualScoresForPacket(packet);
+  if (packet.sourceCount <= 0 || scores.evidence < 30) return "证据不足";
+  if (scores.declineRisk >= 62) return "衰退";
+  if (scores.bubbleRisk >= 62) return "泡沫风险";
+  if (/现金流|高股息|公用事业|银行|电信|高速|水电/.test(`${packet.group} ${packet.industry}`)) return "平稳现金流";
+  if (scores.growth >= 68 && Math.max(scores.bubbleRisk, scores.declineRisk) < 58) return "扎实增长";
+  if (scores.growth >= 50 || scores.momentum >= 50) return "继续观察";
+  return "证据不足";
+}
+
+function visualScoresForPacket(packet: RadarIndustryPacket) {
+  const evidence = Math.min(100, (packet.sourceCount ?? 0) * 9 + (packet.evidenceTypes?.length ?? 0) * 12 - (packet.evidenceGaps?.length ?? 0) * 8);
+  const growth = Math.min(100, 28 + evidence * 0.45 + (packet.signalTypes?.length ?? 0) * 7);
+  const riskText = `${packet.group} ${packet.industry} ${(packet.evidenceGaps ?? []).join(" ")}`;
+  const bubbleRisk = /泡沫|机器人|低空|AI应用|商业航天/.test(riskText) ? 72 : 24;
+  const declineRisk = /衰退|过剩|地产|光伏|传统/.test(riskText) ? 72 : 24;
+  return { growth, momentum: growth, evidence, valuationRisk: bubbleRisk, bubbleRisk, declineRisk, confidence: Math.max(0, evidence - (packet.evidenceGaps?.length ?? 0) * 6), change: packet.changeStatus === "unchanged" ? 32 : 64 };
+}
+
+function visualScoresForRadarItem(item: RadarItem, stage: string) {
+  const evidence = Math.min(100, (item.supportingSourceCount ?? item.sourceIds?.length ?? 0) * 18 + (item.evidenceTypes?.length ?? 0) * 10);
+  const confidence = { 低: 35, 中: 62, 高: 88 }[item.confidence || "中"];
+  const risk = { 低: 28, 中: 58, 高: 88 }[item.riskLevel];
+  const growth = stage === "扎实增长" ? 82 : stage === "即将增长" ? 72 : stage === "衰退" ? 22 : stage === "泡沫风险" ? 70 : 54;
+  const declineRisk = stage === "衰退" ? 88 : Math.max(18, risk - 20);
+  const bubbleRisk = stage === "泡沫风险" ? 88 : risk;
+  return { growth, momentum: growth, evidence, valuationRisk: risk, bubbleRisk, declineRisk, confidence, change: item.changeReason?.includes("维持") ? 42 : 68 };
+}
+
+function visualScoresForCoverage(coverage: RadarCoverageItem | RadarCoverageReview) {
+  const evidence = Math.min(100, coverage.sourceCount * 10 + coverage.evidenceTypes.length * 10);
+  const watched = "status" in coverage && coverage.status === "watched";
+  const formal = "status" in coverage && coverage.status === "formal";
+  const growth = formal ? 62 : watched ? 48 : 28;
+  const risk = /泡沫|衰退|过剩|地产|光伏|机器人/.test(`${coverage.label} ${coverage.note}`) ? 68 : 32;
+  return { growth, momentum: growth, evidence, valuationRisk: risk, bubbleRisk: risk, declineRisk: risk, confidence: evidence, change: watched || formal ? 48 : 25 };
 }
 
 function radarPacketPriority(packet: RadarIndustryPacket) {
