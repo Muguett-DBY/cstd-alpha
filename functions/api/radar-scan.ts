@@ -208,7 +208,8 @@ type RadarSourcePlanItem =
   | { kind: "eastmoney"; tier: RadarEvidenceType; query: string; sourceName?: string; sourceType?: RadarEvidenceType }
   | { kind: "boards"; tier: RadarEvidenceType };
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async (context) => {
+  const { request, env } = context;
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
@@ -218,7 +219,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ radar: null, job, error: radarErrorMessage(null, "read") }, 200);
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const { request, env } = context;
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
@@ -232,23 +234,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const job = createRadarAnalysisJob(evidenceHash);
   await writeRadarJob(env, job);
 
-  try {
-    await dispatchRadarAnalysisWorkflow(env, job.id);
-    return json({ radar: cached ? markCached(cached.radar) : null, job }, 202);
-  } catch (error) {
+  const dispatchTask = dispatchRadarAnalysisWorkflow(env, job.id).catch(async (error) => {
     logRadarFailure(error, "refresh", Boolean(cached));
-    const failedJob = updateRadarJob(job, "failed", "本次刷新失败，已保留上次扫描。");
-    await writeRadarJob(env, failedJob);
-    const warning = radarErrorMessage(error, "refresh");
-    if (cached) {
-      return json({
-        radar: markCached(cached.radar, "本次刷新失败，已保留上次稳定扫描。", warning),
-        job: failedJob,
-        warning,
-      });
-    }
-    return json({ radar: null, job: failedJob, error: warning }, 200);
-  }
+    await writeRadarJob(env, updateRadarJob(job, "failed", "本次后台分析未能启动，已保留上次扫描。"));
+  });
+  context.waitUntil(dispatchTask);
+  return json({ radar: cached ? markCached(cached.radar) : null, job }, 202);
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {

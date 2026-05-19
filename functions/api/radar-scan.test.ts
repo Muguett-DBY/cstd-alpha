@@ -96,10 +96,7 @@ describe("radar scan async job API", () => {
     const env = { AUTH_SECRET: "secret", REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload, [RADAR_ANALYSIS_JOB_LATEST_KEY]: job }) };
     globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
 
-    const response = await onRequestGet({
-      request: request("GET"),
-      env,
-    } as unknown as EventContext<typeof env, string, unknown>);
+    const response = await onRequestGet(context("GET", env));
     const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { status?: string } };
 
     expect(response.status).toBe(200);
@@ -126,10 +123,7 @@ describe("radar scan async job API", () => {
       return new Response(null, { status: 204 });
     }) as typeof fetch;
 
-    const response = await onRequestPost({
-      request: request("POST"),
-      env,
-    } as unknown as EventContext<typeof env, string, unknown>);
+    const response = await onRequestPost(context("POST", env));
     const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { id?: string; status?: string } };
 
     expect(response.status).toBe(202);
@@ -152,10 +146,7 @@ describe("radar scan async job API", () => {
     };
     globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
 
-    const response = await onRequestPost({
-      request: request("POST"),
-      env,
-    } as unknown as EventContext<typeof env, string, unknown>);
+    const response = await onRequestPost(context("POST", env));
     const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { id?: string; status?: string } };
 
     expect(response.status).toBe(202);
@@ -164,7 +155,7 @@ describe("radar scan async job API", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  test("POST preserves old radar and returns a brief failed job when GitHub dispatch is unavailable", async () => {
+  test("POST returns a queued job immediately and records background dispatch failure without exposing details", async () => {
     const payload = cachedRadarPayload();
     const env = {
       AUTH_SECRET: "secret",
@@ -172,18 +163,18 @@ describe("radar scan async job API", () => {
       REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload, [RADAR_EVIDENCE_SNAPSHOT_KEY]: radarEvidenceSnapshot() }),
     };
     globalThis.fetch = vi.fn(async () => new Response("bad token", { status: 401 })) as typeof fetch;
+    const waitUntilTasks: Promise<unknown>[] = [];
 
-    const response = await onRequestPost({
-      request: request("POST"),
-      env,
-    } as unknown as EventContext<typeof env, string, unknown>);
+    const response = await onRequestPost(context("POST", env, waitUntilTasks));
     const json = (await response.json()) as { radar?: { fromCache?: boolean; refreshWarning?: string }; job?: { status?: string }; warning?: string };
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(json.radar?.fromCache).toBe(true);
-    expect(json.job?.status).toBe("failed");
-    expect(json.warning).toBe("本次刷新失败，已保留上次扫描。请稍后重试。");
+    expect(json.job?.status).toBe("queued");
+    expect(json.warning).toBeUndefined();
     expect(JSON.stringify(json)).not.toContain("bad token");
+    await Promise.all(waitUntilTasks);
+    expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_ANALYSIS_JOB_LATEST_KEY, expect.stringContaining('"failed"'), expect.anything());
   });
 });
 
@@ -215,6 +206,16 @@ function request(method: string) {
     method,
     headers: { cookie: "session=mock" },
   });
+}
+
+function context<TEnv>(method: string, env: TEnv, waitUntilTasks?: Promise<unknown>[]) {
+  return {
+    request: request(method),
+    env,
+    waitUntil: vi.fn((promise: Promise<unknown>) => {
+      waitUntilTasks?.push(promise);
+    }),
+  } as unknown as EventContext<TEnv, string, unknown>;
 }
 
 function kvWith(store: Record<string, unknown>) {
