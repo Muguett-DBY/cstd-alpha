@@ -2,6 +2,24 @@ export type RadarEvidenceType = "hard_data" | "official" | "announcement" | "mar
 
 export type RadarEvidenceBreakdown = Partial<Record<RadarEvidenceType, number>>;
 
+export type RadarConclusionStrength = "正式结论" | "观察" | "证据不足";
+
+export type RadarEvidenceGap =
+  | "缺财报"
+  | "缺价格"
+  | "缺销量"
+  | "缺订单"
+  | "缺库存"
+  | "缺产能"
+  | "缺现金流"
+  | "缺政策细则"
+  | "缺公司公告"
+  | "缺多源验证";
+
+export type RadarDriverTag = "需求" | "价格" | "技术" | "政策" | "市占率" | "供给收缩";
+
+export type RadarSustainabilityTier = "短期催化" | "中期景气" | "长期护城河";
+
 export type RadarSource = {
   source: string;
   query: string;
@@ -10,6 +28,7 @@ export type RadarSource = {
   publishedAt?: string;
   summary?: string;
   sourceType?: RadarEvidenceType;
+  signalType?: string;
   weight?: number;
 };
 
@@ -46,6 +65,10 @@ export type RadarItem = {
   thesis: string;
   drivers: string[];
   evidence: string[];
+  conclusionStrength: RadarConclusionStrength;
+  evidenceGaps: RadarEvidenceGap[];
+  driverTags: RadarDriverTag[];
+  sustainabilityTier: RadarSustainabilityTier;
   durability: "短期" | "中期" | "长期" | "不确定";
   riskLevel: "低" | "中" | "高";
   confidence?: "低" | "中" | "高";
@@ -53,6 +76,7 @@ export type RadarItem = {
   supportingSourceCount?: number;
   sourceIds?: string[];
   changeReason?: string;
+  counterEvidenceConditions: string[];
   turningPoints: string[];
 };
 

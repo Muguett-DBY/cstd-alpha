@@ -6,6 +6,7 @@ vi.mock("../_shared/auth", () => ({
 
 import {
   RADAR_CACHE_KEY,
+  RADAR_CACHE_VERSION,
   RADAR_DIGEST_CACHE_KEY,
   RADAR_EVIDENCE_SNAPSHOT_KEY,
   RADAR_SOURCE_CACHE_KEY,
@@ -124,6 +125,38 @@ describe("radar scan model routing", () => {
     expect(dynamicPayload).not.toHaveProperty("sources");
   });
 
+  test("defines investment-radar conclusion fields in the stable JSON contract", () => {
+    const digest = buildRadarEvidenceDigest([
+      { source: "Google News", query: "A股 行业 景气", title: "半导体设备订单增长", url: "https://example.com/a" },
+    ]);
+    const request = buildRadarRequest(
+      { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
+      digest,
+      new AbortController().signal,
+    );
+    const body = JSON.parse(String(request.body)) as { messages: Array<{ content: string }> };
+    const stablePayload = JSON.parse(body.messages[1].content) as {
+      evidenceRules: string[];
+      expectedJsonShape: {
+        solidGrowth: Array<Record<string, unknown>>;
+      };
+    };
+    const sampleItem = stablePayload.expectedJsonShape.solidGrowth[0];
+    const stableText = JSON.stringify(stablePayload);
+
+    expect(sampleItem).toMatchObject({
+      conclusionStrength: "正式结论 | 观察 | 证据不足",
+      evidenceGaps: ["缺财报", "缺价格", "缺销量"],
+      driverTags: ["需求", "价格", "技术"],
+      sustainabilityTier: "短期催化 | 中期景气 | 长期护城河",
+      counterEvidenceConditions: ["反证条件"],
+    });
+    expect(stableText).toContain("驱动因素标签");
+    expect(stableText).toContain("供给收缩");
+    expect(stableText).toContain("证据缺口");
+    expect(stableText).toContain("不要生成全空报告");
+  });
+
   test("caps dynamic evidence text while keeping broad coverage for lower DeepSeek input cost", () => {
     const digest = buildRadarEvidenceDigest(
       Array.from({ length: 120 }, (_, index) => ({
@@ -190,7 +223,7 @@ describe("radar scan evidence tiers", () => {
     const digest = buildRadarEvidenceDigest([
       { source: "行业价格", query: "存储芯片 DRAM NAND 价格 库存", title: "DRAM 价格继续上涨", url: "https://example.com/memory", summary: "AI 服务器需求拉动。", sourceType: "hard_data", weight: 5 },
       { source: "公司公告", query: "一季报 营收 净利润 毛利率 订单 产能", title: "半导体设备公司订单增长", url: "https://example.com/order", sourceType: "announcement", weight: 4 },
-      { source: "东方财富板块", query: "东方财富板块/行业/概念数据", title: "半导体设备 涨跌幅 4.2%", url: "https://example.com/board", sourceType: "market", weight: 3 },
+      { source: "东方财富板块", query: "东方财富板块/行业/概念数据", title: "半导体设备 涨跌幅 4.2%", url: "https://example.com/board", sourceType: "market", signalType: "commodity_price", weight: 3 },
     ]);
 
     expect(digest.sourceCount).toBe(3);
@@ -199,6 +232,7 @@ describe("radar scan evidence tiers", () => {
       topic: expect.stringContaining("半导体"),
       sourceIds: expect.arrayContaining(["S1"]),
       evidenceTypes: expect.arrayContaining(["hard_data", "announcement"]),
+      signalTypes: expect.arrayContaining(["commodity_price"]),
     });
     expect(digest.softCoverage[0]).toMatchObject({
       label: expect.stringContaining("半导体"),
@@ -372,7 +406,7 @@ describe("radar scan caching", () => {
           sources: digest.citations,
         },
         [RADAR_DIGEST_CACHE_KEY]: {
-          version: "v2",
+          version: "v3",
           cachedAt: new Date().toISOString(),
           sourceFingerprint: digest.sourceFingerprint,
           digest,
@@ -518,6 +552,50 @@ describe("radar scan caching", () => {
     expect(fetchedUrls.some((url) => url.includes("opencode.ai"))).toBe(false);
   });
 
+  test("POST normalizes investment-radar fields from model output", async () => {
+    const payload = cachedRadarPayload();
+    const digest = buildRadarEvidenceDigest(manyRadarSources(40));
+    const env = { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "paid-key", REPORT_CACHE: kvWith(radarCacheStore(payload, digest)) };
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("api.deepseek.com/chat/completions")) {
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(modelRadarPayloadWithInvestmentFields()) } }],
+          }),
+        );
+      }
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+    const response = await onRequestPost({
+      request: request("POST"),
+      env,
+    } as unknown as EventContext<typeof env, string, unknown>);
+    const json = (await response.json()) as {
+      radar?: {
+        solidGrowth?: Array<{
+          conclusionStrength?: string;
+          evidenceGaps?: string[];
+          driverTags?: string[];
+          sustainabilityTier?: string;
+          counterEvidenceConditions?: string[];
+        }>;
+      };
+    };
+    const item = json.radar?.solidGrowth?.[0];
+
+    expect(response.status).toBe(200);
+    expect(item).toMatchObject({
+      conclusionStrength: "正式结论",
+      evidenceGaps: ["缺财报", "缺价格", "缺销量"],
+      driverTags: ["需求", "价格", "供给收缩"],
+      sustainabilityTier: "长期护城河",
+      counterEvidenceConditions: ["订单连续两个季度低于预期"],
+    });
+    expect(item?.driverTags).not.toContain("海外扩张");
+    expect(item?.evidenceGaps).not.toContain("缺品牌认知");
+  });
+
   test("POST returns coverage review and rewrites misleading not-covered wording", async () => {
     const payload = cachedRadarPayload();
     const digest = buildRadarEvidenceDigest([
@@ -538,7 +616,7 @@ describe("radar scan caching", () => {
           sources: digest.citations,
         },
         [RADAR_DIGEST_CACHE_KEY]: {
-          version: "v2",
+          version: "v3",
           cachedAt: new Date().toISOString(),
           sourceFingerprint: digest.sourceFingerprint,
           digest,
@@ -585,7 +663,7 @@ describe("radar scan caching", () => {
           sources: digest.citations,
         },
         [RADAR_DIGEST_CACHE_KEY]: {
-          version: "v2",
+          version: "v3",
           cachedAt: new Date().toISOString(),
           sourceFingerprint: digest.sourceFingerprint,
           digest,
@@ -645,7 +723,7 @@ function radarCacheStore(payload: RadarCachePayload, digest: ReturnType<typeof b
       sources: digest.citations,
     },
     [RADAR_DIGEST_CACHE_KEY]: {
-      version: "v2",
+      version: "v3",
       cachedAt: new Date().toISOString(),
       sourceFingerprint: digest.sourceFingerprint,
       digest,
@@ -666,7 +744,7 @@ function radarEvidenceSnapshot(sources: ReturnType<typeof manyRadarSources>) {
 function cachedRadarPayload(): RadarCachePayload {
   const now = new Date().toISOString();
   return {
-    version: "v1",
+    version: RADAR_CACHE_VERSION,
     cachedAt: now,
     radar: {
       id: "radar-1",
@@ -728,6 +806,35 @@ function modelRadarPayloadWithSourceIds() {
         riskLevel: "中",
         changeReason: "测试。",
         turningPoints: ["订单放缓"],
+      },
+    ],
+  };
+}
+
+function modelRadarPayloadWithInvestmentFields() {
+  return {
+    ...modelRadarPayload(),
+    solidGrowth: [
+      {
+        title: "存储芯片价格复苏",
+        industries: ["存储芯片"],
+        companies: ["兆易创新"],
+        thesis: "价格、库存和服务器需求共同支持复苏判断。",
+        drivers: ["AI 服务器需求", "价格上涨", "供给收缩"],
+        evidence: ["测试证据"],
+        sourceIds: ["S1"],
+        evidenceTypes: ["hard_data"],
+        supportingSourceCount: 3,
+        confidence: "高",
+        durability: "长期",
+        riskLevel: "中",
+        conclusionStrength: "正式结论",
+        evidenceGaps: ["缺财报", "缺价格", "缺销量", "缺品牌认知"],
+        driverTags: ["需求", "价格", "供给收缩", "海外扩张"],
+        sustainabilityTier: "长期护城河",
+        changeReason: "测试。",
+        counterEvidenceConditions: ["订单连续两个季度低于预期"],
+        turningPoints: ["价格下跌"],
       },
     ],
   };

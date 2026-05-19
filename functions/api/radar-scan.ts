@@ -3,15 +3,19 @@ import { verifySessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
 import type {
   RadarCitation,
+  RadarConclusionStrength,
   RadarCoverageItem,
   RadarCoverageReview,
   RadarCoverageStatus,
   RadarEvidenceBreakdown,
+  RadarEvidenceGap,
   RadarEvidenceType,
+  RadarDriverTag,
   RadarItem,
   RadarList,
   RadarScan,
   RadarSource,
+  RadarSustainabilityTier,
 } from "../../src/shared/radar";
 
 type Env = {
@@ -34,6 +38,7 @@ export type RadarEvidencePacket = {
   score: number;
   sourceIds: string[];
   evidenceTypes: RadarEvidenceType[];
+  signalTypes: string[];
   summary: string;
   signals: string[];
 };
@@ -76,11 +81,11 @@ type RadarEvidenceSnapshotPayload = {
   sources: RadarSource[];
 };
 
-export const RADAR_CACHE_VERSION = "v1";
+export const RADAR_CACHE_VERSION = "v2";
 export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
 export const RADAR_SOURCE_CACHE_VERSION = "v2";
 export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
-export const RADAR_DIGEST_CACHE_VERSION = "v2";
+export const RADAR_DIGEST_CACHE_VERSION = "v3";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 export const RADAR_EVIDENCE_SNAPSHOT_VERSION = "v1";
 export const RADAR_EVIDENCE_SNAPSHOT_KEY = `radar-evidence:${RADAR_EVIDENCE_SNAPSHOT_VERSION}:latest`;
@@ -100,6 +105,10 @@ const RADAR_DIGEST_CITATION_LIMIT = 96;
 const RADAR_DIGEST_NEWS_FLOOR = 20;
 const RADAR_DIGEST_MAX_NEWS_SHARE = 0.3;
 const RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE = 0.46;
+const RADAR_CONCLUSION_STRENGTHS: readonly RadarConclusionStrength[] = ["正式结论", "观察", "证据不足"];
+const RADAR_EVIDENCE_GAPS: readonly RadarEvidenceGap[] = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
+const RADAR_DRIVER_TAGS: readonly RadarDriverTag[] = ["需求", "价格", "技术", "政策", "市占率", "供给收缩"];
+const RADAR_SUSTAINABILITY_TIERS: readonly RadarSustainabilityTier[] = ["短期催化", "中期景气", "长期护城河"];
 
 const RADAR_QUERIES = [
   "A股 细分行业 业绩增长 景气度",
@@ -265,6 +274,7 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "先按公开信息源归纳，再做模型自己的投资分析。",
               "优先使用多源交叉验证，避免只凭单条新闻判断。",
               "硬数据和公告证据优先于新闻与研报观点；新闻只负责发现线索，硬数据负责验证增长。",
+              "证据里的 signalType 表示第一阶段硬数据信号：commodity_price 商品/价格，financial_metric 财报指标，industry_stat 行业统计，freight_rate 运价。正式结论优先引用这些信号。",
               "如果同一产业方向同时出现主题板块聚合、行业分类覆盖和多条新闻线索，可以形成中低置信观察或正式结论；不要只因为 sourceType 里没有 hard_data 就把所有方向清空。",
               "新浪主题板块聚合用于说明产业方向覆盖，Google News 用于提供价格、库存、财报和产能线索；正式结论仍需写清证据强弱和待验证项。",
               "不要生成全空报告：如果没有高置信正式结论，也必须把证据较强的方向作为低/中置信观察条目放入 sustainability、upcomingGrowth 或 decliningIndustries，并在 thesis、confidence、limitations 里明确待验证。",
@@ -275,6 +285,11 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               "平稳产业中的杰出经营者优先从平稳现金流、高股息、公用事业、电信运营、能源、消费必需等证据中判断；如果证据不足，写入 coverageReview，不要写“没有覆盖平稳产业”。",
               "汽车、航运、钢铁、水泥等周期方向如果只构成线索，应写为已扫描但未形成强结论，而不是写成未能覆盖。",
               "增长判断至少说明需求扩张、技术突破、价格提升、市占率提升、政策推动中的主要驱动。",
+              "每个行业条目必须填写结论强度 conclusionStrength，只能是：正式结论、观察、证据不足。正式结论需要多源或硬证据支持，观察用于线索较强但仍待验证，证据不足用于只可记录缺口的方向。",
+              "每个行业条目必须填写证据缺口 evidenceGaps，优先使用：缺财报、缺价格、缺销量、缺订单、缺库存、缺产能、缺现金流、缺政策细则、缺公司公告、缺多源验证；没有明显缺口时输出空数组。",
+              "每个行业条目必须填写驱动因素标签 driverTags，只能从需求、价格、技术、政策、市占率、供给收缩中选择，和 drivers 里的文字解释保持一致。",
+              "每个行业条目必须填写可持续性分层 sustainabilityTier，只能是短期催化、中期景气、长期护城河；证据无法支撑时选择最保守的一档，并写明 evidenceGaps。",
+              "每个行业条目必须填写反证条件 counterEvidenceConditions，写出哪些价格、销量、订单、财报、政策或供给信号出现后应下调或撤销该结论。",
               "泡沫判断必须同时说明原因、当前证据和潜在拐点。",
               "输出应稳定：如果只是短期新闻扰动，不要改变产业阶段判断；若改变归类，必须写明 changeReason。",
               "控制输出冗余：每个正式数组最多 4 条，每条只保留最关键的 2-5 个驱动、证据、拐点，优先引用 sourceIds，不要重复长篇复制证据标题。",
@@ -402,14 +417,16 @@ export function buildRadarEvidenceDigest(sources: ReadonlyArray<RadarSource>): R
     .map(([topic, group]): RadarEvidencePacket => {
       const sorted = [...group].sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
       const evidenceTypes = uniqueEvidenceTypes(sorted.map((source) => source.sourceType));
+      const signalTypes = uniqueStrings(sorted.map((source) => source.signalType));
       const sourceIds = sorted.slice(0, 5).map((source) => source.id);
-      const signals = sorted.slice(0, 6).map((source) => `${source.id} ${source.title}${source.summary ? `：${source.summary}` : ""}`);
+      const signals = sorted.slice(0, 6).map((source) => `${source.id}${source.signalType ? ` [${source.signalType}]` : ""} ${source.title}${source.summary ? `：${source.summary}` : ""}`);
       return {
         topic,
         score: sorted.reduce((sum, source) => sum + (source.score ?? 0), 0),
         sourceIds,
         evidenceTypes,
-        summary: `${topic}共 ${group.length} 条公开来源，主要证据类型：${evidenceTypes.map(radarEvidenceTypeName).join("、") || "新闻线索"}。`,
+        signalTypes,
+        summary: `${topic}共 ${group.length} 条公开来源，主要证据类型：${evidenceTypes.map(radarEvidenceTypeName).join("、") || "新闻线索"}${signalTypes.length ? `，硬数据信号：${signalTypes.join("、")}` : ""}。`,
         signals,
       };
     })
@@ -443,6 +460,7 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
       score: Math.round(packet.score),
       sourceIds: packet.sourceIds,
       evidenceTypes: packet.evidenceTypes,
+      signalTypes: packet.signalTypes,
       summary: packet.summary,
       signals: packet.signals.slice(0, 4).map((signal) => trimText(signal, 180)),
     })),
@@ -454,6 +472,7 @@ function compactRadarEvidenceDigest(digest: RadarEvidenceDigest) {
       url: source.url,
       publishedAt: source.publishedAt,
       query: source.query,
+      signalType: source.signalType,
       summary: source.summary ? trimText(source.summary, 180) : undefined,
     })),
   };
@@ -803,25 +822,82 @@ function radarItems(value: unknown, previousTitles = new Set<string>(), digest?:
     const title = stringValue(record.title);
     const confidence = enumValue<NonNullable<RadarItem["confidence"]>>(record.confidence, ["低", "中", "高"], "中");
     const sourceIds = radarItemSourceIds(record, digest);
+    const drivers = stringArray(record.drivers).slice(0, 8);
+    const evidence = stringArray(record.evidence).slice(0, 8);
+    const durability = enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定");
+    const itemEvidenceTypes = evidenceTypes(record.evidenceTypes);
+    const turningPoints = stringArray(record.turningPoints).slice(0, 6);
     return {
       title,
       industries: stringArray(record.industries).slice(0, 6),
       companies: ahRepresentativeCompanies(record.companies).slice(0, 8),
       thesis: stringValue(record.thesis),
-      drivers: stringArray(record.drivers).slice(0, 8),
-      evidence: stringArray(record.evidence).slice(0, 8),
-      durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
+      drivers,
+      evidence,
+      conclusionStrength: conclusionStrengthValue(record.conclusionStrength, confidence),
+      evidenceGaps: evidenceGapValues(record.evidenceGaps),
+      driverTags: driverTagValues(record.driverTags, [title, stringValue(record.thesis), drivers.join(" "), evidence.join(" ")]),
+      sustainabilityTier: sustainabilityTierValue(record.sustainabilityTier, durability),
+      durability,
       riskLevel: enumValue(record.riskLevel, ["低", "中", "高"], "中"),
       confidence,
-      evidenceTypes: evidenceTypes(record.evidenceTypes),
+      evidenceTypes: itemEvidenceTypes,
       supportingSourceCount: numberValue(record.supportingSourceCount) ?? (sourceIds.length || undefined),
       sourceIds,
       changeReason:
         stringValue(record.changeReason) ||
         (title && previousTitles.has(title) ? "延续上次稳定判断，本次证据未形成足够反转。" : "本次扫描基于新增公开证据或硬数据重新归类。"),
-      turningPoints: stringArray(record.turningPoints).slice(0, 6),
+      counterEvidenceConditions: counterEvidenceConditions(record.counterEvidenceConditions, turningPoints),
+      turningPoints,
     };
   });
+}
+
+function conclusionStrengthValue(value: unknown, confidence: NonNullable<RadarItem["confidence"]>) {
+  return enumValue<RadarConclusionStrength>(value, RADAR_CONCLUSION_STRENGTHS, defaultConclusionStrength(confidence));
+}
+
+function defaultConclusionStrength(confidence: NonNullable<RadarItem["confidence"]>): RadarConclusionStrength {
+  if (confidence === "高") return "正式结论";
+  if (confidence === "低") return "证据不足";
+  return "观察";
+}
+
+function evidenceGapValues(value: unknown) {
+  return enumArrayValue<RadarEvidenceGap>(value, RADAR_EVIDENCE_GAPS).slice(0, 8);
+}
+
+function driverTagValues(value: unknown, fallbackTextParts: string[]) {
+  const explicit = enumArrayValue<RadarDriverTag>(value, RADAR_DRIVER_TAGS).slice(0, 6);
+  if (explicit.length) return explicit;
+  const fallbackText = fallbackTextParts.join(" ");
+  return RADAR_DRIVER_TAGS.filter((tag) => driverTagPattern(tag).test(fallbackText)).slice(0, 6);
+}
+
+function driverTagPattern(tag: RadarDriverTag) {
+  return {
+    需求: /需求|订单|销量|消费|出口|装机|发电量|客流|用电/i,
+    价格: /价格|涨价|提价|毛利率|价差|运价|猪价|铜价|锂价|硅料/i,
+    技术: /技术|创新|AI|算力|芯片|工艺|临床|审批|突破|升级/i,
+    政策: /政策|补贴|监管|医保|药监|发改委|工信部|财政|关税/i,
+    市占率: /市占率|份额|渗透率|国产替代|集中度|龙头/i,
+    供给收缩: /供给收缩|限产|去产能|库存下降|产能出清|供给约束|开工率下降/i,
+  }[tag];
+}
+
+function sustainabilityTierValue(value: unknown, durability: RadarItem["durability"]) {
+  const fallback = {
+    短期: "短期催化",
+    中期: "中期景气",
+    长期: "长期护城河",
+    不确定: "短期催化",
+  }[durability] as RadarSustainabilityTier;
+  return enumValue<RadarSustainabilityTier>(value, RADAR_SUSTAINABILITY_TIERS, fallback);
+}
+
+function counterEvidenceConditions(value: unknown, turningPoints: string[]) {
+  const explicit = stringArray(value).slice(0, 6);
+  return explicit.length ? explicit : turningPoints.slice(0, 3);
 }
 
 function radarLists(value: unknown, coverageReview: RadarCoverageReview[] = []): RadarList[] {
@@ -960,6 +1036,7 @@ function radarSourceFromSnapshot(value: unknown): RadarSource | null {
     publishedAt: stringValue(value.publishedAt) || undefined,
     summary: stringValue(value.summary) || undefined,
     sourceType: evidenceTypeValue(value.sourceType),
+    signalType: stringValue(value.signalType) || undefined,
     weight: numberValue(value.weight),
   });
 }
@@ -1014,6 +1091,10 @@ function radarEvidenceTypeName(sourceType: RadarEvidenceType) {
 
 function uniqueEvidenceTypes(values: RadarEvidenceType[]) {
   return [...new Set(values)].sort((left, right) => evidenceWeight(right) - evidenceWeight(left)).slice(0, 6);
+}
+
+function uniqueStrings(values: Array<string | undefined>) {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))].slice(0, 8);
 }
 
 function radarSourceScore(source: Pick<RadarCitation, "source" | "query" | "title" | "summary" | "sourceType" | "weight" | "publishedAt">) {
@@ -1213,6 +1294,16 @@ function enumValue<T extends string>(value: unknown, values: readonly T[], fallb
   return values.includes(value as T) ? (value as T) : fallback;
 }
 
+function enumArrayValue<T extends string>(value: unknown, values: readonly T[]): T[] {
+  const allowed = new Set<string>(values);
+  const seen = new Set<string>();
+  return stringArray(value).filter((item): item is T => {
+    if (!allowed.has(item) || seen.has(item)) return false;
+    seen.add(item);
+    return true;
+  });
+}
+
 const RADAR_PROMPT = `一、当前扎实增长的细分产业
 当前哪些细分产业里的公司，处于扎实的业绩增长当中？这些增长的主要驱动因素是什么？增长来自需求扩张、技术突破、价格提升、市占率提升，还是政策推动？
 
@@ -1233,6 +1324,14 @@ const RADAR_PROMPT = `一、当前扎实增长的细分产业
 
 七、不同产业阶段中的典型公司
 列出衰落产业中的沙漠之花、平稳产业中的杰出经营者、上升产业中的领军人物、细分产业初期的风险投资标的。`;
+
+const RADAR_ITEM_JSON_FIELDS = {
+  conclusionStrength: "正式结论 | 观察 | 证据不足",
+  evidenceGaps: ["缺财报", "缺价格", "缺销量"],
+  driverTags: ["需求", "价格", "技术"],
+  sustainabilityTier: "短期催化 | 中期景气 | 长期护城河",
+  counterEvidenceConditions: ["反证条件"],
+};
 
 const RADAR_JSON_SHAPE = {
   title: "行业雷达扫描",
@@ -1258,6 +1357,7 @@ const RADAR_JSON_SHAPE = {
       thesis: "分析",
       drivers: ["驱动"],
       evidence: ["证据"],
+      ...RADAR_ITEM_JSON_FIELDS,
       sourceIds: ["S1", "S2"],
       evidenceTypes: ["hard_data", "announcement"],
       supportingSourceCount: 5,
@@ -1268,10 +1368,10 @@ const RADAR_JSON_SHAPE = {
       turningPoints: ["拐点"],
     },
   ],
-  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 3, confidence: "中", durability: "长期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["market"], supportingSourceCount: 3, confidence: "中", durability: "短期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["announcement"], supportingSourceCount: 2, confidence: "中", durability: "中期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
-  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 4, confidence: "高", durability: "长期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  sustainability: [{ title: "增长类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["驱动"], evidence: ["证据"], ...RADAR_ITEM_JSON_FIELDS, sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 3, confidence: "中", durability: "长期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  bubbleRisks: [{ title: "泡沫类型", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["成因"], evidence: ["证据"], ...RADAR_ITEM_JSON_FIELDS, sourceIds: ["S1"], evidenceTypes: ["market"], supportingSourceCount: 3, confidence: "中", durability: "短期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  upcomingGrowth: [{ title: "即将增长", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["信号"], evidence: ["证据"], ...RADAR_ITEM_JSON_FIELDS, sourceIds: ["S1"], evidenceTypes: ["announcement"], supportingSourceCount: 2, confidence: "中", durability: "中期", riskLevel: "中", changeReason: "变化原因", turningPoints: ["拐点"] }],
+  decliningIndustries: [{ title: "衰退产业", industries: ["行业"], companies: ["公司"], thesis: "分析", drivers: ["衰退原因"], evidence: ["证据"], ...RADAR_ITEM_JSON_FIELDS, sourceIds: ["S1"], evidenceTypes: ["hard_data"], supportingSourceCount: 4, confidence: "高", durability: "长期", riskLevel: "高", changeReason: "变化原因", turningPoints: ["拐点"] }],
   representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["公司"], note: "说明" }],
   stageCompanies: [{ label: "上升产业中的领军人物", companies: ["公司"], note: "说明" }],
   limitations: ["信息不足或需后续验证的地方"],

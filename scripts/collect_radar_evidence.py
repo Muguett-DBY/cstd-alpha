@@ -5,8 +5,9 @@ import argparse
 import gzip
 import hashlib
 import json
+import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -99,6 +100,114 @@ TOPIC_ROLLUP_KEYWORDS = {
     "平稳现金流/高股息": ("高股息", "煤炭", "公用事业", "电力", "水电", "银行", "电信"),
     "机器人/AI应用": ("机器人", "人形机器人", "具身智能", "AI应用", "人工智能"),
 }
+LOCAL_HARD_DATA_SIGNALS = [
+    {
+        "signalType": "commodity_price",
+        "sourceType": "hard_data",
+        "topic": "战略有色金属",
+        "query": "铜 铝 锂 稀土 commodity_price 现货价格 期货价格 库存",
+        "title": "商品价格聚合：铜/铝/LME库存、碳酸锂现货报价、稀土氧化物价格",
+        "url": "https://data.stats.gov.cn/easyquery.htm#commodity_price",
+        "summary": "本地硬数据层标记 commodity_price，后续采集优先核验现货价格、期货价格、交易所库存和周度报价字段。",
+    },
+    {
+        "signalType": "commodity_price",
+        "sourceType": "hard_data",
+        "topic": "光伏产业链",
+        "query": "硅料 硅片 组件 commodity_price 价格 开工率 库存",
+        "title": "光伏价格聚合：硅料价格、硅片报价、组件价格和开工率",
+        "url": "https://www.miit.gov.cn/#photovoltaic-price",
+        "summary": "本地硬数据层标记 commodity_price，用价格、库存、产能和开工率字段约束光伏产业链证据。",
+    },
+    {
+        "signalType": "financial_metric",
+        "sourceType": "announcement",
+        "topic": "平稳现金流/高股息",
+        "query": "财报 financial_metric 营收 净利润 毛利率 经营现金流 分红",
+        "title": "公告财务聚合：营收、净利润、毛利率、经营现金流和分红字段",
+        "url": "https://www.cninfo.com.cn/new/disclosure#financial_metric",
+        "summary": "本地公告层标记 financial_metric，优先从年报、季报、业绩预告和分红公告抽取财报指标。",
+    },
+    {
+        "signalType": "financial_metric",
+        "sourceType": "announcement",
+        "topic": "创新药/医疗服务",
+        "query": "创新药 财报 financial_metric 研发费用 营收 现金流 商业化",
+        "title": "医药财务聚合：研发费用、商业化营收、净利润和现金流",
+        "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/#medical-financial-metric",
+        "summary": "本地公告层标记 financial_metric，用财报、研发费用、营收、净利润和现金流字段约束创新药证据。",
+    },
+    {
+        "signalType": "industry_stat",
+        "sourceType": "official",
+        "topic": "汽车/智能驾驶",
+        "query": "新能源汽车 industry_stat 销量 出口 渗透率 中汽协 乘联会",
+        "title": "行业统计聚合：新能源汽车销量、出口、渗透率和智能驾驶装车量",
+        "url": "https://www.caam.org.cn/#industry_stat-auto-sales",
+        "summary": "本地官方统计层标记 industry_stat，优先核验月度销量、出口量、渗透率和同比/环比字段。",
+    },
+    {
+        "signalType": "industry_stat",
+        "sourceType": "official",
+        "topic": "电力电网/能源基础设施",
+        "query": "电力 industry_stat 发电量 装机量 用电量 国家能源局",
+        "title": "能源统计聚合：发电量、装机量、用电量和电网投资",
+        "url": "https://www.nea.gov.cn/#industry_stat-power",
+        "summary": "本地官方统计层标记 industry_stat，用装机、发电量、用电量、电网投资和同比字段约束能源证据。",
+    },
+    {
+        "signalType": "freight_rate",
+        "sourceType": "hard_data",
+        "topic": "航运物流",
+        "query": "航运 freight_rate 运价 SCFI CCFI BDI 集装箱 散货",
+        "title": "航运运价聚合：SCFI、CCFI、BDI运价指数和集装箱运价",
+        "url": "https://www.sse.net.cn/index/singleIndex?indexType=scfi#freight_rate",
+        "summary": "本地硬数据层标记 freight_rate，优先核验SCFI、CCFI、BDI、集装箱运价和同比/环比字段。",
+    },
+    {
+        "signalType": "industry_stat",
+        "sourceType": "official",
+        "topic": "生猪养殖",
+        "query": "生猪 industry_stat 猪价 能繁母猪 存栏 出栏 农业农村部",
+        "title": "养殖统计聚合：猪价、能繁母猪存栏、生猪出栏和产能去化",
+        "url": "https://www.moa.gov.cn/#industry_stat-hog",
+        "summary": "本地官方统计层标记 industry_stat，优先核验猪价、存栏、出栏、产能去化和同比字段。",
+    },
+]
+
+AKSHARE_FUTURES_DAILY_SIGNALS = [
+    ("LC0", "碳酸锂主连", "锂电储能", "碳酸锂 期货 价格 库存 供需", "commodity_price", "hard_data"),
+    ("PS0", "多晶硅主连", "光伏产业链", "多晶硅 硅料 期货 价格 产能", "commodity_price", "hard_data"),
+    ("SI0", "工业硅主连", "光伏产业链", "工业硅 硅料 期货 价格 库存", "commodity_price", "hard_data"),
+    ("CU0", "沪铜主连", "战略有色金属", "铜 期货 价格 库存 供需", "commodity_price", "hard_data"),
+    ("RB0", "螺纹钢主连", "钢铁水泥/地产链", "钢铁 螺纹钢 期货 价格 需求", "commodity_price", "hard_data"),
+    ("HC0", "热卷主连", "钢铁水泥/地产链", "钢铁 热卷 期货 价格 需求", "commodity_price", "hard_data"),
+    ("I0", "铁矿石主连", "钢铁水泥/地产链", "铁矿石 期货 价格 库存", "commodity_price", "hard_data"),
+    ("LH0", "生猪主连", "生猪养殖", "生猪 期货 猪价 产能 周期", "industry_stat", "hard_data"),
+    ("EC0", "集运欧线主连", "航运物流", "集运欧线 期货 运价 航运", "freight_rate", "hard_data"),
+]
+
+AKSHARE_SPOT_BASIS_NAMES = {
+    "CU": ("铜", "战略有色金属", "commodity_price"),
+    "LC": ("碳酸锂", "锂电储能", "commodity_price"),
+    "SI": ("工业硅", "光伏产业链", "commodity_price"),
+    "PS": ("多晶硅", "光伏产业链", "commodity_price"),
+    "RB": ("螺纹钢", "钢铁水泥/地产链", "commodity_price"),
+    "HC": ("热卷", "钢铁水泥/地产链", "commodity_price"),
+    "I": ("铁矿石", "钢铁水泥/地产链", "commodity_price"),
+    "LH": ("生猪", "生猪养殖", "industry_stat"),
+}
+
+CPCA_SIGNALS = [
+    ("狭义乘用车", "批发", "汽车/智能驾驶", "乘用车批发 销量 同比"),
+    ("狭义乘用车", "出口", "汽车/智能驾驶", "汽车出口 销量 同比"),
+]
+
+EASTMONEY_INDUSTRY_INDEX_SIGNALS = [
+    ("EMI00107664", "波罗的海干散货指数(BDI)", "航运物流", "航运 BDI 运价 指数", "freight_rate"),
+    ("EMI00662541", "建材指数", "钢铁水泥/地产链", "建材 水泥 地产链 价格 指数", "commodity_price"),
+    ("EMI00662535", "大宗商品价格指数", "战略有色金属", "大宗商品 铜 铝 有色 价格 指数", "commodity_price"),
+]
 
 
 def main() -> int:
@@ -154,6 +263,8 @@ def main() -> int:
 def collect_sources() -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     for label, fetcher in [
+        ("eastmoney_industry_indexes", fetch_eastmoney_industry_indexes),
+        ("local_hard_data_signals", local_hard_data_signal_sources),
         ("eastmoney", fetch_eastmoney_boards),
         ("sina_boards", fetch_sina_boards),
         ("google_news", fetch_google_news),
@@ -163,6 +274,65 @@ def collect_sources() -> list[dict[str, Any]]:
         fetched = fetcher()
         print_source_summary(label, fetched)
         sources.extend(fetched)
+    return sources
+
+
+def local_hard_data_signal_sources() -> list[dict[str, Any]]:
+    return [
+        {
+            "source": "本地硬数据指标聚合",
+            "query": signal["query"],
+            "title": signal["title"],
+            "url": signal["url"],
+            "summary": f"{signal['topic']}：{signal['summary']}",
+            "sourceType": signal["sourceType"],
+            "signalType": signal["signalType"],
+            "weight": 1,
+        }
+        for signal in LOCAL_HARD_DATA_SIGNALS
+    ]
+
+
+def fetch_eastmoney_industry_indexes() -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for indicator_id, indicator_name, topic, query, signal_type in EASTMONEY_INDUSTRY_INDEX_SIGNALS:
+        params = {
+            "sortColumns": "REPORT_DATE",
+            "sortTypes": "-1",
+            "pageSize": "5",
+            "pageNumber": "1",
+            "reportName": "RPT_INDUSTRY_INDEX",
+            "columns": "ALL",
+            "filter": f'(INDICATOR_ID="{indicator_id}")',
+        }
+        url = f"https://datacenter-web.eastmoney.com/api/data/v1/get?{urlencode(params)}"
+        try:
+            data = read_json(url)
+        except (OSError, ValueError, URLError) as exc:
+            print(f"collector_warning eastmoney_industry_index.{indicator_id}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+        rows = data.get("result", {}).get("data", []) or []
+        if not rows:
+            continue
+        latest = rows[0]
+        date = clean_date(latest.get("REPORT_DATE"))
+        value = number_text(latest.get("INDICATOR_VALUE"))
+        change = format_percent(latest.get("CHANGE_RATE"))
+        three_month = format_percent(latest.get("CHANGERATE_3M"))
+        one_year = format_percent(latest.get("CHANGERATE_1Y"))
+        sources.append(
+            {
+                "source": "东方财富行业指数",
+                "query": query,
+                "title": f"{indicator_name} {date} 最新值 {value}，日变化 {change}",
+                "url": url,
+                "publishedAt": iso_date(date),
+                "summary": f"{topic}硬数据：3个月变化 {three_month}，1年变化 {one_year}，关联板块 {clean_text(latest.get('BOARD_NAME')) or '待验证'}。",
+                "sourceType": "hard_data",
+                "signalType": signal_type,
+                "weight": SOURCE_WEIGHTS["hard_data"],
+            }
+        )
     return sources
 
 
@@ -316,18 +486,163 @@ def fetch_akshare() -> list[dict[str, Any]]:
         return []
 
     sources: list[dict[str, Any]] = []
-    for func_name, label, query, source_type in [
-        ("stock_board_industry_name_em", "AKShare 行业板块", "A股 行业板块 涨跌幅 成交额", "market"),
-        ("stock_board_concept_name_em", "AKShare 概念板块", "A股 概念板块 涨跌幅 成交额", "market"),
-        ("stock_zh_a_spot_em", "AKShare A股行情", "A股 实时行情 涨跌幅 成交额 换手率", "market"),
-        ("stock_hk_spot_em", "AKShare 港股行情", "港股 实时行情 涨跌幅 成交额", "market"),
+    for label, fetcher in [
+        ("futures_daily", lambda: fetch_akshare_futures_daily(ak)),
+        ("spot_basis", lambda: fetch_akshare_spot_basis(ak)),
+        ("hog_stats", lambda: fetch_akshare_hog_stats(ak)),
+        ("cpca_auto", lambda: fetch_akshare_cpca_stats(ak)),
     ]:
         try:
-            frame = getattr(ak, func_name)()
+            fetched = fetcher()
+            print_source_summary(f"akshare_{label}", fetched)
+            sources.extend(fetched)
         except Exception as exc:
-            print(f"collector_warning akshare.{func_name}: {type(exc).__name__}: {str(exc)[:180]}")
+            print(f"collector_warning akshare.{label}: {type(exc).__name__}: {str(exc)[:180]}")
+    return sources
+
+
+def fetch_akshare_futures_daily(ak: Any) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for symbol, label, topic, query, signal_type, source_type in AKSHARE_FUTURES_DAILY_SIGNALS:
+        try:
+            frame = ak.futures_zh_daily_sina(symbol=symbol)
+        except Exception as exc:
+            print(f"collector_warning akshare.futures_zh_daily_sina.{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
             continue
-        sources.extend(frame_rows_to_sources(frame, label, query, source_type, limit=60))
+        rows = frame_records(frame)
+        if not rows:
+            continue
+        latest = rows[-1]
+        previous = rows[-2] if len(rows) > 1 else {}
+        close = numeric(latest.get("close"))
+        previous_close = numeric(previous.get("close"))
+        change = ratio_change(close, previous_close)
+        date = clean_text(latest.get("date"))
+        sources.append(
+            {
+                "source": "AKShare/Sina期货日线",
+                "query": f"{topic} {query}",
+                "title": f"{label} {date} 收盘 {number_text(close)}，结算 {number_text(latest.get('settle'))}，成交 {number_text(latest.get('volume'))}",
+                "url": f"https://finance.sina.com.cn/futures/quotes/{symbol}.shtml",
+                "publishedAt": iso_date(date),
+                "summary": f"主连日线硬数据，较上一交易日收盘变化 {format_percent(change)}，持仓 {number_text(latest.get('hold'))}。",
+                "sourceType": source_type,
+                "signalType": signal_type,
+                "weight": SOURCE_WEIGHTS[source_type],
+            }
+        )
+    return sources
+
+
+def fetch_akshare_spot_basis(ak: Any) -> list[dict[str, Any]]:
+    target_symbols = list(AKSHARE_SPOT_BASIS_NAMES.keys())
+    for date in recent_yyyymmdd_dates(skip_today=True, max_days=7):
+        try:
+            frame = ak.futures_spot_price(date=date, vars_list=target_symbols)
+        except Exception as exc:
+            print(f"collector_warning akshare.futures_spot_price.{date}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+        rows = frame_records(frame)
+        if rows:
+            return [spot_basis_source(row) for row in rows if clean_text(row.get("symbol")) in AKSHARE_SPOT_BASIS_NAMES]
+    return []
+
+
+def spot_basis_source(row: dict[str, Any]) -> dict[str, Any]:
+    symbol = clean_text(row.get("symbol"))
+    name, topic, signal_type = AKSHARE_SPOT_BASIS_NAMES[symbol]
+    date = clean_text(row.get("date"))
+    dominant_contract = clean_text(row.get("dominant_contract"))
+    return {
+        "source": "AKShare/100ppi期现基差",
+        "query": f"{topic} {name} 现货 期货 基差 价格",
+        "title": f"{name} {date} 现货 {number_text(row.get('spot_price'))}，主力 {dominant_contract or '待验证'} {number_text(row.get('dominant_contract_price'))}",
+        "url": f"https://www.100ppi.com/sf/day-{date}.html#{quote(symbol)}",
+        "publishedAt": iso_date(date),
+        "summary": f"期现硬数据：主力基差 {number_text(row.get('dom_basis'))}，基差率 {format_percent(row.get('dom_basis_rate'))}。",
+        "sourceType": "hard_data",
+        "signalType": signal_type,
+        "weight": SOURCE_WEIGHTS["hard_data"],
+    }
+
+
+def fetch_akshare_hog_stats(ak: Any) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    try:
+        frame = ak.futures_hog_core(symbol="外三元")
+        rows = frame_records(frame)
+        if rows:
+            latest = rows[-1]
+            previous = rows[-2] if len(rows) > 1 else {}
+            value = numeric(latest.get("value"))
+            previous_value = numeric(previous.get("value"))
+            date = clean_text(latest.get("date"))
+            sources.append(
+                {
+                    "source": "AKShare/生猪价格统计",
+                    "query": "生猪养殖 猪价 外三元 现货 产能 周期",
+                    "title": f"外三元猪价 {date} {number_text(value)} 元/斤，日变化 {format_percent(ratio_change(value, previous_value))}",
+                    "url": "https://www.akshare.akfamily.xyz/data/futures/futures.html#futures-hog-core",
+                    "publishedAt": iso_date(date),
+                    "summary": "生猪现货价格硬数据，用于验证猪周期反转或衰退判断。",
+                    "sourceType": "hard_data",
+                    "signalType": "industry_stat",
+                    "weight": SOURCE_WEIGHTS["hard_data"],
+                }
+            )
+    except Exception as exc:
+        print(f"collector_warning akshare.futures_hog_core: {type(exc).__name__}: {str(exc)[:180]}")
+
+    try:
+        frame = ak.index_hog_spot_price()
+        rows = frame_records(frame)
+        if rows:
+            latest = rows[-1]
+            date = clean_text(latest.get("日期"))
+            sources.append(
+                {
+                    "source": "AKShare/生猪价格统计",
+                    "query": "生猪养殖 猪价 指数 成交均价 成交均重",
+                    "title": f"生猪价格指数 {date} 指数 {number_text(latest.get('指数'))}，成交均价 {number_text(latest.get('成交均价'))}",
+                    "url": "https://www.akshare.akfamily.xyz/data/index/index.html#index-hog-spot-price",
+                    "publishedAt": iso_date(date),
+                    "summary": f"成交均重 {number_text(latest.get('成交均重'))}，4个月均线 {number_text(latest.get('4个月均线'))}。",
+                    "sourceType": "hard_data",
+                    "signalType": "industry_stat",
+                    "weight": SOURCE_WEIGHTS["hard_data"],
+                }
+            )
+    except Exception as exc:
+        print(f"collector_warning akshare.index_hog_spot_price: {type(exc).__name__}: {str(exc)[:180]}")
+    return sources
+
+
+def fetch_akshare_cpca_stats(ak: Any) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for symbol, indicator, topic, query in CPCA_SIGNALS:
+        try:
+            frame = ak.car_market_total_cpca(symbol=symbol, indicator=indicator)
+        except Exception as exc:
+            print(f"collector_warning akshare.car_market_total_cpca.{symbol}.{indicator}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+        latest = latest_year_month_row(frame)
+        if not latest:
+            continue
+        month, current_year, current_value, previous_value = latest
+        yoy = ratio_change(current_value, previous_value)
+        sources.append(
+            {
+                "source": "AKShare/乘联会汽车统计",
+                "query": f"{topic} {query}",
+                "title": f"{symbol}{indicator} {current_year}年{month} {number_text(current_value)} 万辆，同比 {format_percent(yoy)}",
+                "url": "http://data.cpcadata.com/TotalMarket",
+                "publishedAt": f"{current_year}-{month.replace('月', '').zfill(2)}-01T00:00:00Z",
+                "summary": f"乘联会月度行业统计，去年同期 {number_text(previous_value)} 万辆，用于验证汽车销量、出口和景气度。",
+                "sourceType": "official",
+                "signalType": "industry_stat",
+                "weight": SOURCE_WEIGHTS["official"],
+            }
+        )
     return sources
 
 
@@ -414,7 +729,7 @@ def frame_rows_to_sources(frame: Any, label: str, query: str, source_type: str, 
 
 
 def fixture_sources() -> list[dict[str, Any]]:
-    sources: list[dict[str, Any]] = []
+    sources: list[dict[str, Any]] = local_hard_data_signal_sources() + fixture_hard_data_sources()
     for index in range(90):
         topic, query, _source_type = TOPIC_QUERIES[index % len(TOPIC_QUERIES)]
         sources.append(
@@ -488,6 +803,67 @@ def fixture_sources() -> list[dict[str, Any]]:
     return sources
 
 
+def fixture_hard_data_sources() -> list[dict[str, Any]]:
+    today = "2026-05-18"
+    return [
+        {
+            "source": "AKShare/Sina期货日线",
+            "query": "锂电储能 碳酸锂 期货 价格 库存 供需",
+            "title": f"碳酸锂主连 {today} 收盘 192,180.00，结算 191,500.00，成交 208,152.00",
+            "url": "https://finance.sina.com.cn/futures/quotes/LC0.shtml",
+            "publishedAt": f"{today}T00:00:00Z",
+            "summary": "主连日线硬数据，较上一交易日收盘变化 1.79%，持仓 466,957.00。",
+            "sourceType": "hard_data",
+            "signalType": "commodity_price",
+            "weight": SOURCE_WEIGHTS["hard_data"],
+        },
+        {
+            "source": "AKShare/100ppi期现基差",
+            "query": "光伏产业链 多晶硅 现货 期货 基差 价格",
+            "title": "多晶硅 20260518 现货 38,000.00，主力 ps2606 36,930.00",
+            "url": "https://www.100ppi.com/sf/day-20260518.html#PS",
+            "publishedAt": "2026-05-18T00:00:00Z",
+            "summary": "期现硬数据：主力基差 1,070.00，基差率 2.82%。",
+            "sourceType": "hard_data",
+            "signalType": "commodity_price",
+            "weight": SOURCE_WEIGHTS["hard_data"],
+        },
+        {
+            "source": "AKShare/乘联会汽车统计",
+            "query": "汽车/智能驾驶 汽车出口 销量 同比",
+            "title": "狭义乘用车出口 2026年4月 77.02 万辆，同比 82.16%",
+            "url": "http://data.cpcadata.com/TotalMarket",
+            "publishedAt": "2026-04-01T00:00:00Z",
+            "summary": "乘联会月度行业统计，去年同期 42.28 万辆，用于验证汽车销量、出口和景气度。",
+            "sourceType": "official",
+            "signalType": "industry_stat",
+            "weight": SOURCE_WEIGHTS["official"],
+        },
+        {
+            "source": "AKShare/生猪价格统计",
+            "query": "生猪养殖 猪价 外三元 现货 产能 周期",
+            "title": "外三元猪价 2026-05-19 9.65 元/斤，日变化 0.10%",
+            "url": "https://www.akshare.akfamily.xyz/data/futures/futures.html#futures-hog-core",
+            "publishedAt": "2026-05-19T00:00:00Z",
+            "summary": "生猪现货价格硬数据，用于验证猪周期反转或衰退判断。",
+            "sourceType": "hard_data",
+            "signalType": "industry_stat",
+            "weight": SOURCE_WEIGHTS["hard_data"],
+        },
+        {
+            "source": "东方财富行业指数",
+            "query": "航运物流 航运 BDI 运价 指数",
+            "title": "波罗的海干散货指数(BDI) 2026-05-18 最新值 3,092.00，日变化 -1.87%",
+            "url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_INDUSTRY_INDEX",
+            "publishedAt": "2026-05-18T00:00:00Z",
+            "summary": "航运物流硬数据：3个月变化 49.88%，1年变化 122.77%，关联板块 航运港口。",
+            "sourceType": "hard_data",
+            "signalType": "freight_rate",
+            "weight": SOURCE_WEIGHTS["hard_data"],
+        },
+    ]
+
+
 def google_only_fixture_sources() -> list[dict[str, Any]]:
     return [
         {
@@ -536,6 +912,9 @@ def classify_source(source: dict[str, Any]) -> dict[str, Any]:
         "sourceType": source_type,
         "weight": weight,
     }
+    signal_type = clean_text(source.get("signalType"))
+    if signal_type:
+        item["signalType"] = signal_type
     item["score"] = score_source(item)
     return {key: value for key, value in item.items() if value not in ("", None)}
 
@@ -654,6 +1033,7 @@ def evidence_quality(sources: list[dict[str, Any]]) -> dict[str, Any]:
         "structuredShare": round(structured_count / source_count, 4) if source_count else 0,
         "bySource": by_source,
         "byType": by_type,
+        "bySignalType": {key: value for key, value in count_by(sources, "signalType").items() if key != "unknown"},
     }
 
 
@@ -744,6 +1124,92 @@ def first_text(row: dict[str, Any], keys: tuple[str, ...]) -> str:
     return ""
 
 
+def frame_records(frame: Any) -> list[dict[str, Any]]:
+    try:
+        return frame.to_dict("records")
+    except Exception:
+        return []
+
+
+def latest_year_month_row(frame: Any) -> tuple[str, int, float, float] | None:
+    rows = frame_records(frame)
+    if not rows:
+        return None
+    year_columns = sorted(
+        [clean_text(column) for column in getattr(frame, "columns", []) if re.fullmatch(r"\d{4}年", clean_text(column))],
+        reverse=True,
+    )
+    if len(year_columns) < 2:
+        return None
+    current_column, previous_column = year_columns[0], year_columns[1]
+    current_year = int(current_column.replace("年", ""))
+    for row in reversed(rows):
+        month = clean_text(row.get("月份"))
+        current_value = numeric(row.get(current_column))
+        previous_value = numeric(row.get(previous_column))
+        if month and current_value is not None and previous_value is not None:
+            return month, current_year, current_value, previous_value
+    return None
+
+
+def recent_yyyymmdd_dates(skip_today: bool, max_days: int) -> list[str]:
+    start = datetime.now(timezone.utc).date() - (timedelta(days=1) if skip_today else timedelta(days=0))
+    return [(start - timedelta(days=offset)).strftime("%Y%m%d") for offset in range(max_days)]
+
+
+def numeric(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if value != value:
+                return None
+        except Exception:
+            return None
+        return float(value)
+    text = clean_text(value).replace(",", "").replace("%", "")
+    if not text or text.lower() in ("nan", "none", "null", "nat"):
+        return None
+    try:
+        result = float(text)
+    except ValueError:
+        return None
+    if result != result:
+        return None
+    return result
+
+
+def ratio_change(current: float | None, previous: float | None) -> float | None:
+    if current is None or previous in (None, 0):
+        return None
+    return (current - previous) / previous
+
+
+def format_percent(value: Any) -> str:
+    number = numeric(value)
+    if number is None:
+        return "待验证"
+    if abs(number) <= 1:
+        number *= 100
+    return f"{number:.2f}%"
+
+
+def clean_date(value: Any) -> str:
+    text = clean_text(value)
+    match = re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", text)
+    if not match:
+        return text
+    parts = re.split(r"[-/]", match.group(0))
+    return f"{parts[0]}-{parts[1].zfill(2)}-{parts[2].zfill(2)}"
+
+
+def iso_date(value: Any) -> str:
+    text = clean_date(value)
+    if re.fullmatch(r"\d{8}", text):
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return f"{text}T00:00:00Z"
+    return ""
+
+
 def clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -751,8 +1217,9 @@ def clean_text(value: Any) -> str:
 
 
 def number_text(value: Any) -> str:
-    if isinstance(value, (int, float)):
-        return f"{value:,.2f}"
+    number = numeric(value)
+    if number is not None:
+        return f"{number:,.2f}"
     return clean_text(value) or "待验证"
 
 

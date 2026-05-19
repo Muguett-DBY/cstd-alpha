@@ -45,6 +45,55 @@ describe("rolling radar evidence collector", () => {
     expect(snapshot.quality?.largestSourceShare).toBeLessThanOrEqual(0.5);
   });
 
+  test("includes explicit local hard-data signal categories with metric-bearing evidence text", () => {
+    const script = "scripts/collect_radar_evidence.py";
+    const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
+    execFileSync("python", [script, "--offline-fixture", "--output", outputPath], { stdio: "pipe" });
+    const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      sources?: Array<{ source?: string; query?: string; title?: string; summary?: string; sourceType?: string; signalType?: string }>;
+    };
+    const sources = snapshot.sources ?? [];
+    const explicitSignals = sources.filter((source) => source.signalType);
+
+    expect(Array.from(new Set(explicitSignals.map((source) => source.signalType)))).toEqual(
+      expect.arrayContaining(["commodity_price", "financial_metric", "industry_stat", "freight_rate"]),
+    );
+    expect(explicitSignals.every((source) => source.source !== "Google News")).toBe(true);
+    expect(explicitSignals.every((source) => ["hard_data", "announcement", "official"].includes(source.sourceType ?? ""))).toBe(true);
+    expect(
+      explicitSignals.some((source) => /价格|报价|现货|期货/.test(`${source.query} ${source.title} ${source.summary}`)),
+    ).toBe(true);
+    expect(
+      explicitSignals.some((source) => /财报|营收|净利润|毛利率|现金流/.test(`${source.query} ${source.title} ${source.summary}`)),
+    ).toBe(true);
+    expect(explicitSignals.some((source) => /销量|出口|装机|产量|开工率/.test(`${source.query} ${source.title} ${source.summary}`))).toBe(true);
+    expect(explicitSignals.some((source) => /运价|SCFI|CCFI|BDI/.test(`${source.query} ${source.title} ${source.summary}`))).toBe(true);
+  });
+
+  test("offline fixture exercises the same real hard-data source families as live collection", () => {
+    const script = "scripts/collect_radar_evidence.py";
+    const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
+    execFileSync("python", [script, "--offline-fixture", "--output", outputPath], { stdio: "pipe" });
+    const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      sources?: Array<{ source?: string; query?: string; title?: string; summary?: string; sourceType?: string; signalType?: string }>;
+      quality?: { bySignalType?: Record<string, number> };
+    };
+    const sources = snapshot.sources ?? [];
+    const sourceFamilies = new Set(sources.map((source) => source.source));
+
+    expect(Array.from(sourceFamilies)).toEqual(
+      expect.arrayContaining(["AKShare/Sina期货日线", "AKShare/100ppi期现基差", "AKShare/乘联会汽车统计", "AKShare/生猪价格统计", "东方财富行业指数"]),
+    );
+    expect(sources.some((source) => source.sourceType === "hard_data" && source.signalType === "commodity_price" && /收盘|结算|现货|基差/.test(`${source.title} ${source.summary}`))).toBe(true);
+    expect(sources.some((source) => source.sourceType === "official" && source.signalType === "industry_stat" && /批发|出口|同比|销量/.test(`${source.title} ${source.summary}`))).toBe(true);
+    expect(sources.some((source) => source.signalType === "freight_rate" && /BDI|SCFI|CCFI|集运|航运/.test(`${source.query} ${source.title}`))).toBe(true);
+    expect(snapshot.quality?.bySignalType).toMatchObject({
+      commodity_price: expect.any(Number),
+      industry_stat: expect.any(Number),
+      freight_rate: expect.any(Number),
+    });
+  });
+
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

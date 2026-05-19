@@ -5,7 +5,7 @@ import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
-import { radarRefreshFallbackMessage } from "./radar-ui";
+import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
@@ -1150,6 +1150,7 @@ function RadarView({
   const loading = phase === "loading" || phase === "refreshing";
   const refreshing = phase === "refreshing";
   const sourceMap = useMemo(() => new Map((radar?.evidenceSources ?? []).map((source) => [source.id, source])), [radar?.evidenceSources]);
+  const radarItems = useMemo(() => (radar ? allRadarItems(radar) : []), [radar]);
   return (
     <section className="radar-view">
       <header className={`radar-header ${refreshing ? "is-refreshing" : ""}`}>
@@ -1194,6 +1195,7 @@ function RadarView({
             <InfoTile title="状态" value={refreshing ? "刷新中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
           </div>
 
+          <RadarRoundChanges changeLog={radar.changeLog} />
           <RadarSectionNav />
           <RadarBrief radar={radar} />
           <RadarEvidenceOverview
@@ -1211,7 +1213,7 @@ function RadarView({
           <RadarItemSection id="radar-decline" title="五、衰退产业识别" items={radar.decliningIndustries} sourceMap={sourceMap} />
           <RadarListSection id="radar-companies" title="六、代表性公司清单" lists={radar.representativeCompanies} />
           <RadarListSection id="radar-stages" title="七、不同产业阶段中的典型公司" lists={radar.stageCompanies} />
-          <RadarSourceLibrary sources={radar.evidenceSources ?? []} />
+          <RadarSourceLibrary sources={radar.evidenceSources ?? []} items={radarItems} />
 
           {radar.limitations.length ? (
             <section className="radar-summary" id="radar-limitations">
@@ -1221,6 +1223,41 @@ function RadarView({
           ) : null}
         </>
       ) : null}
+    </section>
+  );
+}
+
+function RadarRoundChanges({ changeLog }: { changeLog?: string[] }) {
+  const buckets = radarChangeBuckets(changeLog ?? []);
+  const groups = [
+    { key: "added", title: "新增", items: buckets.added, note: "新进入本轮重点跟踪" },
+    { key: "upgraded", title: "升级", items: buckets.upgraded, note: "从观察转向更强结论" },
+    { key: "downgraded", title: "降级", items: buckets.downgraded, note: "证据转弱或本次未延续" },
+    { key: "maintained", title: "维持", items: buckets.maintained, note: "延续上次稳定判断" },
+  ];
+  return (
+    <section className="radar-summary radar-round-changes" aria-labelledby="radar-round-changes-title">
+      <div className="radar-round-changes-head">
+        <div>
+          <p className="eyebrow">上次 vs 本次</p>
+          <h3 id="radar-round-changes-title">本轮变化</h3>
+        </div>
+        <p>按新增、升级、降级、维持拆开，优先看判断是否发生实质变化。</p>
+      </div>
+      <div className="radar-round-change-grid">
+        {groups.map((group) => (
+          <article className={`radar-round-change-card change-${group.key}`} key={group.key}>
+            <div>
+              <span>{group.note}</span>
+              <strong>
+                {group.title}
+                <small>{group.items.length}</small>
+              </strong>
+            </div>
+            <ul>{listItems(group.items.length ? group.items.slice(0, 4) : ["本轮无明确变化。"])}</ul>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1246,7 +1283,6 @@ function RadarBrief({ radar }: { radar: RadarScan }) {
     { label: "泡沫/衰退风险", item: highestPriorityRadarItem([...radar.bubbleRisks, ...radar.decliningIndustries]) },
     { label: "即将进入增长期", item: highestPriorityRadarItem(radar.upcomingGrowth) },
   ].filter((entry): entry is { label: string; item: RadarItem } => Boolean(entry.item));
-  const changes = groupRadarChanges(radar.changeLog ?? []);
   return (
     <section className="radar-summary radar-brief" id="radar-overview">
       <div className="radar-brief-main">
@@ -1270,21 +1306,7 @@ function RadarBrief({ radar }: { radar: RadarScan }) {
           ))}
         </div>
       ) : null}
-      <div className="radar-change-groups">
-        <RadarChangeGroup title="新增/调整" items={changes.changed} />
-        <RadarChangeGroup title="延续" items={changes.retained} />
-        <RadarChangeGroup title="降级/未延续" items={changes.removed} />
-      </div>
     </section>
-  );
-}
-
-function RadarChangeGroup({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div>
-      <strong>{title}</strong>
-      <ul>{listItems(items.length ? items.slice(0, 3) : ["本轮无明确变化。"])}</ul>
-    </div>
   );
 }
 
@@ -1387,6 +1409,7 @@ function RadarCoverageReviewPanel({ coverageReview }: { coverageReview: RadarCov
 
 function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string, RadarCitation> }) {
   const sourceIds = item.sourceIds ?? [];
+  const insights = radarCardInsights(item);
   return (
     <article className="radar-card">
       <header>
@@ -1412,7 +1435,25 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
           {item.evidenceTypes?.length ? ` / ${item.evidenceTypes.map(radarEvidenceLabel).join("、")}` : ""}
         </dd>
       </dl>
-      {item.changeReason ? <p className="radar-change-reason">{item.changeReason}</p> : null}
+      <div className="radar-card-insights" aria-label="结论复核">
+        <section>
+          <span>结论强度</span>
+          <strong>{insights.strengthLabel}</strong>
+          <small>{insights.strengthDetail}</small>
+        </section>
+        <section>
+          <span>证据缺口</span>
+          <ul>{listItems(insights.evidenceGaps.slice(0, 3))}</ul>
+        </section>
+        <section>
+          <span>反证/拐点</span>
+          <ul>{listItems(insights.counterSignals.slice(0, 3))}</ul>
+        </section>
+      </div>
+      <p className="radar-change-reason">
+        <strong>上次 vs 本次</strong>
+        {insights.changeExplanation}
+      </p>
       <details className="radar-card-details">
         <summary>展开证据、驱动和拐点</summary>
         <div className="radar-columns">
@@ -1425,7 +1466,7 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
             <ul>{listItems(item.evidence)}</ul>
           </div>
           <div>
-            <strong>潜在拐点</strong>
+            <strong>原始拐点</strong>
             <ul>{listItems(item.turningPoints)}</ul>
           </div>
         </div>
@@ -1447,7 +1488,7 @@ function RadarCitationCards({ sourceIds, sourceMap }: { sourceIds: string[]; sou
   );
 }
 
-function RadarCitationCard({ source }: { source: RadarCitation }) {
+function RadarCitationCard({ source, context }: { source: RadarCitation; context?: { industries: string[]; itemTitles: string[] } }) {
   const body = (
     <>
       <span>
@@ -1456,6 +1497,11 @@ function RadarCitationCard({ source }: { source: RadarCitation }) {
       <strong>{source.title}</strong>
       <small>{source.source}{source.publishedAt ? ` · ${formatDateTime(source.publishedAt)}` : ""}</small>
       {source.summary ? <p>{source.summary}</p> : null}
+      {context?.industries.length || context?.itemTitles.length ? (
+        <small className="radar-citation-context">
+          关联：{[...context.industries, ...context.itemTitles].slice(0, 4).join("、")}
+        </small>
+      ) : null}
     </>
   );
   return source.url ? (
@@ -1488,18 +1534,60 @@ function RadarListSection({ id, title, lists }: { id: string; title: string; lis
   );
 }
 
-function RadarSourceLibrary({ sources }: { sources: RadarCitation[] }) {
+function RadarSourceLibrary({ sources, items }: { sources: RadarCitation[]; items: RadarItem[] }) {
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [evidenceTypeFilter, setEvidenceTypeFilter] = useState<RadarEvidenceType | "all">("all");
+  const library = useMemo(() => buildRadarSourceLibrary(sources, items, { industry: industryFilter, evidenceType: evidenceTypeFilter }), [evidenceTypeFilter, industryFilter, items, sources]);
   if (!sources.length) return null;
   return (
     <section className="radar-section" id="radar-sources">
-      <h3>证据引用库</h3>
+      <header className="radar-source-header">
+        <div>
+          <h3>证据引用库</h3>
+          <p>
+            已显示 {Math.min(library.entries.length, 30)} / {sources.length} 条，可按行业和证据类型快速收敛。
+          </p>
+        </div>
+        <div className="radar-source-filters" aria-label="证据筛选">
+          <label htmlFor="radar-source-industry">行业</label>
+          <select id="radar-source-industry" value={industryFilter} onChange={(event) => setIndustryFilter(event.currentTarget.value)}>
+            <option value="all">全部行业</option>
+            {library.industries.map((industry) => (
+              <option key={industry} value={industry}>
+                {industry}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="radar-source-type">证据类型</label>
+          <select id="radar-source-type" value={evidenceTypeFilter} onChange={(event) => setEvidenceTypeFilter(event.currentTarget.value as RadarEvidenceType | "all")}>
+            <option value="all">全部类型</option>
+            {library.evidenceTypes.map((type) => (
+              <option key={type} value={type}>
+                {radarEvidenceLabel(type)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </header>
       <div className="radar-source-library">
-        {sources.slice(0, 30).map((source) => (
-          <RadarCitationCard key={source.id} source={source} />
-        ))}
+        {library.entries.length ? (
+          library.entries.slice(0, 30).map((entry) => <RadarCitationCard key={entry.source.id} source={entry.source} context={{ industries: entry.industries, itemTitles: entry.itemTitles }} />)
+        ) : (
+          <p className="muted">当前筛选没有匹配证据，请放宽行业或证据类型。</p>
+        )}
       </div>
     </section>
   );
+}
+
+function allRadarItems(radar: RadarScan) {
+  return [
+    ...(radar.solidGrowth ?? []),
+    ...(radar.sustainability ?? []),
+    ...(radar.bubbleRisks ?? []),
+    ...(radar.upcomingGrowth ?? []),
+    ...(radar.decliningIndustries ?? []),
+  ];
 }
 
 function highestPriorityRadarItem(items: RadarItem[]) {
@@ -1516,19 +1604,6 @@ function radarItemPriority(item: RadarItem) {
   const evidence = item.supportingSourceCount ?? item.sourceIds?.length ?? 0;
   const longTerm = item.durability === "长期" ? 2 : item.durability === "中期" ? 1 : 0;
   return confidence * 20 + risk * 10 + evidence + longTerm;
-}
-
-function groupRadarChanges(changeLog: string[]) {
-  return changeLog.reduce(
-    (groups, item) => {
-      if (/新增|调整|升级|重新归类/.test(item)) groups.changed.push(item);
-      else if (/未延续|删除|降级/.test(item)) groups.removed.push(item);
-      else if (/延续|维持|保留/.test(item)) groups.retained.push(item);
-      else groups.changed.push(item);
-      return groups;
-    },
-    { changed: [] as string[], retained: [] as string[], removed: [] as string[] },
-  );
 }
 
 function listItems(items: string[]) {
