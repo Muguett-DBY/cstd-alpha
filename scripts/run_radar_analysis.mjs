@@ -57,13 +57,16 @@ async function main() {
   const evidence = readJsonFile(requiredArg(args, "evidence"));
   const previousPayload = readOptionalJsonFile(args.previous);
   const previousScan = previousPayload?.radar ?? null;
-  const digest = buildEvidenceDigest(Array.isArray(evidence.sources) ? evidence.sources : []);
+  const industryPackets = normalizeIndustryPackets(evidence.industryPackets);
+  const industryScope = partitionIndustryPackets(industryPackets, previousScan);
+  const digest = buildEvidenceDigest(Array.isArray(evidence.sources) ? evidence.sources : [], industryPackets);
   const structuredFacts = {
     financialFacts: Array.isArray(evidence.financialFacts) ? evidence.financialFacts.slice(0, 120) : [],
     industryFacts: Array.isArray(evidence.industryFacts) ? evidence.industryFacts.slice(0, 160) : [],
     companyCandidates: Array.isArray(evidence.companyCandidates) ? evidence.companyCandidates.slice(0, 120) : [],
+    industryPackets,
   };
-  const body = buildRadarRequestBody(digest, structuredFacts, previousScan, evidence.asOfDate);
+  const body = buildRadarRequestBody(digest, structuredFacts, previousScan, evidence.asOfDate, industryScope);
   if (args["debug-request-output"]) writeJsonFile(args["debug-request-output"], body);
 
   let modelPayload;
@@ -73,7 +76,7 @@ async function main() {
     modelPayload = await callDeepSeek(body);
   }
 
-  const radar = normalizeRadarScan(modelPayload, digest, previousScan, evidence.asOfDate);
+  const radar = normalizeRadarScan(modelPayload, digest, previousScan, evidence.asOfDate, industryScope);
   const cachePayload = {
     version: RADAR_CACHE_VERSION,
     cachedAt: new Date().toISOString(),
@@ -92,7 +95,7 @@ async function main() {
   if (args["output-job"]) writeJsonFile(args["output-job"], job);
 }
 
-function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate) {
+function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, industryScope) {
   return {
     model: DEEPSEEK_MODEL,
     response_format: { type: "json_object" },
@@ -118,6 +121,8 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate) 
             "每个行业条目必须引用 sourceIds，绑定 evidenceDigest.citations 中的 S1/S2 等证据编号。",
             "每个结论必须写反证条件：什么价格、销量、订单、财报、政策或供给信号出现后应撤销判断。",
             "输出必须包含本次 vs 上次：新增、升级、降级、维持、撤销。",
+            "全行业扫描必须以 analysisScope 为准：changedIndustryPackets 是本轮需要深度重判的行业，unchangedIndustrySummaries 是已扫描但证据未明显变化的行业，不能写成未覆盖。",
+            "对 unchanged 行业除非有强反证，不要重写长期判断；可沿用 previousScan 中稳定结论。",
           ],
           expectedJsonShape: radarJsonShape(),
         }),
@@ -127,8 +132,13 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate) 
         content: JSON.stringify({
           asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
           previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
+          analysisScope: compactIndustryScopeForModel(industryScope),
           evidenceDigest: compactDigestForModel(digest),
-          structuredFacts,
+          structuredFacts: {
+            financialFacts: structuredFacts.financialFacts,
+            industryFacts: structuredFacts.industryFacts,
+            companyCandidates: structuredFacts.companyCandidates,
+          },
         }),
       },
     ],
@@ -151,7 +161,90 @@ async function callDeepSeek(body) {
   return JSON.parse(jsonrepair(content));
 }
 
-function buildEvidenceDigest(sources) {
+function normalizeIndustryPackets(value) {
+  return arrayValue(value)
+    .map((item) => {
+      const record = isRecord(item) ? item : {};
+      const industry = stringValue(record.industry);
+      if (!industry) return null;
+      return {
+        group: stringValue(record.group) || "未分组",
+        industry,
+        status: stringValue(record.status) || "scanned",
+        evidenceHash: stringValue(record.evidenceHash) || fingerprint([record]),
+        sourceCount: typeof record.sourceCount === "number" ? record.sourceCount : arrayValue(record.sources).length,
+        evidenceTypes: enumArray(record.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS)),
+        signalTypes: stringArray(record.signalTypes),
+        sources: arrayValue(record.sources).slice(0, 12),
+        financialFacts: arrayValue(record.financialFacts).slice(0, 10),
+        industryFacts: arrayValue(record.industryFacts).slice(0, 10),
+        companyCandidates: arrayValue(record.companyCandidates).slice(0, 10),
+        evidenceGaps: stringArray(record.evidenceGaps).slice(0, 6),
+      };
+    })
+    .filter(Boolean);
+}
+
+function partitionIndustryPackets(industryPackets, previousScan) {
+  const previousByIndustry = new Map(arrayValue(previousScan?.industryPackets).map((packet) => [packet.industry, packet]));
+  const changed = [];
+  const unchanged = [];
+  for (const packet of industryPackets) {
+    const previous = previousByIndustry.get(packet.industry);
+    if (previous?.evidenceHash && previous.evidenceHash === packet.evidenceHash) unchanged.push({ ...packet, changeStatus: "unchanged" });
+    else changed.push({ ...packet, changeStatus: previous ? "changed" : "new" });
+  }
+  return {
+    totalIndustryCount: industryPackets.length,
+    changed,
+    unchanged,
+    previousIndustryCount: previousByIndustry.size,
+  };
+}
+
+function compactIndustryScopeForModel(scope) {
+  return {
+    totalIndustryCount: scope.totalIndustryCount,
+    changedIndustryCount: scope.changed.length,
+    unchangedIndustryCount: scope.unchanged.length,
+    changedIndustryPackets: scope.changed.map(compactIndustryPacket),
+    unchangedIndustrySummaries: scope.unchanged.slice(0, 80).map((packet) => ({
+      group: packet.group,
+      industry: packet.industry,
+      evidenceHash: packet.evidenceHash,
+      sourceCount: packet.sourceCount,
+      evidenceTypes: packet.evidenceTypes,
+      signalTypes: packet.signalTypes,
+      evidenceGaps: packet.evidenceGaps,
+      note: "本轮已扫描，证据 hash 未变化；可复用上次稳定结论。",
+    })),
+  };
+}
+
+function compactIndustryPacket(packet) {
+  return {
+    group: packet.group,
+    industry: packet.industry,
+    changeStatus: packet.changeStatus,
+    evidenceHash: packet.evidenceHash,
+    sourceCount: packet.sourceCount,
+    evidenceTypes: packet.evidenceTypes,
+    signalTypes: packet.signalTypes,
+    evidenceGaps: packet.evidenceGaps,
+    sources: packet.sources.slice(0, 8).map((source) => ({
+      source: source.source,
+      title: trimText(source.title, 140),
+      sourceType: source.sourceType,
+      signalType: source.signalType,
+      publishedAt: source.publishedAt,
+    })),
+    financialFacts: packet.financialFacts.slice(0, 6),
+    industryFacts: packet.industryFacts.slice(0, 6),
+    companyCandidates: packet.companyCandidates.slice(0, 6),
+  };
+}
+
+function buildEvidenceDigest(sources, industryPackets = []) {
   const citations = dedupeSources(sources.map(classifySource))
     .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
     .slice(0, 160)
@@ -161,7 +254,7 @@ function buildEvidenceDigest(sources) {
     const topic = inferTopic(citation);
     groups.set(topic, [...(groups.get(topic) ?? []), citation]);
   }
-  const packets = [...groups.entries()]
+  const sourcePackets = [...groups.entries()]
     .map(([topic, group]) => {
       const sorted = [...group].sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
       const evidenceTypes = unique(sorted.map((source) => source.sourceType)).sort((left, right) => EVIDENCE_WEIGHTS[right] - EVIDENCE_WEIGHTS[left]);
@@ -178,15 +271,30 @@ function buildEvidenceDigest(sources) {
     })
     .sort((left, right) => right.score - left.score)
     .slice(0, 24);
+  const covered = new Set(sourcePackets.map((packet) => packet.topic));
+  const emptyIndustryPackets = industryPackets
+    .filter((packet) => !covered.has(packet.industry))
+    .map((packet) => ({
+      topic: packet.industry,
+      score: packet.sourceCount || 0,
+      sourceIds: [],
+      evidenceTypes: packet.evidenceTypes ?? [],
+      signalTypes: packet.signalTypes ?? [],
+      summary: `${packet.industry}已完成扫描，当前结构化证据 ${packet.sourceCount ?? 0} 条。`,
+      signals: [],
+      evidenceHash: packet.evidenceHash,
+      group: packet.group,
+    }));
+  const packets = [...sourcePackets, ...emptyIndustryPackets];
   return {
     sourceFingerprint: fingerprint(citations),
     sourceCount: citations.length,
     evidenceBreakdown: summarizeBreakdown(citations),
     citations,
     packets,
-    softCoverage: packets.slice(0, 16).map((packet) => ({
+    softCoverage: packets.map((packet) => ({
       label: packet.topic,
-      sourceCount: packet.sourceIds.length,
+      sourceCount: packet.sourceCount ?? packet.sourceIds.length,
       evidenceTypes: packet.evidenceTypes,
       note: `${packet.topic}已扫描，是否进入结论取决于证据强度。`,
       topSourceIds: packet.sourceIds.slice(0, 5),
@@ -225,17 +333,18 @@ function compactDigestForModel(digest) {
   };
 }
 
-function normalizeRadarScan(value, digest, previousScan, asOfDate) {
+function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope) {
   const record = isRecord(value) ? value : {};
   const now = new Date();
   const generatedAt = now.toISOString();
   const validUntil = new Date(now.getTime() + RADAR_VALID_HOURS * 60 * 60 * 1000).toISOString();
   const previousTitles = previousRadarTitles(previousScan);
-  const solidGrowth = radarItems(record.solidGrowth, previousTitles, digest);
-  const sustainability = radarItems(record.sustainability, previousTitles, digest);
-  const bubbleRisks = radarItems(record.bubbleRisks, previousTitles, digest);
-  const upcomingGrowth = radarItems(record.upcomingGrowth, previousTitles, digest);
-  const decliningIndustries = radarItems(record.decliningIndustries, previousTitles, digest);
+  const unchangedIndustries = new Set(industryScope.unchanged.map((packet) => packet.industry));
+  const solidGrowth = reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest), previousScan?.solidGrowth, unchangedIndustries, digest);
+  const sustainability = reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest), previousScan?.sustainability, unchangedIndustries, digest);
+  const bubbleRisks = reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest), previousScan?.bubbleRisks, unchangedIndustries, digest);
+  const upcomingGrowth = reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest), previousScan?.upcomingGrowth, unchangedIndustries, digest);
+  const decliningIndustries = reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest);
   const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
   const scan = {
@@ -251,6 +360,23 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate) {
     evidenceSources: digest.citations,
     softCoverage: digest.softCoverage,
     coverageReview,
+    industryPackets: [...industryScope.changed, ...industryScope.unchanged].map((packet) => ({
+      group: packet.group,
+      industry: packet.industry,
+      status: packet.status,
+      changeStatus: packet.changeStatus,
+      evidenceHash: packet.evidenceHash,
+      sourceCount: packet.sourceCount,
+      evidenceTypes: packet.evidenceTypes,
+      signalTypes: packet.signalTypes,
+      evidenceGaps: packet.evidenceGaps,
+    })),
+    analysisScope: {
+      totalIndustryCount: industryScope.totalIndustryCount,
+      changedIndustryCount: industryScope.changed.length,
+      unchangedIndustryCount: industryScope.unchanged.length,
+      previousIndustryCount: industryScope.previousIndustryCount,
+    },
     confidenceSummary: stringValue(record.confidenceSummary) || "置信度按财报公告、价格/销量硬数据、市场数据和新闻线索的交叉验证强弱生成。",
     fromCache: false,
     executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
@@ -302,6 +428,19 @@ function radarItems(value, previousTitles, digest) {
     .filter(Boolean);
 }
 
+function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustries, digest) {
+  const seen = new Set(currentItems.map((item) => item.title));
+  const reusable = arrayValue(previousItems)
+    .filter((item) => isRecord(item) && !seen.has(item.title) && stringArray(item.industries).some((industry) => unchangedIndustries.has(industry)))
+    .slice(0, 6)
+    .map((item) => ({
+      ...item,
+      sourceIds: sourceIdsForItem(item, digest),
+      changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
+    }));
+  return [...currentItems, ...reusable];
+}
+
 function sourceIdsForItem(record, digest) {
   const valid = new Set(digest.citations.map((source) => source.id));
   const explicit = stringArray(record.sourceIds).filter((id) => valid.has(id)).slice(0, 5);
@@ -344,7 +483,7 @@ function radarCoverageReview(value, digest, formalItems) {
       note: stringValue(item.note),
     });
   }
-  return [...byLabel.values()].slice(0, 18);
+  return [...byLabel.values()];
 }
 
 function radarLists(value) {
@@ -426,6 +565,7 @@ function summarizePreviousScan(scan) {
     bubbleRisks: arrayValue(scan.bubbleRisks).map((item) => item.title).slice(0, 8),
     upcomingGrowth: arrayValue(scan.upcomingGrowth).map((item) => item.title).slice(0, 8),
     decliningIndustries: arrayValue(scan.decliningIndustries).map((item) => item.title).slice(0, 8),
+    industryPackets: arrayValue(scan.industryPackets).map((packet) => ({ industry: packet.industry, evidenceHash: packet.evidenceHash, sourceCount: packet.sourceCount })).slice(0, 120),
   };
 }
 

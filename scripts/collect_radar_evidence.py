@@ -41,6 +41,50 @@ TOPIC_QUERIES = [
     ("平稳现金流/高股息", "高股息 分红 经营现金流 公用事业 电信 水电", "announcement"),
 ]
 
+FINE_INDUSTRY_TAXONOMY = [
+    {"group": "高景气成长", "industry": "半导体/AI算力", "keywords": ("半导体", "芯片", "存储", "HBM", "算力", "服务器", "数据中心", "光模块", "PCB", "CPO")},
+    {"group": "高景气成长", "industry": "半导体设备/材料", "keywords": ("半导体设备", "光刻", "刻蚀", "薄膜", "测试设备", "硅片", "电子特气", "光刻胶")},
+    {"group": "高景气成长", "industry": "AI应用/软件", "keywords": ("AI应用", "人工智能", "大模型", "软件", "工业软件", "办公软件", "云计算")},
+    {"group": "高景气成长", "industry": "机器人/具身智能", "keywords": ("机器人", "人形机器人", "具身智能", "减速器", "伺服", "传感器")},
+    {"group": "高景气成长", "industry": "创新药/医疗服务", "keywords": ("创新药", "医药", "医疗", "CXO", "药", "研发服务", "商业化", "临床", "药监")},
+    {"group": "高景气成长", "industry": "电力电网/能源基础设施", "keywords": ("电力", "电网", "特高压", "变压器", "储能电站", "发电量", "装机")},
+    {"group": "高景气成长", "industry": "军工/航空航天", "keywords": ("军工", "航空", "航天", "导弹", "卫星", "商业航天", "低空经济")},
+    {"group": "高景气成长", "industry": "新材料", "keywords": ("新材料", "碳纤维", "膜材料", "合成生物", "高分子", "陶瓷材料")},
+    {"group": "高景气成长", "industry": "新能源汽车/智能驾驶", "keywords": ("新能源汽车", "新能源车", "智能驾驶", "乘用车", "汽车出口", "车企", "销量")},
+    {"group": "高景气成长", "industry": "消费电子/端侧AI", "keywords": ("消费电子", "端侧AI", "手机", "可穿戴", "AR", "VR", "MR")},
+    {"group": "周期品", "industry": "战略有色金属", "keywords": ("有色", "铜", "钨", "稀土", "小金属", "黄金", "铝", "锂", "镍", "钴")},
+    {"group": "周期品", "industry": "锂电储能", "keywords": ("锂电", "电池", "储能", "碳酸锂", "磷酸铁锂", "固态电池")},
+    {"group": "周期品", "industry": "钢铁", "keywords": ("钢铁", "螺纹钢", "热卷", "铁矿石", "焦煤", "焦炭")},
+    {"group": "周期品", "industry": "水泥/建材", "keywords": ("水泥", "建材", "玻璃", "防水", "石膏板")},
+    {"group": "周期品", "industry": "基础化工", "keywords": ("化工", "MDI", "纯碱", "烧碱", "尿素", "农药", "化纤", "钛白粉")},
+    {"group": "周期品", "industry": "煤炭", "keywords": ("煤炭", "动力煤", "焦煤", "煤价")},
+    {"group": "周期品", "industry": "石油石化", "keywords": ("石油", "石化", "原油", "炼化", "油服")},
+    {"group": "周期品", "industry": "航运物流", "keywords": ("航运", "港口", "物流", "BDI", "CCFI", "SCFI", "集运", "运价")},
+    {"group": "周期品", "industry": "生猪养殖", "keywords": ("猪", "生猪", "养殖", "畜牧", "能繁母猪", "猪价")},
+    {"group": "周期品", "industry": "种植/农产品", "keywords": ("农业", "种植", "种业", "玉米", "大豆", "小麦", "白糖")},
+    {"group": "过剩/衰退", "industry": "光伏产业链", "keywords": ("光伏", "硅料", "硅片", "组件", "逆变器", "TOPCon", "BC电池", "多晶硅", "工业硅")},
+    {"group": "过剩/衰退", "industry": "地产链", "keywords": ("地产", "房地产", "竣工", "新开工", "家居", "物业")},
+    {"group": "过剩/衰退", "industry": "传统消费", "keywords": ("食品饮料", "白酒", "乳制品", "啤酒", "调味品", "服装", "零售")},
+    {"group": "过剩/衰退", "industry": "传统燃油车/零部件", "keywords": ("燃油车", "汽车零部件", "经销商", "乘用车")},
+    {"group": "稳定现金流", "industry": "电力/水电", "keywords": ("水电", "火电", "核电", "绿电", "公用事业", "发电")},
+    {"group": "稳定现金流", "industry": "电信运营", "keywords": ("电信", "运营商", "移动", "联通", "电信运营")},
+    {"group": "稳定现金流", "industry": "燃气/环保", "keywords": ("燃气", "环保", "水务", "固废")},
+    {"group": "稳定现金流", "industry": "高速公路/铁路", "keywords": ("高速公路", "铁路", "收费公路")},
+    {"group": "稳定现金流", "industry": "银行", "keywords": ("银行", "息差", "不良率", "拨备")},
+    {"group": "稳定现金流", "industry": "保险/券商", "keywords": ("保险", "券商", "证券", "资管")},
+    {"group": "消费服务", "industry": "家电/消费出海", "keywords": ("家电", "消费出海", "品牌出海", "跨境", "出口")},
+    {"group": "消费服务", "industry": "旅游/酒店/免税", "keywords": ("旅游", "酒店", "免税", "景区", "出行")},
+    {"group": "消费服务", "industry": "传媒/游戏/互联网", "keywords": ("传媒", "游戏", "互联网", "广告", "短剧")},
+    {"group": "制造业", "industry": "机械设备", "keywords": ("机械", "机床", "工程机械", "叉车", "注塑机")},
+    {"group": "制造业", "industry": "通用自动化", "keywords": ("自动化", "工控", "PLC", "伺服", "工业机器人")},
+    {"group": "制造业", "industry": "仪器仪表/检测", "keywords": ("仪器", "检测", "计量", "传感器")},
+    {"group": "制造业", "industry": "轻工包装/造纸", "keywords": ("包装", "造纸", "轻工", "纸浆")},
+    {"group": "医药健康", "industry": "医疗器械", "keywords": ("医疗器械", "设备", "耗材", "IVD")},
+    {"group": "医药健康", "industry": "中药/消费医疗", "keywords": ("中药", "消费医疗", "眼科", "牙科", "医美")},
+    {"group": "交通运输", "industry": "航空机场", "keywords": ("航空", "机场", "客座率", "航班")},
+    {"group": "交通运输", "industry": "快递/供应链", "keywords": ("快递", "供应链", "物流", "仓储")},
+]
+
 SOURCE_WEIGHTS = {
     "hard_data": 5,
     "official": 4,
@@ -100,6 +144,8 @@ TOPIC_ROLLUP_KEYWORDS = {
     "平稳现金流/高股息": ("高股息", "煤炭", "公用事业", "电力", "水电", "银行", "电信"),
     "机器人/AI应用": ("机器人", "人形机器人", "具身智能", "AI应用", "人工智能"),
 }
+for taxonomy_item in FINE_INDUSTRY_TAXONOMY:
+    TOPIC_ROLLUP_KEYWORDS.setdefault(taxonomy_item["industry"], taxonomy_item["keywords"])
 LOCAL_HARD_DATA_SIGNALS = [
     {
         "signalType": "commodity_price",
@@ -236,6 +282,7 @@ def main() -> int:
     financial_facts = financial_facts_from_sources(sources)
     industry_facts = industry_facts_from_sources(sources)
     company_candidates = company_candidates_from_sources(sources)
+    industry_packets = industry_packets_from_sources(sources, financial_facts, industry_facts, company_candidates)
 
     now = datetime.now(timezone.utc)
     snapshot = {
@@ -250,6 +297,7 @@ def main() -> int:
         "financialFacts": financial_facts,
         "industryFacts": industry_facts,
         "companyCandidates": company_candidates,
+        "industryPackets": industry_packets,
     }
 
     output = Path(args.output)
@@ -1326,6 +1374,82 @@ def company_candidates_from_sources(sources: list[dict[str, Any]]) -> list[dict[
         current["evidenceStrength"] = int(current.get("evidenceStrength") or 0) + SOURCE_WEIGHTS.get(clean_text(source.get("sourceType")), 2)
         current["sourceTypes"] = unique_strings([*current.get("sourceTypes", []), clean_text(source.get("sourceType"))])
     return sorted(candidates.values(), key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True)[:80]
+
+
+def industry_packets_from_sources(
+    sources: list[dict[str, Any]],
+    financial_facts: list[dict[str, Any]],
+    industry_facts: list[dict[str, Any]],
+    company_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    packets: list[dict[str, Any]] = []
+    for taxonomy in FINE_INDUSTRY_TAXONOMY:
+        industry = taxonomy["industry"]
+        keywords = tuple(taxonomy["keywords"])
+        matched_sources = [source for source in sources if industry_matches(source_text(source), industry, keywords)]
+        matched_financial = [fact for fact in financial_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('company', '')}", industry, keywords)]
+        matched_industry = [fact for fact in industry_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('summary', '')}", industry, keywords)]
+        matched_companies = [candidate for candidate in company_candidates if industry_matches(f"{candidate.get('industry', '')} {candidate.get('triggerEvidence', '')} {candidate.get('company', '')}", industry, keywords)]
+        evidence_types = unique_strings(clean_text(source.get("sourceType")) for source in matched_sources)
+        signal_types = unique_strings(clean_text(source.get("signalType")) for source in matched_sources if source.get("signalType"))
+        packet_sources = sorted(matched_sources, key=lambda source: int(source.get("score") or 0), reverse=True)
+        packet = {
+            "group": taxonomy["group"],
+            "industry": industry,
+            "status": "scanned",
+            "evidenceHash": industry_evidence_hash(industry, packet_sources, matched_financial, matched_industry, matched_companies),
+            "sourceCount": len(matched_sources),
+            "evidenceTypes": evidence_types,
+            "signalTypes": signal_types,
+            "sources": [
+                compact_dict(
+                    {
+                        "source": source.get("source"),
+                        "title": source.get("title"),
+                        "url": source.get("url"),
+                        "sourceType": source.get("sourceType"),
+                        "signalType": source.get("signalType"),
+                        "publishedAt": source.get("publishedAt"),
+                    }
+                )
+                for source in packet_sources[:12]
+            ],
+            "financialFacts": matched_financial[:10],
+            "industryFacts": matched_industry[:10],
+            "companyCandidates": matched_companies[:10],
+            "evidenceGaps": industry_evidence_gaps(matched_sources, matched_financial, matched_industry),
+        }
+        packets.append(packet)
+    return packets
+
+
+def industry_matches(text: str, industry: str, keywords: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    if industry.lower() in lowered:
+        return True
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def industry_evidence_hash(industry: str, sources: list[dict[str, Any]], financial_facts: list[dict[str, Any]], industry_facts: list[dict[str, Any]], company_candidates: list[dict[str, Any]]) -> str:
+    source_payload = [f"{source.get('url', '')}|{source.get('title', '')}|{source.get('publishedAt', '')}" for source in sources[:24]]
+    fact_payload = [json.dumps(item, ensure_ascii=False, sort_keys=True) for item in [*financial_facts[:12], *industry_facts[:12], *company_candidates[:12]]]
+    payload = "\n".join([industry, *sorted(source_payload), *sorted(fact_payload)])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def industry_evidence_gaps(sources: list[dict[str, Any]], financial_facts: list[dict[str, Any]], industry_facts: list[dict[str, Any]]) -> list[str]:
+    signal_types = {clean_text(source.get("signalType")) for source in sources}
+    source_types = {clean_text(source.get("sourceType")) for source in sources}
+    gaps: list[str] = []
+    if not financial_facts and "financial_metric" not in signal_types:
+        gaps.append("缺财报")
+    if not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
+        gaps.append("缺价格")
+    if not industry_facts and "industry_stat" not in signal_types:
+        gaps.append("缺销量")
+    if len(source_types - {""}) < 2:
+        gaps.append("缺多源验证")
+    return gaps[:4]
 
 
 def evidence_quality(sources: list[dict[str, Any]]) -> dict[str, Any]:

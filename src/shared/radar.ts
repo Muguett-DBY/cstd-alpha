@@ -70,6 +70,25 @@ export type RadarCoverageReview = {
   sourceIds?: string[];
 };
 
+export type RadarIndustryPacket = {
+  group: string;
+  industry: string;
+  status: "scanned";
+  changeStatus?: "new" | "changed" | "unchanged";
+  evidenceHash: string;
+  sourceCount: number;
+  evidenceTypes: RadarEvidenceType[];
+  signalTypes: string[];
+  evidenceGaps: RadarEvidenceGap[];
+};
+
+export type RadarAnalysisScope = {
+  totalIndustryCount: number;
+  changedIndustryCount: number;
+  unchangedIndustryCount: number;
+  previousIndustryCount: number;
+};
+
 export type RadarItem = {
   title: string;
   industries: string[];
@@ -111,6 +130,8 @@ export type RadarScan = {
   evidenceSources?: RadarCitation[];
   softCoverage?: RadarCoverageItem[];
   coverageReview?: RadarCoverageReview[];
+  industryPackets?: RadarIndustryPacket[];
+  analysisScope?: RadarAnalysisScope;
   confidenceSummary?: string;
   changeLog?: string[];
   fromCache?: boolean;

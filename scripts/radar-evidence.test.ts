@@ -21,6 +21,7 @@ describe("rolling radar evidence collector", () => {
       financialFacts?: unknown[];
       industryFacts?: unknown[];
       companyCandidates?: unknown[];
+      industryPackets?: Array<{ group?: string; industry?: string; status?: string; evidenceHash?: string; sourceCount?: number; evidenceTypes?: string[]; evidenceGaps?: string[] }>;
     };
     const sources = snapshot.sources ?? [];
     const googleSources = sources.filter((source) => source.source === "Google News");
@@ -41,6 +42,9 @@ describe("rolling radar evidence collector", () => {
     expect(snapshot.financialFacts?.length).toBeGreaterThan(0);
     expect(snapshot.industryFacts?.length).toBeGreaterThan(0);
     expect(snapshot.companyCandidates?.length).toBeGreaterThan(0);
+    expect(snapshot.industryPackets?.length).toBeGreaterThanOrEqual(40);
+    expect(snapshot.industryPackets?.every((packet) => packet.status === "scanned" && packet.industry && packet.evidenceHash)).toBe(true);
+    expect(snapshot.industryPackets?.map((packet) => packet.industry)).toEqual(expect.arrayContaining(["半导体/AI算力", "基础化工", "银行", "航空机场"]));
     expect(snapshot.quality).toMatchObject({
       googleNewsShare: expect.any(Number),
       structuredShare: expect.any(Number),
@@ -49,6 +53,21 @@ describe("rolling radar evidence collector", () => {
     });
     expect(snapshot.quality?.uniqueSources).toBeGreaterThanOrEqual(3);
     expect(snapshot.quality?.largestSourceShare).toBeLessThanOrEqual(0.5);
+  });
+
+  test("emits full fine-industry packets even when some industries have weak evidence", () => {
+    const script = "scripts/collect_radar_evidence.py";
+    const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
+    execFileSync("python", [script, "--offline-fixture", "--output", outputPath], { stdio: "pipe" });
+    const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      industryPackets?: Array<{ industry?: string; evidenceHash?: string; sourceCount?: number; evidenceGaps?: string[] }>;
+    };
+    const packets = snapshot.industryPackets ?? [];
+    const emptyOrWeak = packets.filter((packet) => (packet.sourceCount ?? 0) <= 1);
+
+    expect(packets.length).toBeGreaterThanOrEqual(40);
+    expect(emptyOrWeak.length).toBeGreaterThan(0);
+    expect(emptyOrWeak.every((packet) => packet.evidenceHash && Array.isArray(packet.evidenceGaps))).toBe(true);
   });
 
   test("does not use local placeholder signals as financial evidence", () => {

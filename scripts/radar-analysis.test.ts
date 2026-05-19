@@ -44,7 +44,10 @@ describe("background radar analyzer", () => {
         model?: string;
         sourceCount?: number;
         solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidenceGaps?: string[] }>;
+        sustainability?: Array<{ title?: string; changeReason?: string }>;
         evidenceSources?: Array<{ id?: string; source?: string; signalType?: string }>;
+        industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string }>;
+        analysisScope?: { totalIndustryCount?: number; changedIndustryCount?: number; unchangedIndustryCount?: number };
         changeLog?: string[];
       };
     };
@@ -56,6 +59,9 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["百济神州"]);
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual([]);
+    expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 4, changedIndustryCount: 3, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.sustainability?.some((item) => item.title === "航运运价高位观察" && item.changeReason?.includes("复用上次稳定结论"))).toBe(true);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
     expect(job).toMatchObject({ id: "job-test", status: "completed" });
@@ -94,15 +100,20 @@ describe("background radar analyzer", () => {
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { messages?: Array<{ content?: string }> };
     const dynamicPayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: unknown[]; packets?: unknown[] };
+      analysisScope?: { changedIndustryPackets?: unknown[]; unchangedIndustrySummaries?: unknown[]; totalIndustryCount?: number };
       structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[] };
       previousScan?: { id?: string };
     };
 
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(4);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(3);
+    expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
     expect(dynamicPayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
     expect(dynamicPayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
     expect(dynamicPayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
+    expect(JSON.stringify(dynamicPayload.structuredFacts)).not.toContain("industryPackets");
   });
 });
 
@@ -189,6 +200,12 @@ function evidenceSnapshot() {
     companyCandidates: [
       { company: "百济神州", code: "688235.SH", market: "A股", industry: "化学制药", triggerEvidence: "净利润同比 1801.30%", evidenceStrength: 4 },
     ],
+    industryPackets: [
+      { group: "医药健康", industry: "创新药/医疗服务", status: "scanned", evidenceHash: "hash-new-drug", sourceCount: 1, evidenceTypes: ["announcement"], signalTypes: ["financial_metric"], evidenceGaps: [], sources: [sources[0]], financialFacts: [{ company: "百济神州", industry: "化学制药" }], industryFacts: [], companyCandidates: [{ company: "百济神州", industry: "化学制药" }] },
+      { group: "高景气成长", industry: "汽车/智能驾驶", status: "scanned", evidenceHash: "hash-auto", sourceCount: 1, evidenceTypes: ["official"], signalTypes: ["industry_stat"], evidenceGaps: ["缺财报"], sources: [sources[2]], financialFacts: [], industryFacts: [{ industry: "汽车/智能驾驶" }], companyCandidates: [] },
+      { group: "周期品", industry: "战略有色金属", status: "scanned", evidenceHash: "hash-metal", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["commodity_price"], evidenceGaps: ["缺财报"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+    ],
   };
 }
 
@@ -208,13 +225,35 @@ function previousRadarCache() {
       sourceQueries: [],
       executiveSummary: ["旧报告。"],
       solidGrowth: [],
-      sustainability: [],
+      sustainability: [
+        {
+          title: "航运运价高位观察",
+          industries: ["航运物流"],
+          companies: ["中远海控"],
+          thesis: "运价高位但公司级业绩仍需验证。",
+          drivers: ["运价"],
+          evidence: ["旧证据"],
+          conclusionStrength: "观察",
+          evidenceGaps: ["缺财报"],
+          driverTags: ["价格"],
+          sustainabilityTier: "短期催化",
+          durability: "短期",
+          riskLevel: "中",
+          confidence: "中",
+          sourceIds: [],
+          counterEvidenceConditions: ["运价回落"],
+          turningPoints: ["BDI回落"],
+        },
+      ],
       bubbleRisks: [],
       upcomingGrowth: [],
       decliningIndustries: [],
       representativeCompanies: [],
       stageCompanies: [],
       limitations: [],
+      industryPackets: [
+        { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"] },
+      ],
     },
   };
 }
