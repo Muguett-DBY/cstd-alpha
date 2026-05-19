@@ -3255,6 +3255,25 @@ button:not(:disabled):active,
     padding-inline: 10px;
   }
 
+  .app-shell.view-radar .view-tabs {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .app-shell.view-radar .view-tabs button {
+    flex: 0 0 auto;
+    min-width: 94px;
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+
+  .app-shell.view-radar .view-tabs button.wide-tab {
+    grid-column: auto;
+  }
+
   .app-shell.view-radar .workspace {
     padding-top: 12px;
   }
