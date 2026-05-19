@@ -46,7 +46,7 @@ describe("background radar analyzer", () => {
         solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidenceGaps?: string[] }>;
         sustainability?: Array<{ title?: string; changeReason?: string }>;
         evidenceSources?: Array<{ id?: string; source?: string; signalType?: string }>;
-        industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string }>;
+        industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string; stage?: string; scores?: { growth?: number; evidence?: number; bubbleRisk?: number } }>;
         analysisScope?: { totalIndustryCount?: number; changedIndustryCount?: number; unchangedIndustryCount?: number };
         changeLog?: string[];
       };
@@ -61,6 +61,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual([]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
     expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 4, changedIndustryCount: 3, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(radarCache.radar?.sustainability?.some((item) => item.title === "航运运价高位观察" && item.changeReason?.includes("复用上次稳定结论"))).toBe(true);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
@@ -100,7 +101,7 @@ describe("background radar analyzer", () => {
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { messages?: Array<{ content?: string }> };
     const dynamicPayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: unknown[]; packets?: unknown[] };
-      analysisScope?: { changedIndustryPackets?: unknown[]; unchangedIndustrySummaries?: unknown[]; totalIndustryCount?: number };
+      analysisScope?: { changedIndustryPackets?: Array<{ scores?: unknown }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
       structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[] };
       previousScan?: { id?: string };
     };
@@ -109,6 +110,7 @@ describe("background radar analyzer", () => {
     expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(4);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(3);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
     expect(dynamicPayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
     expect(dynamicPayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);

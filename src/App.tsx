@@ -8,7 +8,7 @@ import { clearImportedRankingReports } from "./ranking-storage";
 import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -1231,6 +1231,7 @@ function RadarView({
           <RadarRoundChanges changeLog={radar.changeLog} />
           <RadarSectionNav />
           <RadarBrief radar={radar} />
+          <RadarMarketOverview radar={radar} />
           <RadarEvidenceOverview
             breakdown={radar.evidenceBreakdown}
             confidenceSummary={radar.confidenceSummary}
@@ -1291,7 +1292,30 @@ function RadarRoundChanges({ changeLog }: { changeLog?: string[] }) {
           </article>
         ))}
       </div>
+      <RadarChangeFlow buckets={buckets} />
     </section>
+  );
+}
+
+function RadarChangeFlow({ buckets }: { buckets: ReturnType<typeof radarChangeBuckets> }) {
+  const flows = [
+    { from: "未覆盖/弱线索", to: "新增跟踪", items: buckets.added, className: "added" },
+    { from: "观察", to: "更强结论", items: buckets.upgraded, className: "upgraded" },
+    { from: "正式结论", to: "降级/撤销", items: buckets.downgraded, className: "downgraded" },
+    { from: "上次结论", to: "维持", items: buckets.maintained, className: "maintained" },
+  ].filter((flow) => flow.items.length);
+  if (!flows.length) return null;
+  return (
+    <div className="radar-change-flow" aria-label="上次到本次变化流向">
+      {flows.map((flow) => (
+        <article key={flow.className} className={`radar-flow-${flow.className}`}>
+          <span>{flow.from}</span>
+          <i aria-hidden="true" />
+          <strong>{flow.to}</strong>
+          <small>{flow.items.slice(0, 3).join(" / ")}</small>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -1299,6 +1323,7 @@ function RadarSectionNav() {
   return (
     <nav className="radar-section-nav" aria-label="雷达章节">
       <a href="#radar-overview">概览</a>
+      <a href="#radar-market-map">热力图</a>
       <a href="#radar-growth">增长</a>
       <a href="#radar-sustainability">可持续性</a>
       <a href="#radar-bubble">泡沫</a>
@@ -1367,6 +1392,116 @@ function RadarSignalMap({ radar }: { radar: RadarScan }) {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function RadarMarketOverview({ radar }: { radar: RadarScan }) {
+  const packets = radar.industryPackets ?? [];
+  if (!packets.length) return null;
+  return (
+    <section className="radar-summary radar-market-overview" id="radar-market-map">
+      <header className="radar-section-head">
+        <div>
+          <p className="eyebrow">全行业地图</p>
+          <h3>产业热力图与信号分布</h3>
+          <p>横轴是增长动量，纵轴是泡沫/衰退风险；气泡越大，当前证据越多。</p>
+        </div>
+        <span>{packets.length} 个细分产业</span>
+      </header>
+      <div className="radar-market-layout">
+        <RadarIndustryHeatmap packets={packets} />
+        <RadarStageBuckets packets={packets} />
+      </div>
+      <RadarTopSignalLists packets={packets} />
+    </section>
+  );
+}
+
+function RadarIndustryHeatmap({ packets }: { packets: RadarIndustryPacket[] }) {
+  const visiblePackets = [...packets].sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+  return (
+    <div className="radar-heatmap" aria-label="产业增长动量和风险热力图">
+      <div className="radar-heatmap-axis y-axis">泡沫/衰退风险</div>
+      <div className="radar-heatmap-axis x-axis">增长动量</div>
+      <div className="radar-heatmap-quadrants" aria-hidden="true">
+        <span>高增长高风险</span>
+        <span>重点机会区</span>
+        <span>避雷/衰退区</span>
+        <span>稳定/高股息区</span>
+      </div>
+      {visiblePackets.map((packet) => {
+        const scores = packet.scores ?? emptyRadarScores();
+        const growthMomentum = Math.max(scores.growth, scores.momentum);
+        const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
+        const size = Math.max(10, Math.min(32, 10 + (packet.sourceCount || 0) * 2 + scores.evidence / 12));
+        return (
+          <a
+            key={packet.industry}
+            className={`radar-heatmap-dot ${radarStageClass(packet.stage)}`}
+            href={stageTarget(packet.stage)}
+            title={`${packet.industry}｜${packet.stage ?? "证据不足"}｜增长 ${growthMomentum}｜风险 ${risk}｜证据 ${packet.sourceCount} 条`}
+            style={{ left: `${growthMomentum}%`, top: `${100 - risk}%`, width: size, height: size } as CSSProperties}
+          >
+            <span>{packet.industry}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
+  const buckets = radarStageBuckets(packets);
+  return (
+    <div className="radar-stage-buckets" aria-label="产业阶段分布">
+      <div className="radar-signal-map-head">
+        <strong>阶段分布</strong>
+        <span>可展开每个桶</span>
+      </div>
+      {buckets.map((bucket) => (
+        <details key={bucket.stage} className={`radar-stage-bucket ${radarStageClass(bucket.stage)}`} open={bucket.stage === "扎实增长" || bucket.stage === "泡沫风险"}>
+          <summary>
+            <span>{bucket.stage}</span>
+            <strong>{bucket.items.length}</strong>
+            <i style={{ width: `${bucket.percent}%` }} />
+          </summary>
+          <div>
+            {bucket.items.slice(0, 12).map((packet) => (
+              <a key={packet.industry} href={stageTarget(packet.stage)}>
+                {packet.industry}
+                <small>{packet.sourceCount} 条</small>
+              </a>
+            ))}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function RadarTopSignalLists({ packets }: { packets: RadarIndustryPacket[] }) {
+  const lists = [
+    { title: "强信号 Top 20", items: topRadarPackets(packets, (packet) => Math.max(packet.scores?.growth ?? 0, packet.scores?.momentum ?? 0)), metric: "growth" },
+    { title: "风险恶化 Top 20", items: topRadarPackets(packets, (packet) => Math.max(packet.scores?.bubbleRisk ?? 0, packet.scores?.declineRisk ?? 0)), metric: "risk" },
+    { title: "证据增强 Top 20", items: topRadarPackets(packets, (packet) => packet.scores?.evidence ?? 0), metric: "evidence" },
+    { title: "关注度上升 Top 20", items: topRadarPackets(packets, (packet) => packet.scores?.change ?? 0), metric: "change" },
+  ];
+  return (
+    <div className="radar-top-lists">
+      {lists.map((list) => (
+        <article key={list.title}>
+          <h4>{list.title}</h4>
+          <ol>
+            {list.items.map((packet) => (
+              <li key={`${list.title}-${packet.industry}`}>
+                <span>{packet.industry}</span>
+                <strong>{radarPacketMetric(packet, list.metric)}</strong>
+              </li>
+            ))}
+          </ol>
+        </article>
+      ))}
     </div>
   );
 }
@@ -1510,6 +1645,7 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
     <article className={`radar-card radar-risk-${item.riskLevel} radar-strength-${item.conclusionStrength}`}>
       <header>
         <div>
+          <span className="radar-stage-label">{item.conclusionStrength}</span>
           <h4>{item.title || "待确认主题"}</h4>
           <p>{item.thesis || "模型未提供完整分析。"}</p>
         </div>
@@ -1528,6 +1664,7 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
           </div>
         ) : null}
       </div>
+      <RadarCardMiniCharts item={item} />
       <dl>
         <dt>产业</dt>
         <dd>{item.industries.join("、") || "待确认"}</dd>
@@ -1581,6 +1718,21 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
         <RadarCitationCards sourceIds={sourceIds} sourceMap={sourceMap} />
       </details>
     </article>
+  );
+}
+
+function RadarCardMiniCharts({ item }: { item: RadarItem }) {
+  const metrics = radarCardChartMetrics(item);
+  return (
+    <div className="radar-card-mini-charts" aria-label="卡片关键指标">
+      {metrics.map((metric) => (
+        <div key={metric.label}>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+          <i style={{ width: `${metric.value}%` }} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1701,6 +1853,82 @@ function RadarSourceLibrary({ sources, items }: { sources: RadarCitation[]; item
       </div>
     </section>
   );
+}
+
+function radarStageBuckets(packets: RadarIndustryPacket[]) {
+  const order = ["扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
+  const total = Math.max(1, packets.length);
+  return order.map((stage) => {
+    const items = packets.filter((packet) => (packet.stage ?? "证据不足") === stage).sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+    return { stage, items, percent: Math.max(4, (items.length / total) * 100) };
+  });
+}
+
+function radarPacketPriority(packet: RadarIndustryPacket) {
+  const scores = packet.scores ?? emptyRadarScores();
+  return Math.max(scores.growth, scores.momentum) * 2 + scores.evidence + Math.max(scores.bubbleRisk, scores.declineRisk) + (packet.sourceCount ?? 0) * 4;
+}
+
+function topRadarPackets(packets: RadarIndustryPacket[], score: (packet: RadarIndustryPacket) => number) {
+  return [...packets].sort((left, right) => score(right) - score(left)).slice(0, 20);
+}
+
+function radarPacketMetric(packet: RadarIndustryPacket, metric: string) {
+  const scores = packet.scores ?? emptyRadarScores();
+  const value =
+    metric === "risk"
+      ? Math.max(scores.bubbleRisk, scores.declineRisk)
+      : metric === "evidence"
+        ? scores.evidence
+        : metric === "change"
+          ? scores.change
+          : Math.max(scores.growth, scores.momentum);
+  return value.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+}
+
+function emptyRadarScores() {
+  return { growth: 0, momentum: 0, evidence: 0, valuationRisk: 0, bubbleRisk: 0, declineRisk: 0, confidence: 0, change: 0 };
+}
+
+function radarStageClass(stage?: string) {
+  return (
+    {
+      扎实增长: "stage-growth",
+      即将增长: "stage-upcoming",
+      泡沫风险: "stage-bubble",
+      衰退: "stage-decline",
+      平稳现金流: "stage-stable",
+      继续观察: "stage-watch",
+      证据不足: "stage-weak",
+    }[stage || "证据不足"] ?? "stage-weak"
+  );
+}
+
+function stageTarget(stage?: string) {
+  return (
+    {
+      扎实增长: "#radar-growth",
+      即将增长: "#radar-upcoming",
+      泡沫风险: "#radar-bubble",
+      衰退: "#radar-decline",
+      平稳现金流: "#radar-stages",
+      继续观察: "#radar-sustainability",
+      证据不足: "#radar-evidence-overview",
+    }[stage || "证据不足"] ?? "#radar-evidence-overview"
+  );
+}
+
+function radarCardChartMetrics(item: RadarItem) {
+  const confidence = { 低: 35, 中: 62, 高: 88 }[item.confidence || "中"];
+  const risk = { 低: 28, 中: 58, 高: 88 }[item.riskLevel];
+  const evidence = Math.min(100, (item.supportingSourceCount ?? item.sourceIds?.length ?? 0) * 18 + (item.evidenceTypes?.length ?? 0) * 10);
+  const driver = Math.min(100, (item.driverTags?.length ?? 0) * 16 + (item.drivers?.length ?? 0) * 5);
+  return [
+    { label: "证据", value: evidence },
+    { label: "驱动", value: driver },
+    { label: "置信", value: confidence },
+    { label: "风险", value: risk },
+  ];
 }
 
 function allRadarItems(radar: RadarScan) {

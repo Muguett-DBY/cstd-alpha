@@ -175,6 +175,7 @@ function normalizeIndustryPackets(value) {
         sourceCount: typeof record.sourceCount === "number" ? record.sourceCount : arrayValue(record.sources).length,
         evidenceTypes: enumArray(record.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS)),
         signalTypes: stringArray(record.signalTypes),
+        themes: stringArray(record.themes).slice(0, 8),
         sources: arrayValue(record.sources).slice(0, 12),
         financialFacts: arrayValue(record.financialFacts).slice(0, 10),
         industryFacts: arrayValue(record.industryFacts).slice(0, 10),
@@ -191,8 +192,8 @@ function partitionIndustryPackets(industryPackets, previousScan) {
   const unchanged = [];
   for (const packet of industryPackets) {
     const previous = previousByIndustry.get(packet.industry);
-    if (previous?.evidenceHash && previous.evidenceHash === packet.evidenceHash) unchanged.push({ ...packet, changeStatus: "unchanged" });
-    else changed.push({ ...packet, changeStatus: previous ? "changed" : "new" });
+    if (previous?.evidenceHash && previous.evidenceHash === packet.evidenceHash) unchanged.push({ ...packet, previousSourceCount: previous.sourceCount, changeStatus: "unchanged" });
+    else changed.push({ ...packet, previousSourceCount: previous?.sourceCount, changeStatus: previous ? "changed" : "new" });
   }
   return {
     totalIndustryCount: industryPackets.length,
@@ -216,6 +217,8 @@ function compactIndustryScopeForModel(scope) {
       evidenceTypes: packet.evidenceTypes,
       signalTypes: packet.signalTypes,
       evidenceGaps: packet.evidenceGaps,
+      themes: packet.themes,
+      scores: scoreIndustryPacket(packet),
       note: "本轮已扫描，证据 hash 未变化；可复用上次稳定结论。",
     })),
   };
@@ -231,6 +234,8 @@ function compactIndustryPacket(packet) {
     evidenceTypes: packet.evidenceTypes,
     signalTypes: packet.signalTypes,
     evidenceGaps: packet.evidenceGaps,
+    themes: packet.themes,
+    scores: scoreIndustryPacket(packet),
     sources: packet.sources.slice(0, 8).map((source) => ({
       source: source.source,
       title: trimText(source.title, 140),
@@ -347,6 +352,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const decliningIndustries = reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest);
   const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
+  const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
   const scan = {
     id: stringValue(record.id) || `radar-${generatedAt}`,
     title: stringValue(record.title) || "行业雷达扫描",
@@ -360,17 +366,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     evidenceSources: digest.citations,
     softCoverage: digest.softCoverage,
     coverageReview,
-    industryPackets: [...industryScope.changed, ...industryScope.unchanged].map((packet) => ({
-      group: packet.group,
-      industry: packet.industry,
-      status: packet.status,
-      changeStatus: packet.changeStatus,
-      evidenceHash: packet.evidenceHash,
-      sourceCount: packet.sourceCount,
-      evidenceTypes: packet.evidenceTypes,
-      signalTypes: packet.signalTypes,
-      evidenceGaps: packet.evidenceGaps,
-    })),
+    industryPackets: [...industryScope.changed, ...industryScope.unchanged].map((packet) => normalizeRadarIndustryPacket(packet, stageByIndustry)),
     analysisScope: {
       totalIndustryCount: industryScope.totalIndustryCount,
       changedIndustryCount: industryScope.changed.length,
@@ -439,6 +435,94 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
       changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
     }));
   return [...currentItems, ...reusable];
+}
+
+function buildIndustryStageMap(sections) {
+  const stageByIndustry = new Map();
+  for (const [stage, items] of [
+    ["扎实增长", sections.solidGrowth],
+    ["继续观察", sections.sustainability],
+    ["泡沫风险", sections.bubbleRisks],
+    ["即将增长", sections.upcomingGrowth],
+    ["衰退", sections.decliningIndustries],
+  ]) {
+    for (const item of items) {
+      for (const industry of item.industries ?? []) {
+        if (!stageByIndustry.has(industry)) stageByIndustry.set(industry, stage);
+      }
+    }
+  }
+  return stageByIndustry;
+}
+
+function normalizeRadarIndustryPacket(packet, stageByIndustry) {
+  const scores = scoreIndustryPacket(packet);
+  return {
+    group: packet.group,
+    industry: packet.industry,
+    status: packet.status,
+    changeStatus: packet.changeStatus,
+    stage: stageByIndustry.get(packet.industry) || fallbackIndustryStage(packet, scores),
+    evidenceHash: packet.evidenceHash,
+    sourceCount: packet.sourceCount,
+    evidenceTypes: packet.evidenceTypes,
+    signalTypes: packet.signalTypes,
+    evidenceGaps: packet.evidenceGaps,
+    themes: packet.themes,
+    scores,
+  };
+}
+
+function fallbackIndustryStage(packet, scores) {
+  if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
+  if (scores.declineRisk >= 62) return "衰退";
+  if (scores.bubbleRisk >= 62) return "泡沫风险";
+  if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
+  if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
+  if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
+  return "证据不足";
+}
+
+function scoreIndustryPacket(packet) {
+  const text = [
+    packet.group,
+    packet.industry,
+    ...(packet.themes ?? []),
+    ...packet.signalTypes,
+    ...packet.evidenceGaps,
+    ...packet.sources.map((source) => `${source.title ?? ""} ${source.summary ?? ""}`),
+    ...packet.financialFacts.map((fact) => JSON.stringify(fact)),
+    ...packet.industryFacts.map((fact) => JSON.stringify(fact)),
+    ...packet.companyCandidates.map((candidate) => JSON.stringify(candidate)),
+  ].join(" ");
+  const evidenceWeight = packet.evidenceTypes.reduce((sum, type) => sum + (EVIDENCE_WEIGHTS[type] ?? 1), 0);
+  const structuredFactCount = packet.financialFacts.length + packet.industryFacts.length + packet.companyCandidates.length;
+  const sourceCount = packet.sourceCount ?? 0;
+  const gapPenalty = packet.evidenceGaps.length * 7;
+  const evidence = clampScore(sourceCount * 7 + evidenceWeight * 5 + structuredFactCount * 8 - gapPenalty);
+  const positiveSignals = keywordCount(text, /增长|上涨|改善|扩张|预增|回升|景气|订单|出口|涨价|放量|利润|同比|环比/g);
+  const riskSignals = keywordCount(text, /泡沫|过热|透支|估值|连板|停牌|炒作|拥挤|高估/g);
+  const declineSignals = keywordCount(text, /下滑|亏损|过剩|去库|衰退|萎缩|价格下跌|需求弱|开工率低|减值/g);
+  const hardSignalBonus = packet.signalTypes.filter((signal) => /financial_metric|industry_stat|commodity_price|freight_rate/.test(signal)).length * 9;
+  const changeStatusBonus = packet.changeStatus === "new" ? 18 : packet.changeStatus === "changed" ? 14 : 5;
+  const previousSourceCount = typeof packet.previousSourceCount === "number" ? packet.previousSourceCount : sourceCount;
+  const sourceDelta = sourceCount - previousSourceCount;
+  const growth = clampScore(25 + evidence * 0.34 + hardSignalBonus + positiveSignals * 5 - declineSignals * 4);
+  const momentum = clampScore(22 + changeStatusBonus + Math.max(0, sourceDelta) * 8 + positiveSignals * 4 + sourceCount * 3 - declineSignals * 3);
+  const bubbleRisk = clampScore(12 + riskSignals * 13 + (packet.evidenceTypes.includes("market") ? 18 : 0) + (/机器人|低空|AI应用|商业航天/.test(`${packet.group} ${packet.industry}`) ? 8 : 0));
+  const declineRisk = clampScore(12 + declineSignals * 11 + (/过剩|衰退|地产|光伏|传统/.test(`${packet.group} ${packet.industry}`) ? 18 : 0) + (packet.evidenceGaps.includes("缺销量") ? 4 : 0));
+  const valuationRisk = clampScore(15 + riskSignals * 10 + (packet.evidenceTypes.includes("market") ? 15 : 0) + (bubbleRisk > 60 ? 10 : 0));
+  const confidence = clampScore(evidence + (packet.evidenceTypes.length >= 2 ? 12 : 0) - packet.evidenceGaps.length * 6);
+  const change = clampScore(35 + changeStatusBonus + Math.abs(sourceDelta) * 12 + (packet.changeStatus === "unchanged" ? -12 : 0));
+  return { growth, momentum, evidence, valuationRisk, bubbleRisk, declineRisk, confidence, change };
+}
+
+function keywordCount(text, pattern) {
+  return [...String(text).matchAll(pattern)].length;
+}
+
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function sourceIdsForItem(record, digest) {

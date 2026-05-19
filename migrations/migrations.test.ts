@@ -33,4 +33,18 @@ describe("D1 migrations", () => {
     expect(tableColumns(db, "template_analysis")).toContain("status");
     expect(tableColumns(db, "template_analysis")).toContain("error_message");
   });
+
+  test("radar entity migration creates normalized industry and scoring tables", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0005_radar_entities.sql"))).not.toThrow();
+
+    const industries = tableColumns(db, "industries");
+    const evidenceItems = tableColumns(db, "evidence_items");
+    const indicatorValues = tableColumns(db, "indicator_values");
+    const radarItems = tableColumns(db, "radar_items");
+    for (const column of ["id", "name", "parent_id", "level"]) expect(industries).toContain(column);
+    for (const column of ["source_type", "published_at", "related_industry_id", "related_theme_id", "confidence"]) expect(evidenceItems).toContain(column);
+    for (const column of ["entity_type", "entity_id", "indicator_name", "value", "period"]) expect(indicatorValues).toContain(column);
+    for (const column of ["growth_score", "momentum_score", "evidence_score", "bubble_risk", "decline_risk"]) expect(radarItems).toContain(column);
+  });
 });

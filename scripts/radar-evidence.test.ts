@@ -21,7 +21,7 @@ describe("rolling radar evidence collector", () => {
       financialFacts?: unknown[];
       industryFacts?: unknown[];
       companyCandidates?: unknown[];
-      industryPackets?: Array<{ group?: string; industry?: string; status?: string; evidenceHash?: string; sourceCount?: number; evidenceTypes?: string[]; evidenceGaps?: string[] }>;
+      industryPackets?: Array<{ group?: string; industry?: string; status?: string; evidenceHash?: string; sourceCount?: number; evidenceTypes?: string[]; evidenceGaps?: string[]; themes?: string[] }>;
     };
     const sources = snapshot.sources ?? [];
     const googleSources = sources.filter((source) => source.source === "Google News");
@@ -42,9 +42,10 @@ describe("rolling radar evidence collector", () => {
     expect(snapshot.financialFacts?.length).toBeGreaterThan(0);
     expect(snapshot.industryFacts?.length).toBeGreaterThan(0);
     expect(snapshot.companyCandidates?.length).toBeGreaterThan(0);
-    expect(snapshot.industryPackets?.length).toBeGreaterThanOrEqual(40);
+    expect(snapshot.industryPackets?.length).toBeGreaterThanOrEqual(80);
     expect(snapshot.industryPackets?.every((packet) => packet.status === "scanned" && packet.industry && packet.evidenceHash)).toBe(true);
-    expect(snapshot.industryPackets?.map((packet) => packet.industry)).toEqual(expect.arrayContaining(["半导体/AI算力", "基础化工", "银行", "航空机场"]));
+    expect(snapshot.industryPackets?.map((packet) => packet.industry)).toEqual(expect.arrayContaining(["半导体/AI算力", "存储芯片", "港股互联网平台", "基础化工", "银行", "航空机场"]));
+    expect(snapshot.industryPackets?.some((packet) => packet.themes?.includes("HBM存储"))).toBe(true);
     expect(snapshot.quality).toMatchObject({
       googleNewsShare: expect.any(Number),
       structuredShare: expect.any(Number),
@@ -65,7 +66,7 @@ describe("rolling radar evidence collector", () => {
     const packets = snapshot.industryPackets ?? [];
     const emptyOrWeak = packets.filter((packet) => (packet.sourceCount ?? 0) <= 1);
 
-    expect(packets.length).toBeGreaterThanOrEqual(40);
+    expect(packets.length).toBeGreaterThanOrEqual(80);
     expect(emptyOrWeak.length).toBeGreaterThan(0);
     expect(emptyOrWeak.every((packet) => packet.evidenceHash && Array.isArray(packet.evidenceGaps))).toBe(true);
   });

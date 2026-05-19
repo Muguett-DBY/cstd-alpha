@@ -48,6 +48,7 @@ export type RadarCoverageItem = {
 };
 
 export type RadarCoverageStatus = "formal" | "watched" | "insufficient";
+export type RadarIndustryStage = "扎实增长" | "即将增长" | "泡沫风险" | "衰退" | "平稳现金流" | "继续观察" | "证据不足";
 
 export type RadarAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
 
@@ -75,11 +76,23 @@ export type RadarIndustryPacket = {
   industry: string;
   status: "scanned";
   changeStatus?: "new" | "changed" | "unchanged";
+  stage?: RadarIndustryStage;
   evidenceHash: string;
   sourceCount: number;
   evidenceTypes: RadarEvidenceType[];
   signalTypes: string[];
   evidenceGaps: RadarEvidenceGap[];
+  themes?: string[];
+  scores?: {
+    growth: number;
+    momentum: number;
+    evidence: number;
+    valuationRisk: number;
+    bubbleRisk: number;
+    declineRisk: number;
+    confidence: number;
+    change: number;
+  };
 };
 
 export type RadarAnalysisScope = {

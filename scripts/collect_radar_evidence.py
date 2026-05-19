@@ -84,6 +84,56 @@ FINE_INDUSTRY_TAXONOMY = [
     {"group": "交通运输", "industry": "航空机场", "keywords": ("航空", "机场", "客座率", "航班")},
     {"group": "交通运输", "industry": "快递/供应链", "keywords": ("快递", "供应链", "物流", "仓储")},
 ]
+FINE_INDUSTRY_TAXONOMY.extend(
+    [
+        {"group": "科技成长", "industry": "存储芯片", "keywords": ("存储", "DRAM", "NAND", "HBM", "内存", "闪存"), "themes": ("HBM存储", "存储涨价", "AI服务器")},
+        {"group": "科技成长", "industry": "AI算力芯片", "keywords": ("AI芯片", "GPU", "ASIC", "推理芯片", "算力芯片"), "themes": ("国产算力", "AI服务器", "推理芯片")},
+        {"group": "科技成长", "industry": "光模块/CPO", "keywords": ("光模块", "CPO", "800G", "1.6T", "光通信"), "themes": ("光模块升级", "AI数据中心")},
+        {"group": "科技成长", "industry": "PCB/服务器链", "keywords": ("PCB", "覆铜板", "服务器", "交换机", "高速铜缆"), "themes": ("AI服务器", "高速互联")},
+        {"group": "科技成长", "industry": "晶圆代工/封测", "keywords": ("晶圆代工", "封测", "先进封装", "Chiplet"), "themes": ("先进封装", "国产替代")},
+        {"group": "科技成长", "industry": "港股互联网平台", "keywords": ("港股互联网", "平台经济", "回购", "广告", "电商", "腾讯", "阿里", "美团"), "themes": ("港股互联网回购", "平台经济修复")},
+        {"group": "科技成长", "industry": "港股电讯", "keywords": ("港股电讯", "运营商", "中移动", "中电信", "中联通", "派息"), "themes": ("高股息央企", "港股电讯")},
+        {"group": "高端制造", "industry": "低空经济", "keywords": ("低空经济", "eVTOL", "无人机", "飞行汽车"), "themes": ("低空经济", "商业化落地")},
+        {"group": "高端制造", "industry": "商业航天", "keywords": ("商业航天", "卫星", "火箭", "星链", "卫星互联网"), "themes": ("商业航天", "卫星互联网")},
+        {"group": "高端制造", "industry": "工程机械", "keywords": ("工程机械", "挖掘机", "叉车", "起重机", "海外收入"), "themes": ("制造业出海", "设备更新")},
+        {"group": "高端制造", "industry": "工业母机/机床", "keywords": ("工业母机", "机床", "数控", "刀具", "五轴"), "themes": ("国产替代", "设备更新")},
+        {"group": "高端制造", "industry": "船舶制造", "keywords": ("船舶", "造船", "手持订单", "新船价格", "船厂"), "themes": ("船舶周期", "订单交付")},
+        {"group": "新能源", "industry": "光伏硅料", "keywords": ("硅料", "多晶硅", "工业硅", "硅料价格"), "themes": ("光伏出清", "硅料价格")},
+        {"group": "新能源", "industry": "光伏组件", "keywords": ("组件", "电池片", "TOPCon", "BC电池", "组件价格"), "themes": ("光伏出清", "技术迭代")},
+        {"group": "新能源", "industry": "逆变器", "keywords": ("逆变器", "户储", "组串式", "微逆"), "themes": ("储能出海", "逆变器库存")},
+        {"group": "新能源", "industry": "风电", "keywords": ("风电", "海风", "陆风", "风机", "海缆"), "themes": ("海风开工", "装机复苏")},
+        {"group": "新能源", "industry": "锂矿/锂盐", "keywords": ("锂矿", "锂盐", "碳酸锂", "氢氧化锂"), "themes": ("锂价反弹", "库存变化")},
+        {"group": "新能源", "industry": "锂电池/材料", "keywords": ("锂电池", "正极", "负极", "隔膜", "电解液"), "themes": ("储能需求", "产能过剩")},
+        {"group": "新能源", "industry": "固态/钠电池", "keywords": ("固态电池", "钠电池", "半固态", "硫化物"), "themes": ("固态电池", "技术突破")},
+        {"group": "新能源", "industry": "电网设备", "keywords": ("电网设备", "特高压", "变压器", "电表", "配网"), "themes": ("电网投资", "AI用电")},
+        {"group": "医药医疗", "industry": "港股创新药", "keywords": ("港股创新药", "license out", "出海", "临床", "药明", "百济"), "themes": ("创新药出海", "BD交易")},
+        {"group": "医药医疗", "industry": "CXO", "keywords": ("CXO", "CDMO", "CRO", "订单", "投融资"), "themes": ("医药投融资", "订单恢复")},
+        {"group": "医药医疗", "industry": "医药商业/药店", "keywords": ("药店", "医药商业", "集采", "处方外流"), "themes": ("集采影响", "消费医疗")},
+        {"group": "消费", "industry": "白酒", "keywords": ("白酒", "批价", "库存", "动销", "茅台"), "themes": ("白酒批价", "消费复苏")},
+        {"group": "消费", "industry": "食品饮料", "keywords": ("食品饮料", "啤酒", "乳制品", "调味品", "休闲食品"), "themes": ("消费复苏", "成本改善")},
+        {"group": "消费", "industry": "纺织服装", "keywords": ("纺织", "服装", "运动鞋服", "出口", "品牌"), "themes": ("品牌出海", "消费复苏")},
+        {"group": "消费", "industry": "港股消费/博彩", "keywords": ("港股消费", "博彩", "澳门", "客流", "免税"), "themes": ("港股博彩", "旅游恢复")},
+        {"group": "金融地产", "industry": "港股银行/保险", "keywords": ("港股银行", "港股保险", "息差", "新业务价值", "分红"), "themes": ("高股息", "保险复苏")},
+        {"group": "金融地产", "industry": "地产开发", "keywords": ("地产开发", "销售面积", "拿地", "保交楼", "房价"), "themes": ("地产链修复", "政策托底")},
+        {"group": "金融地产", "industry": "港股物业", "keywords": ("港股物业", "物管", "在管面积", "收缴率"), "themes": ("物业现金流", "地产链压力")},
+        {"group": "金融地产", "industry": "AH折溢价", "keywords": ("AH溢价", "AH折价", "两地上市", "港股通"), "themes": ("AH折溢价", "南向资金")},
+        {"group": "周期资源", "industry": "铜/铝", "keywords": ("铜", "铝", "LME", "沪铜", "电解铝"), "themes": ("铜价上涨", "库存低位")},
+        {"group": "周期资源", "industry": "黄金/贵金属", "keywords": ("黄金", "白银", "贵金属", "金价"), "themes": ("金价上涨", "避险")},
+        {"group": "周期资源", "industry": "稀土/钨钼", "keywords": ("稀土", "钨", "钼", "小金属", "出口管制"), "themes": ("战略金属", "出口管制")},
+        {"group": "周期资源", "industry": "钢铁长材/板材", "keywords": ("螺纹钢", "热卷", "钢材", "铁水", "钢厂利润"), "themes": ("钢铁复苏", "地产需求")},
+        {"group": "周期资源", "industry": "水泥玻璃", "keywords": ("水泥", "玻璃", "熟料", "浮法", "开工率"), "themes": ("建材复苏", "产能出清")},
+        {"group": "周期资源", "industry": "化工品", "keywords": ("纯碱", "烧碱", "MDI", "尿素", "钛白粉"), "themes": ("化工价差", "库存周期")},
+        {"group": "交通物流", "industry": "集运/油运", "keywords": ("集运", "油运", "VLCC", "欧线", "运价期货"), "themes": ("航运旺季", "红海扰动")},
+        {"group": "交通物流", "industry": "港口", "keywords": ("港口", "吞吐量", "集装箱", "外贸"), "themes": ("出口链", "港口吞吐")},
+        {"group": "公用事业/高股息", "industry": "煤电/火电", "keywords": ("火电", "煤电", "电价", "容量电价"), "themes": ("高股息央企", "电价机制")},
+        {"group": "公用事业/高股息", "industry": "核电", "keywords": ("核电", "核准", "装机", "利用小时"), "themes": ("核电核准", "稳定现金流")},
+        {"group": "公用事业/高股息", "industry": "高速公路", "keywords": ("高速公路", "通行费", "车流量", "分红"), "themes": ("高股息", "车流恢复")},
+    ]
+)
+existing_topic_names = {topic for topic, _, _ in TOPIC_QUERIES}
+for taxonomy_item in FINE_INDUSTRY_TAXONOMY:
+    if taxonomy_item["industry"] not in existing_topic_names:
+        TOPIC_QUERIES.append((taxonomy_item["industry"], f"{taxonomy_item['industry']} {' '.join(taxonomy_item['keywords'][:6])} 财报 价格 销量 订单", "news"))
 
 SOURCE_WEIGHTS = {
     "hard_data": 5,
@@ -1401,6 +1451,7 @@ def industry_packets_from_sources(
             "sourceCount": len(matched_sources),
             "evidenceTypes": evidence_types,
             "signalTypes": signal_types,
+            "themes": list(taxonomy.get("themes", ())),
             "sources": [
                 compact_dict(
                     {

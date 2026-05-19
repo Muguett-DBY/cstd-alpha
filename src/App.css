@@ -3075,6 +3075,403 @@ button:not(:disabled):active,
   flex: 0 0 auto;
 }
 
+.radar-change-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.radar-change-flow article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfbf8;
+}
+
+.radar-change-flow span,
+.radar-change-flow strong,
+.radar-change-flow small {
+  overflow-wrap: anywhere;
+}
+
+.radar-change-flow span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-change-flow strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.radar-change-flow i {
+  position: relative;
+  height: 2px;
+  background: var(--line);
+}
+
+.radar-change-flow i::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left-color: var(--line);
+}
+
+.radar-change-flow small {
+  grid-column: 1 / -1;
+  color: var(--body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.radar-flow-added {
+  border-left-color: var(--teal) !important;
+}
+
+.radar-flow-upgraded {
+  border-left-color: var(--blue) !important;
+}
+
+.radar-flow-downgraded {
+  border-left-color: var(--red) !important;
+}
+
+.radar-flow-maintained {
+  border-left-color: var(--amber) !important;
+}
+
+.radar-market-overview {
+  display: grid;
+  gap: 16px;
+}
+
+.radar-market-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 14px;
+}
+
+.radar-heatmap {
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(85, 112, 138, 0.08), rgba(209, 68, 46, 0.08)),
+    linear-gradient(0deg, rgba(15, 118, 110, 0.06), rgba(141, 75, 179, 0.09)),
+    #fbfbf8;
+}
+
+.radar-heatmap::before,
+.radar-heatmap::after {
+  content: "";
+  position: absolute;
+  background: rgba(18, 20, 23, 0.12);
+}
+
+.radar-heatmap::before {
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+}
+
+.radar-heatmap::after {
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+}
+
+.radar-heatmap-axis {
+  position: absolute;
+  z-index: 2;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-heatmap-axis.y-axis {
+  left: 12px;
+  top: 12px;
+}
+
+.radar-heatmap-axis.x-axis {
+  right: 12px;
+  bottom: 10px;
+}
+
+.radar-heatmap-quadrants {
+  position: absolute;
+  inset: 36px 16px 32px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  pointer-events: none;
+}
+
+.radar-heatmap-quadrants span {
+  color: rgba(18, 20, 23, 0.4);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-heatmap-quadrants span:nth-child(2),
+.radar-heatmap-quadrants span:nth-child(4) {
+  text-align: right;
+}
+
+.radar-heatmap-quadrants span:nth-child(3),
+.radar-heatmap-quadrants span:nth-child(4) {
+  align-self: end;
+}
+
+.radar-heatmap-dot {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 999px;
+  background: var(--stage-color);
+  box-shadow: 0 8px 20px rgba(18, 20, 23, 0.16);
+  color: transparent;
+  text-decoration: none;
+  transform: translate(-50%, -50%);
+}
+
+.radar-heatmap-dot:hover,
+.radar-heatmap-dot:focus-visible {
+  z-index: 5;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: white;
+}
+
+.radar-heatmap-dot span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.stage-growth {
+  --stage-color: #d1442e;
+  --stage-soft: #fff0ed;
+}
+
+.stage-upcoming {
+  --stage-color: #d07810;
+  --stage-soft: #fff5df;
+}
+
+.stage-bubble {
+  --stage-color: #8d4bb3;
+  --stage-soft: #f8edff;
+}
+
+.stage-decline {
+  --stage-color: #55708a;
+  --stage-soft: #edf3f8;
+}
+
+.stage-stable {
+  --stage-color: #0f766e;
+  --stage-soft: #e6f4f1;
+}
+
+.stage-watch {
+  --stage-color: #2f5f98;
+  --stage-soft: #eaf4ff;
+}
+
+.stage-weak {
+  --stage-color: #8c98a4;
+  --stage-soft: #f1f2f1;
+}
+
+.radar-stage-buckets {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbf8;
+}
+
+.radar-stage-bucket {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+}
+
+.radar-stage-bucket summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  cursor: pointer;
+  padding: 10px;
+  list-style: none;
+}
+
+.radar-stage-bucket summary::-webkit-details-marker {
+  display: none;
+}
+
+.radar-stage-bucket summary span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.radar-stage-bucket summary strong {
+  color: var(--stage-color);
+}
+
+.radar-stage-bucket summary i {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--stage-color);
+}
+
+.radar-stage-bucket > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding: 9px;
+  background: var(--stage-soft);
+}
+
+.radar-stage-bucket a {
+  border: 1px solid color-mix(in srgb, var(--stage-color) 28%, var(--line));
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.radar-stage-bucket small {
+  margin-left: 5px;
+  color: var(--muted);
+}
+
+.radar-top-lists {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.radar-top-lists article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbf8;
+}
+
+.radar-top-lists h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.radar-top-lists ol {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.radar-top-lists li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--body);
+  font-size: 13px;
+}
+
+.radar-top-lists li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radar-top-lists li strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-stage-label {
+  display: inline-flex;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #eef3f1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-card-mini-charts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.radar-card-mini-charts div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: white;
+}
+
+.radar-card-mini-charts span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.radar-card-mini-charts strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-card-mini-charts i {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--teal), var(--amber));
+}
+
 @keyframes button-spin {
   to {
     transform: rotate(360deg);
@@ -3132,7 +3529,10 @@ button:not(:disabled):active,
   .radar-meta,
   .radar-round-changes-head,
   .radar-round-change-grid,
+  .radar-change-flow,
   .radar-brief-main,
+  .radar-market-layout,
+  .radar-top-lists,
   .radar-signal-bars,
   .radar-focus-grid,
   .evidence-tier-grid,
@@ -3146,6 +3546,7 @@ button:not(:disabled):active,
   .radar-columns,
   .radar-card-insights,
   .radar-card-meters,
+  .radar-card-mini-charts,
   .template-grid {
     grid-template-columns: 1fr;
   }
@@ -3306,6 +3707,15 @@ button:not(:disabled):active,
   .radar-section-nav {
     top: 8px;
     margin-inline: -2px;
+  }
+
+  .radar-heatmap {
+    min-height: 360px;
+  }
+
+  .radar-top-lists article {
+    max-height: 320px;
+    overflow: auto;
   }
 
   .radar-card header {
