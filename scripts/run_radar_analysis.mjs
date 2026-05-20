@@ -978,7 +978,7 @@ function buildRadarD1Sql(radar, evidence, jobId) {
       `INSERT OR REPLACE INTO indicator_values (id, entity_type, entity_id, indicator_name, value, period, source, created_at) VALUES (${sql(safeId(`${runId}_${industryId}_${metric}_${stringValue(fact.company)}_${stringValue(fact.publishedAt)}`))}, 'industry', ${sql(industryId)}, ${sql(metric)}, ${numberSql(value)}, ${sql(stringValue(fact.publishedAt) || radar.asOfDate)}, ${sql(stringValue(fact.source) || "evidence")}, ${sql(radar.generatedAt)});`,
     );
   }
-  return `BEGIN TRANSACTION;\n${statements.join("\n")}\nCOMMIT;\n`;
+  return `${statements.join("\n")}\n`;
 }
 
 function inferRadarTopicFromText(text) {
