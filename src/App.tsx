@@ -124,10 +124,10 @@ function App() {
   }, [selectedCompany]);
 
   useEffect(() => {
-    if (activeView !== "radar" || radar || radarPhase !== "idle") return;
+    if (!authenticated || activeView !== "radar" || radar || radarPhase !== "idle") return;
     const id = window.setTimeout(() => void loadRadar(false), 0);
     return () => window.clearTimeout(id);
-  }, [activeView, loadRadar, radar, radarPhase]);
+  }, [activeView, authenticated, loadRadar, radar, radarPhase]);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event: Event) => {
@@ -171,6 +171,8 @@ function App() {
       const session = await login(password, username);
       setUser(session);
       setAuthenticated(true);
+      setRadarError("");
+      if (activeView === "radar" && !radar) setRadarPhase("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败。");
     }
