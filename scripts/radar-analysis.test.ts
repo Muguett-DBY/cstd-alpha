@@ -43,8 +43,9 @@ describe("background radar analyzer", () => {
         generatedAt?: string;
         model?: string;
         sourceCount?: number;
-        solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidenceGaps?: string[] }>;
+        solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[] }>;
         sustainability?: Array<{ title?: string; changeReason?: string }>;
+        bubbleRisks?: Array<{ companies?: string[] }>;
         evidenceSources?: Array<{ id?: string; source?: string; signalType?: string }>;
         industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string; stage?: string; scores?: { growth?: number; evidence?: number; bubbleRisk?: number } }>;
         coverageReview?: Array<{ label?: string; sourceCount?: number; sourceIds?: string[] }>;
@@ -59,7 +60,9 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.sourceCount).toBeGreaterThanOrEqual(5);
     expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["百济神州"]);
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
-    expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual([]);
+    expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
+    expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
+    expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
     expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 6, changedIndustryCount: 5, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
@@ -210,7 +213,7 @@ function evidenceSnapshot() {
       url: "https://anysearch.example.com/storage",
       publishedAt: "2026-05-19T00:00:00Z",
       summary: "外部搜索发现价格和订单线索，仍需硬数据交叉验证。",
-      sourceType: "official",
+      sourceType: "news",
       signalType: "external_search",
       weight: 4,
       industry: "存储芯片",
@@ -259,7 +262,7 @@ function evidenceSnapshot() {
       { group: "高景气成长", industry: "汽车/智能驾驶", status: "scanned", evidenceHash: "hash-auto", sourceCount: 1, evidenceTypes: ["official"], signalTypes: ["industry_stat"], evidenceGaps: ["缺财报"], sources: [sources[2]], financialFacts: [], industryFacts: [{ industry: "汽车/智能驾驶" }], companyCandidates: [] },
       { group: "周期品", industry: "战略有色金属", status: "scanned", evidenceHash: "hash-metal", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["commodity_price"], evidenceGaps: ["缺财报"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
-      { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["official"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["news"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "过剩/衰退", industry: "光伏产业链", status: "scanned", evidenceHash: "hash-pv", sourceCount: 1, evidenceTypes: ["market"], signalTypes: ["financial_metric"], evidenceGaps: [], sources: [sources[6]], financialFacts: [], industryFacts: [], companyCandidates: [] },
     ],
   };
@@ -328,8 +331,8 @@ function modelOutput() {
         companies: ["百济神州", "Micron"],
         thesis: "营收增长和净利润拐点由公司财报直接验证。",
         drivers: ["商业化收入扩张", "费用率改善"],
-        evidence: ["S1 财报数据"],
-        sourceIds: ["S1"],
+        evidence: ["S1 财报数据", "净利润同比+42653%"],
+        sourceIds: ["S6"],
         evidenceTypes: ["announcement"],
         supportingSourceCount: 1,
         conclusionStrength: "正式结论",
@@ -344,7 +347,28 @@ function modelOutput() {
       },
     ],
     sustainability: [],
-    bubbleRisks: [],
+    bubbleRisks: [
+      {
+        title: "低空经济概念超前",
+        industries: ["低空经济"],
+        companies: ["万丰奥威(002085.SZ)", "亿航智能(EH.O)"],
+        thesis: "海外公司只能作为产业证据，不能进入代表公司。",
+        drivers: ["主题催化"],
+        evidence: ["S6 外部搜索线索"],
+        sourceIds: ["S6"],
+        evidenceTypes: ["news"],
+        supportingSourceCount: 1,
+        conclusionStrength: "观察",
+        evidenceGaps: [],
+        driverTags: ["政策"],
+        sustainabilityTier: "短期催化",
+        confidence: "中",
+        durability: "短期",
+        riskLevel: "高",
+        counterEvidenceConditions: ["订单兑现"],
+        turningPoints: ["监管变化"],
+      },
+    ],
     upcomingGrowth: [],
     decliningIndustries: [
       {

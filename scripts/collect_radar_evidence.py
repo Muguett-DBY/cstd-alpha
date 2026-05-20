@@ -35,7 +35,7 @@ ANYSEARCH_EVIDENCE_PROFILES = [
     {
         "profile": "industry_data",
         "terms": "价格 库存 产能 销量 开工率 运价 装机 出口 同比 环比",
-        "sourceType": "official",
+        "sourceType": "news",
         "domains": ("finance", "business"),
         "contentTypes": ("data", "news", "web"),
         "freshness": "week",
@@ -44,7 +44,7 @@ ANYSEARCH_EVIDENCE_PROFILES = [
     {
         "profile": "announcement",
         "terms": "财报 业绩预告 业绩快报 经营现金流 毛利率 净利润 营收 订单",
-        "sourceType": "official",
+        "sourceType": "news",
         "domains": ("finance", "business"),
         "contentTypes": ("doc", "data", "news", "web"),
         "freshness": "month",
@@ -53,7 +53,7 @@ ANYSEARCH_EVIDENCE_PROFILES = [
     {
         "profile": "policy",
         "terms": "政策 监管 文件 出口管制 集采 补贴 审批 核准",
-        "sourceType": "official",
+        "sourceType": "news",
         "domains": ("business", "legal"),
         "contentTypes": ("doc", "news", "web"),
         "freshness": "month",

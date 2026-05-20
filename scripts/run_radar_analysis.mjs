@@ -45,6 +45,7 @@ const NON_AH_PATTERNS = [
   /英特尔|Intel/i,
   /三星|Samsung/i,
   /SK海力士|SK Hynix|Hynix/i,
+  /\([A-Z]{1,6}\.(O|N|NASDAQ|NYSE|US)\)/i,
 ];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
@@ -119,6 +120,7 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
             "强观察可以使用行业硬数据加公司候选，但必须写清仍缺什么证据。",
             "弱线索只进入 coverageReview 或 limitations，不进入正式结论区。",
             "代表公司只能列 A 股或港股上市公司；海外公司只能作为产业证据出现，不能进入 companies、representativeCompanies、stageCompanies。",
+            "净利润同比超过 1000% 必须按低基数或一次性修复处理，不能单独证明扎实增长；必须同时看营收、毛利率、经营现金流和行业硬数据。",
             "每个行业条目必须引用 sourceIds，绑定 evidenceDigest.citations 中的 S1/S2 等证据编号。",
             "每个结论必须写反证条件：什么价格、销量、订单、财报、政策或供给信号出现后应撤销判断。",
             "输出必须包含本次 vs 上次：新增、升级、降级、维持、撤销。",
@@ -461,15 +463,16 @@ function radarItems(value, previousTitles, digest) {
       if (!title) return null;
       const confidence = enumValue(record.confidence, ["低", "中", "高"], "中");
       const sourceIds = sourceIdsForItem(record, digest);
+      const normalizedEvidence = stringArray(record.evidence).slice(0, 8).map(formatExtremePercentEvidence);
       return {
         title,
         industries: stringArray(record.industries).slice(0, 5),
         companies: ahCompanies(record.companies).slice(0, 6),
         thesis: stringValue(record.thesis),
         drivers: stringArray(record.drivers).slice(0, 8),
-        evidence: stringArray(record.evidence).slice(0, 8),
+        evidence: normalizedEvidence,
         conclusionStrength: enumValue(record.conclusionStrength, CONCLUSION_STRENGTHS, confidence === "高" ? "正式结论" : "观察"),
-        evidenceGaps: enumArray(record.evidenceGaps, EVIDENCE_GAPS),
+        evidenceGaps: evidenceGapsForItem(record, normalizedEvidence),
         driverTags: enumArray(record.driverTags, DRIVER_TAGS),
         sustainabilityTier: enumValue(record.sustainabilityTier, SUSTAINABILITY_TIERS, "中期景气"),
         durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
@@ -598,15 +601,58 @@ function clampScore(value) {
 
 function sourceIdsForItem(record, digest) {
   const valid = new Set(digest.citations.map((source) => source.id));
-  const explicit = stringArray(record.sourceIds).filter((id) => valid.has(id)).slice(0, 5);
-  if (explicit.length) return explicit;
-  const text = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.companies)].join(" ");
-  return digest.citations
-    .map((source) => ({ id: source.id, score: keywordOverlapScore(text, `${source.title} ${source.summary ?? ""} ${source.query}`) + source.weight }))
-    .filter((source) => source.score > 1)
+  const text = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.companies), ...stringArray(record.evidence)].join(" ");
+  const companyNames = ahCompanies(record.companies).map(stripTicker).filter((company) => company.length >= 2);
+  const companyMatched = digest.citations
+    .map((source) => {
+      const sourceText = `${source.company ?? ""} ${source.title} ${source.summary ?? ""} ${source.query}`;
+      const matched = companyNames.some((company) => sourceText.includes(company));
+      return { id: source.id, matched, score: source.weight + keywordOverlapScore(text, sourceText) };
+    })
+    .filter((source) => source.matched)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((source) => source.id);
+  const evidenceMentioned = unique(stringArray(record.evidence).flatMap((line) => [...String(line).matchAll(/\bS\d+\b/g)].map((match) => match[0]))).filter((id) => valid.has(id));
+  const explicit = stringArray(record.sourceIds)
+    .filter((id) => valid.has(id))
+    .map((id) => digest.citations.find((source) => source.id === id))
+    .filter(Boolean)
+    .filter((source) => keywordOverlapScore(text, `${source.title} ${source.summary ?? ""} ${source.query}`) > 0)
+    .map((source) => source.id);
+  const inferred = digest.citations
+    .map((source) => {
+      const overlap = keywordOverlapScore(text, `${source.title} ${source.summary ?? ""} ${source.query}`);
+      return { id: source.id, overlap, score: overlap * 10 + source.weight };
+    })
+    .filter((source) => source.overlap > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, 4)
     .map((source) => source.id);
+  return unique([...companyMatched, ...evidenceMentioned, ...inferred, ...explicit]).slice(0, 5);
+}
+
+function formatExtremePercentEvidence(text) {
+  return String(text).replace(/同比\s*([+-]?\d+(?:\.\d+)?)%/g, (match, rawValue) => {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value) || Math.abs(value) < 1000) return match;
+    const sign = value > 0 ? "+" : "";
+    return `同比大幅变化（原始${sign}${value}%，低基数/一次性因素需核验）`;
+  });
+}
+
+function evidenceGapsForItem(record, evidence) {
+  const gaps = enumArray(record.evidenceGaps, EVIDENCE_GAPS);
+  const text = [record.title, record.thesis, ...stringArray(record.drivers), ...evidence].join(" ");
+  if (/低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test(text)) {
+    if (!/现金流|经营现金流|OCF/i.test(text)) gaps.push("缺现金流");
+    if (!/价格|销量|订单|库存|产能|多源|行业硬数据/.test(text)) gaps.push("缺多源验证");
+  }
+  return unique(gaps);
+}
+
+function stripTicker(company) {
+  return String(company).replace(/\s*\([^)]*\)\s*/g, "").trim();
 }
 
 function radarCoverageReview(value, digest, formalItems) {
