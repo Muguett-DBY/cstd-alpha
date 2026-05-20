@@ -98,7 +98,7 @@ describe("background radar analyzer", () => {
       { stdio: "pipe" },
     );
 
-    const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { messages?: Array<{ content?: string }> };
+    const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { reasoning_effort?: string; messages?: Array<{ content?: string }> };
     const dynamicPayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: unknown[]; packets?: unknown[] };
       analysisScope?: { changedIndustryPackets?: Array<{ scores?: unknown }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
@@ -106,6 +106,7 @@ describe("background radar analyzer", () => {
       previousScan?: { id?: string };
     };
 
+    expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
     expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(4);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(3);

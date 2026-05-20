@@ -98,6 +98,7 @@ async function main() {
 function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, industryScope) {
   return {
     model: DEEPSEEK_MODEL,
+    reasoning_effort: "max",
     response_format: { type: "json_object" },
     stream: false,
     temperature: 0.12,

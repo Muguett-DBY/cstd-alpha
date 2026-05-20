@@ -5,6 +5,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,9 @@ MAX_SINGLE_SOURCE_SHARE = 0.38
 MIN_GOOGLE_NEWS_SOURCES = 18
 MIN_STRUCTURED_SOURCES = 80
 MIN_UNIQUE_SOURCES = 3
+ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search"
+ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "72"))
+ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "3"))
 
 TOPIC_QUERIES = [
     ("半导体/AI算力", "存储芯片 DRAM NAND HBM AI 服务器 价格 库存", "hard_data"),
@@ -372,6 +376,7 @@ def collect_sources() -> list[dict[str, Any]]:
         ("eastmoney", fetch_eastmoney_boards),
         ("sina_boards", fetch_sina_boards),
         ("google_news", fetch_google_news),
+        ("anysearch", fetch_anysearch),
         ("akshare", fetch_akshare),
         ("baostock", fetch_baostock),
     ]:
@@ -733,6 +738,105 @@ def fetch_google_news() -> list[dict[str, Any]]:
     return sources
 
 
+def fetch_anysearch() -> list[dict[str, Any]]:
+    api_key = os.environ.get("ANYSEARCH_API_KEY", "").strip().replace("\\_", "_")
+    if not api_key:
+        print("collector_warning anysearch: ANYSEARCH_API_KEY not configured; skipping supplemental search")
+        return []
+    sources: list[dict[str, Any]] = []
+    for query_plan in anysearch_query_plans()[:ANYSEARCH_MAX_QUERIES]:
+        request_body = {
+            "query": query_plan["query"],
+            "max_results": ANYSEARCH_RESULTS_PER_QUERY,
+            "domains": query_plan["domains"],
+            "content_types": query_plan["contentTypes"],
+            "zone": "cn",
+            "language": "zh-CN",
+            "constraint": {"freshness": "month"},
+        }
+        try:
+            payload = post_json(ANYSEARCH_API_URL, request_body, {"Authorization": f"Bearer {api_key}"})
+        except Exception as exc:
+            print(f"collector_warning anysearch.{query_plan['industry']}: {type(exc).__name__}: {str(exc)[:180]}")
+            continue
+        sources.extend(anysearch_sources_from_payload(payload, query_plan))
+    return sources
+
+
+def anysearch_query_plans() -> list[dict[str, Any]]:
+    plans: list[dict[str, Any]] = []
+    for taxonomy in FINE_INDUSTRY_TAXONOMY:
+        industry = taxonomy["industry"]
+        keywords = " ".join(taxonomy["keywords"][:6])
+        domains = anysearch_domains_for_group(taxonomy["group"], industry)
+        content_types = ["news", "web", "data"]
+        if "政策" in keywords or taxonomy["group"] in ("金融地产", "医药医疗"):
+            content_types.append("doc")
+        plans.append(
+            {
+                "industry": industry,
+                "group": taxonomy["group"],
+                "query": f"{industry} {keywords} 最新 财报 价格 销量 订单 政策 风险 A股 港股",
+                "domains": domains,
+                "contentTypes": unique_strings(content_types),
+                "sourceType": "official" if any(domain in domains for domain in ("energy", "health", "legal")) else "news",
+            }
+        )
+    return plans
+
+
+def anysearch_domains_for_group(group: str, industry: str) -> list[str]:
+    text = f"{group} {industry}"
+    domains = ["finance", "business"]
+    if any(word in text for word in ("能源", "电力", "光伏", "锂", "煤", "石油", "储能", "风电")):
+        domains.append("energy")
+    if any(word in text for word in ("医药", "医疗", "创新药", "CXO")):
+        domains.append("health")
+    if any(word in text for word in ("金融", "地产", "银行", "保险", "政策", "监管")):
+        domains.append("legal")
+    return unique_strings(domains)
+
+
+def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    record = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    results = record.get("results") if isinstance(record.get("results"), list) else []
+    sources: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        title = clean_text(result.get("title"))
+        url = clean_text(result.get("url"))
+        if not title or not url:
+            continue
+        description = clean_text(result.get("description"))
+        content = trim_text(result.get("content"), 700)
+        source_type = clean_text(query_plan.get("sourceType")) or "news"
+        sources.append(
+            compact_dict(
+                {
+                    "source": "AnySearch",
+                    "query": query_plan["query"],
+                    "title": title,
+                    "url": url,
+                    "publishedAt": clean_text(result.get("published_at")),
+                    "summary": trim_text(f"{description} {content}", 900),
+                    "sourceType": source_type if source_type in ("news", "official") else "news",
+                    "signalType": "external_search",
+                    "weight": SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["news"]),
+                    "topic": query_plan["industry"],
+                    "industry": query_plan["industry"],
+                    "qualityScore": numeric(result.get("quality_score")),
+                    "anysearchScore": numeric(result.get("score")),
+                    "anysearchSource": clean_text(result.get("source")),
+                    "anysearchRequestId": clean_text(metadata.get("request_id")),
+                    "cached": metadata.get("cached") if isinstance(metadata.get("cached"), bool) else False,
+                }
+            )
+        )
+    return sources
+
+
 def fetch_akshare() -> list[dict[str, Any]]:
     try:
         import akshare as ak  # type: ignore[import-not-found]
@@ -1054,7 +1158,49 @@ def fixture_sources() -> list[dict[str, Any]]:
                 "weight": SOURCE_WEIGHTS["market"],
             }
         )
+    sources.extend(fixture_anysearch_sources())
     return sources
+
+
+def fixture_anysearch_sources() -> list[dict[str, Any]]:
+    return [
+        {
+            "source": "AnySearch",
+            "query": "存储芯片 HBM DRAM NAND 最新 财报 价格 销量 订单 政策 风险 A股 港股",
+            "title": "存储芯片价格和 A/H 产业链订单线索被多源提及",
+            "url": "https://anysearch.example.com/radar/storage",
+            "publishedAt": "2026-05-19T00:00:00Z",
+            "summary": "AnySearch 外部搜索线索：用于发现存储芯片涨价、订单和公司候选，不替代财报或价格硬数据。",
+            "sourceType": "news",
+            "signalType": "external_search",
+            "weight": SOURCE_WEIGHTS["news"],
+            "topic": "存储芯片",
+            "industry": "存储芯片",
+            "qualityScore": 0.91,
+            "anysearchScore": 0.86,
+            "anysearchSource": "news",
+            "anysearchRequestId": "req_fixture_storage",
+            "cached": True,
+        },
+        {
+            "source": "AnySearch",
+            "query": "创新药 出海 license out 审批 最新 财报 价格 销量 订单 政策 风险 A股 港股",
+            "title": "创新药出海和审批进展形成补充搜索线索",
+            "url": "https://anysearch.example.com/radar/biotech",
+            "publishedAt": "2026-05-19T00:00:00Z",
+            "summary": "AnySearch 外部搜索线索：用于发现 BD 交易、审批和商业化变化，需要财报公告交叉验证。",
+            "sourceType": "official",
+            "signalType": "external_search",
+            "weight": SOURCE_WEIGHTS["official"],
+            "topic": "创新药/医疗服务",
+            "industry": "创新药/医疗服务",
+            "qualityScore": 0.88,
+            "anysearchScore": 0.82,
+            "anysearchSource": "doc",
+            "anysearchRequestId": "req_fixture_biotech",
+            "cached": True,
+        },
+    ]
 
 
 def fixture_financial_sources() -> list[dict[str, Any]]:
@@ -1228,7 +1374,14 @@ def classify_source(source: dict[str, Any]) -> dict[str, Any]:
         text_value = clean_text(source.get(key))
         if text_value:
             item[key] = text_value
+    for key in ("topic", "anysearchSource", "anysearchRequestId"):
+        text_value = clean_text(source.get(key))
+        if text_value:
+            item[key] = text_value
     for key in ("value", "yoy", "metrics"):
+        if key in source and source.get(key) is not None:
+            item[key] = source.get(key)
+    for key in ("qualityScore", "anysearchScore", "cached"):
         if key in source and source.get(key) is not None:
             item[key] = source.get(key)
     item["score"] = score_source(item)
@@ -1577,6 +1730,19 @@ def read_text(url: str) -> str:
 
 def read_json(url: str) -> dict[str, Any]:
     return json.loads(read_text(url))
+
+
+def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
+    request_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; CSTDAlphaEvidenceBot/1.0; +https://alpha.custard.top)",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    request_headers.update(headers or {})
+    request = Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers=request_headers, method="POST")
+    with urlopen(request, timeout=25) as response:
+        data = response.read()
+    return json.loads(data.decode("utf-8"))
 
 
 def parse_js_object(text: str) -> dict[str, Any]:

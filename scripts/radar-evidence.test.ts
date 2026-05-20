@@ -115,6 +115,29 @@ describe("rolling radar evidence collector", () => {
     });
   });
 
+  test("includes AnySearch as a supplemental source family without treating it as hard data", () => {
+    const script = "scripts/collect_radar_evidence.py";
+    const workflow = ".github/workflows/radar-evidence.yml";
+    const source = readFileSync(script, "utf8");
+    const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
+
+    expect(source).toContain("ANYSEARCH_API_KEY");
+    expect(readFileSync(workflow, "utf8")).toContain("ANYSEARCH_API_KEY");
+
+    execFileSync("python", [script, "--offline-fixture", "--output", outputPath], { stdio: "pipe" });
+    const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      sources?: Array<{ source?: string; sourceType?: string; signalType?: string; qualityScore?: number; anysearchRequestId?: string; cached?: boolean }>;
+      industryPackets?: Array<{ sources?: Array<{ source?: string }> }>;
+    };
+    const anysearchSources = (snapshot.sources ?? []).filter((source) => source.source === "AnySearch");
+
+    expect(anysearchSources.length).toBeGreaterThan(0);
+    expect(anysearchSources.every((source) => source.sourceType === "news" || source.sourceType === "official")).toBe(true);
+    expect(anysearchSources.every((source) => source.signalType !== "financial_metric" && source.signalType !== "commodity_price")).toBe(true);
+    expect(anysearchSources.some((source) => typeof source.qualityScore === "number" && source.anysearchRequestId && typeof source.cached === "boolean")).toBe(true);
+    expect(snapshot.industryPackets?.some((packet) => packet.sources?.some((source) => source.source === "AnySearch"))).toBe(true);
+  });
+
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

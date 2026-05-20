@@ -1,4 +1,5 @@
 import { jsonrepair } from "jsonrepair";
+import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, type AnySearchEvidence } from "../_shared/anysearch";
 import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../_shared/providers";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
@@ -25,12 +26,14 @@ import {
 type Env = {
   AUTH_SECRET: string;
   DEEPSEEK_API_KEY?: string;
+  ANYSEARCH_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
 type DurableTemplateEnv = {
   DEEPSEEK_API_KEY?: string;
+  ANYSEARCH_API_KEY?: string;
   REPORT_LIBRARY_DB: D1Database;
   REPORT_LIBRARY_BUCKET: R2Bucket;
 };
@@ -120,7 +123,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
   const enabledTemplates = activeResearchTemplates(userTemplates);
 
-  const durableEnv = { DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY, REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
+  const durableEnv = { ANYSEARCH_API_KEY: env.ANYSEARCH_API_KEY, DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY, REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     if (!enabledTemplates.length) return json({ error: "没有启用任何模板，无法进行全部模板分析。" }, 400);
     const fullTemplate = fullAnalysisTemplate(enabledTemplates);
@@ -385,10 +388,11 @@ async function requestTemplateReportOnce(
   const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
   try {
     const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
+    const enrichedEvidence = await enrichTemplateEvidenceWithAnySearch(env, watchlist, evidence, template, controller.signal);
     let lastError: unknown;
     for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
       try {
-        const messages = buildTemplateMessages(watchlist, evidence, template, childAnalyses, minLength, draftToExpand, route.isFree ? "free" : "paid");
+        const messages = buildTemplateMessages(watchlist, enrichedEvidence, template, childAnalyses, minLength, draftToExpand, route.isFree ? "free" : "paid");
         const response = await fetchTemplateModel(route.url, buildTemplateRequest(route, messages, maxTokens, templateReasoningEffort(template.id), controller.signal));
         if (!response.ok) {
           lastError = new Error(`模板分析生成失败：${route.model} ${response.status} ${(await response.text()).slice(0, 500)}`);
@@ -460,6 +464,85 @@ function buildTemplateMessages(
 
 function templateCacheAnchor(cacheMode: "free" | "paid") {
   return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
+}
+
+async function enrichTemplateEvidenceWithAnySearch(
+  env: DurableTemplateEnv,
+  watchlist: WatchlistRow,
+  evidence: EvidenceBundle,
+  template: ResearchTemplate,
+  signal: AbortSignal,
+): Promise<EvidenceBundle> {
+  const apiKey = env.ANYSEARCH_API_KEY?.trim();
+  if (!apiKey) return evidence;
+  const cached = await readTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template);
+  const anySearchEvidence =
+    cached ??
+    (await fetchAnySearchEvidence({
+      apiKey,
+      signal,
+      queries: [
+        {
+          query: `${watchlist.company_name} ${watchlist.ticker} 最新公告 业绩 风险 行业 竞争格局 政策 负面 舆情`,
+          topic: `${watchlist.company_name} 模板分析补充证据`,
+          sourceType: "news",
+          maxResults: 5,
+          domains: ["finance", "business", "legal"],
+          contentTypes: ["news", "web", "doc", "data"],
+          freshness: "month",
+        },
+      ],
+    }));
+  if (!cached) await writeTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template, anySearchEvidence);
+  if (!anySearchEvidence.length) return evidence;
+  return {
+    ...evidence,
+    evidence: [...evidence.evidence, ...anySearchEvidenceToReportEvidence(anySearchEvidence, evidence.retrievedAt)],
+    facts: {
+      ...evidence.facts,
+      externalSearch: {
+        source: "AnySearch",
+        note: "外部搜索线索只用于补充公司、行业、政策和风险信息，不替代财报、公告、价格或销量硬数据。",
+        items: anySearchEvidence.map(({ title, url, summary, topic, publishedAt, qualityScore, anysearchRequestId, cached }) => ({
+          title,
+          url,
+          summary,
+          topic,
+          publishedAt,
+          qualityScore,
+          anysearchRequestId,
+          cached,
+        })),
+      },
+    },
+  };
+}
+
+async function readTemplateAnySearchCache(bucket: R2Bucket, watchlist: WatchlistRow, template: ResearchTemplate): Promise<AnySearchEvidence[] | null> {
+  if (typeof bucket.get !== "function") return null;
+  const object = await bucket.get(templateAnySearchCacheKey(watchlist, template)).catch(() => null);
+  if (!object) return null;
+  const payload = (await object.json().catch(() => null)) as { items?: AnySearchEvidence[] } | null;
+  return Array.isArray(payload?.items) ? payload.items : null;
+}
+
+async function writeTemplateAnySearchCache(bucket: R2Bucket, watchlist: WatchlistRow, template: ResearchTemplate, items: AnySearchEvidence[]) {
+  if (typeof bucket.put !== "function") return;
+  await bucket
+    .put(templateAnySearchCacheKey(watchlist, template), JSON.stringify({ cachedAt: new Date().toISOString(), items }), {
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+      customMetadata: { templateId: template.id, ticker: watchlist.ticker },
+    })
+    .catch(() => undefined);
+}
+
+function templateAnySearchCacheKey(watchlist: WatchlistRow, template: ResearchTemplate) {
+  const day = new Date().toISOString().slice(0, 10);
+  return `${TEMPLATE_REPORT_PREFIX}/anysearch-cache/${day}/${safeCacheKey(watchlist.user_key || watchlist.user_id || "user")}/${safeCacheKey(watchlist.id || "watchlist")}/${safeCacheKey(template.id)}.json`;
+}
+
+function safeCacheKey(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 96) || "unknown";
 }
 
 export function isUsableTemplateAnalysisCache(analysis: TemplateAnalysisResult) {

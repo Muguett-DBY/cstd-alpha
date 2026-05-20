@@ -151,6 +151,66 @@ describe("template model routing", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
   });
+
+  test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: "贵州茅台 渠道库存边际改善",
+              url: "https://example.com/maotai-channel",
+              description: "渠道库存和批价变化需要跟踪。",
+              content: "公开信息显示渠道库存边际改善，但批价仍需交叉验证。",
+              source: "news",
+              quality_score: 0.9,
+              published_at: "2026-05-18T00:00:00Z",
+            },
+          ],
+          metadata: { request_id: "req_template", cached: true },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "补充搜索报告",
+                  score: 66,
+                  verdict: "观察",
+                  summary: "已纳入外部搜索证据。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: "## 报告\n已纳入 AnySearch 外部搜索证据。",
+                }),
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestTemplateReport(
+      { ANYSEARCH_API_KEY: "any-key", DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[0],
+      [],
+    );
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.anysearch.com/v1/search");
+    expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization", "Bearer any-key");
+    const modelBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const promptPayload = JSON.parse(modelBody.messages[1].content);
+    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("AnySearch 外部搜索");
+    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("渠道库存边际改善");
+  });
 });
 
 describe("normalizeGeneratedAnalysis score discipline", () => {
