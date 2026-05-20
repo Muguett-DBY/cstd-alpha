@@ -1399,16 +1399,37 @@ function RadarSignalMap({ radar }: { radar: RadarScan }) {
 function RadarMarketOverview({ radar }: { radar: RadarScan }) {
   const packets = buildRadarVisualPackets(radar);
   if (!packets.length) return null;
+  const formalTotal = allRadarItems(radar).length;
+  const scannedTotal = radar.analysisScope?.totalIndustryCount ?? radar.industryPackets?.length ?? 0;
+  const weakTotal = packets.filter((packet) => packet.stage === "证据不足").length;
   return (
     <section className="radar-summary radar-market-overview" id="radar-market-map">
       <header className="radar-section-head">
         <div>
           <p className="eyebrow">全行业地图</p>
-          <h3>产业热力图与信号分布</h3>
-          <p>横轴是增长动量，纵轴是泡沫/衰退风险；气泡越大，当前证据越多。</p>
+          <h3>全行业扫描地图</h3>
+          <p>正式结论、观察线索和弱证据分开看；热力图覆盖全量扫描包，不等同于正式推荐。</p>
         </div>
-        <span>{packets.length} 个细分产业</span>
+        <span>{packets.length} 个细分主题</span>
       </header>
+      <div className="radar-market-kpis" aria-label="雷达覆盖口径">
+        <span>
+          <strong>{formalTotal}</strong>
+          正式雷达条目
+        </span>
+        <span>
+          <strong>{scannedTotal || packets.length}</strong>
+          后台行业包
+        </span>
+        <span>
+          <strong>{packets.length}</strong>
+          可视化主题
+        </span>
+        <span>
+          <strong>{weakTotal}</strong>
+          证据不足
+        </span>
+      </div>
       <div className="radar-market-layout">
         <RadarIndustryHeatmap packets={packets} />
         <RadarStageBuckets packets={packets} />
@@ -1431,22 +1452,29 @@ function RadarIndustryHeatmap({ packets }: { packets: RadarIndustryPacket[] }) {
         <span>稳定/高股息区</span>
       </div>
       {visiblePackets.map((packet) => {
-        const scores = packet.scores ?? emptyRadarScores();
+        const scores = radarPacketVisualScores(packet);
         const growthMomentum = Math.max(scores.growth, scores.momentum);
         const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
-        const size = Math.max(10, Math.min(32, 10 + (packet.sourceCount || 0) * 2 + scores.evidence / 12));
+        const size = Math.max(10, Math.min(32, 11 + Math.sqrt(packet.sourceCount || 0) * 3 + scores.evidence / 18));
         return (
           <a
             key={packet.industry}
-            className={`radar-heatmap-dot ${radarStageClass(packet.stage)}`}
+            className={`radar-heatmap-dot ${radarStageClass(packet.stage)} ${scores.confidence < 45 ? "is-low-confidence" : ""}`}
             href={stageTarget(packet.stage)}
-            title={`${packet.industry}｜${packet.stage ?? "证据不足"}｜增长 ${growthMomentum}｜风险 ${risk}｜证据 ${packet.sourceCount} 条`}
+            title={`${packet.industry}｜${packet.stage ?? "证据不足"}｜动量 ${growthMomentum}｜风险 ${risk}｜证据 ${packet.sourceCount} 条`}
             style={{ left: `${growthMomentum}%`, top: `${100 - risk}%`, width: size, height: size } as CSSProperties}
           >
             <span>{packet.industry}</span>
           </a>
         );
       })}
+      <div className="radar-heatmap-legend" aria-label="热力图图例">
+        <span className="stage-growth">增长</span>
+        <span className="stage-bubble">泡沫</span>
+        <span className="stage-decline">衰退</span>
+        <span className="stage-watch">观察</span>
+        <span className="stage-weak">弱证据</span>
+      </div>
     </div>
   );
 }
@@ -1456,8 +1484,8 @@ function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
   return (
     <div className="radar-stage-buckets" aria-label="产业阶段分布">
       <div className="radar-signal-map-head">
-        <strong>阶段分布</strong>
-        <span>可展开每个桶</span>
+        <strong>全量扫描分层</strong>
+        <span>非正式结论，可展开</span>
       </div>
       {buckets.map((bucket) => (
         <details key={bucket.stage} className={`radar-stage-bucket ${radarStageClass(bucket.stage)}`} open={bucket.stage === "扎实增长" || bucket.stage === "泡沫风险"}>
@@ -1482,10 +1510,10 @@ function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
 
 function RadarTopSignalLists({ packets }: { packets: RadarIndustryPacket[] }) {
   const lists = [
-    { title: "强信号 Top 20", items: topRadarPackets(packets, (packet) => Math.max(packet.scores?.growth ?? 0, packet.scores?.momentum ?? 0)), metric: "growth" },
-    { title: "风险恶化 Top 20", items: topRadarPackets(packets, (packet) => Math.max(packet.scores?.bubbleRisk ?? 0, packet.scores?.declineRisk ?? 0)), metric: "risk" },
-    { title: "证据增强 Top 20", items: topRadarPackets(packets, (packet) => packet.scores?.evidence ?? 0), metric: "evidence" },
-    { title: "关注度上升 Top 20", items: topRadarPackets(packets, (packet) => packet.scores?.change ?? 0), metric: "change" },
+    { title: "机会强度 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "opportunity")), metric: "opportunity" },
+    { title: "风险压力 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "risk")), metric: "risk" },
+    { title: "硬证据 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "evidence")), metric: "evidence" },
+    { title: "边际变化 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "change")), metric: "change" },
   ];
   return (
     <div className="radar-top-lists">
@@ -1968,8 +1996,8 @@ function visualScoresForCoverage(coverage: RadarCoverageItem | RadarCoverageRevi
 }
 
 function radarPacketPriority(packet: RadarIndustryPacket) {
-  const scores = packet.scores ?? emptyRadarScores();
-  return Math.max(scores.growth, scores.momentum) * 2 + scores.evidence + Math.max(scores.bubbleRisk, scores.declineRisk) + (packet.sourceCount ?? 0) * 4;
+  const scores = radarPacketVisualScores(packet);
+  return Math.max(scores.growth, scores.momentum) * 2 + scores.evidence + Math.max(scores.bubbleRisk, scores.declineRisk) + Math.sqrt(packet.sourceCount ?? 0) * 10;
 }
 
 function topRadarPackets(packets: RadarIndustryPacket[], score: (packet: RadarIndustryPacket) => number) {
@@ -1977,16 +2005,41 @@ function topRadarPackets(packets: RadarIndustryPacket[], score: (packet: RadarIn
 }
 
 function radarPacketMetric(packet: RadarIndustryPacket, metric: string) {
-  const scores = packet.scores ?? emptyRadarScores();
-  const value =
-    metric === "risk"
-      ? Math.max(scores.bubbleRisk, scores.declineRisk)
-      : metric === "evidence"
-        ? scores.evidence
-        : metric === "change"
-          ? scores.change
-          : Math.max(scores.growth, scores.momentum);
+  const value = radarPacketMetricValue(packet, metric);
   return value.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+}
+
+function radarPacketMetricValue(packet: RadarIndustryPacket, metric: string) {
+  const scores = radarPacketVisualScores(packet);
+  if (metric === "risk") return Math.round(Math.max(scores.bubbleRisk, scores.declineRisk) * 0.72 + scores.valuationRisk * 0.18 + scores.evidence * 0.1);
+  if (metric === "evidence") return Math.round(scores.evidence * 0.72 + scores.confidence * 0.2 + Math.min(12, Math.sqrt(packet.sourceCount || 0) * 2));
+  if (metric === "change") return Math.round(scores.change * 0.74 + Math.max(scores.growth, scores.momentum) * 0.16 + scores.evidence * 0.1);
+  const riskDrag = Math.max(scores.bubbleRisk, scores.declineRisk) * 0.22;
+  return Math.max(0, Math.round(Math.max(scores.growth, scores.momentum) * 0.52 + scores.evidence * 0.28 + scores.confidence * 0.2 - riskDrag));
+}
+
+function radarPacketVisualScores(packet: RadarIndustryPacket) {
+  const raw = packet.scores ?? emptyRadarScores();
+  const sourceEvidence = Math.min(96, 18 + Math.sqrt(packet.sourceCount || 0) * 10 + (packet.evidenceTypes?.length ?? 0) * 8 - (packet.evidenceGaps?.length ?? 0) * 7);
+  const evidence = Math.round(Math.min(raw.evidence || sourceEvidence, sourceEvidence));
+  const confidence = Math.round(Math.max(0, Math.min(96, (raw.confidence || evidence) * 0.55 + evidence * 0.45 - (packet.evidenceGaps?.length ?? 0) * 3)));
+  const rawGrowth = Math.max(raw.growth, raw.momentum);
+  const stageGrowth =
+    packet.stage === "扎实增长" ? 78 : packet.stage === "即将增长" ? 70 : packet.stage === "泡沫风险" ? 64 : packet.stage === "衰退" ? 26 : packet.stage === "平稳现金流" ? 42 : packet.stage === "继续观察" ? 48 : 24;
+  const growth = Math.round(Math.max(6, Math.min(96, rawGrowth * 0.42 + stageGrowth * 0.38 + confidence * 0.2 - (packet.evidenceGaps?.length ?? 0) * 4)));
+  const stageRisk = packet.stage === "衰退" ? 84 : packet.stage === "泡沫风险" ? 88 : packet.stage === "证据不足" ? 44 : packet.stage === "继续观察" ? 46 : packet.stage === "平稳现金流" ? 24 : 38;
+  const rawRisk = Math.max(raw.bubbleRisk, raw.declineRisk, raw.valuationRisk);
+  const combinedRisk = Math.round(Math.max(8, Math.min(96, rawRisk * 0.5 + stageRisk * 0.5)));
+  return {
+    growth,
+    momentum: Math.round(Math.max(growth, raw.momentum * 0.45 + growth * 0.55)),
+    evidence,
+    valuationRisk: Math.round(raw.valuationRisk * 0.45 + combinedRisk * 0.55),
+    bubbleRisk: packet.stage === "泡沫风险" ? Math.max(78, combinedRisk) : Math.round(raw.bubbleRisk * 0.45 + combinedRisk * 0.55),
+    declineRisk: packet.stage === "衰退" ? Math.max(78, combinedRisk) : Math.round(raw.declineRisk * 0.45 + combinedRisk * 0.55),
+    confidence,
+    change: Math.round(Math.max(10, Math.min(96, raw.change * 0.65 + (packet.changeStatus === "changed" ? 64 : packet.changeStatus === "new" ? 72 : 34) * 0.35))),
+  };
 }
 
 function emptyRadarScores() {

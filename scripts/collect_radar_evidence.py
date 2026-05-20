@@ -1803,7 +1803,7 @@ def industry_packets_from_sources(
             "financialFacts": matched_financial[:10],
             "industryFacts": matched_industry[:10],
             "companyCandidates": matched_companies[:10],
-            "evidenceGaps": industry_evidence_gaps(matched_sources, matched_financial, matched_industry),
+            "evidenceGaps": industry_evidence_gaps(taxonomy, matched_sources, matched_financial, matched_industry),
         }
         packets.append(packet)
     return packets
@@ -1823,17 +1823,27 @@ def industry_evidence_hash(industry: str, sources: list[dict[str, Any]], financi
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-def industry_evidence_gaps(sources: list[dict[str, Any]], financial_facts: list[dict[str, Any]], industry_facts: list[dict[str, Any]]) -> list[str]:
+def industry_evidence_gaps(taxonomy: dict[str, Any], sources: list[dict[str, Any]], financial_facts: list[dict[str, Any]], industry_facts: list[dict[str, Any]]) -> list[str]:
     signal_types = {clean_text(source.get("signalType")) for source in sources}
     source_types = {clean_text(source.get("sourceType")) for source in sources}
+    source_names = {clean_text(source.get("source")) for source in sources}
+    industry_text = f"{taxonomy.get('group', '')} {taxonomy.get('industry', '')} {' '.join(taxonomy.get('keywords', ())) }"
+    needs_price = bool(re.search(r"有色|铜|铝|稀土|钨|锂|光伏|硅料|钢铁|水泥|建材|玻璃|生猪|猪价|航运|运价|煤炭|石油|化工|农产品|存储|DRAM|NAND|HBM", industry_text, re.I))
+    needs_sales = bool(re.search(r"汽车|消费|家电|纺织|医药商业|药店|医疗器械|航运|港口|航空|机场|旅游|酒店|博彩|互联网|电商", industry_text, re.I))
+    needs_order = bool(re.search(r"电网|设备|材料|军工|航空航天|商业航天|机器人|具身|船舶|工程机械|工业母机|光模块|PCB|服务器|低空|eVTOL", industry_text, re.I))
+    needs_inventory = bool(re.search(r"存储|DRAM|NAND|HBM|锂|光伏|硅料|钢铁|水泥|煤炭|化工|生猪", industry_text, re.I))
     gaps: list[str] = []
     if not financial_facts and "financial_metric" not in signal_types:
         gaps.append("缺财报")
-    if not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
+    if needs_price and not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
         gaps.append("缺价格")
-    if not industry_facts and "industry_stat" not in signal_types:
+    if needs_sales and not industry_facts and "industry_stat" not in signal_types:
         gaps.append("缺销量")
-    if len(source_types - {""}) < 2:
+    if needs_order and not any(re.search(r"订单|合同|在手订单|中标", source_text(source), re.I) for source in sources):
+        gaps.append("缺订单")
+    if needs_inventory and not any(re.search(r"库存|库容|去库|累库", source_text(source), re.I) for source in sources):
+        gaps.append("缺库存")
+    if len(source_types - {""}) < 2 and len(source_names - {""}) < 2:
         gaps.append("缺多源验证")
     return gaps[:4]
 

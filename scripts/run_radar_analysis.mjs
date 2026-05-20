@@ -309,6 +309,7 @@ function buildEvidenceDigest(sources, industryPackets = []) {
       return {
         topic,
         score: sorted.reduce((sum, source) => sum + (source.score ?? 0), 0),
+        sourceCount: group.length,
         sourceIds: sorted.slice(0, 8).map((source) => source.id),
         evidenceTypes,
         signalTypes,
@@ -321,17 +322,29 @@ function buildEvidenceDigest(sources, industryPackets = []) {
   const covered = new Set(sourcePackets.map((packet) => packet.topic));
   const emptyIndustryPackets = industryPackets
     .filter((packet) => !covered.has(packet.industry))
-    .map((packet) => ({
-      topic: packet.industry,
-      score: packet.sourceCount || 0,
-      sourceIds: [],
-      evidenceTypes: packet.evidenceTypes ?? [],
-      signalTypes: packet.signalTypes ?? [],
-      summary: `${packet.industry}已完成扫描，当前结构化证据 ${packet.sourceCount ?? 0} 条。`,
-      signals: [],
-      evidenceHash: packet.evidenceHash,
-      group: packet.group,
-    }));
+    .map((packet) => {
+      const packetSourceKeys = new Set(packet.sources.flatMap((source) => [source.url, source.title]).filter(Boolean));
+      const exactCitations = citations.filter((source) => packetSourceKeys.has(source.url) || packetSourceKeys.has(source.title));
+      const relatedCitations = (exactCitations.length ? exactCitations : citations
+        .map((source) => ({ source, score: keywordOverlapScore(`${packet.industry} ${(packet.themes ?? []).join(" ")}`, `${source.query} ${source.title} ${source.summary ?? ""} ${source.industry ?? ""}`) + (source.industry === packet.industry ? 3 : 0) }))
+        .filter((item) => item.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 8)
+        .map((item) => item.source));
+      const sourceIds = relatedCitations.map((source) => source.id);
+      return {
+        topic: packet.industry,
+        score: packet.sourceCount || 0,
+        sourceCount: packet.sourceCount ?? sourceIds.length,
+        sourceIds,
+        evidenceTypes: packet.evidenceTypes?.length ? packet.evidenceTypes : unique(relatedCitations.map((source) => source.sourceType)),
+        signalTypes: packet.signalTypes?.length ? packet.signalTypes : unique(relatedCitations.map((source) => source.signalType).filter(Boolean)),
+        summary: `${packet.industry}已完成扫描，当前结构化证据 ${packet.sourceCount ?? sourceIds.length} 条。`,
+        signals: relatedCitations.slice(0, 5).map((source) => `${source.id}${source.signalType ? ` [${source.signalType}]` : ""} ${source.title}`),
+        evidenceHash: packet.evidenceHash,
+        group: packet.group,
+      };
+    });
   const packets = [...sourcePackets, ...emptyIndustryPackets];
   return {
     sourceFingerprint: fingerprint(citations),
@@ -496,6 +509,7 @@ function buildIndustryStageMap(sections) {
     ["衰退", sections.decliningIndustries],
   ]) {
     for (const item of items) {
+      if (item.title && !stageByIndustry.has(item.title)) stageByIndustry.set(item.title, stage);
       for (const industry of item.industries ?? []) {
         if (!stageByIndustry.has(industry)) stageByIndustry.set(industry, stage);
       }
@@ -524,8 +538,10 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
 
 function fallbackIndustryStage(packet, scores) {
   if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
-  if (scores.declineRisk >= 62) return "衰退";
-  if (scores.bubbleRisk >= 62) return "泡沫风险";
+  const growthPressure = Math.max(scores.growth, scores.momentum);
+  if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
+  if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
+  if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
   if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
   if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
   if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
@@ -550,19 +566,22 @@ function scoreIndustryPacket(packet) {
   const gapPenalty = packet.evidenceGaps.length * 7;
   const hardSignalCount = packet.signalTypes.filter((signal) => /financial_metric|industry_stat|commodity_price|freight_rate/.test(signal)).length;
   const externalOnly = packet.signalTypes.length > 0 && packet.signalTypes.every((signal) => signal === "external_search");
-  const rawEvidence = clampScore(sourceCount * 7 + evidenceWeight * 5 + structuredFactCount * 8 - gapPenalty);
+  const sourceDepth = Math.sqrt(Math.max(0, sourceCount)) * 12;
+  const factDiversityBonus = Math.min(28, structuredFactCount * 6);
+  const rawEvidence = clampScore(sourceDepth + evidenceWeight * 4 + factDiversityBonus - gapPenalty);
   const evidence = externalOnly && hardSignalCount === 0 ? Math.min(rawEvidence, 45) : rawEvidence;
-  const positiveSignals = keywordCount(text, /增长|上涨|改善|扩张|预增|回升|景气|订单|出口|涨价|放量|利润|同比|环比/g);
-  const riskSignals = keywordCount(text, /泡沫|过热|透支|估值|连板|停牌|炒作|拥挤|高估/g);
-  const declineSignals = keywordCount(text, /下滑|亏损|过剩|去库|衰退|萎缩|价格下跌|需求弱|开工率低|减值/g);
-  const hardSignalBonus = hardSignalCount * 9;
+  const positiveSignals = Math.min(8, keywordCount(text, /增长|上涨|改善|扩张|预增|回升|景气|订单|出口|涨价|放量|利润|同比|环比/g));
+  const riskSignals = Math.min(8, keywordCount(text, /泡沫|过热|透支|估值|连板|停牌|炒作|拥挤|高估/g));
+  const declineSignals = Math.min(8, keywordCount(text, /下滑|亏损|过剩|去库|衰退|萎缩|价格下跌|需求弱|开工率低|减值/g));
+  const hardSignalBonus = hardSignalCount * 7;
   const changeStatusBonus = packet.changeStatus === "new" ? 18 : packet.changeStatus === "changed" ? 14 : 5;
   const previousSourceCount = typeof packet.previousSourceCount === "number" ? packet.previousSourceCount : sourceCount;
   const sourceDelta = sourceCount - previousSourceCount;
-  const growth = clampScore(25 + evidence * 0.34 + hardSignalBonus + positiveSignals * 5 - declineSignals * 4);
-  const momentum = clampScore(22 + changeStatusBonus + Math.max(0, sourceDelta) * 8 + positiveSignals * 4 + sourceCount * 3 - declineSignals * 3);
+  const growth = clampScore(18 + evidence * 0.24 + hardSignalBonus + positiveSignals * 4 - declineSignals * 5 - packet.evidenceGaps.length * 2);
+  const momentum = clampScore(18 + changeStatusBonus + Math.min(6, Math.max(0, sourceDelta)) * 6 + positiveSignals * 3 + Math.min(10, sourceCount) * 1.5 - declineSignals * 3);
   const bubbleRisk = clampScore(12 + riskSignals * 13 + (packet.evidenceTypes.includes("market") ? 18 : 0) + (/机器人|低空|AI应用|商业航天/.test(`${packet.group} ${packet.industry}`) ? 8 : 0));
-  const declineRisk = clampScore(12 + declineSignals * 11 + (/过剩|衰退|地产|光伏|传统/.test(`${packet.group} ${packet.industry}`) ? 18 : 0) + (packet.evidenceGaps.includes("缺销量") ? 4 : 0));
+  const structuralDeclineBonus = /过剩|衰退|地产|光伏|传统/.test(`${packet.group} ${packet.industry}`) ? 18 : 0;
+  const declineRisk = clampScore(12 + declineSignals * 9 + structuralDeclineBonus + (packet.evidenceGaps.includes("缺销量") ? 4 : 0));
   const valuationRisk = clampScore(15 + riskSignals * 10 + (packet.evidenceTypes.includes("market") ? 15 : 0) + (bubbleRisk > 60 ? 10 : 0));
   const confidence = clampScore(evidence + (packet.evidenceTypes.length >= 2 ? 12 : 0) - packet.evidenceGaps.length * 6);
   const change = clampScore(35 + changeStatusBonus + Math.abs(sourceDelta) * 12 + (packet.changeStatus === "unchanged" ? -12 : 0));
@@ -610,13 +629,16 @@ function radarCoverageReview(value, digest, formalItems) {
   for (const item of explicit) {
     const label = stringValue(item.label);
     if (!label) continue;
+    const base = byLabel.get(label);
+    const explicitSourceIds = stringArray(item.sourceIds).filter((id) => digest.citations.some((source) => source.id === id)).slice(0, 5);
+    const explicitEvidenceTypes = enumArray(item.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS));
     byLabel.set(label, {
       label,
       status: enumValue(item.status, ["formal", "watched", "insufficient"], "watched"),
-      sourceCount: typeof item.sourceCount === "number" ? item.sourceCount : 0,
-      evidenceTypes: enumArray(item.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS)),
-      sourceIds: stringArray(item.sourceIds).filter((id) => digest.citations.some((source) => source.id === id)).slice(0, 5),
-      note: stringValue(item.note),
+      sourceCount: typeof item.sourceCount === "number" && item.sourceCount > 0 ? item.sourceCount : (base?.sourceCount ?? 0),
+      evidenceTypes: explicitEvidenceTypes.length ? explicitEvidenceTypes : (base?.evidenceTypes ?? []),
+      sourceIds: explicitSourceIds.length ? explicitSourceIds : (base?.sourceIds ?? []),
+      note: stringValue(item.note) || base?.note || "",
     });
   }
   return [...byLabel.values()];

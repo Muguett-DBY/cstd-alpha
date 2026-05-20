@@ -208,6 +208,34 @@ describe("rolling radar evidence collector", () => {
     expect(counts.risk).toBeGreaterThan(0);
   });
 
+  test("evidence gaps are routed by industry need instead of requiring price and sales for every sector", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "drug={'group':'医药医疗','industry':'创新药/医疗服务','keywords':('创新药','CXO')}",
+          "storage={'group':'科技成长','industry':'存储芯片','keywords':('存储','DRAM','NAND','HBM')}",
+          "same_type_multi_source={'group':'周期品','industry':'航运物流','keywords':('航运','运价')}",
+          "drug_sources=[{'sourceType':'announcement','signalType':'financial_metric','title':'药企营收净利润增长'}]",
+          "storage_sources=[{'sourceType':'official','signalType':'external_search','title':'存储芯片订单线索'}]",
+          "multi_sources=[{'source':'AKShare/Sina期货日线','sourceType':'hard_data','signalType':'freight_rate','title':'BDI运价上涨'}, {'source':'东方财富行业板块','sourceType':'hard_data','signalType':'freight_rate','title':'航运指数上涨'}]",
+          "print(json.dumps({'drug': m.industry_evidence_gaps(drug, drug_sources, [{'company':'A'}], []), 'storage': m.industry_evidence_gaps(storage, storage_sources, [], []), 'sameTypeMulti': m.industry_evidence_gaps(same_type_multi_source, multi_sources, [], [{'name':'BDI'}])}, ensure_ascii=True))",
+        ].join("; "),
+      ],
+      { encoding: "utf8" },
+    );
+    const result = JSON.parse(output) as { drug: string[]; storage: string[]; sameTypeMulti: string[] };
+
+    expect(result.drug).not.toContain("缺价格");
+    expect(result.drug).not.toContain("缺销量");
+    expect(result.storage).toEqual(expect.arrayContaining(["缺财报", "缺价格", "缺库存"]));
+    expect(result.sameTypeMulti).not.toContain("缺多源验证");
+  });
+
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

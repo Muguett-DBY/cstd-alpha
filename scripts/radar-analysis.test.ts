@@ -47,6 +47,7 @@ describe("background radar analyzer", () => {
         sustainability?: Array<{ title?: string; changeReason?: string }>;
         evidenceSources?: Array<{ id?: string; source?: string; signalType?: string }>;
         industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string; stage?: string; scores?: { growth?: number; evidence?: number; bubbleRisk?: number } }>;
+        coverageReview?: Array<{ label?: string; sourceCount?: number; sourceIds?: string[] }>;
         analysisScope?: { totalIndustryCount?: number; changedIndustryCount?: number; unchangedIndustryCount?: number };
         changeLog?: string[];
       };
@@ -60,10 +61,18 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual([]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 5, changedIndustryCount: 4, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 6, changedIndustryCount: 5, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.growth).toBeLessThan(68);
+    expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")).toMatchObject({
+      sourceCount: expect.any(Number),
+      sourceIds: expect.any(Array),
+    });
+    expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceCount).toBeGreaterThan(0);
+    expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceIds?.length).toBeGreaterThan(0);
     expect(radarCache.radar?.sustainability?.some((item) => item.title === "航运运价高位观察" && item.changeReason?.includes("复用上次稳定结论"))).toBe(true);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
@@ -110,8 +119,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(5);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(4);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(6);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(5);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -216,6 +225,16 @@ function evidenceSnapshot() {
       anysearchRequestId: "req_test",
       cached: false,
     },
+    {
+      source: "东方财富行业板块",
+      query: "光伏产业链 亏损 过剩 硅料 价格",
+      title: "光伏产业链持续亏损，产能过剩压力未消",
+      url: "https://quote.eastmoney.com/center/boardlist.html#boards-BK0478",
+      sourceType: "market",
+      signalType: "financial_metric",
+      weight: 3,
+      industry: "光伏产业链",
+    },
   ];
   return {
     version: "v1",
@@ -241,6 +260,7 @@ function evidenceSnapshot() {
       { group: "周期品", industry: "战略有色金属", status: "scanned", evidenceHash: "hash-metal", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["commodity_price"], evidenceGaps: ["缺财报"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["official"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      { group: "过剩/衰退", industry: "光伏产业链", status: "scanned", evidenceHash: "hash-pv", sourceCount: 1, evidenceTypes: ["market"], signalTypes: ["financial_metric"], evidenceGaps: [], sources: [sources[6]], financialFacts: [], industryFacts: [], companyCandidates: [] },
     ],
   };
 }
@@ -326,9 +346,31 @@ function modelOutput() {
     sustainability: [],
     bubbleRisks: [],
     upcomingGrowth: [],
-    decliningIndustries: [],
+    decliningIndustries: [
+      {
+        title: "光伏产业链",
+        industries: ["光伏", "光伏组件"],
+        companies: ["隆基绿能"],
+        thesis: "模型用正式标题给出衰退结论时，行业包应继承该阶段。",
+        drivers: ["产能过剩"],
+        evidence: ["S7 行业板块压力"],
+        sourceIds: ["S7"],
+        evidenceTypes: ["market"],
+        supportingSourceCount: 1,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["供给"],
+        sustainabilityTier: "中期景气",
+        confidence: "中",
+        durability: "中期",
+        riskLevel: "高",
+        counterEvidenceConditions: ["硅料价格持续反弹"],
+        turningPoints: ["产能出清"],
+      },
+    ],
     representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["百济神州", "美光"], note: "测试过滤海外公司。" }],
     stageCompanies: [],
+    coverageReview: [{ label: "存储芯片", status: "insufficient", sourceCount: 0, evidenceTypes: [], sourceIds: [], note: "模型认为仍需硬数据。" }],
     limitations: [],
   };
 }

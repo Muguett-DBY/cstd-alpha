@@ -3153,6 +3153,34 @@ button:not(:disabled):active,
   gap: 16px;
 }
 
+.radar-market-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.radar-market-kpis span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: #fbfbf8;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-market-kpis strong {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 .radar-market-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
@@ -3250,6 +3278,11 @@ button:not(:disabled):active,
   transform: translate(-50%, -50%);
 }
 
+.radar-heatmap-dot.is-low-confidence {
+  opacity: 0.48;
+  filter: saturate(0.7);
+}
+
 .radar-heatmap-dot:hover,
 .radar-heatmap-dot:focus-visible {
   z-index: 5;
@@ -3267,6 +3300,31 @@ button:not(:disabled):active,
   white-space: nowrap;
   color: inherit;
   font-size: 12px;
+  font-weight: 850;
+}
+
+.radar-heatmap-legend {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.radar-heatmap-legend span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid color-mix(in srgb, var(--stage-color) 30%, white);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--stage-color);
+  font-size: 11px;
   font-weight: 850;
 }
 
@@ -3531,6 +3589,7 @@ button:not(:disabled):active,
   .radar-round-change-grid,
   .radar-change-flow,
   .radar-brief-main,
+  .radar-market-kpis,
   .radar-market-layout,
   .radar-top-lists,
   .radar-signal-bars,
