@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ MIN_UNIQUE_SOURCES = 3
 ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search"
 ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "360"))
 ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "2"))
+ANYSEARCH_CONCURRENCY = max(1, int(os.environ.get("ANYSEARCH_CONCURRENCY", "10")))
 
 ANYSEARCH_EVIDENCE_PROFILES = [
     {
@@ -783,7 +785,16 @@ def fetch_anysearch() -> list[dict[str, Any]]:
         print("collector_warning anysearch: ANYSEARCH_API_KEY not configured; skipping supplemental search")
         return []
     sources: list[dict[str, Any]] = []
-    for query_plan in anysearch_query_plans()[:ANYSEARCH_MAX_QUERIES]:
+    query_plans = anysearch_query_plans()[:ANYSEARCH_MAX_QUERIES]
+    with ThreadPoolExecutor(max_workers=min(ANYSEARCH_CONCURRENCY, max(1, len(query_plans)))) as executor:
+        futures = [executor.submit(fetch_anysearch_query_plan, query_plan, api_key) for query_plan in query_plans]
+        for future in as_completed(futures):
+            sources.extend(future.result())
+    return sources
+
+
+def fetch_anysearch_query_plan(query_plan: dict[str, Any], api_key: str) -> list[dict[str, Any]]:
+    try:
         request_body = {
             "query": query_plan["query"],
             "max_results": ANYSEARCH_RESULTS_PER_QUERY,
@@ -794,13 +805,11 @@ def fetch_anysearch() -> list[dict[str, Any]]:
             "language": "zh-CN",
             "constraint": {"freshness": query_plan["freshness"]},
         }
-        try:
-            payload = post_json(ANYSEARCH_API_URL, request_body, {"Authorization": f"Bearer {api_key}"})
-        except Exception as exc:
-            print(f"collector_warning anysearch.{query_plan['industry']}: {type(exc).__name__}: {str(exc)[:180]}")
-            continue
-        sources.extend(anysearch_sources_from_payload(payload, query_plan))
-    return sources
+        payload = post_json(ANYSEARCH_API_URL, request_body, {"Authorization": f"Bearer {api_key}"}, timeout=18)
+        return anysearch_sources_from_payload(payload, query_plan)
+    except Exception as exc:
+        print(f"collector_warning anysearch.{query_plan['profile']}.{query_plan['industry']}: {type(exc).__name__}: {str(exc)[:180]}")
+        return []
 
 
 def anysearch_query_plans() -> list[dict[str, Any]]:
@@ -1901,7 +1910,7 @@ def read_json(url: str) -> dict[str, Any]:
     return json.loads(read_text(url))
 
 
-def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
+def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None = None, timeout: int = 25) -> dict[str, Any]:
     request_headers = {
         "User-Agent": "Mozilla/5.0 (compatible; CSTDAlphaEvidenceBot/1.0; +https://alpha.custard.top)",
         "Content-Type": "application/json",
@@ -1909,7 +1918,7 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str] | None 
     }
     request_headers.update(headers or {})
     request = Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers=request_headers, method="POST")
-    with urlopen(request, timeout=25) as response:
+    with urlopen(request, timeout=timeout) as response:
         data = response.read()
     return json.loads(data.decode("utf-8"))
 
