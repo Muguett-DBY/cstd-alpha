@@ -102,7 +102,7 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
     response_format: { type: "json_object" },
     stream: false,
     temperature: 0.12,
-    max_tokens: 7000,
+    max_tokens: 24000,
     messages: [
       {
         role: "system",
@@ -136,9 +136,9 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
           analysisScope: compactIndustryScopeForModel(industryScope),
           evidenceDigest: compactDigestForModel(digest),
           structuredFacts: {
-            financialFacts: structuredFacts.financialFacts,
-            industryFacts: structuredFacts.industryFacts,
-            companyCandidates: structuredFacts.companyCandidates,
+            financialFacts: structuredFacts.financialFacts.slice(0, 40).map(compactFinancialFact),
+            industryFacts: structuredFacts.industryFacts.slice(0, 50).map(compactIndustryFact),
+            companyCandidates: structuredFacts.companyCandidates.slice(0, 40).map(compactCompanyCandidate),
           },
         }),
       },
@@ -237,16 +237,57 @@ function compactIndustryPacket(packet) {
     evidenceGaps: packet.evidenceGaps,
     themes: packet.themes,
     scores: scoreIndustryPacket(packet),
-    sources: packet.sources.slice(0, 8).map((source) => ({
+    sources: packet.sources.slice(0, 1).map((source) => ({
       source: source.source,
-      title: trimText(source.title, 140),
+      title: trimText(source.title, 70),
       sourceType: source.sourceType,
       signalType: source.signalType,
       publishedAt: source.publishedAt,
     })),
-    financialFacts: packet.financialFacts.slice(0, 6),
-    industryFacts: packet.industryFacts.slice(0, 6),
-    companyCandidates: packet.companyCandidates.slice(0, 6),
+    factCounts: {
+      financial: packet.financialFacts.length,
+      industry: packet.industryFacts.length,
+      companies: packet.companyCandidates.length,
+    },
+  };
+}
+
+function compactFinancialFact(fact) {
+  return {
+    source: stringValue(fact.source),
+    company: stringValue(fact.company),
+    code: stringValue(fact.code),
+    market: stringValue(fact.market),
+    industry: stringValue(fact.industry),
+    metric: stringValue(fact.metric),
+    value: typeof fact.value === "number" ? fact.value : undefined,
+    yoy: typeof fact.yoy === "number" ? fact.yoy : undefined,
+    publishedAt: stringValue(fact.publishedAt),
+    title: trimText(fact.title, 100),
+  };
+}
+
+function compactIndustryFact(fact) {
+  return {
+    source: stringValue(fact.source),
+    industry: stringValue(fact.industry),
+    signalType: stringValue(fact.signalType),
+    sourceType: stringValue(fact.sourceType),
+    publishedAt: stringValue(fact.publishedAt),
+    title: trimText(fact.title, 110),
+    summary: trimText(fact.summary, 120),
+  };
+}
+
+function compactCompanyCandidate(candidate) {
+  return {
+    company: stringValue(candidate.company),
+    code: stringValue(candidate.code),
+    market: stringValue(candidate.market),
+    industry: stringValue(candidate.industry),
+    evidenceStrength: typeof candidate.evidenceStrength === "number" ? candidate.evidenceStrength : undefined,
+    sourceTypes: stringArray(candidate.sourceTypes).slice(0, 4),
+    triggerEvidence: trimText(candidate.triggerEvidence, 100),
   };
 }
 
@@ -309,17 +350,17 @@ function buildEvidenceDigest(sources, industryPackets = []) {
 }
 
 function compactDigestForModel(digest) {
-  const citationIds = new Set(digest.packets.slice(0, 18).flatMap((packet) => packet.sourceIds.slice(0, 6)));
-  const prioritized = [...digest.citations.filter((source) => citationIds.has(source.id)), ...digest.citations.filter((source) => !citationIds.has(source.id))].slice(0, 120);
+  const citationIds = new Set(digest.packets.slice(0, 12).flatMap((packet) => packet.sourceIds.slice(0, 4)));
+  const prioritized = [...digest.citations.filter((source) => citationIds.has(source.id)), ...digest.citations.filter((source) => !citationIds.has(source.id))].slice(0, 70);
   return {
     sourceFingerprint: digest.sourceFingerprint,
     sourceCount: digest.sourceCount,
     evidenceBreakdown: digest.evidenceBreakdown,
     softCoverage: digest.softCoverage,
-    packets: digest.packets.slice(0, 18).map((packet) => ({
+    packets: digest.packets.slice(0, 12).map((packet) => ({
       ...packet,
-      sourceIds: packet.sourceIds.slice(0, 6),
-      signals: packet.signals.slice(0, 5).map((signal) => trimText(signal, 220)),
+      sourceIds: packet.sourceIds.slice(0, 4),
+      signals: packet.signals.slice(0, 3).map((signal) => trimText(signal, 160)),
     })),
     citations: prioritized.map((source) => ({
       id: source.id,
@@ -327,8 +368,8 @@ function compactDigestForModel(digest) {
       sourceType: source.sourceType,
       signalType: source.signalType,
       query: source.query,
-      title: trimText(source.title, 150),
-      summary: source.summary ? trimText(source.summary, 220) : undefined,
+      title: trimText(source.title, 120),
+      summary: source.summary ? trimText(source.summary, 150) : undefined,
       url: source.url,
       publishedAt: source.publishedAt,
       company: source.company,
