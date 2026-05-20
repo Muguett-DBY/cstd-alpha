@@ -178,6 +178,36 @@ describe("rolling radar evidence collector", () => {
     expect(percentageScore).toBe(fractionScore);
   });
 
+  test("keeps all AnySearch evidence profiles in selected sources", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "items=[]",
+          "profiles=['industry_data','announcement','policy','risk']",
+          "for profile in profiles:",
+          "    for index in range(24):",
+          "        source_type='news' if profile=='risk' else 'official'",
+          "        items.append(m.classify_source({'source':'AnySearch','query':profile,'title':f'{profile} 证据 {index} 价格 财报 风险','url':f'https://any.example/{profile}/{index}','sourceType':source_type,'signalType':'external_search','weight':m.SOURCE_WEIGHTS[source_type],'evidenceProfile':profile,'anysearchTags':['tag'], 'anysearchContentTypes':['doc' if profile in ('announcement','policy') else 'news'], 'qualityScore':90 if profile in ('industry_data','announcement') else 72,'publishedAt':'2026-05-19T00:00:00Z'}))",
+          "selected=m.select_sources(items, limit=80)",
+          "counts={profile: sum(1 for item in selected if item.get('evidenceProfile') == profile) for profile in profiles}",
+          "print(json.dumps(counts, ensure_ascii=False))",
+        ].join("\n"),
+      ],
+      { encoding: "utf8" },
+    );
+    const counts = JSON.parse(output) as Record<string, number>;
+
+    expect(counts.industry_data).toBeGreaterThan(0);
+    expect(counts.announcement).toBeGreaterThan(0);
+    expect(counts.policy).toBeGreaterThan(0);
+    expect(counts.risk).toBeGreaterThan(0);
+  });
+
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

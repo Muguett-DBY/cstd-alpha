@@ -1626,6 +1626,10 @@ def select_sources(items: list[dict[str, Any]], limit: int) -> list[dict[str, An
         "market": max(28, int(limit * 0.34)),
         "news": max_google_news,
     }
+    anysearch_profile_minimum = max(4, min(20, int(limit * 0.09)))
+    for profile in ("industry_data", "announcement", "policy", "risk"):
+        for item in [source for source in non_google_items if source.get("source") == "AnySearch" and source.get("evidenceProfile") == profile][:anysearch_profile_minimum]:
+            add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source, max_by_type)
     for source_type, minimum in minimum_by_type.items():
         for item in [source for source in non_google_items if source.get("sourceType") == source_type][:minimum]:
             add_selected(item, selected, seen, non_google_limit, max_google_news, max_per_source, max_by_type)
