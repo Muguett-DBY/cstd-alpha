@@ -1,5 +1,5 @@
 import { jsonrepair } from "jsonrepair";
-import { verifySessionCookie } from "../_shared/auth";
+import { readSessionCookie } from "../_shared/auth";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
 import type {
   RadarCitation,
@@ -12,6 +12,8 @@ import type {
   RadarEvidenceBreakdown,
   RadarEvidenceGap,
   RadarEvidenceType,
+  RadarEvidenceFreshness,
+  RadarDiagnostics,
   RadarDriverTag,
   RadarItem,
   RadarList,
@@ -27,6 +29,7 @@ type Env = {
   GITHUB_RADAR_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
   REPORT_CACHE?: KVNamespace;
+  REPORT_LIBRARY_DB?: D1Database;
 };
 
 type RadarModel = typeof DEEPSEEK_PAID_MODEL;
@@ -84,6 +87,8 @@ type RadarEvidenceSnapshotPayload = {
   source: string;
   evidenceHash?: string;
   sources: RadarSource[];
+  quality?: Record<string, unknown>;
+  industryPackets?: unknown[];
 };
 
 export const RADAR_CACHE_VERSION = "v2";
@@ -210,27 +215,38 @@ type RadarSourcePlanItem =
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
-  if (!authenticated) return json({ error: "Unauthorized." }, 401);
+  const session = await readSessionCookie(request.headers.get("cookie"), env);
+  if (!session) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
   const job = await readLatestRadarJob(env);
-  if (cached) return json({ radar: markCached(cached.radar), job });
-  return json({ radar: null, job, error: radarErrorMessage(null, "read") }, 200);
+  const freshness = await readRadarEvidenceFreshness(env);
+  const radar = cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null;
+  return json({
+    radar,
+    job,
+    diagnostics: session.role === "admin" ? radarDiagnostics(cached, job, freshness) : null,
+    ...(radar ? {} : { error: radarErrorMessage(null, "read") }),
+  }, 200);
 };
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
-  if (!authenticated) return json({ error: "Unauthorized." }, 401);
+  const session = await readSessionCookie(request.headers.get("cookie"), env);
+  if (!session) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
+  const freshness = await readRadarEvidenceFreshness(env);
   const activeJob = await readActiveRadarJob(env);
   if (activeJob) {
-    return json({ radar: cached ? markCached(cached.radar) : null, job: activeJob }, 202);
+    return json({
+      radar: cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null,
+      job: activeJob,
+      diagnostics: session.role === "admin" ? radarDiagnostics(cached, activeJob, freshness) : null,
+    }, 202);
   }
 
-  const evidenceHash = await readRadarEvidenceHash(env);
+  const evidenceHash = freshness?.evidenceHash ?? (await readRadarEvidenceHash(env));
   const job = createRadarAnalysisJob(evidenceHash);
   await writeRadarJob(env, job);
 
@@ -239,7 +255,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     await writeRadarJob(env, updateRadarJob(job, "failed", "本次后台分析未能启动，已保留上次扫描。"));
   });
   context.waitUntil(dispatchTask);
-  return json({ radar: cached ? markCached(cached.radar) : null, job }, 202);
+  return json({
+    radar: cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null,
+    job,
+    diagnostics: session.role === "admin" ? radarDiagnostics(cached, job, freshness) : null,
+  }, 202);
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
@@ -822,6 +842,21 @@ async function readRadarEvidenceHash(env: Env): Promise<string | undefined> {
   return stringValue(value?.evidenceHash) || undefined;
 }
 
+async function readRadarEvidenceFreshness(env: Env): Promise<RadarEvidenceFreshness | null> {
+  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotPayload>(RADAR_EVIDENCE_SNAPSHOT_KEY, "json").catch(() => null);
+  if (!value || value.version !== RADAR_EVIDENCE_SNAPSHOT_VERSION) return null;
+  const generatedAt = stringValue(value.generatedAt) || undefined;
+  const ageHours = generatedAt ? Math.max(0, Math.round(((Date.now() - Date.parse(generatedAt)) / 3_600_000) * 10) / 10) : undefined;
+  return {
+    generatedAt,
+    asOfDate: stringValue(value.asOfDate) || undefined,
+    ageHours,
+    stale: typeof ageHours === "number" ? ageHours > 30 : true,
+    sourceCount: Array.isArray(value.sources) ? value.sources.length : undefined,
+    evidenceHash: stringValue(value.evidenceHash) || undefined,
+  };
+}
+
 async function dispatchRadarAnalysisWorkflow(env: Env, jobId: string) {
   const token = env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
   if (!token) throw new Error("missing GitHub radar dispatch token");
@@ -902,6 +937,28 @@ async function readRadarEvidenceSnapshot(env: Env): Promise<RadarSource[] | null
   const sources = dedupeSources(value.sources.map(radarSourceFromSnapshot).filter((source): source is RadarSource => Boolean(source)));
   if (sources.length < MIN_RADAR_SOURCE_COUNT) return null;
   return sources.sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0)).slice(0, 128);
+}
+
+function withRadarFreshness(radar: RadarScan, freshness: RadarEvidenceFreshness | null): RadarScan {
+  return freshness ? { ...radar, evidenceFreshness: freshness } : radar;
+}
+
+function radarDiagnostics(cache: RadarCachePayload | null, job: RadarAnalysisJob | null, freshness: RadarEvidenceFreshness | null): RadarDiagnostics {
+  return {
+    jobStatus: job?.status,
+    jobMessage: sanitizeDiagnostic(job?.message),
+    evidenceGeneratedAt: freshness?.generatedAt,
+    evidenceHash: freshness?.evidenceHash,
+    evidenceAgeHours: freshness?.ageHours,
+    latestRadarGeneratedAt: cache?.radar.generatedAt,
+    sourceCount: freshness?.sourceCount ?? cache?.radar.sourceCount,
+    cacheVersion: cache?.version,
+  };
+}
+
+function sanitizeDiagnostic(value: string | undefined) {
+  if (!value) return undefined;
+  return value.replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer [redacted]").replace(/[A-Za-z0-9_-]{24,}/g, "[redacted]");
 }
 
 function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: string): RadarScan {

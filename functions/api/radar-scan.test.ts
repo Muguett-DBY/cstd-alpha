@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("../_shared/auth", () => ({
-  verifySessionCookie: vi.fn(async () => true),
+  readSessionCookie: vi.fn(async () => ({ userId: "user-admin", username: "admin", displayName: "admin", role: "admin", sessionId: "session", expiresAt: new Date(Date.now() + 3600_000).toISOString() })),
 }));
 
 import {
@@ -99,11 +99,13 @@ describe("radar scan async job API", () => {
     globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
 
     const response = await onRequestGet(context("GET", env));
-    const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { status?: string } };
+    const json = (await response.json()) as { radar?: { fromCache?: boolean; evidenceFreshness?: { sourceCount?: number } }; job?: { status?: string }; diagnostics?: { jobStatus?: string } };
 
     expect(response.status).toBe(200);
     expect(json.radar?.fromCache).toBe(true);
+    expect(json.radar?.evidenceFreshness?.sourceCount).toBeUndefined();
     expect(json.job?.status).toBe("running");
+    expect(json.diagnostics?.jobStatus).toBe("running");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -126,11 +128,13 @@ describe("radar scan async job API", () => {
     }) as typeof fetch;
 
     const response = await onRequestPost(context("POST", env));
-    const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { id?: string; status?: string } };
+    const json = (await response.json()) as { radar?: { fromCache?: boolean; evidenceFreshness?: { evidenceHash?: string; stale?: boolean } }; job?: { id?: string; status?: string }; diagnostics?: { evidenceHash?: string } };
 
     expect(response.status).toBe(202);
     expect(json.radar?.fromCache).toBe(true);
+    expect(json.radar?.evidenceFreshness).toMatchObject({ evidenceHash: "abc123", stale: false });
     expect(json.job?.status).toBe("queued");
+    expect(json.diagnostics?.evidenceHash).toBe("abc123");
     expect(json.job?.id).toMatch(/^radar-/);
     expect(fetchedUrls).toEqual(["https://api.github.com/repos/Muguett-DBY/cstd-alpha/actions/workflows/radar-analysis.yml/dispatches"]);
     expect(fetchedUrls.some((url) => url.includes("deepseek.com"))).toBe(false);

@@ -147,7 +147,7 @@ describe("rolling radar evidence collector", () => {
 
     expect(anysearchSources.length).toBeGreaterThanOrEqual(4);
     expect(Array.from(profiles)).toEqual(expect.arrayContaining(["announcement", "industry_data", "policy", "risk"]));
-    expect(anysearchSources.every((source) => source.sourceType === "news" || source.sourceType === "official")).toBe(true);
+    expect(anysearchSources.every((source) => source.sourceType === "news")).toBe(true);
     expect(anysearchSources.every((source) => source.signalType !== "financial_metric" && source.signalType !== "commodity_price")).toBe(true);
     expect(anysearchSources.every((source) => source.signalType === "external_search")).toBe(true);
     expect(anysearchSources.some((source) => typeof source.qualityScore === "number" && source.qualityScore >= 0.85 && source.anysearchRequestId && typeof source.cached === "boolean")).toBe(true);
@@ -191,7 +191,7 @@ describe("rolling radar evidence collector", () => {
           "profiles=['industry_data','announcement','policy','risk']",
           "for profile in profiles:",
           "    for index in range(24):",
-          "        source_type='news' if profile=='risk' else 'official'",
+          "        source_type='news'",
           "        items.append(m.classify_source({'source':'AnySearch','query':profile,'title':f'{profile} 证据 {index} 价格 财报 风险','url':f'https://any.example/{profile}/{index}','sourceType':source_type,'signalType':'external_search','weight':m.SOURCE_WEIGHTS[source_type],'evidenceProfile':profile,'anysearchTags':['tag'], 'anysearchContentTypes':['doc' if profile in ('announcement','policy') else 'news'], 'qualityScore':90 if profile in ('industry_data','announcement') else 72,'publishedAt':'2026-05-19T00:00:00Z'}))",
           "selected=m.select_sources(items, limit=80)",
           "counts={profile: sum(1 for item in selected if item.get('evidenceProfile') == profile) for profile in profiles}",

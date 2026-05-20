@@ -864,7 +864,7 @@ def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str
             continue
         description = clean_text(result.get("description"))
         content = trim_text(result.get("content"), 700)
-        source_type = clean_text(query_plan.get("sourceType")) or "news"
+        source_type = "news"
         anysearch_source = clean_text(result.get("source"))
         quality_score = numeric(result.get("quality_score"))
         sources.append(
@@ -876,9 +876,9 @@ def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str
                     "url": url,
                     "publishedAt": clean_text(result.get("published_at")),
                     "summary": trim_text(f"{description} {content}", 900),
-                    "sourceType": source_type if source_type in ("news", "official") else "news",
+                    "sourceType": "news",
                     "signalType": "external_search",
-                    "weight": SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["news"]),
+                    "weight": SOURCE_WEIGHTS["news"],
                     "topic": query_plan["industry"],
                     "industry": query_plan["industry"],
                     "evidenceProfile": query_plan.get("profile"),
@@ -1231,9 +1231,9 @@ def fixture_anysearch_sources() -> list[dict[str, Any]]:
             "url": "https://anysearch.example.com/radar/storage-industry-data",
             "publishedAt": "2026-05-19T00:00:00Z",
             "summary": "AnySearch 外部搜索线索：用于发现存储芯片涨价、订单和公司候选，不替代财报或价格硬数据。",
-            "sourceType": "official",
+            "sourceType": "news",
             "signalType": "external_search",
-            "weight": SOURCE_WEIGHTS["official"],
+            "weight": SOURCE_WEIGHTS["news"],
             "topic": "存储芯片",
             "industry": "存储芯片",
             "evidenceProfile": "industry_data",
@@ -1254,9 +1254,9 @@ def fixture_anysearch_sources() -> list[dict[str, Any]]:
             "url": "https://anysearch.example.com/radar/storage-announcement",
             "publishedAt": "2026-05-19T00:00:00Z",
             "summary": "AnySearch 外部搜索线索：用于发现公司公告、业绩预告和订单变化，仍需交易所公告或财报数据交叉验证。",
-            "sourceType": "official",
+            "sourceType": "news",
             "signalType": "external_search",
-            "weight": SOURCE_WEIGHTS["official"],
+            "weight": SOURCE_WEIGHTS["news"],
             "topic": "存储芯片",
             "industry": "存储芯片",
             "evidenceProfile": "announcement",
@@ -1277,9 +1277,9 @@ def fixture_anysearch_sources() -> list[dict[str, Any]]:
             "url": "https://anysearch.example.com/radar/biotech",
             "publishedAt": "2026-05-19T00:00:00Z",
             "summary": "AnySearch 外部搜索线索：用于发现 BD 交易、审批和商业化变化，需要财报公告交叉验证。",
-            "sourceType": "official",
+            "sourceType": "news",
             "signalType": "external_search",
-            "weight": SOURCE_WEIGHTS["official"],
+            "weight": SOURCE_WEIGHTS["news"],
             "topic": "创新药/医疗服务",
             "industry": "创新药/医疗服务",
             "evidenceProfile": "policy",

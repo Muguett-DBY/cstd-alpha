@@ -3269,11 +3269,14 @@ button:not(:disabled):active,
   z-index: 3;
   display: grid;
   place-items: center;
+  appearance: none;
+  padding: 0;
   border: 2px solid white;
   border-radius: 999px;
   background: var(--stage-color);
   box-shadow: 0 8px 20px rgba(18, 20, 23, 0.16);
   color: transparent;
+  cursor: pointer;
   text-decoration: none;
   transform: translate(-50%, -50%);
 }
@@ -3419,12 +3422,14 @@ button:not(:disabled):active,
   background: var(--stage-soft);
 }
 
-.radar-stage-bucket a {
+.radar-stage-bucket button {
+  appearance: none;
   border: 1px solid color-mix(in srgb, var(--stage-color) 28%, var(--line));
   border-radius: 999px;
   padding: 5px 8px;
   background: white;
   color: var(--ink);
+  cursor: pointer;
   font-size: 12px;
   font-weight: 800;
   text-decoration: none;
@@ -3472,15 +3477,272 @@ button:not(:disabled):active,
   font-size: 13px;
 }
 
-.radar-top-lists li span {
+.radar-top-lists li button {
+  appearance: none;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--body);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.radar-top-lists li button:hover {
+  color: var(--teal);
+}
+
 .radar-top-lists li strong {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+.radar-industry-table-section {
+  display: grid;
+  gap: 14px;
+}
+
+.radar-industry-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.radar-industry-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 118px 70px 70px 96px minmax(180px, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  background: white;
+  color: var(--body);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.radar-industry-row:first-child {
+  border-top: 0;
+}
+
+.radar-industry-row:hover {
+  background: #fbfbf8;
+}
+
+.radar-industry-row.is-head {
+  cursor: default;
+  background: #f3f5f3;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.radar-industry-row strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.radar-industry-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.radar-diagnostics {
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fbfbf8;
+}
+
+.radar-diagnostics summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.radar-diagnostics dl {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 12px 0 0;
+}
+
+.radar-diagnostics dt {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.radar-diagnostics dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.radar-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(18, 20, 23, 0.28);
+}
+
+.radar-drawer {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  width: min(720px, 100%);
+  height: 100%;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  padding: 24px;
+  background: #f7f8f5;
+  box-shadow: -18px 0 46px rgba(18, 20, 23, 0.18);
+}
+
+.radar-drawer > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.radar-drawer h3 {
+  margin: 8px 0 5px;
+  color: var(--ink);
+  font-size: clamp(30px, 5vw, 48px);
+  line-height: 1.05;
+}
+
+.radar-drawer p {
+  margin: 0;
+  color: var(--body);
+}
+
+.radar-drawer-score-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.radar-score-dial {
+  --score: 0deg;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at center, #f7f8f5 0 54%, transparent 55%),
+    conic-gradient(var(--teal) var(--score), #e0e4dd 0);
+}
+
+.radar-score-dial strong {
+  color: var(--ink);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-score-dial span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.radar-drawer-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: white;
+}
+
+.radar-drawer-panel h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.radar-drawer-panel article {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.radar-drawer-panel article:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.radar-drawer-panel article strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+
+.radar-drawer-panel article small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.radar-mini-trend {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  min-height: 148px;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbf8;
+}
+
+.radar-mini-trend div {
+  display: grid;
+  grid-template-columns: repeat(3, 10px);
+  grid-template-rows: 1fr auto;
+  gap: 3px;
+  align-items: end;
+  min-height: 116px;
+}
+
+.radar-mini-trend span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.radar-mini-trend i {
+  display: block;
+  min-height: 4px;
+  border-radius: 999px 999px 0 0;
+}
+
+.radar-mini-trend i:nth-of-type(1) {
+  background: var(--red);
+}
+
+.radar-mini-trend i:nth-of-type(2) {
+  background: var(--teal);
+}
+
+.radar-mini-trend i:nth-of-type(3) {
+  background: var(--amber);
 }
 
 .radar-stage-label {
@@ -3601,6 +3863,7 @@ button:not(:disabled):active,
   .radar-source-library,
   .radar-source-header,
   .radar-source-filters,
+  .radar-drawer > header,
   .radar-coverage-review > div,
   .radar-columns,
   .radar-card-insights,
@@ -3775,6 +4038,25 @@ button:not(:disabled):active,
   .radar-top-lists article {
     max-height: 320px;
     overflow: auto;
+  }
+
+  .radar-industry-table {
+    overflow-x: auto;
+  }
+
+  .radar-industry-row {
+    min-width: 760px;
+    grid-template-columns: minmax(220px, 1.4fr) 118px 70px 70px 96px minmax(180px, 1fr);
+  }
+
+  .radar-drawer {
+    width: 100%;
+    padding: 18px;
+    border-left: 0;
+  }
+
+  .radar-drawer-score-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .radar-card header {

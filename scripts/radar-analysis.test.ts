@@ -12,6 +12,7 @@ describe("background radar analyzer", () => {
     const modelPath = join(workdir, "model.json");
     const outputRadarPath = join(workdir, "radar-cache.json");
     const outputJobPath = join(workdir, "job.json");
+    const outputSqlPath = join(workdir, "radar-history.sql");
 
     writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
     writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
@@ -33,6 +34,8 @@ describe("background radar analyzer", () => {
         outputRadarPath,
         "--output-job",
         outputJobPath,
+        "--output-d1-sql",
+        outputSqlPath,
       ],
       { stdio: "pipe" },
     );
@@ -54,6 +57,7 @@ describe("background radar analyzer", () => {
       };
     };
     const job = JSON.parse(readFileSync(outputJobPath, "utf8")) as { id?: string; status?: string; radarGeneratedAt?: string };
+    const sql = readFileSync(outputSqlPath, "utf8");
 
     expect(radarCache.version).toBe("v2");
     expect(radarCache.radar?.model).toBe("deepseek-v4-flash");
@@ -81,6 +85,10 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
     expect(job).toMatchObject({ id: "job-test", status: "completed" });
     expect(job.radarGeneratedAt).toBe(radarCache.radar?.generatedAt);
+    expect(sql).toContain("INSERT OR REPLACE INTO radar_runs");
+    expect(sql).toContain("INSERT OR REPLACE INTO radar_items");
+    expect(sql).toContain("INSERT OR REPLACE INTO indicator_values");
+    expect(sql).toContain("INSERT OR REPLACE INTO evidence_items");
   });
 
   test("model input fixture includes financial, industry, and company candidate facts", () => {

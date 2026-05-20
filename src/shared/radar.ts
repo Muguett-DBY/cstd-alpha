@@ -62,6 +62,26 @@ export type RadarAnalysisJob = {
   radarGeneratedAt?: string;
 };
 
+export type RadarEvidenceFreshness = {
+  generatedAt?: string;
+  asOfDate?: string;
+  ageHours?: number;
+  stale: boolean;
+  sourceCount?: number;
+  evidenceHash?: string;
+};
+
+export type RadarDiagnostics = {
+  jobStatus?: RadarAnalysisJobStatus;
+  jobMessage?: string;
+  evidenceGeneratedAt?: string;
+  evidenceHash?: string;
+  evidenceAgeHours?: number;
+  latestRadarGeneratedAt?: string;
+  sourceCount?: number;
+  cacheVersion?: string;
+};
+
 export type RadarCoverageReview = {
   label: string;
   status: RadarCoverageStatus;
@@ -83,6 +103,17 @@ export type RadarIndustryPacket = {
   signalTypes: string[];
   evidenceGaps: RadarEvidenceGap[];
   themes?: string[];
+  sourceIds?: string[];
+  dataFreshness?: RadarEvidenceFreshness;
+  conclusionEligibility?: "eligible" | "watch" | "insufficient";
+  metricRefs?: string[];
+  scoreTrend?: Array<{
+    runTime: string;
+    growth: number;
+    evidence: number;
+    risk: number;
+    stage?: RadarIndustryStage;
+  }>;
   scores?: {
     growth: number;
     momentum: number;
@@ -140,6 +171,8 @@ export type RadarScan = {
   sourceCount: number;
   sourceQueries: string[];
   evidenceBreakdown?: RadarEvidenceBreakdown;
+  evidenceFreshness?: RadarEvidenceFreshness;
+  diagnostics?: RadarDiagnostics;
   evidenceSources?: RadarCitation[];
   softCoverage?: RadarCoverageItem[];
   coverageReview?: RadarCoverageReview[];

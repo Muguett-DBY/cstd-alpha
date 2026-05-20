@@ -18,6 +18,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       RADAR_EVIDENCE_KV_NAMESPACE_ID: d2c77bf9e7f14258af33e2efd3f59c60
+      RADAR_D1_DATABASE_NAME: cstd-alpha-report-library
       RADAR_JOB_ID: ${{ inputs.job_id }}
     steps:
       - name: Checkout
@@ -61,7 +62,8 @@ jobs:
             --previous dist-radar/previous-radar-cache.json \
             --job-id "$RADAR_JOB_ID" \
             --output-radar dist-radar/radar-cache.json \
-            --output-job dist-radar/job-completed.json
+            --output-job dist-radar/job-completed.json \
+            --output-d1-sql dist-radar/radar-history.sql
 
       - name: Upload radar result to Workers KV
         run: |
@@ -77,6 +79,13 @@ jobs:
             --path dist-radar/job-completed.json \
             --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
             --remote
+
+      - name: Upload structured radar history to D1
+        continue-on-error: true
+        run: |
+          npx wrangler d1 execute "$RADAR_D1_DATABASE_NAME" \
+            --remote \
+            --file dist-radar/radar-history.sql
 
       - name: Mark radar job failed
         if: failure()
@@ -103,3 +112,4 @@ jobs:
             dist-radar/job-failed.json
             dist-radar/radar-evidence.json
             dist-radar/previous-radar-cache.json
+            dist-radar/radar-history.sql

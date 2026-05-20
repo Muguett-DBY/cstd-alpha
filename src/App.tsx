@@ -8,7 +8,7 @@ import { clearImportedRankingReports } from "./ranking-storage";
 import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -52,6 +52,7 @@ function App() {
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
   const [radarJob, setRadarJob] = useState<RadarAnalysisJob | null>(null);
+  const [radarDiagnostics, setRadarDiagnostics] = useState<RadarDiagnostics | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
   const [radarError, setRadarError] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -68,6 +69,7 @@ function App() {
         if (nextRadar.radar) setRadar(nextRadar.radar);
         else if (!hasExistingRadar) setRadar(null);
         setRadarJob(nextRadar.job ?? null);
+        setRadarDiagnostics(nextRadar.diagnostics ?? null);
         if (nextRadar.job?.status === "queued" || nextRadar.job?.status === "running") {
           setRadarPhase(nextRadar.radar || hasExistingRadar ? "refreshing" : "loading");
         } else {
@@ -89,6 +91,7 @@ function App() {
         .then((result) => {
           if (result.radar) setRadar(result.radar);
           setRadarJob(result.job ?? null);
+          setRadarDiagnostics(result.diagnostics ?? null);
           if (result.job?.status === "queued" || result.job?.status === "running") {
             setRadarPhase(result.radar || radar ? "refreshing" : "loading");
           } else {
@@ -189,6 +192,7 @@ function App() {
     setChartBundle(null);
     setRadar(null);
     setRadarJob(null);
+    setRadarDiagnostics(null);
     setRadarPhase("idle");
     setRadarError("");
     setProgress([]);
@@ -591,7 +595,7 @@ function App() {
         ) : activeView === "mine" ? (
           <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
         ) : activeView === "radar" ? (
-          <RadarView radar={radar} job={radarJob} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
+          <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
         ) : (
           <>
             {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
@@ -1171,12 +1175,16 @@ function EmptyState() {
 function RadarView({
   radar,
   job,
+  diagnostics,
+  isAdmin,
   phase,
   error,
   onRefresh,
 }: {
   radar: RadarScan | null;
   job: RadarAnalysisJob | null;
+  diagnostics: RadarDiagnostics | null;
+  isAdmin: boolean;
   phase: RadarPhase;
   error: string;
   onRefresh: () => void;
@@ -1186,6 +1194,9 @@ function RadarView({
   const jobRunning = job?.status === "queued" || job?.status === "running";
   const sourceMap = useMemo(() => new Map((radar?.evidenceSources ?? []).map((source) => [source.id, source])), [radar?.evidenceSources]);
   const radarItems = useMemo(() => (radar ? allRadarItems(radar) : []), [radar]);
+  const visualPackets = useMemo(() => (radar ? buildRadarVisualPackets(radar) : []), [radar]);
+  const [selectedIndustry, setSelectedIndustry] = useState("");
+  const selectedPacket = useMemo(() => visualPackets.find((packet) => packet.industry === selectedIndustry) ?? null, [selectedIndustry, visualPackets]);
   return (
     <section className="radar-view">
       <header className={`radar-header ${refreshing ? "is-refreshing" : ""}`}>
@@ -1228,12 +1239,16 @@ function RadarView({
             <InfoTile title="公开来源" value={`${radar.sourceCount} 条`} />
             <InfoTile title="模型" value={radar.model} />
             <InfoTile title="状态" value={jobRunning ? "后台分析中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
+            <InfoTile title="证据新鲜度" value={radar.evidenceFreshness?.generatedAt ? `${radar.evidenceFreshness.ageHours ?? 0} 小时` : "待确认"} />
           </div>
 
+          {radar.evidenceFreshness?.stale ? <p className="cache-notice">当前证据包偏旧，已按现有证据分析；请关注信息截止时间。</p> : null}
+          {isAdmin && diagnostics ? <RadarDiagnosticsPanel diagnostics={diagnostics} /> : null}
           <RadarRoundChanges changeLog={radar.changeLog} />
           <RadarSectionNav />
           <RadarBrief radar={radar} />
-          <RadarMarketOverview radar={radar} />
+          <RadarMarketOverview radar={radar} packets={visualPackets} onSelectIndustry={setSelectedIndustry} />
+          <RadarIndustryTable packets={visualPackets} onSelectIndustry={setSelectedIndustry} />
           <RadarEvidenceOverview
             breakdown={radar.evidenceBreakdown}
             confidenceSummary={radar.confidenceSummary}
@@ -1256,6 +1271,9 @@ function RadarView({
               <h3>约束与待验证</h3>
               <ul>{listItems(radar.limitations)}</ul>
             </section>
+          ) : null}
+          {selectedPacket ? (
+            <RadarIndustryDrawer packet={selectedPacket} items={radarItems} sourceMap={sourceMap} onClose={() => setSelectedIndustry("")} />
           ) : null}
         </>
       ) : null}
@@ -1326,6 +1344,7 @@ function RadarSectionNav() {
     <nav className="radar-section-nav" aria-label="雷达章节">
       <a href="#radar-overview">概览</a>
       <a href="#radar-market-map">热力图</a>
+      <a href="#radar-all-industries">全行业</a>
       <a href="#radar-growth">增长</a>
       <a href="#radar-sustainability">可持续性</a>
       <a href="#radar-bubble">泡沫</a>
@@ -1398,8 +1417,7 @@ function RadarSignalMap({ radar }: { radar: RadarScan }) {
   );
 }
 
-function RadarMarketOverview({ radar }: { radar: RadarScan }) {
-  const packets = buildRadarVisualPackets(radar);
+function RadarMarketOverview({ radar, packets, onSelectIndustry }: { radar: RadarScan; packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   if (!packets.length) return null;
   const formalTotal = allRadarItems(radar).length;
   const scannedTotal = radar.analysisScope?.totalIndustryCount ?? radar.industryPackets?.length ?? 0;
@@ -1433,15 +1451,15 @@ function RadarMarketOverview({ radar }: { radar: RadarScan }) {
         </span>
       </div>
       <div className="radar-market-layout">
-        <RadarIndustryHeatmap packets={packets} />
-        <RadarStageBuckets packets={packets} />
+        <RadarIndustryHeatmap packets={packets} onSelectIndustry={onSelectIndustry} />
+        <RadarStageBuckets packets={packets} onSelectIndustry={onSelectIndustry} />
       </div>
-      <RadarTopSignalLists packets={packets} />
+      <RadarTopSignalLists packets={packets} onSelectIndustry={onSelectIndustry} />
     </section>
   );
 }
 
-function RadarIndustryHeatmap({ packets }: { packets: RadarIndustryPacket[] }) {
+function RadarIndustryHeatmap({ packets, onSelectIndustry }: { packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   const visiblePackets = [...packets].sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
   return (
     <div className="radar-heatmap" aria-label="产业增长动量和风险热力图">
@@ -1459,15 +1477,16 @@ function RadarIndustryHeatmap({ packets }: { packets: RadarIndustryPacket[] }) {
         const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
         const size = Math.max(10, Math.min(32, 11 + Math.sqrt(packet.sourceCount || 0) * 3 + scores.evidence / 18));
         return (
-          <a
+          <button
+            type="button"
             key={packet.industry}
             className={`radar-heatmap-dot ${radarStageClass(packet.stage)} ${scores.confidence < 45 ? "is-low-confidence" : ""}`}
-            href={stageTarget(packet.stage)}
+            onClick={() => onSelectIndustry(packet.industry)}
             title={`${packet.industry}｜${packet.stage ?? "证据不足"}｜动量 ${growthMomentum}｜风险 ${risk}｜证据 ${packet.sourceCount} 条`}
             style={{ left: `${growthMomentum}%`, top: `${100 - risk}%`, width: size, height: size } as CSSProperties}
           >
             <span>{packet.industry}</span>
-          </a>
+          </button>
         );
       })}
       <div className="radar-heatmap-legend" aria-label="热力图图例">
@@ -1481,7 +1500,7 @@ function RadarIndustryHeatmap({ packets }: { packets: RadarIndustryPacket[] }) {
   );
 }
 
-function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
+function RadarStageBuckets({ packets, onSelectIndustry }: { packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   const buckets = radarStageBuckets(packets);
   return (
     <div className="radar-stage-buckets" aria-label="产业阶段分布">
@@ -1498,10 +1517,10 @@ function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
           </summary>
           <div>
             {bucket.items.slice(0, 12).map((packet) => (
-              <a key={packet.industry} href={stageTarget(packet.stage)}>
+              <button key={packet.industry} type="button" onClick={() => onSelectIndustry(packet.industry)}>
                 {packet.industry}
                 <small>{packet.sourceCount} 条</small>
-              </a>
+              </button>
             ))}
           </div>
         </details>
@@ -1510,7 +1529,7 @@ function RadarStageBuckets({ packets }: { packets: RadarIndustryPacket[] }) {
   );
 }
 
-function RadarTopSignalLists({ packets }: { packets: RadarIndustryPacket[] }) {
+function RadarTopSignalLists({ packets, onSelectIndustry }: { packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   const lists = [
     { title: "机会强度 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "opportunity")), metric: "opportunity" },
     { title: "风险压力 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "risk")), metric: "risk" },
@@ -1525,7 +1544,7 @@ function RadarTopSignalLists({ packets }: { packets: RadarIndustryPacket[] }) {
           <ol>
             {list.items.map((packet) => (
               <li key={`${list.title}-${packet.industry}`}>
-                <span>{packet.industry}</span>
+                <button type="button" onClick={() => onSelectIndustry(packet.industry)}>{packet.industry}</button>
                 <strong>{radarPacketMetric(packet, list.metric)}</strong>
               </li>
             ))}
@@ -1533,6 +1552,159 @@ function RadarTopSignalLists({ packets }: { packets: RadarIndustryPacket[] }) {
         </article>
       ))}
     </div>
+  );
+}
+
+function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [stage, setStage] = useState("all");
+  const rows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return packets
+      .filter((packet) => (stage === "all" || (packet.stage ?? "证据不足") === stage) && (!normalizedQuery || `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`.toLowerCase().includes(normalizedQuery)))
+      .sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+  }, [packets, query, stage]);
+  const stages = ["all", "扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
+  return (
+    <section className="radar-section radar-industry-table-section" id="radar-all-industries">
+      <header className="radar-source-header">
+        <div>
+          <h3>全行业扫描表</h3>
+          <p>后台全量扫描的细分产业都在这里；正式结论只代表证据强度达到门槛。</p>
+        </div>
+        <div className="radar-source-filters" aria-label="全行业筛选">
+          <label htmlFor="radar-industry-search">搜索</label>
+          <input id="radar-industry-search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="行业、主题、分组" />
+          <label htmlFor="radar-stage-filter">阶段</label>
+          <select id="radar-stage-filter" value={stage} onChange={(event) => setStage(event.currentTarget.value)}>
+            {stages.map((item) => (
+              <option key={item} value={item}>{item === "all" ? "全部阶段" : item}</option>
+            ))}
+          </select>
+        </div>
+      </header>
+      <div className="radar-industry-table" role="table" aria-label="全行业扫描表">
+        <div role="row" className="radar-industry-row is-head">
+          <span>细分产业</span>
+          <span>阶段</span>
+          <span>增长</span>
+          <span>风险</span>
+          <span>证据</span>
+          <span>缺口</span>
+        </div>
+        {rows.slice(0, 120).map((packet) => {
+          const scores = radarPacketVisualScores(packet);
+          const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
+          return (
+            <button key={packet.industry} type="button" role="row" className="radar-industry-row" onClick={() => onSelectIndustry(packet.industry)}>
+              <span>
+                <strong>{packet.industry}</strong>
+                <small>{packet.group}{packet.themes?.length ? ` · ${packet.themes.slice(0, 2).join("、")}` : ""}</small>
+              </span>
+              <span className={`coverage-status ${radarStageClass(packet.stage)}`}>{packet.stage ?? "证据不足"}</span>
+              <span>{Math.round(Math.max(scores.growth, scores.momentum))}</span>
+              <span>{Math.round(risk)}</span>
+              <span>{packet.sourceCount} 条</span>
+              <span>{packet.evidenceGaps?.slice(0, 2).join("、") || "无明显缺口"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RadarIndustryDrawer({ packet, items, sourceMap, onClose }: { packet: RadarIndustryPacket; items: RadarItem[]; sourceMap: Map<string, RadarCitation>; onClose: () => void }) {
+  const scores = radarPacketVisualScores(packet);
+  const relatedItems = items.filter((item) => item.industries.includes(packet.industry) || item.title.includes(packet.industry) || packet.industry.includes(item.title));
+  const sources = uniqueStrings(relatedItems.flatMap((item) => item.sourceIds ?? [])).map((id) => sourceMap.get(id)).filter((source): source is RadarCitation => Boolean(source));
+  const trend = packet.scoreTrend?.length ? packet.scoreTrend : [
+    { runTime: "上次", growth: Math.max(0, scores.growth - 8), evidence: Math.max(0, scores.evidence - 6), risk: Math.max(0, Math.max(scores.bubbleRisk, scores.declineRisk) - 5), stage: packet.stage },
+    { runTime: "本次", growth: scores.growth, evidence: scores.evidence, risk: Math.max(scores.bubbleRisk, scores.declineRisk), stage: packet.stage },
+  ];
+  return (
+    <div className="radar-drawer-backdrop" role="presentation" onClick={onClose}>
+      <aside className="radar-drawer" role="dialog" aria-modal="true" aria-label={`${packet.industry} 产业详情`} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <span className={`coverage-status ${radarStageClass(packet.stage)}`}>{packet.stage ?? "证据不足"}</span>
+            <h3>{packet.industry}</h3>
+            <p>{packet.group} · {packet.sourceCount} 条证据 · {packet.evidenceTypes.map(radarEvidenceLabel).join("、") || "线索"}</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>关闭</button>
+        </header>
+        <div className="radar-drawer-score-grid">
+          <RadarScoreDial label="增长" value={Math.max(scores.growth, scores.momentum)} />
+          <RadarScoreDial label="证据" value={scores.evidence} />
+          <RadarScoreDial label="风险" value={Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk)} />
+          <RadarScoreDial label="变化" value={scores.change} />
+        </div>
+        <section className="radar-drawer-panel">
+          <h4>趋势</h4>
+          <div className="radar-mini-trend">
+            {trend.map((point) => (
+              <div key={point.runTime}>
+                <span>{point.runTime}</span>
+                <i style={{ height: `${Math.max(4, point.growth)}%` }} title={`增长 ${Math.round(point.growth)}`} />
+                <i style={{ height: `${Math.max(4, point.evidence)}%` }} title={`证据 ${Math.round(point.evidence)}`} />
+                <i style={{ height: `${Math.max(4, point.risk)}%` }} title={`风险 ${Math.round(point.risk)}`} />
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="radar-drawer-panel">
+          <h4>正式结论资格</h4>
+          <p>{packet.conclusionEligibility === "eligible" ? "已达到硬证据和交叉验证门槛。" : packet.conclusionEligibility === "watch" ? "线索较强，仍需财报、价格、订单或多源验证。" : "证据不足，仅作为覆盖记录。"}</p>
+          {packet.evidenceGaps?.length ? <ul>{listItems(packet.evidenceGaps)}</ul> : null}
+        </section>
+        {relatedItems.length ? (
+          <section className="radar-drawer-panel">
+            <h4>关联结论</h4>
+            {relatedItems.slice(0, 4).map((item) => (
+              <article key={item.title}>
+                <strong>{item.title}</strong>
+                <p>{item.thesis}</p>
+                <small>{item.companies.join("、") || "代表公司待确认"}</small>
+              </article>
+            ))}
+          </section>
+        ) : null}
+        <section className="radar-drawer-panel">
+          <h4>证据时间线</h4>
+          {sources.length ? <RadarCitationCards sourceIds={sources.map((source) => source.id)} sourceMap={sourceMap} /> : <p className="muted">暂无绑定到正式结论的证据卡片，可在证据库中继续筛选。</p>}
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function RadarScoreDial({ label, value }: { label: string; value: number }) {
+  const score = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div className="radar-score-dial" style={{ "--score": `${score * 3.6}deg` } as CSSProperties}>
+      <strong>{score}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function RadarDiagnosticsPanel({ diagnostics }: { diagnostics: RadarDiagnostics }) {
+  return (
+    <details className="radar-diagnostics">
+      <summary>管理员诊断</summary>
+      <dl>
+        <dt>GitHub Job</dt>
+        <dd>{diagnostics.jobStatus || "无"}</dd>
+        <dt>Job 信息</dt>
+        <dd>{diagnostics.jobMessage || "无"}</dd>
+        <dt>证据包</dt>
+        <dd>{diagnostics.evidenceGeneratedAt || "未知"} / {diagnostics.evidenceHash || "无 hash"}</dd>
+        <dt>证据年龄</dt>
+        <dd>{typeof diagnostics.evidenceAgeHours === "number" ? `${diagnostics.evidenceAgeHours} 小时` : "未知"}</dd>
+        <dt>最新报告</dt>
+        <dd>{diagnostics.latestRadarGeneratedAt || "无"}</dd>
+      </dl>
+    </details>
   );
 }
 
@@ -2062,20 +2234,6 @@ function radarStageClass(stage?: string) {
   );
 }
 
-function stageTarget(stage?: string) {
-  return (
-    {
-      扎实增长: "#radar-growth",
-      即将增长: "#radar-upcoming",
-      泡沫风险: "#radar-bubble",
-      衰退: "#radar-decline",
-      平稳现金流: "#radar-stages",
-      继续观察: "#radar-sustainability",
-      证据不足: "#radar-evidence-overview",
-    }[stage || "证据不足"] ?? "#radar-evidence-overview"
-  );
-}
-
 function radarCardChartMetrics(item: RadarItem) {
   const confidence = { 低: 35, 中: 62, 高: 88 }[item.confidence || "中"];
   const risk = { 低: 28, 中: 58, 高: 88 }[item.riskLevel];
@@ -2118,6 +2276,10 @@ function radarItemPriority(item: RadarItem) {
 function listItems(items: string[]) {
   const values = items.length ? items : ["数据不足，需要继续核验。"];
   return values.map((item) => <li key={item}>{item}</li>);
+}
+
+function uniqueStrings(items: string[]) {
+  return Array.from(new Set(items.filter(Boolean)));
 }
 
 function radarEvidenceEntries(breakdown?: RadarEvidenceBreakdown): Array<[RadarEvidenceType, number]> {

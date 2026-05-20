@@ -411,8 +411,8 @@ describe("API client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ radar: { ...radar, fromCache: true } })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchRadarScan()).resolves.toEqual({ radar, job: null, warning: undefined });
-    await expect(refreshRadarScan()).resolves.toEqual({ radar: { ...radar, fromCache: true }, job: null, warning: undefined });
+    await expect(fetchRadarScan()).resolves.toEqual({ radar, job: null, diagnostics: null, warning: undefined });
+    await expect(refreshRadarScan()).resolves.toEqual({ radar: { ...radar, fromCache: true }, job: null, diagnostics: null, warning: undefined });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/radar-scan", expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenNthCalledWith(

@@ -94,6 +94,7 @@ async function main() {
   };
   if (args["output-radar"]) writeJsonFile(args["output-radar"], cachePayload);
   if (args["output-job"]) writeJsonFile(args["output-job"], job);
+  if (args["output-d1-sql"]) writeTextFile(args["output-d1-sql"], buildRadarD1Sql(radar, evidence, jobId));
 }
 
 function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, industryScope) {
@@ -908,6 +909,106 @@ function fingerprint(values) {
   return (hash >>> 0).toString(36);
 }
 
+function buildRadarD1Sql(radar, evidence, jobId) {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS industries (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, level INTEGER NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS evidence_items (id TEXT PRIMARY KEY, source_type TEXT NOT NULL, title TEXT NOT NULL, content TEXT, url TEXT, published_at TEXT, fetched_at TEXT NOT NULL, related_company_id TEXT, related_industry_id TEXT, related_theme_id TEXT, confidence REAL, raw_value TEXT);`,
+    `CREATE TABLE IF NOT EXISTS indicator_values (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, indicator_name TEXT NOT NULL, value REAL, period TEXT, source TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`,
+    `CREATE TABLE IF NOT EXISTS radar_runs (id TEXT PRIMARY KEY, market TEXT NOT NULL DEFAULT 'A/H', run_time TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS radar_items (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, industry_id TEXT, theme_id TEXT, stage TEXT NOT NULL, conclusion TEXT, confidence REAL, risk REAL, growth_score REAL, momentum_score REAL, evidence_score REAL, valuation_risk REAL, bubble_risk REAL, decline_risk REAL, evidence_count INTEGER NOT NULL DEFAULT 0);`,
+  ];
+  const runId = safeId(`radar_run_${jobId || radar.id || radar.generatedAt}`);
+  statements.push(
+    `INSERT OR REPLACE INTO radar_runs (id, market, run_time, model, status) VALUES (${sql(runId)}, 'A/H', ${sql(radar.generatedAt)}, ${sql(radar.model)}, 'completed');`,
+  );
+  for (const packet of arrayValue(radar.industryPackets)) {
+    const industry = stringValue(packet.industry);
+    if (!industry) continue;
+    const industryId = industryIdForName(industry);
+    const scores = isRecord(packet.scores) ? packet.scores : {};
+    const risk = Math.max(Number(scores.valuationRisk) || 0, Number(scores.bubbleRisk) || 0, Number(scores.declineRisk) || 0);
+    statements.push(`INSERT OR REPLACE INTO industries (id, name, parent_id, level) VALUES (${sql(industryId)}, ${sql(industry)}, NULL, 2);`);
+    statements.push(
+      [
+        `INSERT OR REPLACE INTO radar_items (id, run_id, industry_id, theme_id, stage, conclusion, confidence, risk, growth_score, momentum_score, evidence_score, valuation_risk, bubble_risk, decline_risk, evidence_count) VALUES (`,
+        [
+          sql(safeId(`${runId}_${industryId}`)),
+          sql(runId),
+          sql(industryId),
+          "NULL",
+          sql(stringValue(packet.stage) || "证据不足"),
+          sql(`${industry}：${stringValue(packet.group) || "全行业扫描"}`),
+          numberSql(scores.confidence),
+          numberSql(risk),
+          numberSql(scores.growth),
+          numberSql(scores.momentum),
+          numberSql(scores.evidence),
+          numberSql(scores.valuationRisk),
+          numberSql(scores.bubbleRisk),
+          numberSql(scores.declineRisk),
+          numberSql(packet.sourceCount),
+        ].join(", "),
+        `);`,
+      ].join(""),
+    );
+    for (const [name, value] of Object.entries(scores)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      statements.push(
+        `INSERT OR REPLACE INTO indicator_values (id, entity_type, entity_id, indicator_name, value, period, source, created_at) VALUES (${sql(safeId(`${runId}_${industryId}_${name}`))}, 'industry', ${sql(industryId)}, ${sql(name)}, ${numberSql(value)}, ${sql(radar.asOfDate)}, 'radar_scoring', ${sql(radar.generatedAt)});`,
+      );
+    }
+  }
+  for (const source of arrayValue(radar.evidenceSources).slice(0, 160)) {
+    const sourceId = safeId(`${runId}_${source.id || fingerprint([source])}`);
+    const industry = inferRadarTopicFromText(`${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`);
+    const industryId = industry ? industryIdForName(industry) : null;
+    if (industryId) statements.push(`INSERT OR IGNORE INTO industries (id, name, parent_id, level) VALUES (${sql(industryId)}, ${sql(industry)}, NULL, 2);`);
+    statements.push(
+      `INSERT OR REPLACE INTO evidence_items (id, source_type, title, content, url, published_at, fetched_at, related_industry_id, confidence, raw_value) VALUES (${sql(sourceId)}, ${sql(source.sourceType || "news")}, ${sql(source.title || "未命名证据")}, ${sql(source.summary || source.query || "")}, ${sql(source.url || "")}, ${sql(source.publishedAt || "")}, ${sql(radar.generatedAt)}, ${industryId ? sql(industryId) : "NULL"}, ${numberSql(source.score)}, ${sql(source.signalType || "")});`,
+    );
+  }
+  for (const fact of [...arrayValue(evidence.financialFacts), ...arrayValue(evidence.industryFacts)].slice(0, 260)) {
+    const industry = stringValue(fact.industry) || inferRadarTopicFromText(`${fact.title ?? ""} ${fact.summary ?? ""} ${fact.metric ?? ""}`);
+    const industryId = industry ? industryIdForName(industry) : "market";
+    const metric = stringValue(fact.metric) || stringValue(fact.name) || stringValue(fact.signalType) || "fact";
+    const value = numericValue(fact.value) ?? numericValue(fact.yoy);
+    if (value === undefined) continue;
+    statements.push(`INSERT OR IGNORE INTO industries (id, name, parent_id, level) VALUES (${sql(industryId)}, ${sql(industry || "市场")}, NULL, 2);`);
+    statements.push(
+      `INSERT OR REPLACE INTO indicator_values (id, entity_type, entity_id, indicator_name, value, period, source, created_at) VALUES (${sql(safeId(`${runId}_${industryId}_${metric}_${stringValue(fact.company)}_${stringValue(fact.publishedAt)}`))}, 'industry', ${sql(industryId)}, ${sql(metric)}, ${numberSql(value)}, ${sql(stringValue(fact.publishedAt) || radar.asOfDate)}, ${sql(stringValue(fact.source) || "evidence")}, ${sql(radar.generatedAt)});`,
+    );
+  }
+  return `BEGIN TRANSACTION;\n${statements.join("\n")}\nCOMMIT;\n`;
+}
+
+function inferRadarTopicFromText(text) {
+  for (const [label, pattern] of TOPIC_RULES) {
+    if (pattern.test(String(text))) return label;
+  }
+  return "";
+}
+
+function industryIdForName(name) {
+  return safeId(`industry_${name}`);
+}
+
+function safeId(value) {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120) || `id_${fingerprint([{ title: value }])}`;
+}
+
+function sql(value) {
+  return `'${String(value ?? "").replace(/'/g, "''")}'`;
+}
+
+function numberSql(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(number) : "NULL";
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -937,6 +1038,10 @@ function readOptionalJsonFile(path) {
 
 function writeJsonFile(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
+}
+
+function writeTextFile(path, value) {
+  writeFileSync(path, value, "utf8");
 }
 
 function arrayValue(value) {
