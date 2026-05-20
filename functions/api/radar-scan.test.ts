@@ -66,7 +66,7 @@ describe("radar scan model contract", () => {
       new AbortController().signal,
       previous,
     );
-    const body = JSON.parse(String(request.body)) as { messages: Array<{ content: string }> };
+    const body = JSON.parse(String(request.body)) as { reasoning_effort?: string; thinking?: unknown; messages: Array<{ content: string }> };
     const stablePayload = JSON.parse(body.messages[1].content) as Record<string, unknown>;
     const dynamicPayload = JSON.parse(body.messages[2].content) as Record<string, unknown>;
 
@@ -77,6 +77,8 @@ describe("radar scan model contract", () => {
       stream: false,
       temperature: 0.1,
     });
+    expect(body.reasoning_effort).toBe("max");
+    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
     expect(JSON.stringify(stablePayload)).toContain("信息差");
     expect(JSON.stringify(stablePayload)).toContain("代表公司只能列 A 股或港股上市公司");
     expect(dynamicPayload).toMatchObject({
