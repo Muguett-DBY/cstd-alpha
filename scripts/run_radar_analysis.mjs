@@ -335,6 +335,13 @@ function compactDigestForModel(digest) {
       code: source.code,
       market: source.market,
       industry: source.industry,
+      evidenceProfile: source.evidenceProfile,
+      anysearchTags: source.anysearchTags,
+      anysearchContentTypes: source.anysearchContentTypes,
+      anysearchFreshness: source.anysearchFreshness,
+      anysearchSource: source.anysearchSource,
+      qualityScore: source.qualityScore,
+      cached: source.cached,
     })),
   };
 }
@@ -500,11 +507,14 @@ function scoreIndustryPacket(packet) {
   const structuredFactCount = packet.financialFacts.length + packet.industryFacts.length + packet.companyCandidates.length;
   const sourceCount = packet.sourceCount ?? 0;
   const gapPenalty = packet.evidenceGaps.length * 7;
-  const evidence = clampScore(sourceCount * 7 + evidenceWeight * 5 + structuredFactCount * 8 - gapPenalty);
+  const hardSignalCount = packet.signalTypes.filter((signal) => /financial_metric|industry_stat|commodity_price|freight_rate/.test(signal)).length;
+  const externalOnly = packet.signalTypes.length > 0 && packet.signalTypes.every((signal) => signal === "external_search");
+  const rawEvidence = clampScore(sourceCount * 7 + evidenceWeight * 5 + structuredFactCount * 8 - gapPenalty);
+  const evidence = externalOnly && hardSignalCount === 0 ? Math.min(rawEvidence, 45) : rawEvidence;
   const positiveSignals = keywordCount(text, /增长|上涨|改善|扩张|预增|回升|景气|订单|出口|涨价|放量|利润|同比|环比/g);
   const riskSignals = keywordCount(text, /泡沫|过热|透支|估值|连板|停牌|炒作|拥挤|高估/g);
   const declineSignals = keywordCount(text, /下滑|亏损|过剩|去库|衰退|萎缩|价格下跌|需求弱|开工率低|减值/g);
-  const hardSignalBonus = packet.signalTypes.filter((signal) => /financial_metric|industry_stat|commodity_price|freight_rate/.test(signal)).length * 9;
+  const hardSignalBonus = hardSignalCount * 9;
   const changeStatusBonus = packet.changeStatus === "new" ? 18 : packet.changeStatus === "changed" ? 14 : 5;
   const previousSourceCount = typeof packet.previousSourceCount === "number" ? packet.previousSourceCount : sourceCount;
   const sourceDelta = sourceCount - previousSourceCount;
@@ -600,6 +610,8 @@ function classifySource(source) {
               ? "research"
               : "news");
   const weight = source.weight ?? EVIDENCE_WEIGHTS[sourceType] ?? 2;
+  const baseScore = weight * 10 + (/营收|净利润|价格|库存|销量|订单|现金流|同比|环比/.test(text) ? 8 : 0) + (/泡沫|过剩|亏损|下滑|衰退|停牌|异动/.test(text) ? 4 : 0);
+  const score = typeof source.score === "number" && Number.isFinite(source.score) ? source.score : baseScore + anySearchScoreBonus(source);
   return {
     source: stringValue(source.source),
     query: stringValue(source.query),
@@ -610,12 +622,58 @@ function classifySource(source) {
     sourceType,
     signalType: stringValue(source.signalType) || undefined,
     weight,
-    score: weight * 10 + (/营收|净利润|价格|库存|销量|订单|现金流|同比|环比/.test(text) ? 8 : 0) + (/泡沫|过剩|亏损|下滑|衰退|停牌|异动/.test(text) ? 4 : 0),
+    score,
     company: stringValue(source.company) || undefined,
     code: stringValue(source.code) || undefined,
     market: stringValue(source.market) || undefined,
     industry: stringValue(source.industry) || undefined,
+    evidenceProfile: stringValue(source.evidenceProfile) || undefined,
+    anysearchTags: Array.isArray(source.anysearchTags) ? source.anysearchTags.map(stringValue).filter(Boolean).slice(0, 6) : undefined,
+    anysearchContentTypes: Array.isArray(source.anysearchContentTypes) ? source.anysearchContentTypes.map(stringValue).filter(Boolean).slice(0, 6) : undefined,
+    anysearchFreshness: stringValue(source.anysearchFreshness) || undefined,
+    anysearchSource: stringValue(source.anysearchSource) || undefined,
+    qualityScore: numericValue(source.qualityScore),
+    cached: typeof source.cached === "boolean" ? source.cached : undefined,
   };
+}
+
+function anySearchScoreBonus(source) {
+  if (source.source !== "AnySearch") return 0;
+  let bonus = 0;
+  const quality = numericValue(source.qualityScore);
+  if (quality !== undefined) {
+    const normalized = quality > 1 ? quality / 100 : quality;
+    if (normalized >= 0.9) bonus += 14;
+    else if (normalized >= 0.85) bonus += 10;
+    else if (normalized >= 0.75) bonus += 5;
+    else if (normalized < 0.55) bonus -= 12;
+  }
+  const anysearchSource = stringValue(source.anysearchSource).toLowerCase();
+  const anysearchContentTypes = new Set(Array.isArray(source.anysearchContentTypes) ? source.anysearchContentTypes.map((item) => stringValue(item).toLowerCase()).filter(Boolean) : []);
+  if (anysearchSource === "data" || anysearchSource === "doc" || anysearchContentTypes.has("data") || anysearchContentTypes.has("doc")) bonus += 8;
+  else if (anysearchSource === "academic" || anysearchContentTypes.has("academic")) bonus += 6;
+  else if (anysearchSource === "news" || anysearchContentTypes.has("news")) bonus += 3;
+  else if (anysearchSource === "web" || anysearchContentTypes.has("web")) bonus += 1;
+  bonus += publishedAtBonus(source.publishedAt);
+  if (isRecord(source.anysearchSignalScores)) {
+    const authority = numericValue(source.anysearchSignalScores.authority);
+    const freshness = numericValue(source.anysearchSignalScores.freshness);
+    if (authority !== undefined && authority >= 25) bonus += 4;
+    if (freshness !== undefined && freshness >= 10) bonus += 3;
+  }
+  return bonus;
+}
+
+function publishedAtBonus(value) {
+  const text = stringValue(value);
+  if (!text) return 0;
+  const timestamp = Date.parse(text);
+  if (!Number.isFinite(timestamp)) return 0;
+  const ageDays = (Date.now() - timestamp) / 86400000;
+  if (ageDays <= 7) return 8;
+  if (ageDays <= 30) return 4;
+  if (ageDays <= 90) return 1;
+  return 0;
 }
 
 function dedupeSources(sources) {
@@ -782,6 +840,10 @@ function stringArray(value) {
 
 function stringValue(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function numericValue(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value) {

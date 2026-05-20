@@ -9,6 +9,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+__pycache__/
+*.pyc
 .wrangler
 dist
 dist-ssr

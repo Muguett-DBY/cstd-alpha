@@ -33,6 +33,7 @@ export type AnySearchQuery = {
   sourceType?: SupplementalSourceType;
   maxResults?: number;
   domains?: AnySearchDomain[];
+  tags?: string[];
   contentTypes?: AnySearchContentType[];
   freshness?: AnySearchFreshness;
 };
@@ -48,11 +49,16 @@ export type AnySearchEvidence = {
   signalType: "external_search";
   weight: number;
   topic?: string;
+  tags?: string[];
+  contentTypes?: AnySearchContentType[];
+  freshness?: AnySearchFreshness;
   publishedAt?: string;
   qualityScore?: number;
   score?: number;
   anysearchSource?: string;
   anysearchRequestId?: string;
+  signalScores?: Record<string, number>;
+  contentType?: string;
   cached?: boolean;
 };
 
@@ -67,6 +73,7 @@ type AnySearchResponse = {
     source?: string;
     score?: number;
     quality_score?: number;
+    signal_scores?: Record<string, number>;
     published_at?: string;
   }>;
   metadata?: {
@@ -80,7 +87,7 @@ const MAX_SUMMARY_CHARS = 520;
 const MAX_CONTENT_CHARS = 1200;
 
 export function buildAnySearchRequestBody(query: AnySearchQuery) {
-  return {
+  const body: Record<string, unknown> = {
     query: query.query,
     max_results: query.maxResults ?? 5,
     domains: query.domains ?? ["finance", "business"],
@@ -89,6 +96,8 @@ export function buildAnySearchRequestBody(query: AnySearchQuery) {
     language: "zh-CN",
     constraint: { freshness: query.freshness ?? "month" },
   };
+  if (query.tags?.length) body.tags = query.tags;
+  return body;
 }
 
 export async function fetchAnySearchEvidence({
@@ -152,11 +161,16 @@ export function normalizeAnySearchResults(payload: unknown, context: AnySearchQu
       signalType: "external_search",
       weight: sourceType === "official" ? 4 : 2,
       topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
       publishedAt: cleanText(raw.published_at) || undefined,
       qualityScore: numberValue(raw.quality_score),
       score: numberValue(raw.score),
       anysearchSource: cleanText(raw.source) || undefined,
       anysearchRequestId: cleanText(metadata.request_id) || undefined,
+      signalScores: signalScoresValue(raw.signal_scores),
+      contentType: cleanText(raw.source) || undefined,
       cached: typeof metadata.cached === "boolean" ? metadata.cached : false,
     });
   }
@@ -172,6 +186,9 @@ export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], re
     freshness: item.publishedAt ? "latest-public" : "stale",
     notes: [
       item.topic ? `主题：${item.topic}` : "",
+      item.tags?.length ? `检索标签：${item.tags.join(",")}` : "",
+      item.contentTypes?.length ? `内容类型：${item.contentTypes.join(",")}` : "",
+      item.freshness ? `时间窗口：${item.freshness}` : "",
       item.summary,
       typeof item.qualityScore === "number" ? `quality_score=${item.qualityScore}` : "",
       item.anysearchRequestId ? `request_id=${item.anysearchRequestId}` : "",
@@ -206,6 +223,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function numberValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   return undefined;
+}
+
+function signalScoresValue(value: unknown): Record<string, number> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).flatMap(([key, item]) => (typeof item === "number" && Number.isFinite(item) ? [[key, item] as const] : []));
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 function cleanText(value: unknown) {

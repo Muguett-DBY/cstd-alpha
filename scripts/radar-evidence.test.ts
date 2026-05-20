@@ -126,16 +126,56 @@ describe("rolling radar evidence collector", () => {
 
     execFileSync("python", [script, "--offline-fixture", "--output", outputPath], { stdio: "pipe" });
     const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
-      sources?: Array<{ source?: string; sourceType?: string; signalType?: string; qualityScore?: number; anysearchRequestId?: string; cached?: boolean }>;
+      sources?: Array<{
+        source?: string;
+        sourceType?: string;
+        signalType?: string;
+        qualityScore?: number;
+        anysearchRequestId?: string;
+        cached?: boolean;
+        evidenceProfile?: string;
+        anysearchTags?: string[];
+        anysearchContentTypes?: string[];
+        anysearchFreshness?: string;
+        anysearchSource?: string;
+        score?: number;
+      }>;
       industryPackets?: Array<{ sources?: Array<{ source?: string }> }>;
     };
     const anysearchSources = (snapshot.sources ?? []).filter((source) => source.source === "AnySearch");
+    const profiles = new Set(anysearchSources.map((source) => source.evidenceProfile));
 
-    expect(anysearchSources.length).toBeGreaterThan(0);
+    expect(anysearchSources.length).toBeGreaterThanOrEqual(4);
+    expect(Array.from(profiles)).toEqual(expect.arrayContaining(["announcement", "industry_data", "policy", "risk"]));
     expect(anysearchSources.every((source) => source.sourceType === "news" || source.sourceType === "official")).toBe(true);
     expect(anysearchSources.every((source) => source.signalType !== "financial_metric" && source.signalType !== "commodity_price")).toBe(true);
-    expect(anysearchSources.some((source) => typeof source.qualityScore === "number" && source.anysearchRequestId && typeof source.cached === "boolean")).toBe(true);
+    expect(anysearchSources.every((source) => source.signalType === "external_search")).toBe(true);
+    expect(anysearchSources.some((source) => typeof source.qualityScore === "number" && source.qualityScore >= 0.85 && source.anysearchRequestId && typeof source.cached === "boolean")).toBe(true);
+    expect(anysearchSources.some((source) => source.anysearchTags?.length && source.anysearchFreshness === "week")).toBe(true);
+    expect(anysearchSources.some((source) => source.anysearchContentTypes?.includes("data") || source.anysearchContentTypes?.includes("doc"))).toBe(true);
+    expect(anysearchSources.filter((source) => source.anysearchSource === "doc" || source.anysearchSource === "data").every((source) => (source.score ?? 0) >= 50)).toBe(true);
     expect(snapshot.industryPackets?.some((packet) => packet.sources?.some((source) => source.source === "AnySearch"))).toBe(true);
+  });
+
+  test("scores AnySearch quality consistently across 0-1 and 0-100 scales", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "base={'source':'AnySearch','query':'存储芯片 价格 库存','title':'存储芯片 价格 库存 订单','summary':'价格 库存 同比','sourceType':'official','signalType':'external_search','weight':4,'anysearchContentTypes':['data','news','web'],'publishedAt':'2026-05-19T00:00:00Z'}",
+          "a={**base,'qualityScore':0.86}; b={**base,'qualityScore':86}",
+          "print(json.dumps([m.score_source(a), m.score_source(b)]))",
+        ].join("; "),
+      ],
+      { encoding: "utf8" },
+    );
+    const [fractionScore, percentageScore] = JSON.parse(output) as [number, number];
+
+    expect(percentageScore).toBe(fractionScore);
   });
 
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {

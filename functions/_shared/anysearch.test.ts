@@ -7,6 +7,7 @@ describe("AnySearch helper", () => {
       query: "贵州茅台 财报 风险 行业 2026",
       maxResults: 4,
       domains: ["finance", "business"],
+      tags: ["finance.market", "business.company"],
       contentTypes: ["news", "web", "data"],
       freshness: "month",
     });
@@ -15,6 +16,7 @@ describe("AnySearch helper", () => {
       query: "贵州茅台 财报 风险 行业 2026",
       max_results: 4,
       domains: ["finance", "business"],
+      tags: ["finance.market", "business.company"],
       content_types: ["news", "web", "data"],
       zone: "cn",
       language: "zh-CN",

@@ -26,8 +26,47 @@ MIN_GOOGLE_NEWS_SOURCES = 18
 MIN_STRUCTURED_SOURCES = 80
 MIN_UNIQUE_SOURCES = 3
 ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search"
-ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "72"))
-ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "3"))
+ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "360"))
+ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "2"))
+
+ANYSEARCH_EVIDENCE_PROFILES = [
+    {
+        "profile": "industry_data",
+        "terms": "价格 库存 产能 销量 开工率 运价 装机 出口 同比 环比",
+        "sourceType": "official",
+        "domains": ("finance", "business"),
+        "contentTypes": ("data", "news", "web"),
+        "freshness": "week",
+        "tags": ("finance.market", "business.industry"),
+    },
+    {
+        "profile": "announcement",
+        "terms": "财报 业绩预告 业绩快报 经营现金流 毛利率 净利润 营收 订单",
+        "sourceType": "official",
+        "domains": ("finance", "business"),
+        "contentTypes": ("doc", "data", "news", "web"),
+        "freshness": "month",
+        "tags": ("finance.company", "business.company"),
+    },
+    {
+        "profile": "policy",
+        "terms": "政策 监管 文件 出口管制 集采 补贴 审批 核准",
+        "sourceType": "official",
+        "domains": ("business", "legal"),
+        "contentTypes": ("doc", "news", "web"),
+        "freshness": "month",
+        "tags": ("legal.regulation", "business.policy"),
+    },
+    {
+        "profile": "risk",
+        "terms": "亏损 过剩 停牌 异动 需求下滑 库存高企 价格下跌 减值",
+        "sourceType": "news",
+        "domains": ("finance", "business"),
+        "contentTypes": ("news", "web", "doc"),
+        "freshness": "week",
+        "tags": ("finance.risk", "business.news"),
+    },
+]
 
 TOPIC_QUERIES = [
     ("半导体/AI算力", "存储芯片 DRAM NAND HBM AI 服务器 价格 库存", "hard_data"),
@@ -750,9 +789,10 @@ def fetch_anysearch() -> list[dict[str, Any]]:
             "max_results": ANYSEARCH_RESULTS_PER_QUERY,
             "domains": query_plan["domains"],
             "content_types": query_plan["contentTypes"],
+            "tags": query_plan["tags"],
             "zone": "cn",
             "language": "zh-CN",
-            "constraint": {"freshness": "month"},
+            "constraint": {"freshness": query_plan["freshness"]},
         }
         try:
             payload = post_json(ANYSEARCH_API_URL, request_body, {"Authorization": f"Bearer {api_key}"})
@@ -765,23 +805,27 @@ def fetch_anysearch() -> list[dict[str, Any]]:
 
 def anysearch_query_plans() -> list[dict[str, Any]]:
     plans: list[dict[str, Any]] = []
-    for taxonomy in FINE_INDUSTRY_TAXONOMY:
-        industry = taxonomy["industry"]
-        keywords = " ".join(taxonomy["keywords"][:6])
-        domains = anysearch_domains_for_group(taxonomy["group"], industry)
-        content_types = ["news", "web", "data"]
-        if "政策" in keywords or taxonomy["group"] in ("金融地产", "医药医疗"):
-            content_types.append("doc")
-        plans.append(
-            {
-                "industry": industry,
-                "group": taxonomy["group"],
-                "query": f"{industry} {keywords} 最新 财报 价格 销量 订单 政策 风险 A股 港股",
-                "domains": domains,
-                "contentTypes": unique_strings(content_types),
-                "sourceType": "official" if any(domain in domains for domain in ("energy", "health", "legal")) else "news",
-            }
-        )
+    for profile in ANYSEARCH_EVIDENCE_PROFILES:
+        for taxonomy in FINE_INDUSTRY_TAXONOMY:
+            industry = taxonomy["industry"]
+            keywords = " ".join(taxonomy["keywords"][:6])
+            group_domains = anysearch_domains_for_group(taxonomy["group"], industry)
+            profile_domains = list(profile["domains"])
+            domains = unique_strings([*profile_domains, *[domain for domain in group_domains if domain in ("energy", "health", "legal")]])
+            content_types = unique_strings(profile["contentTypes"])
+            plans.append(
+                {
+                    "industry": industry,
+                    "group": taxonomy["group"],
+                    "profile": profile["profile"],
+                    "query": f"{industry} {keywords} {profile['terms']} A股 港股",
+                    "domains": domains,
+                    "tags": unique_strings(profile["tags"]),
+                    "contentTypes": content_types,
+                    "freshness": profile["freshness"],
+                    "sourceType": profile["sourceType"],
+                }
+            )
     return plans
 
 
@@ -812,6 +856,8 @@ def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str
         description = clean_text(result.get("description"))
         content = trim_text(result.get("content"), 700)
         source_type = clean_text(query_plan.get("sourceType")) or "news"
+        anysearch_source = clean_text(result.get("source"))
+        quality_score = numeric(result.get("quality_score"))
         sources.append(
             compact_dict(
                 {
@@ -826,9 +872,14 @@ def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str
                     "weight": SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["news"]),
                     "topic": query_plan["industry"],
                     "industry": query_plan["industry"],
-                    "qualityScore": numeric(result.get("quality_score")),
+                    "evidenceProfile": query_plan.get("profile"),
+                    "anysearchTags": query_plan.get("tags"),
+                    "anysearchContentTypes": query_plan.get("contentTypes"),
+                    "anysearchFreshness": query_plan.get("freshness"),
+                    "qualityScore": quality_score,
                     "anysearchScore": numeric(result.get("score")),
-                    "anysearchSource": clean_text(result.get("source")),
+                    "anysearchSignalScores": result.get("signal_scores") if isinstance(result.get("signal_scores"), dict) else None,
+                    "anysearchSource": anysearch_source,
                     "anysearchRequestId": clean_text(metadata.get("request_id")),
                     "cached": metadata.get("cached") if isinstance(metadata.get("cached"), bool) else False,
                 }
@@ -1166,25 +1217,53 @@ def fixture_anysearch_sources() -> list[dict[str, Any]]:
     return [
         {
             "source": "AnySearch",
-            "query": "存储芯片 HBM DRAM NAND 最新 财报 价格 销量 订单 政策 风险 A股 港股",
+            "query": "存储芯片 HBM DRAM NAND 价格 库存 产能 销量 开工率 运价 装机 出口 同比 环比 A股 港股",
             "title": "存储芯片价格和 A/H 产业链订单线索被多源提及",
-            "url": "https://anysearch.example.com/radar/storage",
+            "url": "https://anysearch.example.com/radar/storage-industry-data",
             "publishedAt": "2026-05-19T00:00:00Z",
             "summary": "AnySearch 外部搜索线索：用于发现存储芯片涨价、订单和公司候选，不替代财报或价格硬数据。",
-            "sourceType": "news",
+            "sourceType": "official",
             "signalType": "external_search",
-            "weight": SOURCE_WEIGHTS["news"],
+            "weight": SOURCE_WEIGHTS["official"],
             "topic": "存储芯片",
             "industry": "存储芯片",
+            "evidenceProfile": "industry_data",
+            "anysearchTags": ["finance.market", "business.industry"],
+            "anysearchContentTypes": ["data", "news", "web"],
+            "anysearchFreshness": "week",
             "qualityScore": 0.91,
             "anysearchScore": 0.86,
-            "anysearchSource": "news",
-            "anysearchRequestId": "req_fixture_storage",
+            "anysearchSignalScores": {"freshness": 13, "authority": 33},
+            "anysearchSource": "data",
+            "anysearchRequestId": "req_fixture_storage_data",
             "cached": True,
         },
         {
             "source": "AnySearch",
-            "query": "创新药 出海 license out 审批 最新 财报 价格 销量 订单 政策 风险 A股 港股",
+            "query": "存储芯片 HBM DRAM NAND 财报 业绩预告 业绩快报 经营现金流 毛利率 净利润 营收 订单 A股 港股",
+            "title": "存储链 A/H 公司业绩和订单搜索线索",
+            "url": "https://anysearch.example.com/radar/storage-announcement",
+            "publishedAt": "2026-05-19T00:00:00Z",
+            "summary": "AnySearch 外部搜索线索：用于发现公司公告、业绩预告和订单变化，仍需交易所公告或财报数据交叉验证。",
+            "sourceType": "official",
+            "signalType": "external_search",
+            "weight": SOURCE_WEIGHTS["official"],
+            "topic": "存储芯片",
+            "industry": "存储芯片",
+            "evidenceProfile": "announcement",
+            "anysearchTags": ["finance.company", "business.company"],
+            "anysearchContentTypes": ["doc", "data", "news", "web"],
+            "anysearchFreshness": "month",
+            "qualityScore": 0.86,
+            "anysearchScore": 0.8,
+            "anysearchSignalScores": {"freshness": 9, "authority": 28},
+            "anysearchSource": "doc",
+            "anysearchRequestId": "req_fixture_storage_announcement",
+            "cached": False,
+        },
+        {
+            "source": "AnySearch",
+            "query": "创新药 出海 license out 审批 政策 监管 文件 出口管制 集采 补贴 审批 核准 A股 港股",
             "title": "创新药出海和审批进展形成补充搜索线索",
             "url": "https://anysearch.example.com/radar/biotech",
             "publishedAt": "2026-05-19T00:00:00Z",
@@ -1194,11 +1273,39 @@ def fixture_anysearch_sources() -> list[dict[str, Any]]:
             "weight": SOURCE_WEIGHTS["official"],
             "topic": "创新药/医疗服务",
             "industry": "创新药/医疗服务",
+            "evidenceProfile": "policy",
+            "anysearchTags": ["legal.regulation", "business.policy"],
+            "anysearchContentTypes": ["doc", "news", "web"],
+            "anysearchFreshness": "month",
             "qualityScore": 0.88,
             "anysearchScore": 0.82,
+            "anysearchSignalScores": {"freshness": 8, "authority": 35},
             "anysearchSource": "doc",
             "anysearchRequestId": "req_fixture_biotech",
             "cached": True,
+        },
+        {
+            "source": "AnySearch",
+            "query": "机器人 具身智能 亏损 过剩 停牌 异动 需求下滑 库存高企 价格下跌 减值 A股 港股",
+            "title": "机器人概念交易过热和业绩兑现风险搜索线索",
+            "url": "https://anysearch.example.com/radar/robot-risk",
+            "publishedAt": "2026-05-19T00:00:00Z",
+            "summary": "AnySearch 外部搜索线索：用于发现风险事件、交易异动和产业兑现压力，不能单独证明泡沫或衰退。",
+            "sourceType": "news",
+            "signalType": "external_search",
+            "weight": SOURCE_WEIGHTS["news"],
+            "topic": "机器人/具身智能",
+            "industry": "机器人/具身智能",
+            "evidenceProfile": "risk",
+            "anysearchTags": ["finance.risk", "business.news"],
+            "anysearchContentTypes": ["news", "web", "doc"],
+            "anysearchFreshness": "week",
+            "qualityScore": 0.76,
+            "anysearchScore": 0.7,
+            "anysearchSignalScores": {"freshness": 12, "authority": 18},
+            "anysearchSource": "news",
+            "anysearchRequestId": "req_fixture_robot_risk",
+            "cached": False,
         },
     ]
 
@@ -1374,10 +1481,13 @@ def classify_source(source: dict[str, Any]) -> dict[str, Any]:
         text_value = clean_text(source.get(key))
         if text_value:
             item[key] = text_value
-    for key in ("topic", "anysearchSource", "anysearchRequestId"):
+    for key in ("topic", "evidenceProfile", "anysearchFreshness", "anysearchSource", "anysearchRequestId"):
         text_value = clean_text(source.get(key))
         if text_value:
             item[key] = text_value
+    for key in ("anysearchTags", "anysearchContentTypes", "anysearchSignalScores"):
+        if key in source and source.get(key) is not None:
+            item[key] = source.get(key)
     for key in ("value", "yoy", "metrics"):
         if key in source and source.get(key) is not None:
             item[key] = source.get(key)
@@ -1409,7 +1519,66 @@ def score_source(source: dict[str, Any]) -> int:
     data_signal = 0 if is_google_news else 8 if any(word in text for word in DATA_SIGNAL_WORDS) else 0
     risk_signal = 4 if any(word in text for word in RISK_SIGNAL_WORDS) else 0
     topic_signal = 10 if any(word.lower() in text.lower() for word in TOPIC_SIGNAL_WORDS) else 0
-    return int(source.get("weight", 2)) * 10 + data_signal + risk_signal + topic_signal
+    anysearch_bonus = anysearch_source_bonus(source)
+    return max(0, int(source.get("weight", 2)) * 10 + data_signal + risk_signal + topic_signal + anysearch_bonus)
+
+
+def anysearch_source_bonus(source: dict[str, Any]) -> int:
+    if source.get("source") != "AnySearch":
+        return 0
+    bonus = 0
+    quality_score = numeric(source.get("qualityScore"))
+    if quality_score is not None:
+        normalized_quality = quality_score / 100 if quality_score > 1 else quality_score
+        if normalized_quality >= 0.9:
+            bonus += 14
+        elif normalized_quality >= 0.85:
+            bonus += 10
+        elif normalized_quality >= 0.75:
+            bonus += 5
+        elif normalized_quality < 0.55:
+            bonus -= 12
+    anysearch_source = clean_text(source.get("anysearchSource")).lower()
+    anysearch_content_types = {clean_text(item).lower() for item in source.get("anysearchContentTypes", []) if clean_text(item)}
+    if anysearch_source in ("data", "doc") or anysearch_content_types.intersection({"data", "doc"}):
+        bonus += 8
+    elif anysearch_source == "academic" or "academic" in anysearch_content_types:
+        bonus += 6
+    elif anysearch_source == "news" or "news" in anysearch_content_types:
+        bonus += 3
+    elif anysearch_source == "web" or "web" in anysearch_content_types:
+        bonus += 1
+    freshness_bonus = published_at_bonus(clean_text(source.get("publishedAt")))
+    bonus += freshness_bonus
+    signal_scores = source.get("anysearchSignalScores")
+    if isinstance(signal_scores, dict):
+        authority = numeric(signal_scores.get("authority"))
+        freshness = numeric(signal_scores.get("freshness"))
+        if authority is not None and authority >= 25:
+            bonus += 4
+        if freshness is not None and freshness >= 10:
+            bonus += 3
+    return bonus
+
+
+def published_at_bonus(value: str) -> int:
+    if not value:
+        return 0
+    normalized = value.replace("Z", "+00:00")
+    try:
+        published = datetime.fromisoformat(normalized)
+    except ValueError:
+        return 0
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+    age_days = (datetime.now(timezone.utc) - published.astimezone(timezone.utc)).days
+    if age_days <= 7:
+        return 8
+    if age_days <= 30:
+        return 4
+    if age_days <= 90:
+        return 1
+    return 0
 
 
 def dedupe_sources(items: Any) -> list[dict[str, Any]]:

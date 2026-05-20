@@ -60,8 +60,10 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual([]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 4, changedIndustryCount: 3, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 5, changedIndustryCount: 4, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(radarCache.radar?.sustainability?.some((item) => item.title === "航运运价高位观察" && item.changeReason?.includes("复用上次稳定结论"))).toBe(true);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
@@ -100,19 +102,27 @@ describe("background radar analyzer", () => {
 
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { reasoning_effort?: string; messages?: Array<{ content?: string }> };
     const dynamicPayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
-      evidenceDigest?: { citations?: unknown[]; packets?: unknown[] };
-      analysisScope?: { changedIndustryPackets?: Array<{ scores?: unknown }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
+      evidenceDigest?: { citations?: Array<{ source?: string; qualityScore?: number; evidenceProfile?: string; anysearchTags?: string[]; anysearchContentTypes?: string[]; anysearchFreshness?: string }>; packets?: unknown[] };
+      analysisScope?: { changedIndustryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
       structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[] };
       previousScan?: { id?: string };
     };
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(4);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(3);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(5);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(4);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(dynamicPayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
+    expect(dynamicPayload.evidenceDigest?.citations?.find((source) => source.source === "AnySearch")).toMatchObject({
+      qualityScore: 86,
+      evidenceProfile: "industry_data",
+      anysearchFreshness: "week",
+      anysearchTags: ["finance.market", "business.industry"],
+      anysearchContentTypes: ["data", "news", "web"],
+    });
     expect(dynamicPayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
     expect(dynamicPayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
     expect(dynamicPayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
@@ -184,6 +194,28 @@ function evidenceSnapshot() {
       weight: 5,
       industry: "航运物流",
     },
+    {
+      source: "AnySearch",
+      query: "存储芯片 HBM 价格 库存 A股 港股",
+      title: "存储芯片价格和 A/H 产业链订单搜索线索",
+      url: "https://anysearch.example.com/storage",
+      publishedAt: "2026-05-19T00:00:00Z",
+      summary: "外部搜索发现价格和订单线索，仍需硬数据交叉验证。",
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 4,
+      industry: "存储芯片",
+      evidenceProfile: "industry_data",
+      anysearchFreshness: "week",
+      anysearchTags: ["finance.market", "business.industry"],
+      anysearchContentTypes: ["data", "news", "web"],
+      anysearchSource: "data",
+      qualityScore: 86,
+      anysearchScore: 0.82,
+      anysearchSignalScores: { freshness: 12, authority: 31 },
+      anysearchRequestId: "req_test",
+      cached: false,
+    },
   ];
   return {
     version: "v1",
@@ -208,6 +240,7 @@ function evidenceSnapshot() {
       { group: "高景气成长", industry: "汽车/智能驾驶", status: "scanned", evidenceHash: "hash-auto", sourceCount: 1, evidenceTypes: ["official"], signalTypes: ["industry_stat"], evidenceGaps: ["缺财报"], sources: [sources[2]], financialFacts: [], industryFacts: [{ industry: "汽车/智能驾驶" }], companyCandidates: [] },
       { group: "周期品", industry: "战略有色金属", status: "scanned", evidenceHash: "hash-metal", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["commodity_price"], evidenceGaps: ["缺财报"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["official"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
     ],
   };
 }

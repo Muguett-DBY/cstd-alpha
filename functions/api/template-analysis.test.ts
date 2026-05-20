@@ -175,6 +175,40 @@ describe("template model routing", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
+          results: [
+            {
+              title: "白酒行业批价和动销分化",
+              url: "https://example.com/baijiu-industry",
+              description: "行业批价、库存和竞争格局出现分化。",
+              content: "高端白酒渠道动销需要结合批价和库存验证。",
+              source: "data",
+              quality_score: 0.86,
+              published_at: "2026-05-18T00:00:00Z",
+            },
+          ],
+          metadata: { request_id: "req_template_industry", cached: false },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: "贵州茅台 风险事件和监管跟踪",
+              url: "https://example.com/maotai-risk",
+              description: "负面舆情和监管风险需要持续跟踪。",
+              content: "市场关注渠道库存、价格体系和监管环境变化。",
+              source: "doc",
+              quality_score: 0.84,
+              published_at: "2026-05-18T00:00:00Z",
+            },
+          ],
+          metadata: { request_id: "req_template_risk", cached: false },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
           choices: [
             {
               finish_reason: "stop",
@@ -206,10 +240,19 @@ describe("template model routing", () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.anysearch.com/v1/search");
     expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization", "Bearer any-key");
-    const modelBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://api.anysearch.com/v1/search");
+    expect(fetchMock.mock.calls[2][0]).toBe("https://api.anysearch.com/v1/search");
+    const anySearchBodies = fetchMock.mock.calls.slice(0, 3).map((call) => JSON.parse(call[1].body));
+    expect(anySearchBodies.map((body) => body.query).join("\n")).toContain("最新公告");
+    expect(anySearchBodies.map((body) => body.query).join("\n")).toContain("所属行业");
+    expect(anySearchBodies.map((body) => body.query).join("\n")).toContain("负面");
+    expect(anySearchBodies.every((body) => Array.isArray(body.tags) && body.tags.length > 0)).toBe(true);
+    const modelBody = JSON.parse(fetchMock.mock.calls[3][1].body);
     const promptPayload = JSON.parse(modelBody.messages[1].content);
     expect(JSON.stringify(promptPayload.publicEvidence)).toContain("AnySearch 外部搜索");
     expect(JSON.stringify(promptPayload.publicEvidence)).toContain("渠道库存边际改善");
+    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("白酒行业批价");
+    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("监管跟踪");
   });
 });
 
