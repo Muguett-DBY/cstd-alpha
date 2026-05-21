@@ -961,12 +961,14 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
     .slice(0, 6)
     .map((item) => {
       const conclusionStrength = enumValue(item.conclusionStrength, CONCLUSION_STRENGTHS, "观察");
+      const sourceIds = sourceIdsForItem(item, digest);
       return {
         ...item,
+        companies: evidenceBackedCompanies(ahCompanies(item.companies), sourceIds, digest, item).slice(0, 6),
         thesis: conclusionStrength === "正式结论" ? fixRadarText(item.thesis) : softenObservationText(item.thesis),
         evidence: stringArray(item.evidence).map(fixRadarText),
         conclusionStrength,
-        sourceIds: sourceIdsForItem(item, digest),
+        sourceIds,
         changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
       };
     });
