@@ -544,14 +544,16 @@ function buildIndustryStageMap(sections) {
 }
 
 function normalizeRadarIndustryPacket(packet, stageByIndustry) {
-  const scores = scoreIndustryPacket(packet);
+  const rawScores = scoreIndustryPacket(packet);
   const mappedStage = stageForIndustryPacket(packet, stageByIndustry);
+  const stage = mappedStage || fallbackIndustryStage(packet, rawScores);
+  const scores = reconcileScoresWithStage(rawScores, stage);
   return {
     group: packet.group,
     industry: packet.industry,
     status: packet.status,
     changeStatus: packet.changeStatus,
-    stage: mappedStage || fallbackIndustryStage(packet, scores),
+    stage,
     evidenceHash: packet.evidenceHash,
     sourceCount: packet.sourceCount,
     evidenceTypes: packet.evidenceTypes,
@@ -560,6 +562,37 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
     themes: packet.themes,
     scores,
   };
+}
+
+function reconcileScoresWithStage(scores, stage) {
+  const next = { ...scores };
+  if (stage === "衰退") {
+    next.growth = Math.min(next.growth, 49);
+    next.momentum = Math.min(next.momentum, 49);
+    next.declineRisk = Math.max(next.declineRisk, 72);
+  } else if (stage === "扎实增长") {
+    next.growth = Math.max(next.growth, 68);
+    next.momentum = Math.max(next.momentum, 55);
+    next.declineRisk = Math.min(next.declineRisk, 60);
+    next.bubbleRisk = Math.min(next.bubbleRisk, 58);
+  } else if (stage === "即将增长") {
+    next.growth = Math.max(next.growth, 56);
+    next.momentum = Math.max(next.momentum, 58);
+    next.declineRisk = Math.min(next.declineRisk, 68);
+  } else if (stage === "平稳现金流") {
+    next.growth = Math.min(next.growth, 52);
+    next.bubbleRisk = Math.min(next.bubbleRisk, 45);
+    next.declineRisk = Math.min(next.declineRisk, 45);
+  } else if (stage === "泡沫风险") {
+    next.bubbleRisk = Math.max(next.bubbleRisk, 64);
+    next.valuationRisk = Math.max(next.valuationRisk, 60);
+  } else if (stage === "继续观察") {
+    next.growth = Math.min(Math.max(next.growth, 35), 72);
+    next.declineRisk = Math.min(next.declineRisk, 84);
+  } else if (stage === "证据不足") {
+    next.confidence = Math.min(next.confidence, 48);
+  }
+  return next;
 }
 
 function stageForIndustryPacket(packet, stageByIndustry) {

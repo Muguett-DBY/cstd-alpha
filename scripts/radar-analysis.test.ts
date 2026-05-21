@@ -69,9 +69,15 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
     expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 9, changedIndustryCount: 8, unchangedIndustryCount: 1 });
-    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
+    const newDrugPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务");
+    expect(newDrugPacket).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
+    expect(newDrugPacket?.scores?.growth).toBeGreaterThanOrEqual(68);
+    expect(newDrugPacket?.scores?.declineRisk).toBeLessThanOrEqual(60);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
-    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链")).toMatchObject({ stage: "衰退" });
+    const propertyPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链");
+    expect(propertyPacket).toMatchObject({ stage: "衰退" });
+    expect(propertyPacket?.scores?.growth).toBeLessThanOrEqual(49);
+    expect(propertyPacket?.scores?.declineRisk).toBeGreaterThanOrEqual(72);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "新能源汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "CXO")?.stage).not.toBe("衰退");
