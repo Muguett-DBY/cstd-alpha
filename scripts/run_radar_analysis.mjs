@@ -594,8 +594,11 @@ function cleanStageKey(value) {
 function fallbackIndustryStage(packet, scores) {
   if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
   const growthPressure = Math.max(scores.growth, scores.momentum);
-  const structuralDecline = /过剩\/衰退|过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(`${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`);
+  const stageText = `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`;
+  const structuralDecline = /过剩\/衰退|过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(stageText);
+  const protectedGrowthTheme = /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|电网设备|AI应用|软件/.test(stageText);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
+  if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
   if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
   if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
