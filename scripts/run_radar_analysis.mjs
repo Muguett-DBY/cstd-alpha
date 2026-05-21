@@ -676,7 +676,7 @@ function isDirectStructuralDecline(packet) {
 }
 
 function isProtectedGrowthTheme(packet) {
-  return /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件|消费复苏|消费出海|品牌出海|白酒批价|高股息|保险复苏|物业现金流|储能出海/.test(stageSignalText(packet));
+  return /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件|消费复苏|消费出海|品牌出海|白酒批价|高股息|保险复苏|物业现金流|储能出海|水泥|建材|建材复苏|产能出清/.test(stageSignalText(packet));
 }
 
 function shouldProtectFromBroadDecline(packet, scores) {
