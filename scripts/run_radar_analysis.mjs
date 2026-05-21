@@ -1097,7 +1097,7 @@ function mergeRadarLists(primary, fallback) {
     byLabel.set(list.label, {
       label: list.label,
       companies: uniqueCompaniesByName([...(existing?.companies ?? []), ...(list.companies ?? [])]).slice(0, 8),
-      note: stringValue(list.note) || existing?.note || "",
+      note: existing?.note || stringValue(list.note) || "",
     });
   }
   return [...byLabel.values()].filter((item) => item.companies.length || item.note);

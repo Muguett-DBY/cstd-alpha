@@ -2111,7 +2111,12 @@ def industry_evidence_gaps(taxonomy: dict[str, Any], sources: list[dict[str, Any
     gaps: list[str] = []
     if not financial_facts and "financial_metric" not in signal_types:
         gaps.append("缺财报")
-    if needs["price"] and not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
+    has_price_signal = any(signal in signal_types for signal in ("commodity_price", "freight_rate")) or any(
+        clean_text(source.get("signalType")) == "industry_stat"
+        and re.search(r"价格|现货|期货|猪价|批价|运价|基差|收盘|结算|元/斤|元/吨", source_text(source), re.I)
+        for source in sources
+    )
+    if needs["price"] and not has_price_signal:
         gaps.append("缺价格")
     if needs["sales"] and not industry_facts and "industry_stat" not in signal_types:
         gaps.append("缺销量")
