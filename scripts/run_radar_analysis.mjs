@@ -521,8 +521,7 @@ function cleanRadarSections(sections) {
 
 function hasEnoughRadarItemEvidence(item) {
   const sourceCount = item.sourceIds?.length ?? 0;
-  const hasHardEvidence = arrayValue(item.evidenceTypes).some((type) => /hard_data|official|announcement|market/.test(type));
-  return sourceCount >= 2 || (sourceCount >= 1 && hasHardEvidence);
+  return sourceCount >= 2;
 }
 
 function dedupeRadarItems(items) {
@@ -602,6 +601,7 @@ function canonicalIndustryKey(value) {
   if (/高速|铁路/.test(text)) return "高速铁路";
   if (/电信|运营商/.test(text)) return "电信运营";
   if (/银行|保险|券商/.test(text)) return "金融高股息";
+  if (/战略有色|有色|铜|铝|稀土|钨|钼|钴|镍/.test(text)) return "战略有色金属";
   if (/存储|DRAM|NAND|HBM/.test(text)) return "存储芯片";
   if (/航运|集运|油运|港口|BDI|SCFI|CCFI/.test(text)) return "航运物流";
   if (/锂电|储能|锂矿|锂盐|碳酸锂/.test(text)) return "锂电储能";
