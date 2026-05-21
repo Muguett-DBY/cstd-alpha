@@ -690,7 +690,8 @@ function conservativeConfidenceSummary(summary, breakdown = {}) {
   const announcement = Number(breakdown.announcement) || 0;
   if (hard < 30 || official <= 2) {
     const cleanedBase = fixRadarText(base).split("证据结构提示：")[0].trim();
-    const conservativeBase = cleanedBase
+    const confidenceBase = /^(高|较高|中高)$/.test(cleanedBase) ? "总体置信度中等" : cleanedBase;
+    const conservativeBase = confidenceBase
       .replace(/总体置信度[较偏]?高/g, "总体置信度中等")
       .replace(/置信度较高/g, "置信度中等")
       .replace(/总体置信度高/g, "总体置信度中等")
