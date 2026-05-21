@@ -102,7 +102,7 @@ describe("background radar analyzer", () => {
     });
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceCount).toBeGreaterThan(0);
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceIds?.length).toBeGreaterThan(0);
-    expect(radarCache.radar?.sustainability?.some((item) => item.title === "航运运价高位观察" && item.changeReason?.includes("复用上次稳定结论"))).toBe(true);
+    expect(radarCache.radar?.sustainability?.some((item) => item.sourceIds?.length === 0)).toBe(false);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
     expect(job).toMatchObject({ id: "job-test", status: "completed" });
@@ -267,6 +267,19 @@ function evidenceSnapshot() {
       signalType: "financial_metric",
       weight: 3,
       industry: "光伏产业链",
+    },
+    {
+      source: "东方财富概念板块",
+      query: "低空经济 概念 涨幅 成交额 估值",
+      title: "低空经济概念成交额放大，万丰奥威短期涨幅居前",
+      url: "https://quote.eastmoney.com/center/boardlist.html#concept-low-altitude",
+      sourceType: "market",
+      signalType: "market_heat",
+      weight: 3,
+      company: "万丰奥威",
+      code: "002085.SZ",
+      market: "A股",
+      industry: "低空经济",
     },
   ];
   return {
@@ -494,9 +507,9 @@ function modelOutput() {
         companies: ["万丰奥威(002085.SZ)", "亿航智能(EH.O)"],
         thesis: "海外公司只能作为产业证据，不能进入代表公司。",
         drivers: ["主题催化"],
-        evidence: ["S6 外部搜索线索"],
-        sourceIds: ["S6"],
-        evidenceTypes: ["news"],
+        evidence: ["S8 低空经济概念成交额放大"],
+        sourceIds: ["S8"],
+        evidenceTypes: ["market"],
         supportingSourceCount: 1,
         conclusionStrength: "观察",
         evidenceGaps: [],
