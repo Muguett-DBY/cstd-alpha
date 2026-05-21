@@ -29,6 +29,21 @@ const TOPIC_RULES = [
   ["消费出海", /消费|品牌出海|跨境|家电|纺织|食品饮料|旅游/i],
   ["机器人/AI应用", /机器人|人形机器人|具身智能|AI应用|大模型/i],
 ];
+const STAGE_ALIAS_RULES = [
+  ["地产链", /地产链|房地产|地产开发|房地产开发|房地产服务|房企|保交楼|销售面积|新开工|竣工/i],
+  ["传统燃油车/零部件", /传统燃油车|燃油车|汽车零部件/i],
+  ["光伏产业链", /光伏|硅料|硅片|组件|逆变器|电池片/i],
+  ["钢铁水泥/地产链", /钢铁|水泥|玻璃|建材|开工率/i],
+];
+const STAGE_PRIORITY = {
+  衰退: 50,
+  泡沫风险: 45,
+  扎实增长: 40,
+  即将增长: 35,
+  平稳现金流: 30,
+  继续观察: 20,
+  证据不足: 10,
+};
 const NON_AH_PATTERNS = [
   /美光|Micron/i,
   /英伟达|NVIDIA/i,
@@ -505,6 +520,12 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
 
 function buildIndustryStageMap(sections) {
   const stageByIndustry = new Map();
+  const setStage = (key, stage) => {
+    const normalized = cleanStageKey(key);
+    if (!normalized) return;
+    const existing = stageByIndustry.get(normalized);
+    if (!existing || (STAGE_PRIORITY[stage] ?? 0) >= (STAGE_PRIORITY[existing] ?? 0)) stageByIndustry.set(normalized, stage);
+  };
   for (const [stage, items] of [
     ["扎实增长", sections.solidGrowth],
     ["继续观察", sections.sustainability],
@@ -513,9 +534,9 @@ function buildIndustryStageMap(sections) {
     ["衰退", sections.decliningIndustries],
   ]) {
     for (const item of items) {
-      if (item.title && !stageByIndustry.has(item.title)) stageByIndustry.set(item.title, stage);
+      for (const key of stageLookupKeys(item.title)) setStage(key, stage);
       for (const industry of item.industries ?? []) {
-        if (!stageByIndustry.has(industry)) stageByIndustry.set(industry, stage);
+        for (const key of stageLookupKeys(industry)) setStage(key, stage);
       }
     }
   }
@@ -524,12 +545,13 @@ function buildIndustryStageMap(sections) {
 
 function normalizeRadarIndustryPacket(packet, stageByIndustry) {
   const scores = scoreIndustryPacket(packet);
+  const mappedStage = stageForIndustryPacket(packet, stageByIndustry);
   return {
     group: packet.group,
     industry: packet.industry,
     status: packet.status,
     changeStatus: packet.changeStatus,
-    stage: stageByIndustry.get(packet.industry) || fallbackIndustryStage(packet, scores),
+    stage: mappedStage || fallbackIndustryStage(packet, scores),
     evidenceHash: packet.evidenceHash,
     sourceCount: packet.sourceCount,
     evidenceTypes: packet.evidenceTypes,
@@ -540,13 +562,43 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
   };
 }
 
+function stageForIndustryPacket(packet, stageByIndustry) {
+  const keys = stageLookupKeys(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`);
+  let selected = "";
+  for (const key of keys) {
+    const stage = stageByIndustry.get(cleanStageKey(key));
+    if (stage && (!selected || (STAGE_PRIORITY[stage] ?? 0) > (STAGE_PRIORITY[selected] ?? 0))) selected = stage;
+  }
+  return selected;
+}
+
+function stageLookupKeys(value) {
+  const text = stringValue(value);
+  if (!text) return [];
+  const keys = [text];
+  for (const [alias, pattern] of STAGE_ALIAS_RULES) {
+    if (pattern.test(text)) keys.push(alias);
+  }
+  for (const [topic, pattern] of TOPIC_RULES) {
+    if (pattern.test(text)) keys.push(topic);
+  }
+  return unique(keys.map(cleanStageKey).filter(Boolean));
+}
+
+function cleanStageKey(value) {
+  return stringValue(value).replace(/\s+/g, "");
+}
+
 function fallbackIndustryStage(packet, scores) {
   if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
   const growthPressure = Math.max(scores.growth, scores.momentum);
+  const structuralDecline = /过剩\/衰退|过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(`${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
   if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
   if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
+  if (structuralDecline && scores.declineRisk >= 52) return "衰退";
+  if (structuralDecline && growthPressure >= 54) return "继续观察";
   if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
   if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
   return "证据不足";

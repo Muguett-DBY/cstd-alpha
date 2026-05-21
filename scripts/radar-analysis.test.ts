@@ -68,9 +68,10 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 6, changedIndustryCount: 5, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 7, changedIndustryCount: 6, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链")).toMatchObject({ stage: "衰退" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.growth).toBeLessThan(68);
@@ -130,8 +131,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(6);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(5);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(7);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(6);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -272,6 +273,31 @@ function evidenceSnapshot() {
       { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["news"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "过剩/衰退", industry: "光伏产业链", status: "scanned", evidenceHash: "hash-pv", sourceCount: 1, evidenceTypes: ["market"], signalTypes: ["financial_metric"], evidenceGaps: [], sources: [sources[6]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      {
+        group: "过剩/衰退",
+        industry: "地产链",
+        status: "scanned",
+        evidenceHash: "hash-property",
+        sourceCount: 8,
+        evidenceTypes: ["hard_data", "announcement", "market"],
+        signalTypes: ["financial_metric", "commodity_price"],
+        evidenceGaps: [],
+        sources: [
+          {
+            source: "东方财富业绩报表",
+            query: "地产链 财报 营收 净利润",
+            title: "地产链公司低基数利润同比改善",
+            summary: "房地产销售仍弱，低基数下净利润同比改善，债务和需求压力未解。",
+            sourceType: "announcement",
+            signalType: "financial_metric",
+            weight: 4,
+            industry: "房地产开发",
+          },
+        ],
+        financialFacts: [{ company: "万科A", industry: "房地产开发", yoy: 1200 }],
+        industryFacts: [{ industry: "房地产开发", metric: "销售面积", value: -12 }],
+        companyCandidates: [{ company: "万科A", industry: "房地产开发" }],
+      },
     ],
   };
 }
@@ -398,6 +424,26 @@ function modelOutput() {
         riskLevel: "高",
         counterEvidenceConditions: ["硅料价格持续反弹"],
         turningPoints: ["产能出清"],
+      },
+      {
+        title: "地产链整体承压",
+        industries: ["房地产开发", "房地产服务"],
+        companies: ["万科A(000002.SZ)", "保利发展(600048.SH)"],
+        thesis: "成交和开工仍弱，低基数利润修复不能证明扎实增长。",
+        drivers: ["需求萎缩", "债务压力"],
+        evidence: ["S1 地产链低基数改善但销售仍弱"],
+        sourceIds: ["S1"],
+        evidenceTypes: ["announcement"],
+        supportingSourceCount: 2,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["需求", "价格"],
+        sustainabilityTier: "中期景气",
+        confidence: "中",
+        durability: "中期",
+        riskLevel: "高",
+        counterEvidenceConditions: ["销售面积和现金流连续改善"],
+        turningPoints: ["开工率回升"],
       },
     ],
     representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["百济神州", "美光"], note: "测试过滤海外公司。" }],
