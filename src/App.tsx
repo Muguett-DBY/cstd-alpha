@@ -5,7 +5,7 @@ import { RankingView, type RankingMarket } from "./RankingView";
 import { MyResearchView } from "./MyResearchView";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
-import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
+import { buildRadarSourceLibrary, isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem, RadarList, RadarScan } from "./shared/radar";
@@ -1560,14 +1560,11 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
   const [stage, setStage] = useState("all");
   const [expanded, setExpanded] = useState(false);
   const rows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return packets
-      .filter((packet) => (stage === "all" || (packet.stage ?? "证据不足") === stage) && (!normalizedQuery || `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`.toLowerCase().includes(normalizedQuery)))
-      .sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+    return radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all" }).allRows;
   }, [packets, query, stage]);
   const defaultVisibleCount = 10;
   const hasActiveFilter = stage !== "all" || Boolean(query.trim());
-  const visibleRows = expanded || hasActiveFilter ? rows.slice(0, 120) : rows.slice(0, defaultVisibleCount);
+  const visibleRows = radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }).visibleRows;
   const stages = ["all", "扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
   return (
     <section className="radar-section radar-industry-table-section" id="radar-all-industries">
@@ -1610,6 +1607,7 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
         {visibleRows.map((packet) => {
           const scores = radarPacketVisualScores(packet);
           const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
+          const gapExplanation = radarPacketGapExplanation(packet);
           return (
             <button key={packet.industry} type="button" role="row" className="radar-industry-row" onClick={() => onSelectIndustry(packet.industry)}>
               <span>
@@ -1620,7 +1618,7 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
               <span>{Math.round(Math.max(scores.growth, scores.momentum))}</span>
               <span>{Math.round(risk)}</span>
               <span>{packet.sourceCount} 条</span>
-              <span>{packet.evidenceGaps?.slice(0, 2).join("、") || "无明显缺口"}</span>
+              <span title={`${gapExplanation.reason}${gapExplanation.nextEvidence}`}>{gapExplanation.compact}</span>
             </button>
           );
         })}
@@ -1669,7 +1667,8 @@ function RadarIndustryDrawer({ packet, items, sourceMap, onClose }: { packet: Ra
         </section>
         <section className="radar-drawer-panel">
           <h4>正式结论资格</h4>
-          <p>{packet.conclusionEligibility === "eligible" ? "已达到硬证据和交叉验证门槛。" : packet.conclusionEligibility === "watch" ? "线索较强，仍需财报、价格、订单或多源验证。" : "证据不足，仅作为覆盖记录。"}</p>
+          <p>{packet.conclusionEligibility === "eligible" ? "已达到硬证据和交叉验证门槛。" : radarPacketGapExplanation(packet).reason}</p>
+          <p className="muted">下一步证据：{radarPacketGapExplanation(packet).nextEvidence}</p>
           {packet.evidenceGaps?.length ? <ul>{listItems(packet.evidenceGaps)}</ul> : null}
         </section>
         {relatedItems.length ? (
@@ -2208,7 +2207,9 @@ function radarPacketPriority(packet: RadarIndustryPacket) {
 }
 
 function topRadarPackets(packets: RadarIndustryPacket[], score: (packet: RadarIndustryPacket) => number) {
-  return [...packets].sort((left, right) => score(right) - score(left)).slice(0, 20);
+  const strongPackets = packets.filter((packet) => !isWeakRadarPacket(packet));
+  const source = strongPackets.length ? strongPackets : packets;
+  return [...source].sort((left, right) => score(right) - score(left)).slice(0, 20);
 }
 
 function radarPacketMetric(packet: RadarIndustryPacket, metric: string) {

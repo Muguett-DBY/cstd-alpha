@@ -155,9 +155,9 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
           analysisScope: compactIndustryScopeForModel(industryScope),
           evidenceDigest: compactDigestForModel(digest),
           structuredFacts: {
-            financialFacts: structuredFacts.financialFacts.slice(0, 40).map(compactFinancialFact),
-            industryFacts: structuredFacts.industryFacts.slice(0, 50).map(compactIndustryFact),
-            companyCandidates: structuredFacts.companyCandidates.slice(0, 40).map(compactCompanyCandidate),
+            financialFacts: structuredFacts.financialFacts.slice(0, 120).map(compactFinancialFact),
+            industryFacts: structuredFacts.industryFacts.slice(0, 120).map(compactIndustryFact),
+            companyCandidates: structuredFacts.companyCandidates.slice(0, 120).map(compactCompanyCandidate),
           },
         }),
       },
@@ -712,6 +712,7 @@ function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMat
   const fallback = fallbackIndustryStage(packet, scores);
   if (mappedStage === "继续观察" && fallback === "平稳现金流") return "平稳现金流";
   if (!mappedStage) return fallback;
+  if (mappedStage === "扎实增长" && shouldRejectSolidGrowthForStructuralDecline(packet, scores)) return "衰退";
   if (mappedStage === "衰退" && shouldProtectFromBroadDecline(packet, scores)) return fallback === "衰退" ? "继续观察" : fallback;
   return mappedStage;
 }
@@ -823,6 +824,20 @@ function shouldProtectFromBroadDecline(packet, scores) {
   if (!isProtectedGrowthTheme(packet) && !isPositiveCycleTheme(packet)) return false;
   if (isDirectStructuralDecline(packet) && scores.evidence >= 45) return false;
   return true;
+}
+
+function shouldRejectSolidGrowthForStructuralDecline(packet, scores) {
+  if (!isDirectStructuralDecline(packet)) return false;
+  const text = [
+    packet.group,
+    packet.industry,
+    ...arrayValue(packet.themes),
+    ...arrayValue(packet.evidenceGaps),
+    ...arrayValue(packet.sources).map((source) => `${source.title ?? ""} ${source.summary ?? ""}`),
+    ...arrayValue(packet.financialFacts).map((fact) => JSON.stringify(fact)),
+    ...arrayValue(packet.industryFacts).map((fact) => JSON.stringify(fact)),
+  ].join(" ");
+  return scores.declineRisk >= 52 || /低基数|一次性|销售.*弱|销售.*承压|销售面积.*降|新开工.*降|债务|需求.*弱|亏损|价格.*低位|产能过剩|出清/.test(text);
 }
 
 function scoreIndustryPacket(packet) {

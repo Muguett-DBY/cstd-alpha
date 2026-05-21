@@ -90,6 +90,67 @@ describe("rolling radar evidence collector", () => {
     expect(snapshot.financialFacts?.some((fact) => fact.source === "东方财富业绩报表" && fact.company && fact.metric === "净利润" && typeof fact.yoy === "number")).toBe(true);
   });
 
+  test("builds dynamic A-share company candidates from BaoStock industry rows", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "rows=[{'industry':'电气设备','code':'sh.603618','code_name':'杭电股份'}, {'industry':'电气设备','code':'sz.300820','code_name':'英杰电气'}, {'industry':'房地产开发','code':'sz.000002','code_name':'万科A'}]",
+          "sources=m.baostock_industry_sources(rows)",
+          "candidates=m.company_candidates_from_sources([m.classify_source(source) for source in sources])",
+          "print(json.dumps({'sources': sources, 'candidates': candidates}, ensure_ascii=False))",
+        ].join("; "),
+      ],
+      { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } },
+    );
+    const result = JSON.parse(output) as {
+      sources: Array<{ source?: string; company?: string; code?: string; market?: string; sourceType?: string; signalType?: string }>;
+      candidates: Array<{ company?: string; code?: string; market?: string; industry?: string; sourceTypes?: string[] }>;
+    };
+
+    expect(result.sources.some((source) => source.source === "BaoStock 公司池" && source.company === "杭电股份" && source.code === "603618.SH")).toBe(true);
+    expect(result.sources.some((source) => source.company === "万科A" && source.market === "A股")).toBe(true);
+    expect(result.sources.every((source) => source.signalType !== "financial_metric")).toBe(true);
+    expect(result.candidates.map((candidate) => candidate.company)).toEqual(expect.arrayContaining(["杭电股份", "英杰电气", "万科A"]));
+  });
+
+  test("can request dynamic Eastmoney financial rows for a candidate code pool", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "captured=[]",
+          "def fake_fetch(report_name, report_filter, sort_columns, sort_types, page_size):",
+          "    captured.append({'reportName': report_name, 'filter': report_filter, 'pageSize': page_size})",
+          "    return [{'SECUCODE':'603618.SH','SECURITY_CODE':'603618','SECURITY_NAME_ABBR':'杭电股份','SECURITY_TYPE':'A股','PUBLISHNAME':'电气设备','PARENT_NETPROFIT':100,'SJLTZ':42.5,'YSTZ':18.2,'NOTICE_DATE':'2026-05-01'}]",
+          "m.fetch_eastmoney_report_rows=fake_fetch",
+          "sources=m.fetch_dynamic_company_financials([{'company':'杭电股份','code':'603618.SH','market':'A股','industry':'电气设备','evidenceStrength':9}], ['20260331'])",
+          "print(json.dumps({'captured': captured, 'sources': sources}, ensure_ascii=False))",
+        ].join("\n"),
+      ],
+      { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } },
+    );
+    const result = JSON.parse(output) as {
+      captured: Array<{ reportName?: string; filter?: string; pageSize?: number }>;
+      sources: Array<{ source?: string; company?: string; code?: string; signalType?: string; factType?: string }>;
+    };
+
+    expect(result.captured.some((call) => call.reportName === "RPT_LICO_FN_CPD" && call.filter?.includes("SECURITY_CODE in") && call.filter.includes("603618"))).toBe(true);
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "东方财富业绩报表", company: "杭电股份", code: "603618.SH", signalType: "financial_metric", factType: "financial" }),
+      ]),
+    );
+  });
+
   test("offline fixture exercises the same real hard-data source families as live collection", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

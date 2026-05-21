@@ -20,12 +20,15 @@ from xml.etree import ElementTree
 
 EVIDENCE_VERSION = "v1"
 DEFAULT_MIN_SOURCES = 36
-MAX_SELECTED_SOURCES = 220
+MAX_SELECTED_SOURCES = 320
 MAX_GOOGLE_NEWS_SHARE = 0.35
 MAX_SINGLE_SOURCE_SHARE = 0.38
 MIN_GOOGLE_NEWS_SOURCES = 18
 MIN_STRUCTURED_SOURCES = 80
 MIN_UNIQUE_SOURCES = 3
+MAX_DYNAMIC_COMPANY_CANDIDATES = int(os.environ.get("RADAR_DYNAMIC_COMPANY_CANDIDATES", "160"))
+MAX_DYNAMIC_COMPANY_FINANCIALS = int(os.environ.get("RADAR_DYNAMIC_COMPANY_FINANCIALS", "90"))
+EASTMONEY_COMPANY_CHUNK_SIZE = 25
 ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search"
 ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "360"))
 ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "2"))
@@ -424,6 +427,13 @@ def collect_sources() -> list[dict[str, Any]]:
         fetched = fetcher()
         print_source_summary(label, fetched)
         sources.extend(fetched)
+    try:
+        seed_candidates = company_candidates_from_sources([classify_source(source) for source in sources])
+        dynamic_financials = fetch_dynamic_company_financials(seed_candidates)
+        print_source_summary("eastmoney_dynamic_company_financials", dynamic_financials)
+        sources.extend(dynamic_financials)
+    except Exception as exc:
+        print(f"collector_warning eastmoney_dynamic_company_financials: {type(exc).__name__}: {str(exc)[:180]}")
     return sources
 
 
@@ -476,6 +486,77 @@ def fetch_eastmoney_financials() -> list[dict[str, Any]]:
         )
         sources.extend(financial_forecast_sources(rows, report_date_filter))
     return dedupe_sources(sources)
+
+
+def fetch_dynamic_company_financials(candidates: list[dict[str, Any]], report_dates: list[str] | None = None) -> list[dict[str, Any]]:
+    company_codes = dynamic_company_codes(candidates)[:MAX_DYNAMIC_COMPANY_FINANCIALS]
+    if not company_codes:
+        return []
+    sources: list[dict[str, Any]] = []
+    dates = report_dates or recent_report_dates(include_next=True, count=3)
+    for report_date in dates:
+        report_date_filter = f"{report_date[:4]}-{report_date[4:6]}-{report_date[6:]}"
+        for chunk in chunked(company_codes, EASTMONEY_COMPANY_CHUNK_SIZE):
+            code_filter = ",".join(f'"{code}"' for code in chunk)
+            try:
+                rows = fetch_eastmoney_report_rows(
+                    report_name="RPT_LICO_FN_CPD",
+                    report_filter=f'(SECURITY_CODE in ({code_filter}))(REPORTDATE=\'{report_date_filter}\')',
+                    sort_columns="UPDATE_DATE,SECURITY_CODE",
+                    sort_types="-1,-1",
+                    page_size=max(50, len(chunk) * 2),
+                )
+                sources.extend(financial_report_sources(rows, report_date_filter, "东方财富业绩报表"))
+            except Exception as exc:
+                print(f"collector_warning eastmoney_dynamic_company_financials.report.{report_date}: {type(exc).__name__}: {str(exc)[:160]}")
+            try:
+                rows = fetch_eastmoney_report_rows(
+                    report_name="RPT_FCI_PERFORMANCEE",
+                    report_filter=f'(SECURITY_CODE in ({code_filter}))(REPORT_DATE=\'{report_date_filter}\')',
+                    sort_columns="UPDATE_DATE,SECURITY_CODE",
+                    sort_types="-1,-1",
+                    page_size=max(50, len(chunk) * 2),
+                )
+                sources.extend(financial_report_sources(rows, report_date_filter, "东方财富业绩快报"))
+            except Exception as exc:
+                print(f"collector_warning eastmoney_dynamic_company_financials.flash.{report_date}: {type(exc).__name__}: {str(exc)[:160]}")
+            try:
+                rows = fetch_eastmoney_report_rows(
+                    report_name="RPT_PUBLIC_OP_NEWPREDICT",
+                    report_filter=f'(SECURITY_CODE in ({code_filter}))(REPORT_DATE=\'{report_date_filter}\')',
+                    sort_columns="NOTICE_DATE,SECURITY_CODE",
+                    sort_types="-1,-1",
+                    page_size=max(50, len(chunk) * 2),
+                )
+                sources.extend(financial_forecast_sources(rows, report_date_filter))
+            except Exception as exc:
+                print(f"collector_warning eastmoney_dynamic_company_financials.forecast.{report_date}: {type(exc).__name__}: {str(exc)[:160]}")
+    return dedupe_sources(sources)
+
+
+def dynamic_company_codes(candidates: list[dict[str, Any]]) -> list[str]:
+    ranked: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for candidate in sorted(candidates, key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True):
+        if clean_text(candidate.get("market")) not in ("", "A股"):
+            continue
+        code = eastmoney_security_code(candidate.get("code"))
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        ranked.append((dynamic_company_priority(candidate), code))
+    return [code for _priority, code in sorted(ranked, reverse=True)[:MAX_DYNAMIC_COMPANY_CANDIDATES]]
+
+
+def dynamic_company_priority(candidate: dict[str, Any]) -> int:
+    text = f"{candidate.get('industry', '')} {candidate.get('company', '')} {candidate.get('triggerEvidence', '')}"
+    base = int(candidate.get("evidenceStrength") or 0)
+    priority = base
+    if re.search(r"电气|电网|半导体|芯片|存储|光伏|新能源|锂|汽车|医药|CXO|生猪|养殖|地产|房地产|白酒|家电|消费|航运|钢铁|水泥|煤炭|公用|电力", text, re.I):
+        priority += 12
+    if re.search(r"缺财报|财报|业绩|净利润|营收|现金流|订单|中标|库存|价格", text, re.I):
+        priority += 8
+    return priority
 
 
 def fetch_eastmoney_report_rows(report_name: str, report_filter: str, sort_columns: str, sort_types: str, page_size: int) -> list[dict[str, Any]]:
@@ -653,7 +734,7 @@ def fetch_eastmoney_boards() -> list[dict[str, Any]]:
             "invt": "2",
             "fid": "f3",
             "fs": fs,
-            "fields": "f12,f14,f3,f62,f128,f184",
+            "fields": "f12,f14,f3,f62,f128,f140,f184",
         }
         try:
             data = read_json(f"https://push2.eastmoney.com/api/qt/clist/get?{urlencode(query)}")
@@ -674,6 +755,25 @@ def fetch_eastmoney_boards() -> list[dict[str, Any]]:
                     "weight": SOURCE_WEIGHTS["market"],
                 }
             )
+            lead_name = clean_text(item.get("f128"))
+            lead_code = normalize_a_share_code(item.get("f140"))
+            if lead_name and lead_code:
+                sources.append(
+                    {
+                        "source": "东方财富板块公司池",
+                        "query": f"A股 板块龙头 财报候选 {name}",
+                        "title": f"{lead_name}({lead_code}) 是 {name} 板块领涨/代表公司，纳入动态财报候选",
+                        "url": f"https://quote.eastmoney.com/{lead_code.lower().replace('.', '')}.html",
+                        "summary": f"来源于东方财富板块结构化字段，板块涨跌幅 {number_text(item.get('f3'))}%，用于公司级财报补强候选。",
+                        "sourceType": "market",
+                        "signalType": "company_candidate",
+                        "weight": SOURCE_WEIGHTS["market"],
+                        "company": lead_name,
+                        "code": lead_code,
+                        "market": "A股",
+                        "industry": name,
+                    }
+                )
     return sources
 
 
@@ -724,6 +824,24 @@ def sina_board_sources(label: str, query: str, base_url: str, data: dict[str, An
                 "weight": SOURCE_WEIGHTS["market"],
             }
         )
+        normalized_lead_code = normalize_a_share_code(lead_code)
+        if lead_name and normalized_lead_code:
+            sources.append(
+                {
+                    "source": "新浪板块公司池",
+                    "query": f"A股 板块领涨 公司池 财报候选 {name}",
+                    "title": f"{lead_name}({normalized_lead_code}) 是 {name} 板块领涨公司，纳入动态财报候选",
+                    "url": f"{base_url}#{quote(normalized_lead_code)}",
+                    "summary": f"来源于新浪板块结构化字段，板块涨跌幅 {number_text(pct_change)}%，领涨幅 {number_text(lead_pct)}%。",
+                    "sourceType": "market",
+                    "signalType": "company_candidate",
+                    "weight": SOURCE_WEIGHTS["market"],
+                    "company": lead_name,
+                    "code": normalized_lead_code,
+                    "market": "A股",
+                    "industry": name,
+                }
+            )
     return sources[:limit]
 
 
@@ -814,10 +932,12 @@ def fetch_anysearch_query_plan(query_plan: dict[str, Any], api_key: str) -> list
 
 def anysearch_query_plans() -> list[dict[str, Any]]:
     plans: list[dict[str, Any]] = []
-    for profile in ANYSEARCH_EVIDENCE_PROFILES:
-        for taxonomy in FINE_INDUSTRY_TAXONOMY:
-            industry = taxonomy["industry"]
-            keywords = " ".join(taxonomy["keywords"][:6])
+    profiles_by_name = {profile["profile"]: profile for profile in ANYSEARCH_EVIDENCE_PROFILES}
+    for taxonomy in FINE_INDUSTRY_TAXONOMY:
+        industry = taxonomy["industry"]
+        keywords = " ".join(taxonomy["keywords"][:6])
+        for profile_name in anysearch_profiles_for_taxonomy(taxonomy):
+            profile = profiles_by_name[profile_name]
             group_domains = anysearch_domains_for_group(taxonomy["group"], industry)
             profile_domains = list(profile["domains"])
             domains = unique_strings([*profile_domains, *[domain for domain in group_domains if domain in ("energy", "health", "legal")]])
@@ -836,6 +956,19 @@ def anysearch_query_plans() -> list[dict[str, Any]]:
                 }
             )
     return plans
+
+
+def anysearch_profiles_for_taxonomy(taxonomy: dict[str, Any]) -> list[str]:
+    needs = industry_need_flags(taxonomy)
+    text = f"{taxonomy.get('group', '')} {taxonomy.get('industry', '')} {' '.join(taxonomy.get('keywords', ())) }"
+    profiles = ["announcement"]
+    if needs["price"] or needs["sales"] or needs["inventory"] or needs["order"]:
+        profiles.append("industry_data")
+    if re.search(r"政策|监管|医药|药|集采|军工|低空|商业航天|电网|新能源|光伏|地产|房地产|出口管制|稀土|钨", text, re.I):
+        profiles.append("policy")
+    if re.search(r"过剩|衰退|地产|房地产|光伏|机器人|低空|传统|亏损|风险|泡沫|高景气成长|周期", text, re.I):
+        profiles.append("risk")
+    return unique_strings(profiles)
 
 
 def anysearch_domains_for_group(group: str, industry: str) -> list[str]:
@@ -1090,11 +1223,15 @@ def fetch_baostock() -> list[dict[str, Any]]:
 
 
 def baostock_industry_sources(frame: Any) -> list[dict[str, Any]]:
-    try:
-        rows = frame.to_dict("records")
-    except Exception:
-        return []
+    if isinstance(frame, list):
+        rows = frame
+    else:
+        try:
+            rows = frame.to_dict("records")
+        except Exception:
+            return []
     groups: dict[str, dict[str, Any]] = {}
+    company_sources: list[dict[str, Any]] = []
     for row in rows:
         industry = first_text(row, ("industry", "industryClassification", "行业", "所属行业"))
         code = first_text(row, ("code", "股票代码"))
@@ -1105,7 +1242,25 @@ def baostock_industry_sources(frame: Any) -> list[dict[str, Any]]:
         group["count"] += 1
         if name and len(group["samples"]) < 4:
             group["samples"].append(f"{name}({code})" if code else name)
-    return [
+        normalized_code = normalize_a_share_code(code)
+        if name and normalized_code and len(company_sources) < MAX_DYNAMIC_COMPANY_CANDIDATES:
+            company_sources.append(
+                {
+                    "source": "BaoStock 公司池",
+                    "query": f"A股 公司池 行业分类 财报候选 {industry}",
+                    "title": f"{name}({normalized_code}) 属于 {industry}，纳入雷达动态财报候选",
+                    "url": f"http://baostock.com/baostock/index.php/Python_API%E6%96%87%E6%A1%A3#{quote(normalized_code)}",
+                    "summary": "BaoStock 行业分类提供的 A 股公司候选，用于后续东方财富财报/业绩预告补强，不直接作为财报事实。",
+                    "sourceType": "official",
+                    "signalType": "company_candidate",
+                    "weight": SOURCE_WEIGHTS["official"],
+                    "company": name,
+                    "code": normalized_code,
+                    "market": "A股",
+                    "industry": industry,
+                }
+            )
+    group_sources = [
         {
             "source": "BaoStock 行业分类",
             "query": "A股 行业分类 公司分布",
@@ -1117,6 +1272,7 @@ def baostock_industry_sources(frame: Any) -> list[dict[str, Any]]:
         }
         for industry, group in sorted(groups.items(), key=lambda item: item[1]["count"], reverse=True)
     ][:40]
+    return group_sources + company_sources
 
 
 def frame_rows_to_sources(frame: Any, label: str, query: str, source_type: str, limit: int) -> list[dict[str, Any]]:
@@ -1147,7 +1303,7 @@ def frame_rows_to_sources(frame: Any, label: str, query: str, source_type: str, 
 
 
 def fixture_sources() -> list[dict[str, Any]]:
-    sources: list[dict[str, Any]] = fixture_financial_sources() + fixture_hard_data_sources()
+    sources: list[dict[str, Any]] = fixture_financial_sources() + fixture_hard_data_sources() + fixture_dynamic_company_pool_sources()
     for index in range(90):
         topic, query, _source_type = TOPIC_QUERIES[index % len(TOPIC_QUERIES)]
         sources.append(
@@ -1371,6 +1527,106 @@ def fixture_financial_sources() -> list[dict[str, Any]]:
                 "forecastYoyUpper": 8.05,
             },
         },
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 存储芯片",
+            "title": "德明利(001309.SZ) 2026-03-31 营收同比 88.00%，净利润同比 494.30%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#001309.SZ",
+            "publishedAt": "2026-05-01T00:00:00Z",
+            "summary": "公司级财报：存储芯片链公司收入和利润改善，仍需现货价格与库存交叉验证。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "德明利",
+            "code": "001309.SZ",
+            "market": "A股",
+            "industry": "存储芯片",
+            "metric": "净利润",
+            "value": 420000000,
+            "yoy": 494.3,
+            "metrics": {"revenueYoy": 88.0, "netProfitYoy": 494.3},
+        },
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 电网设备",
+            "title": "杭电股份(603618.SH) 2026-03-31 营收同比 18.20%，净利润同比 42.50%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#603618.SH",
+            "publishedAt": "2026-05-01T00:00:00Z",
+            "summary": "公司级财报：营收和净利润改善，行业 电网设备。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "杭电股份",
+            "code": "603618.SH",
+            "market": "A股",
+            "industry": "电网设备",
+            "metric": "净利润",
+            "value": 100000000,
+            "yoy": 42.5,
+            "metrics": {"revenueYoy": 18.2, "netProfitYoy": 42.5},
+        },
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 房地产开发",
+            "title": "万科A(000002.SZ) 2026-03-31 营收同比 -18.40%，净利润同比 -62.10%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#000002.SZ",
+            "publishedAt": "2026-05-01T00:00:00Z",
+            "summary": "公司级财报：房地产开发收入和利润继续承压，用于地产链衰退验证。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "万科A",
+            "code": "000002.SZ",
+            "market": "A股",
+            "industry": "房地产开发",
+            "metric": "净利润",
+            "value": -3500000000,
+            "yoy": -62.1,
+            "metrics": {"revenueYoy": -18.4, "netProfitYoy": -62.1},
+        },
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 白酒",
+            "title": "贵州茅台(600519.SH) 2026-03-31 营收同比 10.20%，净利润同比 13.30%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#600519.SH",
+            "publishedAt": "2026-05-01T00:00:00Z",
+            "summary": "公司级财报：白酒龙头仍保持正增长，但批价和渠道库存需继续验证。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "贵州茅台",
+            "code": "600519.SH",
+            "market": "A股",
+            "industry": "白酒",
+            "metric": "净利润",
+            "value": 24000000000,
+            "yoy": 13.3,
+            "metrics": {"revenueYoy": 10.2, "netProfitYoy": 13.3},
+        },
+        {
+            "source": "东方财富业绩报表",
+            "query": "A股 财报 营收 净利润 毛利率 经营现金流 生猪养殖",
+            "title": "牧原股份(002714.SZ) 2026-03-31 营收同比 21.40%，净利润同比 138.60%",
+            "url": "https://data.eastmoney.com/bbsj/202603/yjbb.html#002714.SZ",
+            "publishedAt": "2026-05-01T00:00:00Z",
+            "summary": "公司级财报：猪价回升带动养殖利润修复，仍需产能和猪价验证。",
+            "sourceType": "announcement",
+            "signalType": "financial_metric",
+            "weight": SOURCE_WEIGHTS["announcement"],
+            "factType": "financial",
+            "company": "牧原股份",
+            "code": "002714.SZ",
+            "market": "A股",
+            "industry": "生猪养殖",
+            "metric": "净利润",
+            "value": 2800000000,
+            "yoy": 138.6,
+            "metrics": {"revenueYoy": 21.4, "netProfitYoy": 138.6},
+        },
     ]
 
 
@@ -1432,7 +1688,31 @@ def fixture_hard_data_sources() -> list[dict[str, Any]]:
             "signalType": "freight_rate",
             "weight": SOURCE_WEIGHTS["hard_data"],
         },
+        {
+            "source": "公开批价统计",
+            "query": "白酒 批价 库存 动销 价格",
+            "title": "白酒批价样本 2026-05-18 高端酒批价环比小幅下行",
+            "url": "https://example.com/baijiu-price-fixture",
+            "publishedAt": "2026-05-18T00:00:00Z",
+            "summary": "批价和库存线索用于验证白酒需求和渠道压力，不单独构成增长结论。",
+            "sourceType": "hard_data",
+            "signalType": "commodity_price",
+            "weight": SOURCE_WEIGHTS["hard_data"],
+        },
     ]
+
+
+def fixture_dynamic_company_pool_sources() -> list[dict[str, Any]]:
+    return baostock_industry_sources(
+        [
+            {"industry": "电网设备", "code": "sh.603618", "code_name": "杭电股份"},
+            {"industry": "电气设备", "code": "sz.300820", "code_name": "英杰电气"},
+            {"industry": "房地产开发", "code": "sz.000002", "code_name": "万科A"},
+            {"industry": "白酒", "code": "sh.600519", "code_name": "贵州茅台"},
+            {"industry": "生猪养殖", "code": "sz.002714", "code_name": "牧原股份"},
+            {"industry": "存储芯片", "code": "sz.001309", "code_name": "德明利"},
+        ]
+    )
 
 
 def google_only_fixture_sources() -> list[dict[str, Any]]:
@@ -1709,7 +1989,7 @@ def financial_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str
                 }
             )
         )
-    return facts[:80]
+    return facts[:160]
 
 
 def industry_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1732,7 +2012,7 @@ def industry_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str,
                 }
             )
         )
-    return facts[:120]
+    return facts[:180]
 
 
 def company_candidates_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1758,7 +2038,7 @@ def company_candidates_from_sources(sources: list[dict[str, Any]]) -> list[dict[
         )
         current["evidenceStrength"] = int(current.get("evidenceStrength") or 0) + SOURCE_WEIGHTS.get(clean_text(source.get("sourceType")), 2)
         current["sourceTypes"] = unique_strings([*current.get("sourceTypes", []), clean_text(source.get("sourceType"))])
-    return sorted(candidates.values(), key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True)[:80]
+    return sorted(candidates.values(), key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True)[:180]
 
 
 def industry_packets_from_sources(
@@ -1827,25 +2107,31 @@ def industry_evidence_gaps(taxonomy: dict[str, Any], sources: list[dict[str, Any
     signal_types = {clean_text(source.get("signalType")) for source in sources}
     source_types = {clean_text(source.get("sourceType")) for source in sources}
     source_names = {clean_text(source.get("source")) for source in sources}
-    industry_text = f"{taxonomy.get('group', '')} {taxonomy.get('industry', '')} {' '.join(taxonomy.get('keywords', ())) }"
-    needs_price = bool(re.search(r"有色|铜|铝|稀土|钨|锂|光伏|硅料|钢铁|水泥|建材|玻璃|生猪|猪价|航运|运价|煤炭|石油|化工|农产品|存储|DRAM|NAND|HBM", industry_text, re.I))
-    needs_sales = bool(re.search(r"汽车|消费|家电|纺织|医药商业|药店|医疗器械|航运|港口|航空|机场|旅游|酒店|博彩|互联网|电商", industry_text, re.I))
-    needs_order = bool(re.search(r"电网|设备|材料|军工|航空航天|商业航天|机器人|具身|船舶|工程机械|工业母机|光模块|PCB|服务器|低空|eVTOL", industry_text, re.I))
-    needs_inventory = bool(re.search(r"存储|DRAM|NAND|HBM|锂|光伏|硅料|钢铁|水泥|煤炭|化工|生猪", industry_text, re.I))
+    needs = industry_need_flags(taxonomy)
     gaps: list[str] = []
     if not financial_facts and "financial_metric" not in signal_types:
         gaps.append("缺财报")
-    if needs_price and not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
+    if needs["price"] and not any(signal in signal_types for signal in ("commodity_price", "freight_rate")):
         gaps.append("缺价格")
-    if needs_sales and not industry_facts and "industry_stat" not in signal_types:
+    if needs["sales"] and not industry_facts and "industry_stat" not in signal_types:
         gaps.append("缺销量")
-    if needs_order and not any(re.search(r"订单|合同|在手订单|中标", source_text(source), re.I) for source in sources):
+    if needs["order"] and not any(re.search(r"订单|合同|在手订单|中标", source_text(source), re.I) for source in sources):
         gaps.append("缺订单")
-    if needs_inventory and not any(re.search(r"库存|库容|去库|累库", source_text(source), re.I) for source in sources):
+    if needs["inventory"] and not any(re.search(r"库存|库容|去库|累库", source_text(source), re.I) for source in sources):
         gaps.append("缺库存")
     if len(source_types - {""}) < 2 and len(source_names - {""}) < 2:
         gaps.append("缺多源验证")
     return gaps[:4]
+
+
+def industry_need_flags(taxonomy: dict[str, Any]) -> dict[str, bool]:
+    industry_text = f"{taxonomy.get('group', '')} {taxonomy.get('industry', '')} {' '.join(taxonomy.get('keywords', ())) }"
+    return {
+        "price": bool(re.search(r"有色|铜|铝|稀土|钨|锂|光伏|硅料|钢铁|水泥|建材|玻璃|生猪|猪价|航运|运价|煤炭|石油|化工|农产品|存储|DRAM|NAND|HBM|白酒|批价", industry_text, re.I)),
+        "sales": bool(re.search(r"汽车|消费|家电|纺织|医药商业|药店|医疗器械|航运|港口|航空|机场|旅游|酒店|博彩|互联网|电商|地产|房地产|销售面积", industry_text, re.I)),
+        "order": bool(re.search(r"电网|设备|材料|军工|航空航天|商业航天|机器人|具身|船舶|工程机械|工业母机|光模块|PCB|服务器|低空|eVTOL|CXO", industry_text, re.I)),
+        "inventory": bool(re.search(r"存储|DRAM|NAND|HBM|锂|光伏|硅料|钢铁|水泥|煤炭|化工|生猪|白酒|库存", industry_text, re.I)),
+    }
 
 
 def evidence_quality(sources: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2036,6 +2322,37 @@ def market_name_from_row(row: dict[str, Any], code: str) -> str:
     if "港" in security_type or code.endswith(".HK") or "港" in market:
         return "港股"
     return "A股"
+
+
+def normalize_a_share_code(value: Any) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    lowered = text.lower()
+    match = re.search(r"(sh|sz|bj)[\._-]?(\d{6})", lowered)
+    if match:
+        suffix = {"sh": "SH", "sz": "SZ", "bj": "BJ"}[match.group(1)]
+        return f"{match.group(2)}.{suffix}"
+    match = re.search(r"(\d{6})\.(SH|SZ|BJ)", text, re.I)
+    if match:
+        return f"{match.group(1)}.{match.group(2).upper()}"
+    match = re.fullmatch(r"\d{6}", text)
+    if match:
+        prefix = text[:2]
+        suffix = "SH" if prefix in ("60", "68", "90") else "BJ" if prefix in ("43", "83", "87", "92") else "SZ"
+        return f"{text}.{suffix}"
+    return ""
+
+
+def eastmoney_security_code(value: Any) -> str:
+    normalized = normalize_a_share_code(value)
+    if not normalized:
+        return ""
+    return normalized.split(".", 1)[0]
+
+
+def chunked(values: list[str], size: int) -> list[list[str]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]
 
 
 def numeric(value: Any) -> float | None:

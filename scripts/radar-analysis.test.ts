@@ -173,6 +173,65 @@ describe("background radar analyzer", () => {
     expect(dynamicPayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
     expect(JSON.stringify(dynamicPayload.structuredFacts)).not.toContain("industryPackets");
   });
+
+  test("does not let a low-base property item promote the property chain into solid growth", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-property-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const output = modelOutput();
+    output.decliningIndustries = output.decliningIndustries.filter((item) => !item.title.includes("地产"));
+    output.solidGrowth.push({
+      title: "地产链低基数利润修复",
+      industries: ["地产链"],
+      companies: ["万科A"],
+      thesis: "净利润同比+1200%，但销售面积仍弱，低基数因素明显。",
+      drivers: ["低基数修复"],
+      evidence: ["S10 财报低基数改善", "S11 销售面积承压"],
+      sourceIds: ["S10", "S11"],
+      evidenceTypes: ["announcement", "official"],
+      supportingSourceCount: 2,
+      conclusionStrength: "正式结论",
+      evidenceGaps: [],
+      driverTags: ["需求"],
+      sustainabilityTier: "短期催化",
+      confidence: "高",
+      durability: "短期",
+      riskLevel: "高",
+      counterEvidenceConditions: ["销售面积继续下降"],
+      turningPoints: ["销售回升"],
+    });
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-property",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as { radar?: { industryPackets?: Array<{ industry?: string; stage?: string; scores?: { growth?: number; declineRisk?: number } }> } };
+    const propertyPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链");
+
+    expect(propertyPacket?.stage).toBe("衰退");
+    expect(propertyPacket?.scores?.growth).toBeLessThanOrEqual(49);
+    expect(propertyPacket?.scores?.declineRisk).toBeGreaterThanOrEqual(72);
+  });
 });
 
 function evidenceSnapshot() {

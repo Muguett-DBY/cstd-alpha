@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { DEFAULT_APP_VIEW } from "./App";
-import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
-import type { RadarCitation, RadarItem } from "./shared/radar";
+import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation, radarRefreshFallbackMessage } from "./radar-ui";
+import type { RadarCitation, RadarIndustryPacket, RadarItem } from "./shared/radar";
 
 describe("app initial workspace", () => {
   test("opens on the radar scan view by default", () => {
@@ -99,6 +99,41 @@ describe("app initial workspace", () => {
     expect(library.entries.map((entry) => entry.source.id)).toEqual(["S1"]);
     expect(library.entries[0]?.industries).toEqual(["机器人"]);
   });
+
+  test("demotes weak evidence industries from default radar visual lists while keeping them searchable", () => {
+    const packets: RadarIndustryPacket[] = [
+      radarPacket({ industry: "消费电子/端侧AI", stage: "继续观察", sourceCount: 97, evidenceGaps: ["缺财报"] }),
+      radarPacket({ industry: "低空经济", stage: "证据不足", sourceCount: 0, evidenceGaps: ["缺财报", "缺多源验证"] }),
+      radarPacket({ industry: "地产链", stage: "衰退", sourceCount: 37, evidenceGaps: [] }),
+      radarPacket({ industry: "光伏产业链", stage: "衰退", sourceCount: 23, evidenceGaps: [] }),
+      radarPacket({ industry: "白酒", stage: "继续观察", sourceCount: 48, evidenceGaps: [] }),
+      radarPacket({ industry: "轻工包装/造纸", stage: "证据不足", sourceCount: 0, evidenceGaps: ["缺财报", "缺多源验证"] }),
+      radarPacket({ industry: "电网设备", stage: "继续观察", sourceCount: 31, evidenceGaps: ["缺订单"] }),
+      radarPacket({ industry: "存储芯片", stage: "继续观察", sourceCount: 42, evidenceGaps: ["缺价格"] }),
+      radarPacket({ industry: "煤电/火电", stage: "平稳现金流", sourceCount: 20, evidenceGaps: [] }),
+      radarPacket({ industry: "机器人/具身智能", stage: "泡沫风险", sourceCount: 19, evidenceGaps: [] }),
+      radarPacket({ industry: "银行", stage: "平稳现金流", sourceCount: 16, evidenceGaps: [] }),
+      radarPacket({ industry: "航运物流", stage: "继续观察", sourceCount: 14, evidenceGaps: [] }),
+      radarPacket({ industry: "食品饮料", stage: "证据不足", sourceCount: 0, evidenceGaps: ["缺财报"] }),
+    ];
+
+    const plan = radarPacketDisplayPlan(packets, {});
+    const filteredPlan = radarPacketDisplayPlan(packets, { stage: "证据不足" });
+
+    expect(plan.defaultRows).toHaveLength(10);
+    expect(plan.defaultRows.map((packet) => packet.industry)).not.toContain("低空经济");
+    expect(plan.defaultRows.map((packet) => packet.industry)).not.toContain("轻工包装/造纸");
+    expect(plan.allRows.map((packet) => packet.industry)).toEqual(expect.arrayContaining(["低空经济", "轻工包装/造纸"]));
+    expect(filteredPlan.visibleRows.map((packet) => packet.industry)).toEqual(expect.arrayContaining(["低空经济", "轻工包装/造纸", "食品饮料"]));
+  });
+
+  test("explains radar evidence gaps with the next data needed", () => {
+    const explanation = radarPacketGapExplanation(radarPacket({ industry: "电网设备", stage: "继续观察", evidenceGaps: ["缺订单"], sourceCount: 31 }));
+
+    expect(explanation.reason).toContain("暂未升级");
+    expect(explanation.nextEvidence).toContain("中标");
+    expect(explanation.compact).toContain("缺订单");
+  });
 });
 
 function radarItem(overrides: Partial<RadarItem>): RadarItem {
@@ -112,6 +147,21 @@ function radarItem(overrides: Partial<RadarItem>): RadarItem {
     durability: "不确定",
     riskLevel: "中",
     turningPoints: [],
+    ...overrides,
+  };
+}
+
+function radarPacket(overrides: Partial<RadarIndustryPacket>): RadarIndustryPacket {
+  return {
+    group: "测试分组",
+    industry: "测试行业",
+    status: "scanned",
+    stage: "继续观察",
+    evidenceHash: "hash",
+    sourceCount: 1,
+    evidenceTypes: ["news"],
+    signalTypes: [],
+    evidenceGaps: [],
     ...overrides,
   };
 }
