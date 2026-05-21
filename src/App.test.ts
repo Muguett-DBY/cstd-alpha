@@ -42,18 +42,19 @@ describe("app initial workspace", () => {
       supportingSourceCount: 2,
       sourceIds: ["S1", "S2"],
       changeReason: "由观察条目升级为正式结论。",
-      turningPoints: ["订单落地低于预期"],
+      turningPoints: ["AI数据中心订单落地"],
       evidenceGaps: ["缺少公告和硬数据交叉验证"],
       counterEvidence: ["价格战压缩毛利"],
     };
 
     const insights = radarCardInsights(item);
 
-    expect(insights.strengthLabel).toBe("高强度结论");
+    expect(insights.strengthLabel).toBe("中强度判断");
     expect(insights.strengthDetail).toContain("高置信");
-    expect(insights.strengthDetail).toContain("2 条证据");
+    expect(insights.strengthDetail).toContain("核心结论证据 2 条");
     expect(insights.evidenceGaps).toEqual(["缺少公告和硬数据交叉验证"]);
-    expect(insights.counterSignals).toEqual(["价格战压缩毛利", "订单落地低于预期"]);
+    expect(insights.counterSignals).toEqual(["价格战压缩毛利"]);
+    expect(insights.confirmationSignals).toEqual(["AI数据中心订单落地"]);
     expect(insights.changeExplanation).toBe("由观察条目升级为正式结论。");
   });
 
@@ -134,6 +135,13 @@ describe("app initial workspace", () => {
     expect(explanation.reason).toContain("暂未升级");
     expect(explanation.nextEvidence).toContain("中标");
     expect(explanation.compact).toContain("缺订单");
+  });
+
+  test("uses conservative gap wording when no explicit packet gap is present", () => {
+    const explanation = radarPacketGapExplanation(radarPacket({ industry: "化学制药", stage: "扎实增长", evidenceGaps: [], sourceCount: 2 }));
+
+    expect(explanation.compact).toContain("核心证据暂无模型标注缺口");
+    expect(explanation.compact).not.toContain("暂无明显缺口");
   });
 });
 

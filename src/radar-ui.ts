@@ -42,6 +42,7 @@ export type RadarCardInsights = {
   strengthDetail: string;
   evidenceGaps: string[];
   counterSignals: string[];
+  confirmationSignals: string[];
   changeExplanation: string;
 };
 
@@ -93,18 +94,21 @@ export function radarCardInsights(item: RadarItem & Record<string, unknown>): Ra
   const sourceCount = item.supportingSourceCount ?? item.sourceIds?.length ?? 0;
   const confidence = item.confidence || "中";
   const evidenceTypes = item.evidenceTypes ?? [];
-  const strengthLabel = confidence === "高" && sourceCount >= 2 ? "高强度结论" : confidence === "低" || sourceCount <= 1 ? "低强度观察" : "中强度判断";
-  const sourceDetail = sourceCount ? `${sourceCount} 条证据` : "证据待确认";
+  const strongEnough = confidence === "高" && sourceCount >= 3 && evidenceTypes.length >= 2;
+  const strengthLabel = strongEnough ? "高强度结论" : confidence === "低" || sourceCount <= 1 ? "低强度观察" : "中强度判断";
+  const sourceDetail = sourceCount ? `核心结论证据 ${sourceCount} 条` : "核心结论证据待确认";
   const strengthDetail = [`${confidence}置信`, item.durability, sourceDetail, evidenceTypes.map(radarEvidenceTypeLabel).join("、")].filter(Boolean).join(" / ");
 
   const explicitGaps = firstStringArray(item.evidenceGaps, item.evidenceGap, item.evidenceWeaknesses);
-  const counterSignals = [...firstStringArray(item.counterEvidence, item.counterpoints, item.counterSignals, item.contraryEvidence), ...item.turningPoints].slice(0, 5);
+  const counterSignals = firstStringArray(item.counterEvidence, item.counterpoints, item.counterSignals, item.contraryEvidence, item.counterEvidenceConditions).slice(0, 5);
+  const confirmationSignals = firstStringArray(item.confirmationConditions, item.positiveConfirmation, item.confirmationSignals, item.turningPoints).slice(0, 5);
 
   return {
     strengthLabel,
     strengthDetail,
     evidenceGaps: explicitGaps,
     counterSignals: counterSignals.length ? counterSignals : ["暂无明确反证，继续跟踪价格、订单和政策拐点。"],
+    confirmationSignals: confirmationSignals.length ? confirmationSignals : ["等待下一轮价格、订单、销量或财报继续确认。"],
     changeExplanation: item.changeReason || "本轮未提供单项变化说明。",
   };
 }
@@ -159,7 +163,7 @@ export function isWeakRadarPacket(packet: RadarIndustryPacket) {
 
 export function radarPacketGapExplanation(packet: RadarIndustryPacket) {
   const gaps = packet.evidenceGaps ?? [];
-  const compact = gaps.length ? gaps.join("、") : "暂无明显缺口";
+  const compact = gaps.length ? gaps.join("、") : "核心证据暂无模型标注缺口；仍需结合来源复核";
   const nextEvidence = gaps.length ? uniqueStrings(gaps.flatMap(nextEvidenceForGap)).join("；") : "继续跟踪下一轮财报、价格、销量和公告是否出现方向变化。";
   const stage = packet.stage ?? "证据不足";
   const reason =

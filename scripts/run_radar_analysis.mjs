@@ -102,6 +102,12 @@ const REPRESENTATIVE_CONTEXT_RULES = [
     required: /创新药|医药|医疗|医疗器械|CXO|CRO|CDMO|临床|药|制药|生物|药明|康德|迪哲|百奥/i,
   },
 ];
+const DISALLOWED_COMPANY_CONTEXT_RULES = [
+  { company: /万通发展/i, context: /地产|房地产|地产链|物业/i },
+  { company: /南网储能/i, context: /水电|来水|水力发电/i },
+  { company: /崧盛股份/i, context: /电网|特高压|输变电|变压器|配网/i },
+  { company: /帝尔激光/i, context: /硅料|硅片|组件|多晶硅|工业硅|光伏产业链/i, allow: /设备|激光|电池片|工艺/i },
+];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
 const DRIVER_TAGS = ["需求", "价格", "技术", "政策", "市占率", "供给收缩"];
@@ -592,7 +598,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
       unchangedIndustryCount: industryScope.unchanged.length,
       previousIndustryCount: industryScope.previousIndustryCount,
     },
-    confidenceSummary: stringValue(record.confidenceSummary) || "置信度按财报公告、价格/销量硬数据、市场数据和新闻线索的交叉验证强弱生成。",
+    confidenceSummary: conservativeConfidenceSummary(stringValue(record.confidenceSummary), digest.evidenceBreakdown),
     fromCache: false,
     executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
     solidGrowth,
@@ -613,40 +619,123 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   };
 }
 
+function conservativeConfidenceSummary(summary, breakdown = {}) {
+  const base = summary || "置信度按财报公告、价格/销量硬数据、市场数据和新闻线索的交叉验证强弱生成。";
+  const hard = Number(breakdown.hard_data) || 0;
+  const official = Number(breakdown.official) || 0;
+  const announcement = Number(breakdown.announcement) || 0;
+  if (hard < 30 || official <= 2) {
+    return `${fixRadarText(base)} 证据结构提示：公告/财报 ${announcement} 条、硬数据 ${hard} 条、官方/协会 ${official} 条；官方统计或行业硬数据偏少的增长类结论按中等置信处理，需继续交叉验证。`;
+  }
+  return fixRadarText(base);
+}
+
 function radarItems(value, previousTitles, digest) {
   return arrayValue(value)
     .map((item) => {
       const record = isRecord(item) ? item : {};
       const title = stringValue(record.title);
       if (!title) return null;
-      const confidence = enumValue(record.confidence, ["低", "中", "高"], "中");
       const sourceIds = sourceIdsForItem(record, digest);
       const normalizedEvidence = stringArray(record.evidence).slice(0, 8).map(formatExtremePercentEvidence);
       const thesis = formatExtremePercentEvidence(stringValue(record.thesis));
       const companies = evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest, record).slice(0, 6);
+      const evidenceTypes = enumArray(record.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS));
+      const signalSplit = splitRadarSignals(record);
+      const normalized = normalizeRadarItemCertainty(
+        {
+          title,
+          industries: stringArray(record.industries).slice(0, 5),
+          companies,
+          thesis,
+          drivers: stringArray(record.drivers).slice(0, 8),
+          evidence: normalizedEvidence,
+          conclusionStrength: enumValue(record.conclusionStrength, CONCLUSION_STRENGTHS, enumValue(record.confidence, ["低", "中", "高"], "中") === "高" ? "正式结论" : "观察"),
+          evidenceGaps: evidenceGapsForItem({ ...record, thesis }, normalizedEvidence),
+          driverTags: enumArray(record.driverTags, DRIVER_TAGS),
+          sustainabilityTier: enumValue(record.sustainabilityTier, SUSTAINABILITY_TIERS, "中期景气"),
+          durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
+          riskLevel: enumValue(record.riskLevel, ["低", "中", "高"], "中"),
+          confidence: enumValue(record.confidence, ["低", "中", "高"], "中"),
+          evidenceTypes,
+          supportingSourceCount: sourceIds.length,
+          sourceIds,
+          changeReason: stringValue(record.changeReason) || (previousTitles.has(title) ? "延续上次判断，等待新证据确认强弱。" : "本次证据包新增或强化该方向。"),
+          counterEvidenceConditions: signalSplit.counterSignals,
+          confirmationConditions: signalSplit.confirmationSignals,
+          turningPoints: signalSplit.turningPoints,
+        },
+        digest,
+      );
       return {
-        title,
-        industries: stringArray(record.industries).slice(0, 5),
-        companies,
-        thesis,
-        drivers: stringArray(record.drivers).slice(0, 8),
-        evidence: normalizedEvidence,
-        conclusionStrength: enumValue(record.conclusionStrength, CONCLUSION_STRENGTHS, confidence === "高" ? "正式结论" : "观察"),
-        evidenceGaps: evidenceGapsForItem({ ...record, thesis }, normalizedEvidence),
-        driverTags: enumArray(record.driverTags, DRIVER_TAGS),
-        sustainabilityTier: enumValue(record.sustainabilityTier, SUSTAINABILITY_TIERS, "中期景气"),
-        durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
-        riskLevel: enumValue(record.riskLevel, ["低", "中", "高"], "中"),
-        confidence,
-        evidenceTypes: enumArray(record.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS)),
-        supportingSourceCount: typeof record.supportingSourceCount === "number" ? record.supportingSourceCount : sourceIds.length,
-        sourceIds,
-        changeReason: stringValue(record.changeReason) || (previousTitles.has(title) ? "延续上次判断，等待新证据确认强弱。" : "本次证据包新增或强化该方向。"),
-        counterEvidenceConditions: stringArray(record.counterEvidenceConditions).slice(0, 6),
-        turningPoints: stringArray(record.turningPoints).slice(0, 6),
+        ...normalized,
+        title: fixRadarText(normalized.title),
+        thesis: fixRadarText(normalized.thesis),
+        evidence: normalized.evidence.map(fixRadarText),
+        changeReason: fixRadarText(normalized.changeReason),
       };
     })
     .filter(Boolean);
+}
+
+function normalizeRadarItemCertainty(item, digest) {
+  const sourceSet = new Set(item.sourceIds);
+  const citationTypes = digest.citations.filter((source) => sourceSet.has(source.id)).map((source) => source.sourceType);
+  const evidenceTypes = unique([...item.evidenceTypes, ...citationTypes].filter(Boolean));
+  const sourceCount = item.sourceIds.length;
+  const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
+  const hasAnnouncement = evidenceTypes.includes("announcement");
+  const hasMultiFamily = evidenceTypes.length >= 2;
+  const hasExtremePercent = /低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test([item.title, item.thesis, ...item.evidence].join(" "));
+  const gapSet = new Set(item.evidenceGaps);
+  const formalReady = sourceCount >= 2 && (hasMultiFamily || (hasHardOrOfficial && hasAnnouncement));
+  const highReady = sourceCount >= 3 && (hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) && !hasExtremePercent && !gapSet.has("缺多源验证");
+  if (!formalReady || hasExtremePercent) gapSet.add("缺多源验证");
+  if (hasExtremePercent && !gapSet.has("缺现金流")) gapSet.add("缺现金流");
+  let confidence = item.confidence;
+  let conclusionStrength = item.conclusionStrength;
+  if (confidence === "高" && !highReady) confidence = "中";
+  if (conclusionStrength === "正式结论" && (!formalReady || hasExtremePercent)) conclusionStrength = "观察";
+  return {
+    ...item,
+    confidence,
+    conclusionStrength,
+    evidenceTypes,
+    evidenceGaps: [...gapSet],
+    supportingSourceCount: sourceCount,
+  };
+}
+
+function splitRadarSignals(record) {
+  const explicitCounter = stringArray(record.counterEvidenceConditions).slice(0, 6);
+  const explicitConfirmation = stringArray(record.confirmationConditions).slice(0, 6);
+  const turningPoints = stringArray(record.turningPoints).slice(0, 6);
+  const counterFromTurning = [];
+  const confirmationFromTurning = [];
+  for (const point of turningPoints) {
+    if (isPositiveConfirmationSignal(point)) confirmationFromTurning.push(point);
+    else if (isCounterSignal(point)) counterFromTurning.push(point);
+  }
+  return {
+    counterSignals: unique([...explicitCounter, ...counterFromTurning]).slice(0, 6),
+    confirmationSignals: unique([...explicitConfirmation, ...confirmationFromTurning]).slice(0, 6),
+    turningPoints: turningPoints.filter((point) => !confirmationFromTurning.includes(point) && !counterFromTurning.includes(point)).slice(0, 6),
+  };
+}
+
+function isPositiveConfirmationSignal(value) {
+  const text = stringValue(value);
+  return /超预期|订单落地|中标|投资计划|价格反弹|价格上行|需求回升|销量回升|现金流改善|产能出清|利润改善/i.test(text) && !isCounterSignal(text);
+}
+
+function isCounterSignal(value) {
+  return /不及预期|低于预期|回落|下降|下滑|恶化|转亏|亏损扩大|失败|放缓|减弱/i.test(stringValue(value));
+}
+
+function fixRadarText(value) {
+  return stringValue(value)
+    .replace(/医疗服触底/g, "医疗服务触底")
+    .replace(/存储芯片和存储芯片/g, "存储芯片");
 }
 
 function cleanRadarSections(sections) {
@@ -677,34 +766,37 @@ function dedupeRadarItems(items) {
 
 function removeCrossSectionConflicts(sections) {
   const ordered = ["solidGrowth", "upcomingGrowth", "bubbleRisks", "decliningIndustries", "sustainability"];
-  const claimed = new Map();
-  const claimedTitles = new Set();
-  const next = { ...sections };
+  const candidates = [];
   for (const section of ordered) {
-    const items = [];
-    for (const item of next[section] ?? []) {
-      const titleKey = cleanStageKey(item.title);
-      if (claimedTitles.has(titleKey)) continue;
-      const industries = item.industries.filter((industry) => {
-        const key = canonicalIndustryKey(industry);
-        const owner = claimed.get(key);
-        if (!owner) return true;
-        if (section === owner.section) return true;
-        if (section === "decliningIndustries" && itemDeclineIsDirect(industry)) return true;
-        return false;
-      });
-      const rewritten = { ...item, industries };
-      if (rewritten.industries.length) {
-        items.push(rewritten);
-        claimedTitles.add(titleKey);
-        for (const key of radarItemKeys(rewritten)) {
-          if (!claimed.has(key)) claimed.set(key, { section, title: rewritten.title });
-        }
-      }
+    for (const item of sections[section] ?? []) {
+      const primaryKey = primaryRadarItemKey(item);
+      if (!primaryKey) continue;
+      candidates.push({ section, item, key: primaryKey, score: radarItemQuality(item) + conflictStageBonus(section, item) });
     }
-    next[section] = items;
   }
-  return next;
+  const winners = new Map();
+  for (const candidate of candidates) {
+    const existing = winners.get(candidate.key);
+    if (!existing || candidate.score > existing.score) winners.set(candidate.key, candidate);
+  }
+  const winningTitleKeys = new Set([...winners.values()].map((candidate) => cleanStageKey(candidate.item.title)));
+  return Object.fromEntries(
+    Object.entries(sections).map(([section, items]) => [
+      section,
+      arrayValue(items).filter((item) => {
+        const key = primaryRadarItemKey(item);
+        const winner = winners.get(key);
+        return winner?.section === section && cleanStageKey(winner.item.title) === cleanStageKey(item.title) && winningTitleKeys.has(cleanStageKey(item.title));
+      }),
+    ]),
+  );
+}
+
+function conflictStageBonus(section, item) {
+  const stage = { solidGrowth: "扎实增长", upcomingGrowth: "即将增长", bubbleRisks: "泡沫风险", decliningIndustries: "衰退", sustainability: "继续观察" }[section];
+  const directDeclineBonus = section === "decliningIndustries" && stringArray(item.industries).some(itemDeclineIsDirect) ? 16 : 0;
+  const thinGrowthPenalty = section === "solidGrowth" && (item.conclusionStrength !== "正式结论" || item.confidence !== "高") ? 18 : 0;
+  return (STAGE_PRIORITY[stage] ?? 0) + directDeclineBonus - thinGrowthPenalty;
 }
 
 function removeDuplicateSecondaryIndustries(sections) {
@@ -792,10 +884,11 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
 function buildIndustryStageMap(sections) {
   const stageByIndustry = new Map();
   const setStage = (key, stage) => {
-    const normalized = cleanStageKey(key);
-    if (!normalized) return;
-    const existing = stageByIndustry.get(normalized);
-    if (!existing || (STAGE_PRIORITY[stage] ?? 0) >= (STAGE_PRIORITY[existing] ?? 0)) stageByIndustry.set(normalized, stage);
+    const keys = unique([cleanStageKey(key), canonicalIndustryKey(key)].filter(Boolean));
+    for (const normalized of keys) {
+      const existing = stageByIndustry.get(normalized);
+      if (!existing || (STAGE_PRIORITY[stage] ?? 0) >= (STAGE_PRIORITY[existing] ?? 0)) stageByIndustry.set(normalized, stage);
+    }
   };
   for (const [stage, items] of [
     ["扎实增长", sections.solidGrowth],
@@ -817,6 +910,7 @@ function buildIndustryStageMap(sections) {
 
 function stageForRadarSectionItem(item, defaultStage) {
   const text = [item.title, item.thesis, ...stringArray(item.industries), ...stringArray(item.drivers), ...stringArray(item.driverTags)].join(" ");
+  if (defaultStage === "扎实增长" && (item.conclusionStrength !== "正式结论" || item.confidence !== "高")) return "继续观察";
   if (defaultStage === "继续观察" && /平稳现金流|高股息|分红|公用事业|电力|水电|高速公路|电信运营|运营商|银行|保险/.test(text) && !/泡沫|衰退|严重下滑|流动性风险/.test(text)) {
     return "平稳现金流";
   }
@@ -826,7 +920,7 @@ function stageForRadarSectionItem(item, defaultStage) {
 function normalizeRadarIndustryPacket(packet, stageByIndustry) {
   const rawScores = scoreIndustryPacket(packet);
   const mappedStage = stageForIndustryPacket(packet, stageByIndustry);
-  const directMappedStage = stageByIndustry.get(cleanStageKey(packet.industry));
+  const directMappedStage = stageByIndustry.get(cleanStageKey(packet.industry)) || stageByIndustry.get(canonicalIndustryKey(packet.industry));
   const stage = normalizedStageForPacket(packet, rawScores, mappedStage, Boolean(directMappedStage));
   const scores = reconcileScoresWithStage(rawScores, stage);
   return {
@@ -888,6 +982,8 @@ function reconcileScoresWithStage(scores, stage) {
 
 function stageForIndustryPacket(packet, stageByIndustry) {
   const keys = unique([
+    canonicalIndustryKey(packet.industry),
+    canonicalIndustryKey(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`),
     ...stageLookupKeys(packet.industry),
     ...stageLookupKeys(packet.group),
     ...arrayValue(packet.themes).flatMap((theme) => stageLookupKeys(theme)),
@@ -930,10 +1026,17 @@ function fallbackIndustryStage(packet, scores) {
   if (!structuralDecline && positiveCycleTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
   if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
-  if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
+  if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50 && stableCashflowEvidenceIsSufficient(packet, scores)) return "平稳现金流";
   if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
   if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
   return "证据不足";
+}
+
+function stableCashflowEvidenceIsSufficient(packet, scores) {
+  const hasStructuredFacts = arrayValue(packet.financialFacts).length + arrayValue(packet.industryFacts).length > 0;
+  const hasReliableType = arrayValue(packet.evidenceTypes).some((type) => type === "hard_data" || type === "official" || type === "announcement");
+  const externalOnly = arrayValue(packet.signalTypes).length > 0 && arrayValue(packet.signalTypes).every((signal) => signal === "external_search");
+  return !externalOnly && hasReliableType && hasStructuredFacts && !arrayValue(packet.evidenceGaps).includes("缺财报") && scores.evidence >= 50;
 }
 
 function stageSignalText(packet) {
@@ -1128,6 +1231,8 @@ function isEligibleRepresentativeCompany(company) {
 }
 
 function companyMatchesItemContext(company, itemText, sources) {
+  const disallowed = DISALLOWED_COMPANY_CONTEXT_RULES.find((rule) => rule.company.test(company) && rule.context.test(itemText) && !(rule.allow && rule.allow.test(itemText)));
+  if (disallowed) return false;
   const rule = REPRESENTATIVE_CONTEXT_RULES.find((entry) => entry.pattern.test(itemText));
   if (!rule) return true;
   const name = stripTicker(company);

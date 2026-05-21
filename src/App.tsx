@@ -1419,7 +1419,7 @@ function RadarSignalMap({ radar }: { radar: RadarScan }) {
 
 function RadarMarketOverview({ radar, packets, onSelectIndustry }: { radar: RadarScan; packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   if (!packets.length) return null;
-  const formalTotal = allRadarItems(radar).length;
+  const formalTotal = allRadarItems(radar).filter((item) => item.conclusionStrength === "正式结论").length;
   const scannedTotal = radar.analysisScope?.totalIndustryCount ?? radar.industryPackets?.length ?? 0;
   const weakTotal = packets.filter((packet) => packet.stage === "证据不足").length;
   return (
@@ -1435,7 +1435,7 @@ function RadarMarketOverview({ radar, packets, onSelectIndustry }: { radar: Rada
       <div className="radar-market-kpis" aria-label="雷达覆盖口径">
         <span>
           <strong>{formalTotal}</strong>
-          正式雷达条目
+          正式结论条目
         </span>
         <span>
           <strong>{scannedTotal || packets.length}</strong>
@@ -1506,7 +1506,7 @@ function RadarStageBuckets({ packets, onSelectIndustry }: { packets: RadarIndust
     <div className="radar-stage-buckets" aria-label="产业阶段分布">
       <div className="radar-signal-map-head">
         <strong>全量扫描分层</strong>
-        <span>非正式结论，可展开</span>
+        <span>全行业包阶段，不等同正式结论数量</span>
       </div>
       {buckets.map((bucket) => (
         <details key={bucket.stage} className={`radar-stage-bucket ${radarStageClass(bucket.stage)}`} open={bucket.stage === "扎实增长" || bucket.stage === "泡沫风险"}>
@@ -1533,7 +1533,7 @@ function RadarTopSignalLists({ packets, onSelectIndustry }: { packets: RadarIndu
   const lists = [
     { title: "机会强度 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "opportunity")), metric: "opportunity" },
     { title: "风险压力 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "risk")), metric: "risk" },
-    { title: "硬证据 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "evidence")), metric: "evidence" },
+    { title: "证据充分度 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "evidence")), metric: "evidence" },
     { title: "边际变化 Top 20", items: topRadarPackets(packets, (packet) => radarPacketMetricValue(packet, "change")), metric: "change" },
   ];
   return (
@@ -1545,6 +1545,7 @@ function RadarTopSignalLists({ packets, onSelectIndustry }: { packets: RadarIndu
             {list.items.map((packet) => (
               <li key={`${list.title}-${packet.industry}`}>
                 <button type="button" onClick={() => onSelectIndustry(packet.industry)}>{packet.industry}</button>
+                <span className={`coverage-status ${radarStageClass(packet.stage)}`}>{packet.stage ?? "证据不足"}</span>
                 <strong>{radarPacketMetric(packet, list.metric)}</strong>
               </li>
             ))}
@@ -1601,7 +1602,7 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
           <span>阶段</span>
           <span>增长</span>
           <span>风险</span>
-          <span>证据</span>
+          <span>全量扫描证据</span>
           <span>缺口</span>
         </div>
         {visibleRows.map((packet) => {
@@ -1900,7 +1901,7 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
         <dd>{item.durability}</dd>
         <dt>证据</dt>
         <dd>
-          {item.supportingSourceCount ? `${item.supportingSourceCount} 条` : "待确认"}
+          {item.supportingSourceCount ? `核心结论证据 ${item.supportingSourceCount} 条` : "核心结论证据待确认"}
           {item.evidenceTypes?.length ? ` / ${item.evidenceTypes.map(radarEvidenceLabel).join("、")}` : ""}
         </dd>
       </dl>
@@ -1917,8 +1918,12 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
           </section>
         ) : null}
         <section>
-          <span>反证/拐点</span>
+          <span>反证信号</span>
           <ul>{listItems(insights.counterSignals.slice(0, 3))}</ul>
+        </section>
+        <section>
+          <span>正向确认信号</span>
+          <ul>{listItems(insights.confirmationSignals.slice(0, 3))}</ul>
         </section>
       </div>
       <p className="radar-change-reason">
@@ -1937,7 +1942,11 @@ function RadarCard({ item, sourceMap }: { item: RadarItem; sourceMap: Map<string
             <ul>{listItems(item.evidence)}</ul>
           </div>
           <div>
-            <strong>原始拐点</strong>
+            <strong>正向确认信号</strong>
+            <ul>{listItems(insights.confirmationSignals)}</ul>
+          </div>
+          <div>
+            <strong>其他拐点</strong>
             <ul>{listItems(item.turningPoints)}</ul>
           </div>
         </div>
@@ -1990,13 +1999,14 @@ function RadarCitationCards({ sourceIds, sourceMap }: { sourceIds: string[]; sou
 }
 
 function RadarCitationCard({ source, context }: { source: RadarCitation; context?: { industries: string[]; itemTitles: string[] } }) {
+  const sourceKind = source.url ? "可点击来源" : "结构化来源无原文链接";
   const body = (
     <>
       <span>
         {source.id} / {radarEvidenceLabel(source.sourceType)}
       </span>
       <strong>{source.title}</strong>
-      <small>{source.source}{source.publishedAt ? ` · ${formatDateTime(source.publishedAt)}` : ""}</small>
+      <small>{source.source}{source.publishedAt ? ` · ${formatDateTime(source.publishedAt)}` : ""} · {sourceKind}</small>
       {source.summary ? <p>{source.summary}</p> : null}
       {context?.industries.length || context?.itemTitles.length ? (
         <small className="radar-citation-context">
@@ -2038,7 +2048,10 @@ function RadarListSection({ id, title, lists }: { id: string; title: string; lis
 function RadarSourceLibrary({ sources, items }: { sources: RadarCitation[]; items: RadarItem[] }) {
   const [industryFilter, setIndustryFilter] = useState("all");
   const [evidenceTypeFilter, setEvidenceTypeFilter] = useState<RadarEvidenceType | "all">("all");
+  const [expanded, setExpanded] = useState(false);
   const library = useMemo(() => buildRadarSourceLibrary(sources, items, { industry: industryFilter, evidenceType: evidenceTypeFilter }), [evidenceTypeFilter, industryFilter, items, sources]);
+  const hasActiveFilter = industryFilter !== "all" || evidenceTypeFilter !== "all";
+  const visibleEntries = hasActiveFilter || expanded ? library.entries : library.entries.slice(0, 30);
   if (!sources.length) return null;
   return (
     <section className="radar-section" id="radar-sources">
@@ -2046,7 +2059,7 @@ function RadarSourceLibrary({ sources, items }: { sources: RadarCitation[]; item
         <div>
           <h3>证据引用库</h3>
           <p>
-            已显示 {Math.min(library.entries.length, 30)} / {sources.length} 条，可按行业和证据类型快速收敛。
+            已显示 {visibleEntries.length} / {library.entries.length} 条匹配证据，来源总数 {sources.length} 条；可按行业和证据类型快速收敛。
           </p>
         </div>
         <div className="radar-source-filters" aria-label="证据筛选">
@@ -2070,9 +2083,17 @@ function RadarSourceLibrary({ sources, items }: { sources: RadarCitation[]; item
           </select>
         </div>
       </header>
+      {!hasActiveFilter && library.entries.length > 30 ? (
+        <div className="radar-industry-table-summary">
+          <span>默认展示前 30 条核心证据</span>
+          <button type="button" className="ghost-button" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "收起证据库" : `展开全部 ${library.entries.length} 条来源`}
+          </button>
+        </div>
+      ) : null}
       <div className="radar-source-library">
         {library.entries.length ? (
-          library.entries.slice(0, 30).map((entry) => <RadarCitationCard key={entry.source.id} source={entry.source} context={{ industries: entry.industries, itemTitles: entry.itemTitles }} />)
+          visibleEntries.map((entry) => <RadarCitationCard key={entry.source.id} source={entry.source} context={{ industries: entry.industries, itemTitles: entry.itemTitles }} />)
         ) : (
           <p className="muted">当前筛选没有匹配证据，请放宽行业或证据类型。</p>
         )}

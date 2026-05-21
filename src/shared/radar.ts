@@ -165,6 +165,7 @@ export type RadarItem = {
   sourceIds?: string[];
   changeReason?: string;
   counterEvidenceConditions: string[];
+  confirmationConditions?: string[];
   turningPoints: string[];
 };
 

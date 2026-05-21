@@ -46,7 +46,7 @@ describe("background radar analyzer", () => {
         generatedAt?: string;
         model?: string;
         sourceCount?: number;
-        solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[] }>;
+        solidGrowth?: Array<{ title?: string; companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[]; confidence?: string; conclusionStrength?: string; supportingSourceCount?: number }>;
         sustainability?: Array<{ title?: string; changeReason?: string }>;
         bubbleRisks?: Array<{ companies?: string[] }>;
         representativeCompanies?: Array<{ label?: string; companies?: string[] }>;
@@ -68,6 +68,12 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
+    expect(radarCache.radar?.solidGrowth?.[0]).toMatchObject({
+      confidence: "中",
+      conclusionStrength: "观察",
+      supportingSourceCount: expect.any(Number),
+    });
+    expect(radarCache.radar?.solidGrowth?.[0].supportingSourceCount).toBe(radarCache.radar?.solidGrowth?.[0].sourceIds?.length);
     expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([
       "百济神州",
       "药明康德",
@@ -86,11 +92,12 @@ describe("background radar analyzer", () => {
     ];
     expect(formalItems.every((item) => item.sourceIds?.length)).toBe(true);
     expect(new Set(formalItems.map((item) => item.title)).size).toBe(formalItems.length);
+    expect(canonicalTitles(formalItems)).toHaveLength(new Set(canonicalTitles(formalItems)).size);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
     expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 14, changedIndustryCount: 13, unchangedIndustryCount: 1 });
     const newDrugPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务");
-    expect(newDrugPacket).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
-    expect(newDrugPacket?.scores?.growth).toBeGreaterThanOrEqual(68);
+    expect(newDrugPacket).toMatchObject({ stage: "继续观察", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
+    expect(newDrugPacket?.scores?.growth).toBeLessThan(68);
     expect(newDrugPacket?.scores?.declineRisk).toBeLessThanOrEqual(60);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
     const propertyPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链");
@@ -102,7 +109,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "新能源汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "CXO")?.stage).not.toBe("衰退");
-    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "港股银行/保险")).toMatchObject({ stage: "平稳现金流" });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "港股银行/保险")).toMatchObject({ stage: "证据不足" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "白酒")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "港股物业")).toMatchObject({ stage: "证据不足" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
@@ -116,6 +123,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceIds?.length).toBeGreaterThan(0);
     expect(radarCache.radar?.sustainability?.some((item) => item.sourceIds?.length === 0)).toBe(false);
     expect(radarCache.radar?.sustainability?.filter((item) => /平稳现金流|高股息/.test(item.title ?? ""))).toHaveLength(1);
+    expect(radarCache.radar?.decliningIndustries?.filter((item) => /光伏/.test(item.title ?? "") || item.industries?.some((industry) => /光伏/.test(industry ?? "")))).toHaveLength(1);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
     expect(job).toMatchObject({ id: "job-test", status: "completed" });
@@ -902,6 +910,26 @@ function modelOutput() {
         turningPoints: ["产能出清"],
       },
       {
+        title: "光伏硅料价格低位",
+        industries: ["光伏硅料"],
+        companies: ["通威股份"],
+        thesis: "同一光伏 canonical 主题不应重复生成第二条正式衰退结论。",
+        drivers: ["产能过剩"],
+        evidence: ["S10 工业硅价格低位"],
+        sourceIds: ["S10", "S7"],
+        evidenceTypes: ["hard_data", "market"],
+        supportingSourceCount: 2,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["价格", "供给"],
+        sustainabilityTier: "中期景气",
+        confidence: "中",
+        durability: "中期",
+        riskLevel: "高",
+        counterEvidenceConditions: ["硅料价格持续反弹"],
+        turningPoints: ["产能出清"],
+      },
+      {
         title: "地产链整体承压",
         industries: ["房地产开发", "房地产服务"],
         companies: ["万科A(000002.SZ)", "保利发展(600048.SH)"],
@@ -954,4 +982,15 @@ function commonPrefixRatio(left: string, right: string) {
   let index = 0;
   while (index < max && left[index] === right[index]) index += 1;
   return index / Math.max(left.length, right.length);
+}
+
+function canonicalTitles(items: Array<{ title?: string; industries?: string[] }>) {
+  return items.map((item) => {
+    const text = [item.industries?.[0], item.title].filter(Boolean).join(" ");
+    if (/光伏|硅料|组件|逆变器/.test(text)) return "光伏产业链";
+    if (/地产|房地产|物业/.test(text)) return "地产链";
+    if (/存储|DRAM|NAND|HBM/.test(text)) return "存储芯片";
+    if (/平稳现金流|高股息|分红/.test(text)) return "平稳现金流高股息";
+    return text.replace(/\s+/g, "");
+  });
 }
