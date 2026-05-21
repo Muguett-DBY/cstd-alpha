@@ -77,6 +77,26 @@ const REPRESENTATIVE_CONTEXT_RULES = [
     pattern: /航运|运价|集运|港口|物流|BDI|CCFI|SCFI/i,
     required: /航运|运价|集运|港口|物流|BDI|CCFI|SCFI|船/i,
   },
+  {
+    pattern: /地产|房地产|水泥|建材|玻璃|竣工|开工/i,
+    required: /地产|房地产|房企|物业|水泥|建材|玻璃|竣工|开工|销售面积/i,
+  },
+  {
+    pattern: /电网|电力设备|特高压|输变电|变压器/i,
+    required: /电网|电力设备|特高压|输变电|变压器|电气|电工|电源|配网/i,
+  },
+  {
+    pattern: /锂电|储能|电池|碳酸锂|锂矿/i,
+    required: /锂|储能|电池|碳酸锂|能源金属|正极|负极|电解液/i,
+  },
+  {
+    pattern: /煤炭|煤电|火电/i,
+    required: /煤|火电|电力|能源/i,
+  },
+  {
+    pattern: /燃油车|汽车|智能驾驶|零部件|新能源车/i,
+    required: /汽车|车企|乘用车|整车|零部件|智能驾驶|新能源车/i,
+  },
 ];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
@@ -543,7 +563,7 @@ function cleanRadarSections(sections) {
 
 function hasEnoughRadarItemEvidence(item, section = "") {
   const sourceCount = item.sourceIds?.length ?? 0;
-  const needsRepresentativeCompany = /solidGrowth|sustainability|bubbleRisks|upcomingGrowth|decliningIndustries/.test(section);
+  const needsRepresentativeCompany = /solidGrowth|sustainability|bubbleRisks|upcomingGrowth/.test(section);
   return sourceCount >= 2 && (!needsRepresentativeCompany || item.companies?.length > 0);
 }
 
@@ -804,13 +824,14 @@ function fallbackIndustryStage(packet, scores) {
   const protectedGrowthTheme = isProtectedGrowthTheme(packet);
   const positiveCycleTheme = isPositiveCycleTheme(packet);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
+  if (structuralDecline && packetHasStructuralDistress(packet)) return "衰退";
+  if (structuralDecline && scores.declineRisk >= 52) return "衰退";
+  if (structuralDecline && growthPressure >= 54) return "继续观察";
   if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
   if (!structuralDecline && positiveCycleTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
   if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
   if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
-  if (structuralDecline && scores.declineRisk >= 52) return "衰退";
-  if (structuralDecline && growthPressure >= 54) return "继续观察";
   if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
   if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
   return "证据不足";
@@ -842,12 +863,17 @@ function isPositiveCycleTheme(packet) {
 
 function shouldProtectFromBroadDecline(packet, scores) {
   if (!isProtectedGrowthTheme(packet) && !isPositiveCycleTheme(packet)) return false;
-  if (isDirectStructuralDecline(packet) && scores.evidence >= 45) return false;
+  if (isDirectStructuralDecline(packet)) return false;
   return true;
 }
 
 function shouldRejectSolidGrowthForStructuralDecline(packet, scores) {
   if (!isDirectStructuralDecline(packet)) return false;
+  if (packetHasStructuralDistress(packet)) return true;
+  return scores.declineRisk >= 52;
+}
+
+function packetHasStructuralDistress(packet) {
   const text = [
     packet.group,
     packet.industry,
@@ -857,7 +883,7 @@ function shouldRejectSolidGrowthForStructuralDecline(packet, scores) {
     ...arrayValue(packet.financialFacts).map((fact) => JSON.stringify(fact)),
     ...arrayValue(packet.industryFacts).map((fact) => JSON.stringify(fact)),
   ].join(" ");
-  return scores.declineRisk >= 52 || /低基数|一次性|销售.*弱|销售.*承压|销售面积.*降|新开工.*降|债务|需求.*弱|亏损|价格.*低位|产能过剩|出清/.test(text);
+  return /低基数|一次性|销售.*弱|销售.*承压|销售面积.*降|新开工.*降|债务|需求.*弱|亏损|价格.*低位|产能过剩|出清/.test(text);
 }
 
 function scoreIndustryPacket(packet) {
@@ -1010,6 +1036,7 @@ function companyMatchesItemContext(company, itemText, sources) {
     .filter((source) => stripTicker(source.company) === name || `${source.title ?? ""} ${source.summary ?? ""}`.includes(name))
     .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
     .join(" ");
+  if (!companySourceText) return itemText.includes(name);
   return rule.required.test(companySourceText);
 }
 
