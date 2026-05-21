@@ -538,10 +538,13 @@ function dedupeRadarItems(items) {
 function removeCrossSectionConflicts(sections) {
   const ordered = ["solidGrowth", "upcomingGrowth", "bubbleRisks", "decliningIndustries", "sustainability"];
   const claimed = new Map();
+  const claimedTitles = new Set();
   const next = { ...sections };
   for (const section of ordered) {
     const items = [];
     for (const item of next[section] ?? []) {
+      const titleKey = cleanStageKey(item.title);
+      if (claimedTitles.has(titleKey)) continue;
       const industries = item.industries.filter((industry) => {
         const key = canonicalIndustryKey(industry);
         const owner = claimed.get(key);
@@ -553,6 +556,7 @@ function removeCrossSectionConflicts(sections) {
       const rewritten = { ...item, industries };
       if (rewritten.industries.length) {
         items.push(rewritten);
+        claimedTitles.add(titleKey);
         for (const key of radarItemKeys(rewritten)) {
           if (!claimed.has(key)) claimed.set(key, { section, title: rewritten.title });
         }
