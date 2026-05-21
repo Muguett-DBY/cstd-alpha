@@ -691,8 +691,11 @@ function conservativeConfidenceSummary(summary, breakdown = {}) {
   if (hard < 30 || official <= 2) {
     const cleanedBase = fixRadarText(base).split("证据结构提示：")[0].trim();
     const conservativeBase = cleanedBase
+      .replace(/总体置信度[较偏]?高/g, "总体置信度中等")
+      .replace(/置信度较高/g, "置信度中等")
       .replace(/总体置信度高/g, "总体置信度中等")
       .replace(/置信度高/g, "置信度中等")
+      .replace(/硬数据支撑充分/g, "硬数据仍需补强")
       .replace(/证据充分/g, "证据覆盖较强但仍需交叉验证");
     return `${conservativeBase} 证据结构提示：公告/财报 ${announcement} 条、硬数据 ${hard} 条、官方/协会 ${official} 条；官方统计或行业硬数据偏少的增长类结论按中等置信处理，需继续交叉验证。`;
   }
