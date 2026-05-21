@@ -60,6 +60,7 @@ const NON_AH_PATTERNS = [
   /英特尔|Intel/i,
   /三星|Samsung/i,
   /SK海力士|SK Hynix|Hynix/i,
+  /维通利/i,
   /\([A-Z]{1,6}\.(O|N|NASDAQ|NYSE|US)\)/i,
 ];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
