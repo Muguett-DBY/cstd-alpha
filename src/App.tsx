@@ -8,7 +8,7 @@ import { clearImportedRankingReports } from "./ranking-storage";
 import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarRefreshFallbackMessage } from "./radar-ui";
 import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle, type ChartSeries, type PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
-import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
 import type { UserSession } from "./shared/user-research";
 
@@ -2096,20 +2096,21 @@ function buildRadarVisualPackets(radar: RadarScan): RadarIndustryPacket[] {
     ["衰退", radar.decliningIndustries],
   ] as const) {
     for (const item of items) {
+      const itemStage = radarItemVisualStage(item, stage);
       for (const industry of item.industries.length ? item.industries : [item.title]) {
         addPacket({
-          group: stage,
+          group: itemStage,
           industry,
           status: "scanned",
           changeStatus: item.changeReason?.includes("复用") ? "unchanged" : "changed",
-          stage,
-          evidenceHash: `${stage}-${industry}`,
+          stage: itemStage,
+          evidenceHash: `${itemStage}-${industry}`,
           sourceCount: item.supportingSourceCount ?? item.sourceIds?.length ?? 0,
           evidenceTypes: item.evidenceTypes ?? [],
           signalTypes: item.driverTags ?? [],
           evidenceGaps: item.evidenceGaps ?? [],
           themes: item.driverTags,
-          scores: visualScoresForRadarItem(item, stage),
+          scores: visualScoresForRadarItem(item, itemStage),
         });
       }
     }
@@ -2143,6 +2144,14 @@ function buildRadarVisualPackets(radar: RadarScan): RadarIndustryPacket[] {
     });
   }
   return [...staged.values()].sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
+}
+
+function radarItemVisualStage(item: RadarItem, defaultStage: RadarIndustryStage): RadarIndustryStage {
+  const text = [item.title, item.thesis, ...item.industries, ...item.drivers, ...item.driverTags].join(" ");
+  if (defaultStage === "继续观察" && /平稳现金流|高股息|分红|公用事业|电力|水电|高速公路|电信运营|运营商|银行|保险/.test(text) && !/泡沫|衰退|严重下滑|流动性风险/.test(text)) {
+    return "平稳现金流";
+  }
+  return defaultStage;
 }
 
 function inferPacketStage(packet: RadarIndustryPacket) {

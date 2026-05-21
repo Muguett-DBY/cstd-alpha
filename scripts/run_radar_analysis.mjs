@@ -534,13 +534,22 @@ function buildIndustryStageMap(sections) {
     ["衰退", sections.decliningIndustries],
   ]) {
     for (const item of items) {
-      for (const key of stageLookupKeys(item.title)) setStage(key, stage);
+      const itemStage = stageForRadarSectionItem(item, stage);
+      for (const key of stageLookupKeys(item.title)) setStage(key, itemStage);
       for (const industry of item.industries ?? []) {
-        for (const key of stageLookupKeys(industry)) setStage(key, stage);
+        for (const key of stageLookupKeys(industry)) setStage(key, itemStage);
       }
     }
   }
   return stageByIndustry;
+}
+
+function stageForRadarSectionItem(item, defaultStage) {
+  const text = [item.title, item.thesis, ...stringArray(item.industries), ...stringArray(item.drivers), ...stringArray(item.driverTags)].join(" ");
+  if (defaultStage === "继续观察" && /平稳现金流|高股息|分红|公用事业|电力|水电|高速公路|电信运营|运营商|银行|保险/.test(text) && !/泡沫|衰退|严重下滑|流动性风险/.test(text)) {
+    return "平稳现金流";
+  }
+  return defaultStage;
 }
 
 function normalizeRadarIndustryPacket(packet, stageByIndustry) {
@@ -568,6 +577,7 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
 function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMatch = false) {
   if ((packet.sourceCount ?? 0) <= 0 || (scores.evidence < 28 && !hasDirectStageMatch)) return "证据不足";
   const fallback = fallbackIndustryStage(packet, scores);
+  if (mappedStage === "继续观察" && fallback === "平稳现金流") return "平稳现金流";
   if (!mappedStage) return fallback;
   if (mappedStage === "衰退" && shouldProtectFromBroadDecline(packet, scores)) return fallback === "衰退" ? "继续观察" : fallback;
   return mappedStage;
