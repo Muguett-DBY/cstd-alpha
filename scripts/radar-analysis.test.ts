@@ -105,6 +105,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceCount).toBeGreaterThan(0);
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceIds?.length).toBeGreaterThan(0);
     expect(radarCache.radar?.sustainability?.some((item) => item.sourceIds?.length === 0)).toBe(false);
+    expect(radarCache.radar?.sustainability?.filter((item) => /平稳现金流|高股息/.test(item.title ?? ""))).toHaveLength(1);
     expect(radarCache.radar?.evidenceSources?.some((source) => source.source === "东方财富业绩报表" && source.signalType === "financial_metric")).toBe(true);
     expect(radarCache.radar?.changeLog?.join(" ")).toContain("新增");
     expect(job).toMatchObject({ id: "job-test", status: "completed" });
@@ -536,7 +537,48 @@ function modelOutput() {
         turningPoints: ["核心产品销售放缓"],
       },
     ],
-    sustainability: [],
+    sustainability: [
+      {
+        title: "平稳现金流/高股息板块",
+        industries: ["平稳现金流/高股息"],
+        companies: ["工商银行(601398.SH)"],
+        thesis: "现金流稳定且股息率有吸引力。",
+        drivers: ["分红稳定"],
+        evidence: ["S1 现金流稳定", "S2 分红稳定"],
+        sourceIds: ["S1", "S2"],
+        evidenceTypes: ["announcement", "official"],
+        supportingSourceCount: 2,
+        conclusionStrength: "观察",
+        evidenceGaps: [],
+        driverTags: ["现金流"],
+        sustainabilityTier: "长期护城河",
+        confidence: "中",
+        durability: "长期",
+        riskLevel: "低",
+        counterEvidenceConditions: ["分红下降"],
+        turningPoints: ["现金流恶化"],
+      },
+      {
+        title: "高股息/平稳现金流资产",
+        industries: ["高股息资产"],
+        companies: ["长江电力(600900.SH)"],
+        thesis: "同义主题不应重复占两个正式结论。",
+        drivers: ["分红稳定"],
+        evidence: ["S3 现金流稳定", "S4 分红稳定"],
+        sourceIds: ["S3", "S4"],
+        evidenceTypes: ["official", "hard_data"],
+        supportingSourceCount: 2,
+        conclusionStrength: "观察",
+        evidenceGaps: [],
+        driverTags: ["现金流"],
+        sustainabilityTier: "长期护城河",
+        confidence: "中",
+        durability: "长期",
+        riskLevel: "低",
+        counterEvidenceConditions: ["利率大幅上行"],
+        turningPoints: ["股息率下降"],
+      },
+    ],
     bubbleRisks: [
       {
         title: "低空经济概念超前",
