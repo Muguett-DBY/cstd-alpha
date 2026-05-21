@@ -56,6 +56,7 @@ describe("background radar analyzer", () => {
         coverageReview?: Array<{ label?: string; sourceCount?: number; sourceIds?: string[] }>;
         analysisScope?: { totalIndustryCount?: number; changedIndustryCount?: number; unchangedIndustryCount?: number };
         changeLog?: string[];
+        executiveSummary?: string[];
       };
     };
     const job = JSON.parse(readFileSync(outputJobPath, "utf8")) as { id?: string; status?: string; radarGeneratedAt?: string };
@@ -132,6 +133,67 @@ describe("background radar analyzer", () => {
     expect(sql).toContain("INSERT OR REPLACE INTO radar_items");
     expect(sql).toContain("INSERT OR REPLACE INTO indicator_values");
     expect(sql).toContain("INSERT OR REPLACE INTO evidence_items");
+  });
+
+  test("removes stale formal wording and model-provided companies when no formal sections survive", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-empty-formal-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar.json");
+    const outputJobPath = join(workdir, "job.json");
+
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.bubbleRisks = [];
+    output.upcomingGrowth = [];
+    output.decliningIndustries = [];
+    output.executiveSummary = ["存储芯片涨价周期得到业绩确认，维持正式结论。"];
+    output.changeLog = ["维持存储芯片为solidGrowth，维持光伏为decliningIndustries。"];
+    output.representativeCompanies = [{ label: "扎实增长产业中的代表公司", companies: ["德明利", "美光"], note: "来自本轮扎实增长正式结论。" }];
+    output.stageCompanies = [{ label: "上升产业中的领军人物", companies: ["迪哲医药"], note: "来自扎实增长或即将增长方向。" }];
+
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-empty-formal",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+        "--output-job",
+        outputJobPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        executiveSummary?: string[];
+        changeLog?: string[];
+        representativeCompanies?: Array<{ companies?: string[]; note?: string }>;
+        stageCompanies?: Array<{ companies?: string[]; note?: string }>;
+      };
+    };
+
+    expect(radarCache.radar?.executiveSummary?.[0]).toContain("没有行业达到正式结论门槛");
+    expect(radarCache.radar?.executiveSummary?.join(" ")).not.toContain("维持正式结论");
+    expect(radarCache.radar?.executiveSummary?.join(" ")).not.toContain("扎实增长");
+    expect(radarCache.radar?.changeLog?.join(" ")).not.toMatch(/solidGrowth|decliningIndustries|维持存储芯片/);
+    expect((radarCache.radar?.representativeCompanies ?? []).flatMap((item) => item.companies ?? [])).toHaveLength(0);
+    expect((radarCache.radar?.stageCompanies ?? []).flatMap((item) => item.companies ?? [])).toHaveLength(0);
+    expect(radarCache.radar?.representativeCompanies?.map((item) => item.note).join(" ")).not.toContain("来自本轮扎实增长正式结论");
   });
 
   test("model input fixture includes financial, industry, and company candidate facts", () => {

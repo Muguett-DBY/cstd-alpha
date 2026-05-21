@@ -600,7 +600,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     },
     confidenceSummary: conservativeConfidenceSummary(stringValue(record.confidenceSummary), digest.evidenceBreakdown),
     fromCache: false,
-    executiveSummary: stringArray(record.executiveSummary).slice(0, 8),
+    executiveSummary: normalizedExecutiveSummary(record.executiveSummary, formalItems, industryScope),
     solidGrowth,
     sustainability,
     bubbleRisks,
@@ -613,10 +613,38 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     stageCompanies: mergeRadarLists(stageLists, stageCompanyLists({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
     limitations: stringArray(record.limitations).slice(0, 8),
   };
+  const modelChangeLog = stringArray(record.changeLog).slice(0, 8).map(fixRadarText);
   return {
     ...scan,
-    changeLog: stringArray(record.changeLog).slice(0, 8).length ? stringArray(record.changeLog).slice(0, 8) : buildChangeLog(previousScan, scan),
+    changeLog: shouldUseModelChangeLog(modelChangeLog, formalItems) ? modelChangeLog : buildChangeLog(previousScan, scan),
   };
+}
+
+function normalizedExecutiveSummary(value, formalItems, industryScope) {
+  const original = stringArray(value).slice(0, 8).map(fixRadarText);
+  if (formalItems.length) return original.slice(0, 5);
+  const packets = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
+    .filter((packet) => (packet.sourceCount ?? 0) > 0)
+    .sort((a, b) => ((b.sourceCount ?? 0) + (b.scores?.evidence ?? 0)) - ((a.sourceCount ?? 0) + (a.scores?.evidence ?? 0)))
+    .slice(0, 4);
+  const summary = [
+    "本轮没有行业达到正式结论门槛；以下内容按观察和风险复核展示，不能视为高置信投资结论。",
+    ...packets.map((packet) => {
+      const stage = packet.stage || fallbackIndustryStage(packet, scoreIndustryPacket(packet));
+      const displayStage = stage === "衰退" ? "衰退风险复核" : stage === "泡沫风险" ? "泡沫风险复核" : "继续观察";
+      const thesis = stringValue(packet.thesis) || "已扫描到公开证据，但仍需交叉验证。";
+      return `${packet.industry}：${displayStage}，${fixRadarText(thesis)}`;
+    }),
+  ];
+  return summary.slice(0, 5);
+}
+
+function shouldUseModelChangeLog(entries, formalItems) {
+  if (!entries.length) return false;
+  const text = entries.join(" ");
+  if (/solidGrowth|upcomingGrowth|decliningIndustries|bubbleRisks|sustainability/.test(text)) return false;
+  if (!formalItems.length && /正式结论|高置信|确认|维持扎实|维持.*衰退|维持.*增长/.test(text)) return false;
+  return true;
 }
 
 function conservativeConfidenceSummary(summary, breakdown = {}) {
@@ -1246,11 +1274,11 @@ function companyMatchesItemContext(company, itemText, sources) {
 
 function representativeCompanyLists(sections) {
   return [
-    companyListFromItems("扎实增长产业中的代表公司", sections.solidGrowth, "来自本轮扎实增长正式结论。"),
-    companyListFromItems("短期增长但可持续性弱的代表公司", sections.sustainability.filter((item) => item.durability === "短期" || item.sustainabilityTier === "短期催化"), "来自短期催化或可持续性偏弱结论。"),
-    companyListFromItems("存在产业泡沫或股价泡沫的代表公司", sections.bubbleRisks, "来自泡沫或过热风险结论。"),
-    companyListFromItems("即将进入增长期的代表公司", sections.upcomingGrowth, "来自即将增长结论。"),
-    companyListFromItems("已经或即将步入严重衰退的代表公司", sections.decliningIndustries, "来自衰退风险结论。"),
+    companyListFromItems("扎实增长产业中的代表公司", sections.solidGrowth, "本轮无满足正式门槛的扎实增长代表公司。"),
+    companyListFromItems("短期增长但可持续性弱的代表公司", sections.sustainability.filter((item) => item.durability === "短期" || item.sustainabilityTier === "短期催化"), "本轮无满足正式门槛的短期增长代表公司。"),
+    companyListFromItems("存在产业泡沫或股价泡沫的代表公司", sections.bubbleRisks, "本轮无满足正式门槛的泡沫风险代表公司。"),
+    companyListFromItems("即将进入增长期的代表公司", sections.upcomingGrowth, "本轮无满足正式门槛的即将增长代表公司。"),
+    companyListFromItems("已经或即将步入严重衰退的代表公司", sections.decliningIndustries, "本轮无满足正式门槛的衰退代表公司。"),
   ].filter((item) => item.companies.length || item.note);
 }
 
@@ -1258,8 +1286,8 @@ function stageCompanyLists(sections) {
   const stable = sections.sustainability.filter((item) => /平稳|高股息|现金流|公用事业|电力|水电|电信/.test(`${item.title} ${item.industries.join(" ")}`));
   return [
     companyListFromItems("衰落产业中的沙漠之花", sections.decliningIndustries.filter((item) => item.riskLevel !== "高"), "本轮未识别出高置信沙漠之花时保持空缺。"),
-    companyListFromItems("平稳产业中的杰出经营者", stable, "来自平稳现金流/高股息方向。"),
-    companyListFromItems("上升产业中的领军人物", [...sections.solidGrowth, ...sections.upcomingGrowth], "来自扎实增长或即将增长方向。"),
+    companyListFromItems("平稳产业中的杰出经营者", stable, "本轮无满足正式门槛的平稳经营者。"),
+    companyListFromItems("上升产业中的领军人物", [...sections.solidGrowth, ...sections.upcomingGrowth], "本轮无满足正式门槛的上升产业领军公司。"),
     companyListFromItems("细分产业初期的风险投资标的", sections.bubbleRisks.filter((item) => /早期|初期|机器人|低空|商业航天|固态/.test(`${item.title} ${item.industries.join(" ")}`)), "风险投资标的必须有可验证 A/H 公司证据，否则保持空缺。"),
   ].filter((item) => item.companies.length || item.note);
 }
@@ -1323,13 +1351,20 @@ function radarLists(value) {
 
 function mergeRadarLists(primary, fallback) {
   const byLabel = new Map();
-  for (const list of [...fallback, ...primary]) {
+  for (const list of fallback) {
     const existing = byLabel.get(list.label);
-    const companies = existing?.companies?.length ? existing.companies : (list.companies ?? []);
     byLabel.set(list.label, {
       label: list.label,
-      companies: uniqueCompaniesByName(companies).slice(0, 8),
+      companies: uniqueCompaniesByName(existing?.companies?.length ? existing.companies : (list.companies ?? [])).slice(0, 8),
       note: existing?.note || stringValue(list.note) || "",
+    });
+  }
+  for (const list of primary) {
+    const existing = byLabel.get(list.label);
+    if (!existing) continue;
+    byLabel.set(list.label, {
+      ...existing,
+      note: existing.note || stringValue(list.note) || "",
     });
   }
   return [...byLabel.values()].filter((item) => item.companies.length || item.note);
