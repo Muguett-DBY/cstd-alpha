@@ -778,11 +778,12 @@ function cleanStageKey(value) {
 function fallbackIndustryStage(packet, scores) {
   if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
   const growthPressure = Math.max(scores.growth, scores.momentum);
-  const stageText = stageSignalText(packet);
   const structuralDecline = isDirectStructuralDecline(packet);
   const protectedGrowthTheme = isProtectedGrowthTheme(packet);
+  const positiveCycleTheme = isPositiveCycleTheme(packet);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
   if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
+  if (!structuralDecline && positiveCycleTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
   if (scores.declineRisk >= 68 && growthPressure >= 58) return "继续观察";
   if (/现金流|高股息|公用事业|电信|高速|银行|保险/.test(`${packet.group} ${packet.industry}`) && scores.declineRisk < 50) return "平稳现金流";
@@ -811,8 +812,13 @@ function isProtectedGrowthTheme(packet) {
   return /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件|消费复苏|消费出海|品牌出海|白酒批价|高股息|保险复苏|物业现金流|储能出海|水泥|建材|建材复苏|产能出清/.test(stageSignalText(packet));
 }
 
+function isPositiveCycleTheme(packet) {
+  const text = stageSignalText(packet);
+  return /铜价上涨|铝价上涨|金价上涨|钨价上涨|稀土|库存低位|价格上涨|涨价|价格高位|复苏|修复|景气|订单恢复|出口改善/.test(text);
+}
+
 function shouldProtectFromBroadDecline(packet, scores) {
-  if (!isProtectedGrowthTheme(packet)) return false;
+  if (!isProtectedGrowthTheme(packet) && !isPositiveCycleTheme(packet)) return false;
   if (isDirectStructuralDecline(packet) && scores.evidence >= 45) return false;
   return true;
 }

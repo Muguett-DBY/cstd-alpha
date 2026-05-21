@@ -77,7 +77,7 @@ describe("background radar analyzer", () => {
     expect(formalItems.every((item) => item.sourceIds?.length)).toBe(true);
     expect(new Set(formalItems.map((item) => item.title)).size).toBe(formalItems.length);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 12, changedIndustryCount: 11, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 13, changedIndustryCount: 12, unchangedIndustryCount: 1 });
     const newDrugPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务");
     expect(newDrugPacket).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(newDrugPacket?.scores?.growth).toBeGreaterThanOrEqual(68);
@@ -87,6 +87,7 @@ describe("background radar analyzer", () => {
     expect(propertyPacket).toMatchObject({ stage: "衰退" });
     expect(propertyPacket?.scores?.growth).toBeLessThanOrEqual(49);
     expect(propertyPacket?.scores?.declineRisk).toBeGreaterThanOrEqual(72);
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "铜/铝")?.stage).toBe("继续观察");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "新能源汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "CXO")?.stage).not.toBe("衰退");
@@ -152,8 +153,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(12);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(11);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(13);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(12);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -337,6 +338,7 @@ function evidenceSnapshot() {
       { group: "医药健康", industry: "创新药/医疗服务", status: "scanned", evidenceHash: "hash-new-drug", sourceCount: 1, evidenceTypes: ["announcement"], signalTypes: ["financial_metric"], evidenceGaps: [], sources: [sources[0]], financialFacts: [{ company: "百济神州", industry: "化学制药" }], industryFacts: [], companyCandidates: [{ company: "百济神州", industry: "化学制药" }] },
       { group: "高景气成长", industry: "汽车/智能驾驶", status: "scanned", evidenceHash: "hash-auto", sourceCount: 1, evidenceTypes: ["official"], signalTypes: ["industry_stat"], evidenceGaps: ["缺财报"], sources: [sources[2]], financialFacts: [], industryFacts: [{ industry: "汽车/智能驾驶" }], companyCandidates: [] },
       { group: "周期品", industry: "战略有色金属", status: "scanned", evidenceHash: "hash-metal", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["commodity_price"], evidenceGaps: ["缺财报"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
+      { group: "周期资源", industry: "铜/铝", status: "scanned", evidenceHash: "hash-copper-aluminum", sourceCount: 14, evidenceTypes: ["news", "hard_data", "official", "market"], signalTypes: ["external_search", "commodity_price"], evidenceGaps: [], themes: ["铜价上涨", "库存低位"], sources: [sources[3]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "周期品", industry: "航运物流", status: "scanned", evidenceHash: "hash-ship-stable", sourceCount: 1, evidenceTypes: ["hard_data"], signalTypes: ["freight_rate"], evidenceGaps: ["缺财报"], sources: [sources[4]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "科技成长", industry: "存储芯片", status: "scanned", evidenceHash: "hash-storage-anysearch", sourceCount: 12, evidenceTypes: ["news"], signalTypes: ["external_search"], evidenceGaps: ["缺财报", "缺价格", "缺销量"], sources: [sources[5]], financialFacts: [], industryFacts: [], companyCandidates: [] },
       { group: "过剩/衰退", industry: "光伏产业链", status: "scanned", evidenceHash: "hash-pv", sourceCount: 2, evidenceTypes: ["market", "hard_data"], signalTypes: ["financial_metric", "commodity_price"], evidenceGaps: [], sources: [sources[6], sources[9]], financialFacts: [], industryFacts: [], companyCandidates: [] },
