@@ -1565,8 +1565,9 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
       .filter((packet) => (stage === "all" || (packet.stage ?? "证据不足") === stage) && (!normalizedQuery || `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`.toLowerCase().includes(normalizedQuery)))
       .sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
   }, [packets, query, stage]);
-  const defaultVisibleCount = 24;
-  const visibleRows = expanded ? rows.slice(0, 120) : rows.slice(0, defaultVisibleCount);
+  const defaultVisibleCount = 10;
+  const hasActiveFilter = stage !== "all" || Boolean(query.trim());
+  const visibleRows = expanded || hasActiveFilter ? rows.slice(0, 120) : rows.slice(0, defaultVisibleCount);
   const stages = ["all", "扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
   return (
     <section className="radar-section radar-industry-table-section" id="radar-all-industries">
@@ -1590,8 +1591,8 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
         <span>
           显示 {visibleRows.length} / {rows.length} 个细分产业
         </span>
-        <strong>{expanded ? "已展开完整列表" : "默认只看高优先级，避免页面过长"}</strong>
-        {rows.length > defaultVisibleCount ? (
+        <strong>{hasActiveFilter ? "当前筛选已显示全部匹配项" : expanded ? "已展开完整列表" : "默认只看前 10 条，避免页面过长"}</strong>
+        {!hasActiveFilter && rows.length > defaultVisibleCount ? (
           <button type="button" className="ghost-button" onClick={() => setExpanded((value) => !value)}>
             {expanded ? "收起列表" : `展开全部 ${Math.min(rows.length, 120)} 项`}
           </button>

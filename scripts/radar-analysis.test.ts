@@ -68,12 +68,13 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 8, changedIndustryCount: 7, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 9, changedIndustryCount: 8, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链")).toMatchObject({ stage: "衰退" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "新能源汽车/智能驾驶")?.stage).not.toBe("衰退");
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "CXO")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.growth).toBeLessThan(68);
@@ -133,8 +134,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(8);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(7);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(9);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(8);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -313,6 +314,32 @@ function evidenceSnapshot() {
         financialFacts: [],
         industryFacts: [{ industry: "汽车/智能驾驶" }],
         companyCandidates: [],
+      },
+      {
+        group: "医药医疗",
+        industry: "CXO",
+        status: "scanned",
+        evidenceHash: "hash-cxo",
+        sourceCount: 6,
+        evidenceTypes: ["announcement", "market"],
+        signalTypes: ["financial_metric"],
+        evidenceGaps: [],
+        themes: ["医药投融资", "订单恢复"],
+        sources: [
+          {
+            source: "东方财富业绩报表",
+            query: "CXO 财报 订单 恢复",
+            title: "CXO 订单恢复但投融资仍弱",
+            summary: "订单恢复线索出现，医药投融资仍低迷，不能直接判定衰退。",
+            sourceType: "announcement",
+            signalType: "financial_metric",
+            weight: 4,
+            industry: "CXO",
+          },
+        ],
+        financialFacts: [{ company: "药明康德", industry: "CXO" }],
+        industryFacts: [],
+        companyCandidates: [{ company: "药明康德", industry: "CXO" }],
       },
     ],
   };

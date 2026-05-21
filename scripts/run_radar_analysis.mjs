@@ -596,7 +596,7 @@ function fallbackIndustryStage(packet, scores) {
   const growthPressure = Math.max(scores.growth, scores.momentum);
   const stageText = `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`;
   const structuralDecline = /过剩\/衰退|过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(stageText);
-  const protectedGrowthTheme = /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|电网设备|AI应用|软件/.test(stageText);
+  const protectedGrowthTheme = /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件/.test(stageText);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
   if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
