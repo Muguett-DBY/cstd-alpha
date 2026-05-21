@@ -2116,31 +2116,33 @@ function buildRadarVisualPackets(radar: RadarScan): RadarIndustryPacket[] {
     }
   }
   for (const coverage of radar.coverageReview ?? []) {
+    const coverageStage = radarCoverageVisualStage(coverage);
     addPacket({
       group: "覆盖复核",
       industry: coverage.label,
       status: "scanned",
-      stage: coverage.status === "formal" ? "继续观察" : coverage.status === "watched" ? "继续观察" : "证据不足",
+      stage: coverageStage,
       evidenceHash: `coverage-${coverage.label}`,
       sourceCount: coverage.sourceCount,
       evidenceTypes: coverage.evidenceTypes,
       signalTypes: [],
       evidenceGaps: coverage.status === "insufficient" ? ["缺多源验证"] : [],
-      scores: visualScoresForCoverage(coverage),
+      scores: visualScoresForCoverage(coverage, coverageStage),
     });
   }
   for (const coverage of radar.softCoverage ?? []) {
+    const coverageStage = radarCoverageVisualStage(coverage);
     addPacket({
       group: "软覆盖",
       industry: coverage.label,
       status: "scanned",
-      stage: coverage.sourceCount >= 2 ? "继续观察" : "证据不足",
+      stage: coverageStage,
       evidenceHash: `soft-${coverage.label}`,
       sourceCount: coverage.sourceCount,
       evidenceTypes: coverage.evidenceTypes,
       signalTypes: [],
       evidenceGaps: coverage.sourceCount >= 2 ? [] : ["缺多源验证"],
-      scores: visualScoresForCoverage(coverage),
+      scores: visualScoresForCoverage(coverage, coverageStage),
     });
   }
   return [...staged.values()].sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
@@ -2152,6 +2154,13 @@ function radarItemVisualStage(item: RadarItem, defaultStage: RadarIndustryStage)
     return "平稳现金流";
   }
   return defaultStage;
+}
+
+function radarCoverageVisualStage(coverage: RadarCoverageItem | RadarCoverageReview): RadarIndustryStage {
+  const text = `${coverage.label} ${"note" in coverage ? coverage.note : ""}`;
+  if (/平稳现金流|高股息|分红|公用事业|电力|水电|高速公路|电信运营|运营商|银行|保险/.test(text) && !/泡沫|衰退|严重下滑|流动性风险/.test(text)) return "平稳现金流";
+  if ("status" in coverage) return coverage.status === "formal" || coverage.status === "watched" ? "继续观察" : "证据不足";
+  return coverage.sourceCount >= 2 ? "继续观察" : "证据不足";
 }
 
 function inferPacketStage(packet: RadarIndustryPacket) {
@@ -2184,12 +2193,12 @@ function visualScoresForRadarItem(item: RadarItem, stage: string) {
   return { growth, momentum: growth, evidence, valuationRisk: risk, bubbleRisk, declineRisk, confidence, change: item.changeReason?.includes("维持") ? 42 : 68 };
 }
 
-function visualScoresForCoverage(coverage: RadarCoverageItem | RadarCoverageReview) {
+function visualScoresForCoverage(coverage: RadarCoverageItem | RadarCoverageReview, stage = radarCoverageVisualStage(coverage)) {
   const evidence = Math.min(100, coverage.sourceCount * 10 + coverage.evidenceTypes.length * 10);
   const watched = "status" in coverage && coverage.status === "watched";
   const formal = "status" in coverage && coverage.status === "formal";
-  const growth = formal ? 62 : watched ? 48 : 28;
-  const risk = /泡沫|衰退|过剩|地产|光伏|机器人/.test(`${coverage.label} ${coverage.note}`) ? 68 : 32;
+  const growth = stage === "平稳现金流" ? 42 : formal ? 62 : watched ? 48 : 28;
+  const risk = stage === "平稳现金流" ? 24 : /泡沫|衰退|过剩|地产|光伏|机器人/.test(`${coverage.label} ${"note" in coverage ? coverage.note : ""}`) ? 68 : 32;
   return { growth, momentum: growth, evidence, valuationRisk: risk, bubbleRisk: risk, declineRisk: risk, confidence: evidence, change: watched || formal ? 48 : 25 };
 }
 
