@@ -49,6 +49,8 @@ describe("background radar analyzer", () => {
         solidGrowth?: Array<{ companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[] }>;
         sustainability?: Array<{ title?: string; changeReason?: string }>;
         bubbleRisks?: Array<{ companies?: string[] }>;
+        representativeCompanies?: Array<{ label?: string; companies?: string[] }>;
+        stageCompanies?: Array<{ label?: string; companies?: string[] }>;
         evidenceSources?: Array<{ id?: string; source?: string; signalType?: string }>;
         industryPackets?: Array<{ industry?: string; changeStatus?: string; evidenceHash?: string; stage?: string; scores?: { growth?: number; evidence?: number; bubbleRisk?: number } }>;
         coverageReview?: Array<{ label?: string; sourceCount?: number; sourceIds?: string[] }>;
@@ -66,6 +68,14 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
+    expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([
+      "百济神州",
+      "药明康德",
+    ]);
+    expect(radarCache.radar?.stageCompanies?.find((item) => item.label === "上升产业中的领军人物")?.companies).toEqual([
+      "百济神州",
+      "药明康德",
+    ]);
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     const formalItems = [
       ...(radarCache.radar?.solidGrowth ?? []),
@@ -231,6 +241,104 @@ describe("background radar analyzer", () => {
     expect(propertyPacket?.stage).toBe("衰退");
     expect(propertyPacket?.scores?.growth).toBeLessThanOrEqual(49);
     expect(propertyPacket?.scores?.declineRisk).toBeGreaterThanOrEqual(72);
+  });
+
+  test("rejects unsuitable or context-mismatched representative companies", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-company-filter-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    evidence.sources.push(
+      {
+        source: "东方财富业绩报表",
+        query: "A股 财报 营收 净利润 毛利率 经营现金流 养殖业",
+        title: "*ST天山(300313.SZ) 2026Q1 营收同比 381.05%，净利润同比 183.91%",
+        summary: "公司级财报：行业 养殖业，具体主业仍需核验。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "*ST天山",
+        code: "300313.SZ",
+        market: "A股",
+        industry: "养殖业",
+        weight: 4,
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "A股 财报 营收 净利润 毛利率 经营现金流 养殖业",
+        title: "晓鸣股份(300967.SZ) 2025年净利润同比 2243.97%",
+        summary: "公司级财报：行业 养殖业，具体主业仍需核验。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "晓鸣股份",
+        code: "300967.SZ",
+        market: "A股",
+        industry: "养殖业",
+        weight: 4,
+      },
+    );
+    const output = modelOutput();
+    output.solidGrowth = [
+      {
+        title: "生猪养殖周期反转确认",
+        industries: ["生猪养殖"],
+        companies: ["*ST天山(300313.SZ)", "晓鸣股份(300967.SZ)"],
+        thesis: "猪价上行，但公司级样本来自宽泛养殖业。",
+        drivers: ["猪价上行"],
+        evidence: ["外三元猪价上行", "*ST天山和晓鸣股份财报样本"],
+        evidenceTypes: ["hard_data", "announcement"],
+        supportingSourceCount: 3,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["价格"],
+        sustainabilityTier: "中期景气",
+        confidence: "高",
+        durability: "中期",
+        riskLevel: "低",
+        counterEvidenceConditions: ["猪价回落"],
+        turningPoints: ["供给释放"],
+      },
+    ];
+    output.sustainability = [];
+    output.bubbleRisks = [];
+    output.upcomingGrowth = [];
+    output.decliningIndustries = [];
+
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify({ version: "v2", radar: null }), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-company-filter",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { solidGrowth?: Array<{ title?: string; companies?: string[] }>; representativeCompanies?: Array<{ companies?: string[] }> };
+    };
+    const allCompanies = [
+      ...(radarCache.radar?.solidGrowth ?? []).flatMap((item) => item.companies ?? []),
+      ...(radarCache.radar?.representativeCompanies ?? []).flatMap((item) => item.companies ?? []),
+    ];
+
+    expect(radarCache.radar?.solidGrowth?.some((item) => item.title === "生猪养殖周期反转确认")).toBe(false);
+    expect(allCompanies.join(" ")).not.toContain("*ST天山");
+    expect(allCompanies.join(" ")).not.toContain("晓鸣股份");
   });
 });
 

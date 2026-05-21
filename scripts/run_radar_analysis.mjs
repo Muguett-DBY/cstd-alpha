@@ -63,6 +63,21 @@ const NON_AH_PATTERNS = [
   /维通利/i,
   /\([A-Z]{1,6}\.(O|N|NASDAQ|NYSE|US)\)/i,
 ];
+const UNSUITABLE_REPRESENTATIVE_PATTERNS = [/^\*?ST/i, /^退市/i, /退市|风险警示/i];
+const REPRESENTATIVE_CONTEXT_RULES = [
+  {
+    pattern: /生猪|猪价|猪周期|猪肉/i,
+    required: /生猪|猪价|猪周期|猪肉|猪企|养猪|母猪|牧原|温氏|新希望|天邦|傲农|正邦|唐人神|巨星农牧/i,
+  },
+  {
+    pattern: /光伏|硅料|硅片|组件|逆变器|电池片|多晶硅|工业硅/i,
+    required: /光伏|硅料|硅片|组件|逆变器|电池片|多晶硅|工业硅|TOPCon|BC电池/i,
+  },
+  {
+    pattern: /航运|运价|集运|港口|物流|BDI|CCFI|SCFI/i,
+    required: /航运|运价|集运|港口|物流|BDI|CCFI|SCFI|船/i,
+  },
+];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
 const DRIVER_TAGS = ["需求", "价格", "技术", "政策", "市占率", "供给收缩"];
@@ -437,6 +452,8 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
   const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
+  const representativeLists = radarLists(record.representativeCompanies);
+  const stageLists = radarLists(record.stageCompanies);
   const scan = {
     id: stringValue(record.id) || `radar-${generatedAt}`,
     title: stringValue(record.title) || "行业雷达扫描",
@@ -465,8 +482,11 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     bubbleRisks,
     upcomingGrowth,
     decliningIndustries,
-    representativeCompanies: radarLists(record.representativeCompanies),
-    stageCompanies: radarLists(record.stageCompanies),
+    representativeCompanies: mergeRadarLists(
+      representativeLists,
+      representativeCompanyLists({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }),
+    ),
+    stageCompanies: mergeRadarLists(stageLists, stageCompanyLists({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
     limitations: stringArray(record.limitations).slice(0, 8),
   };
   return {
@@ -485,7 +505,7 @@ function radarItems(value, previousTitles, digest) {
       const sourceIds = sourceIdsForItem(record, digest);
       const normalizedEvidence = stringArray(record.evidence).slice(0, 8).map(formatExtremePercentEvidence);
       const thesis = formatExtremePercentEvidence(stringValue(record.thesis));
-      const companies = evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest).slice(0, 6);
+      const companies = evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest, record).slice(0, 6);
       return {
         title,
         industries: stringArray(record.industries).slice(0, 5),
@@ -951,28 +971,75 @@ function stripTicker(company) {
   return String(company).replace(/\s*\([^)]*\)\s*/g, "").trim();
 }
 
-function evidenceBackedCompanies(companies, sourceIds, digest) {
+function evidenceBackedCompanies(companies, sourceIds, digest, record = {}) {
   const sourceSet = new Set(sourceIds);
   const matchedSources = digest.citations.filter((source) => sourceSet.has(source.id));
+  const itemText = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.drivers), ...stringArray(record.evidence)].join(" ");
   const sourceCompanies = unique(
     matchedSources
       .map((source) => stringValue(source.company))
       .filter(Boolean)
-      .filter((company) => !NON_AH_PATTERNS.some((pattern) => pattern.test(company))),
+      .filter((company) => isEligibleRepresentativeCompany(company))
+      .filter((company) => companyMatchesItemContext(company, itemText, matchedSources)),
   );
-  return uniqueCompaniesByName([...companies, ...sourceCompanies]);
+  const explicitCompanies = companies.filter((company) => companyMatchesItemContext(company, itemText, matchedSources));
+  return uniqueCompaniesByName([...explicitCompanies, ...sourceCompanies]);
 }
 
 function uniqueCompaniesByName(companies) {
   const seen = new Set();
   const result = [];
-  for (const company of companies.filter((value) => !NON_AH_PATTERNS.some((pattern) => pattern.test(value)))) {
+  for (const company of companies.filter((value) => isEligibleRepresentativeCompany(value))) {
     const key = stripTicker(company);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     result.push(company);
   }
   return result;
+}
+
+function isEligibleRepresentativeCompany(company) {
+  return ![...NON_AH_PATTERNS, ...UNSUITABLE_REPRESENTATIVE_PATTERNS].some((pattern) => pattern.test(company) || pattern.test(stripTicker(company)));
+}
+
+function companyMatchesItemContext(company, itemText, sources) {
+  const rule = REPRESENTATIVE_CONTEXT_RULES.find((entry) => entry.pattern.test(itemText));
+  if (!rule) return true;
+  const name = stripTicker(company);
+  const companySourceText = sources
+    .filter((source) => stripTicker(source.company) === name || `${source.title ?? ""} ${source.summary ?? ""}`.includes(name))
+    .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
+    .join(" ");
+  return rule.required.test(companySourceText);
+}
+
+function representativeCompanyLists(sections) {
+  return [
+    companyListFromItems("扎实增长产业中的代表公司", sections.solidGrowth, "来自本轮扎实增长正式结论。"),
+    companyListFromItems("短期增长但可持续性弱的代表公司", sections.sustainability.filter((item) => item.durability === "短期" || item.sustainabilityTier === "短期催化"), "来自短期催化或可持续性偏弱结论。"),
+    companyListFromItems("存在产业泡沫或股价泡沫的代表公司", sections.bubbleRisks, "来自泡沫或过热风险结论。"),
+    companyListFromItems("即将进入增长期的代表公司", sections.upcomingGrowth, "来自即将增长结论。"),
+    companyListFromItems("已经或即将步入严重衰退的代表公司", sections.decliningIndustries, "来自衰退风险结论。"),
+  ].filter((item) => item.companies.length || item.note);
+}
+
+function stageCompanyLists(sections) {
+  const stable = sections.sustainability.filter((item) => /平稳|高股息|现金流|公用事业|电力|水电|电信/.test(`${item.title} ${item.industries.join(" ")}`));
+  return [
+    companyListFromItems("衰落产业中的沙漠之花", sections.decliningIndustries.filter((item) => item.riskLevel !== "高"), "本轮未识别出高置信沙漠之花时保持空缺。"),
+    companyListFromItems("平稳产业中的杰出经营者", stable, "来自平稳现金流/高股息方向。"),
+    companyListFromItems("上升产业中的领军人物", [...sections.solidGrowth, ...sections.upcomingGrowth], "来自扎实增长或即将增长方向。"),
+    companyListFromItems("细分产业初期的风险投资标的", sections.bubbleRisks.filter((item) => /早期|初期|机器人|低空|商业航天|固态/.test(`${item.title} ${item.industries.join(" ")}`)), "风险投资标的必须有可验证 A/H 公司证据，否则保持空缺。"),
+  ].filter((item) => item.companies.length || item.note);
+}
+
+function companyListFromItems(label, items, emptyNote) {
+  const companies = uniqueCompaniesByName(items.flatMap((item) => item.companies ?? [])).slice(0, 8);
+  return {
+    label,
+    companies,
+    note: companies.length ? items.map((item) => item.title).slice(0, 3).join("；") : emptyNote,
+  };
 }
 
 function radarCoverageReview(value, digest, formalItems) {
@@ -1021,6 +1088,19 @@ function radarLists(value) {
       };
     })
     .filter((item) => item.label);
+}
+
+function mergeRadarLists(primary, fallback) {
+  const byLabel = new Map();
+  for (const list of [...fallback, ...primary]) {
+    const existing = byLabel.get(list.label);
+    byLabel.set(list.label, {
+      label: list.label,
+      companies: uniqueCompaniesByName([...(existing?.companies ?? []), ...(list.companies ?? [])]).slice(0, 8),
+      note: stringValue(list.note) || existing?.note || "",
+    });
+  }
+  return [...byLabel.values()].filter((item) => item.companies.length || item.note);
 }
 
 function classifySource(source) {
@@ -1201,7 +1281,7 @@ function radarJsonShape() {
 }
 
 function ahCompanies(value) {
-  return stringArray(value).filter((company) => !NON_AH_PATTERNS.some((pattern) => pattern.test(company)));
+  return stringArray(value).filter((company) => isEligibleRepresentativeCompany(company));
 }
 
 function enumValue(value, allowed, fallback) {
