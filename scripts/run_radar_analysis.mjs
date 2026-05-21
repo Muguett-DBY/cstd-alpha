@@ -937,13 +937,7 @@ function evidenceBackedCompanies(companies, sourceIds, digest) {
       .filter(Boolean)
       .filter((company) => !NON_AH_PATTERNS.some((pattern) => pattern.test(company))),
   );
-  if (!sourceCompanies.length) return companies;
-  const sourceText = matchedSources.map((source) => `${source.company ?? ""} ${source.title} ${source.summary ?? ""}`).join(" ");
-  const kept = companies.filter((company) => {
-    const name = stripTicker(company);
-    return name.length >= 2 && sourceText.includes(name);
-  });
-  return uniqueCompaniesByName([...kept, ...sourceCompanies]);
+  return uniqueCompaniesByName([...companies, ...sourceCompanies]);
 }
 
 function uniqueCompaniesByName(companies) {

@@ -62,7 +62,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.version).toBe("v2");
     expect(radarCache.radar?.model).toBe("deepseek-v4-flash");
     expect(radarCache.radar?.sourceCount).toBeGreaterThanOrEqual(5);
-    expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["百济神州"]);
+    expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["百济神州", "药明康德"]);
     expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
     expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
@@ -514,11 +514,11 @@ function modelOutput() {
       {
         title: "创新药商业化利润拐点",
         industries: ["创新药/医疗服务"],
-        companies: ["百济神州", "Micron"],
+        companies: ["百济神州", "药明康德", "Micron"],
         thesis: "营收增长和净利润拐点由公司财报直接验证。",
         drivers: ["商业化收入扩张", "费用率改善"],
         evidence: ["S1 财报数据", "净利润同比+42653%"],
-        sourceIds: ["S6"],
+        sourceIds: ["S1", "S6"],
         evidenceTypes: ["announcement"],
         supportingSourceCount: 1,
         conclusionStrength: "正式结论",
