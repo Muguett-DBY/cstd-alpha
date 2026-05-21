@@ -57,6 +57,7 @@ describe("background radar analyzer", () => {
         analysisScope?: { totalIndustryCount?: number; changedIndustryCount?: number; unchangedIndustryCount?: number };
         changeLog?: string[];
         executiveSummary?: string[];
+        confidenceSummary?: string;
       };
     };
     const job = JSON.parse(readFileSync(outputJobPath, "utf8")) as { id?: string; status?: string; radarGeneratedAt?: string };
@@ -144,7 +145,8 @@ describe("background radar analyzer", () => {
     output.upcomingGrowth = [];
     output.decliningIndustries = [];
     output.executiveSummary = ["存储芯片涨价周期得到业绩确认，维持正式结论。"];
-    output.changeLog = ["维持存储芯片为solidGrowth，维持光伏为decliningIndustries。"];
+    output.changeLog = ["维持存储芯片为solid growth，维持光伏为declining industries。"];
+    output.confidenceSummary = "总体置信度高，增长类证据充分。";
     output.representativeCompanies = [{ label: "扎实增长产业中的代表公司", companies: ["德明利", "美光"], note: "来自本轮扎实增长正式结论。" }];
     output.stageCompanies = [{ label: "上升产业中的领军人物", companies: ["迪哲医药"], note: "来自扎实增长或即将增长方向。" }];
 
@@ -176,6 +178,7 @@ describe("background radar analyzer", () => {
       radar?: {
         executiveSummary?: string[];
         changeLog?: string[];
+        confidenceSummary?: string;
         representativeCompanies?: Array<{ companies?: string[]; note?: string }>;
         stageCompanies?: Array<{ companies?: string[]; note?: string }>;
       };
@@ -184,7 +187,9 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.executiveSummary?.[0]).toContain("没有行业达到正式结论门槛");
     expect(radarCache.radar?.executiveSummary?.join(" ")).not.toContain("维持正式结论");
     expect(radarCache.radar?.executiveSummary?.join(" ")).not.toContain("扎实增长");
-    expect(radarCache.radar?.changeLog?.join(" ")).not.toMatch(/solidGrowth|decliningIndustries|维持存储芯片/);
+    expect(radarCache.radar?.changeLog?.join(" ")).not.toMatch(/solidGrowth|solid growth|decliningIndustries|declining industries|维持存储芯片/);
+    expect(radarCache.radar?.confidenceSummary).toContain("总体置信度中等");
+    expect(radarCache.radar?.confidenceSummary).not.toContain("总体置信度高");
     expect((radarCache.radar?.representativeCompanies ?? []).flatMap((item) => item.companies ?? [])).toHaveLength(0);
     expect((radarCache.radar?.stageCompanies ?? []).flatMap((item) => item.companies ?? [])).toHaveLength(0);
     expect(radarCache.radar?.representativeCompanies?.map((item) => item.note).join(" ")).not.toContain("来自本轮扎实增长正式结论");

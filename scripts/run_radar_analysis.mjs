@@ -678,7 +678,7 @@ function formalSectionsOnly(sections) {
 function shouldUseModelChangeLog(entries, formalItems) {
   if (!entries.length) return false;
   const text = entries.join(" ");
-  if (/solidGrowth|upcomingGrowth|decliningIndustries|bubbleRisks|sustainability/.test(text)) return false;
+  if (/solidGrowth|upcomingGrowth|decliningIndustries|bubbleRisks|sustainability|solid\s*growth|upcoming\s*growth|declining\s*industr/i.test(text)) return false;
   if (!formalItems.length && /正式结论|高置信|确认|维持扎实|维持.*衰退|维持.*增长/.test(text)) return false;
   return true;
 }
@@ -689,7 +689,12 @@ function conservativeConfidenceSummary(summary, breakdown = {}) {
   const official = Number(breakdown.official) || 0;
   const announcement = Number(breakdown.announcement) || 0;
   if (hard < 30 || official <= 2) {
-    return `${fixRadarText(base)} 证据结构提示：公告/财报 ${announcement} 条、硬数据 ${hard} 条、官方/协会 ${official} 条；官方统计或行业硬数据偏少的增长类结论按中等置信处理，需继续交叉验证。`;
+    const cleanedBase = fixRadarText(base).split("证据结构提示：")[0].trim();
+    const conservativeBase = cleanedBase
+      .replace(/总体置信度高/g, "总体置信度中等")
+      .replace(/置信度高/g, "置信度中等")
+      .replace(/证据充分/g, "证据覆盖较强但仍需交叉验证");
+    return `${conservativeBase} 证据结构提示：公告/财报 ${announcement} 条、硬数据 ${hard} 条、官方/协会 ${official} 条；官方统计或行业硬数据偏少的增长类结论按中等置信处理，需继续交叉验证。`;
   }
   return fixRadarText(base);
 }
@@ -776,9 +781,15 @@ function softenObservationText(text) {
   return fixRadarText(text)
     .replace(/得到业绩确认/g, "出现业绩线索但仍需多源确认")
     .replace(/周期确认/g, "周期线索待确认")
+    .replace(/确认(?=业绩兑现)/g, "待确认")
     .replace(/景气持续向上/g, "景气改善线索待验证")
     .replace(/龙头业绩爆发/g, "部分公司业绩高增")
-    .replace(/行业触底回升/g, "触底回升线索待验证");
+    .replace(/产业链公司业绩爆发/g, "产业链公司业绩高增线索")
+    .replace(/业绩爆发/g, "业绩高增线索")
+    .replace(/行业触底回升/g, "触底回升线索待验证")
+    .replace(/待待确认/g, "待确认")
+    .replace(/待确认业绩兑现/g, "业绩兑现仍待确认")
+    .replace(/周期线索业绩兑现仍待确认/g, "周期线索待验证，业绩兑现仍待确认");
 }
 
 function splitRadarSignals(record) {
