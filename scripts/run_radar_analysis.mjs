@@ -483,15 +483,16 @@ function radarItems(value, previousTitles, digest) {
       const confidence = enumValue(record.confidence, ["低", "中", "高"], "中");
       const sourceIds = sourceIdsForItem(record, digest);
       const normalizedEvidence = stringArray(record.evidence).slice(0, 8).map(formatExtremePercentEvidence);
+      const thesis = formatExtremePercentEvidence(stringValue(record.thesis));
       return {
         title,
         industries: stringArray(record.industries).slice(0, 5),
         companies: ahCompanies(record.companies).slice(0, 6),
-        thesis: stringValue(record.thesis),
+        thesis,
         drivers: stringArray(record.drivers).slice(0, 8),
         evidence: normalizedEvidence,
         conclusionStrength: enumValue(record.conclusionStrength, CONCLUSION_STRENGTHS, confidence === "高" ? "正式结论" : "观察"),
-        evidenceGaps: evidenceGapsForItem(record, normalizedEvidence),
+        evidenceGaps: evidenceGapsForItem({ ...record, thesis }, normalizedEvidence),
         driverTags: enumArray(record.driverTags, DRIVER_TAGS),
         sustainabilityTier: enumValue(record.sustainabilityTier, SUSTAINABILITY_TIERS, "中期景气"),
         durability: enumValue(record.durability, ["短期", "中期", "长期", "不确定"], "不确定"),
@@ -861,12 +862,19 @@ function sourceIdsForItem(record, digest) {
 }
 
 function formatExtremePercentEvidence(text) {
-  return String(text).replace(/同比\s*([+-]?\d+(?:\.\d+)?)%/g, (match, rawValue) => {
-    const value = Number(rawValue);
-    if (!Number.isFinite(value) || Math.abs(value) < 1000) return match;
-    const sign = value > 0 ? "+" : "";
-    return `同比大幅变化（原始${sign}${value}%，低基数/一次性因素需核验）`;
-  });
+  return String(text)
+    .replace(/同比\s*([+-]?\d+(?:\.\d+)?)%/g, (match, rawValue) => {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || Math.abs(value) < 1000) return match;
+      const sign = value > 0 ? "+" : "";
+      return `同比大幅变化（原始${sign}${value}%，低基数/一次性因素需核验）`;
+    })
+    .replace(/同比\s*([+-]?\d+(?:\.\d+)?)\s*倍/g, (match, rawValue) => {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || Math.abs(value) < 10) return match;
+      const sign = value > 0 ? "+" : "";
+      return `同比大幅变化（原始${sign}${value}倍，低基数/一次性因素需核验）`;
+    });
 }
 
 function evidenceGapsForItem(record, evidence) {
