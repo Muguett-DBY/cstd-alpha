@@ -161,8 +161,9 @@ async function main() {
 }
 
 function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, industryScope) {
-  const stableEvidence = stableRadarEvidencePayload(digest, structuredFacts, industryScope);
+  const stableEvidence = stableRadarEvidencePayload(digest, structuredFacts);
   const volatileContext = {
+    analysisScope: compactIndustryScopeForModel(industryScope),
     asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
     previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
   };
@@ -211,15 +212,9 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
   };
 }
 
-function stableRadarEvidencePayload(digest, structuredFacts, industryScope) {
-  const compactScope = compactIndustryScopeForModel(industryScope);
+function stableRadarEvidencePayload(digest, structuredFacts) {
   const compactDigest = compactDigestForModel(digest);
   return {
-    analysisScope: {
-      ...compactScope,
-      changedIndustryPackets: sortedByStableKey(compactScope.changedIndustryPackets, industrySortKey),
-      unchangedIndustrySummaries: sortedByStableKey(compactScope.unchangedIndustrySummaries, industrySortKey),
-    },
     evidenceDigest: {
       ...compactDigest,
       citations: sortedByStableKey(compactDigest.citations, (item) => stringValue(item.id) || citationSortKey(item)),
@@ -230,6 +225,26 @@ function stableRadarEvidencePayload(digest, structuredFacts, industryScope) {
       financialFacts: sortedByStableKey(structuredFacts.financialFacts.slice(0, 120).map(compactFinancialFact), factSortKey),
       industryFacts: sortedByStableKey(structuredFacts.industryFacts.slice(0, 120).map(compactIndustryFact), factSortKey),
       companyCandidates: sortedByStableKey(structuredFacts.companyCandidates.slice(0, 120).map(compactCompanyCandidate), factSortKey),
+      industryPackets: sortedByStableKey(arrayValue(structuredFacts.industryPackets).map(compactStableIndustryPacket), industrySortKey),
+    },
+  };
+}
+
+function compactStableIndustryPacket(packet) {
+  return {
+    group: stringValue(packet.group),
+    industry: stringValue(packet.industry),
+    evidenceHash: stringValue(packet.evidenceHash),
+    sourceCount: typeof packet.sourceCount === "number" ? packet.sourceCount : undefined,
+    evidenceTypes: stringArray(packet.evidenceTypes),
+    signalTypes: stringArray(packet.signalTypes),
+    evidenceGaps: stringArray(packet.evidenceGaps),
+    themes: stringArray(packet.themes).slice(0, 8),
+    scores: scoreIndustryPacket(packet),
+    factCounts: {
+      financial: arrayValue(packet.financialFacts).length,
+      industry: arrayValue(packet.industryFacts).length,
+      companies: arrayValue(packet.companyCandidates).length,
     },
   };
 }

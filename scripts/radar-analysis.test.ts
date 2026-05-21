@@ -158,21 +158,22 @@ describe("background radar analyzer", () => {
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { reasoning_effort?: string; messages?: Array<{ content?: string }> };
     const stablePayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: Array<{ source?: string; qualityScore?: number; evidenceProfile?: string; anysearchTags?: string[]; anysearchContentTypes?: string[]; anysearchFreshness?: string }>; packets?: unknown[] };
-      analysisScope?: { changedIndustryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
-      structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[] };
+      structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[]; industryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }> };
     };
     const volatilePayload = JSON.parse(String(requestBody.messages?.[3].content)) as {
+      analysisScope?: { changedIndustryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
       previousScan?: { id?: string };
     };
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(volatilePayload.previousScan).toMatchObject({ id: "radar-previous" });
     expect(JSON.stringify(stablePayload)).not.toContain("radar-previous");
-    expect(stablePayload.analysisScope?.totalIndustryCount).toBe(14);
-    expect(stablePayload.analysisScope?.changedIndustryPackets?.length).toBe(13);
-    expect(stablePayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
-    expect(stablePayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
-    expect(stablePayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
+    expect(JSON.stringify(stablePayload)).not.toContain("changedIndustryPackets");
+    expect(volatilePayload.analysisScope?.totalIndustryCount).toBe(14);
+    expect(volatilePayload.analysisScope?.changedIndustryPackets?.length).toBe(13);
+    expect(volatilePayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
+    expect(volatilePayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
+    expect(volatilePayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(stablePayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
     expect(stablePayload.evidenceDigest?.citations?.find((source) => source.source === "AnySearch")).toMatchObject({
       qualityScore: 86,
@@ -184,7 +185,8 @@ describe("background radar analyzer", () => {
     expect(stablePayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
     expect(stablePayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
     expect(stablePayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
-    expect(JSON.stringify(stablePayload.structuredFacts)).not.toContain("industryPackets");
+    expect(stablePayload.structuredFacts?.industryPackets?.length).toBe(14);
+    expect(stablePayload.structuredFacts?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
   });
 
   test("keeps stable evidence before volatile scan context for prefix cache reuse", () => {
