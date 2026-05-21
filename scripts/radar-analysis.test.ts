@@ -67,6 +67,15 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
+    const formalItems = [
+      ...(radarCache.radar?.solidGrowth ?? []),
+      ...(radarCache.radar?.sustainability ?? []),
+      ...(radarCache.radar?.bubbleRisks ?? []),
+      ...(radarCache.radar?.upcomingGrowth ?? []),
+      ...(radarCache.radar?.decliningIndustries ?? []),
+    ];
+    expect(formalItems.every((item) => item.sourceIds?.length)).toBe(true);
+    expect(new Set(formalItems.map((item) => item.title)).size).toBe(formalItems.length);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
     expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 12, changedIndustryCount: 11, unchangedIndustryCount: 1 });
     const newDrugPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务");

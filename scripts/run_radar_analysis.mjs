@@ -425,11 +425,14 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const validUntil = new Date(now.getTime() + RADAR_VALID_HOURS * 60 * 60 * 1000).toISOString();
   const previousTitles = previousRadarTitles(previousScan);
   const unchangedIndustries = new Set(industryScope.unchanged.map((packet) => packet.industry));
-  const solidGrowth = reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest), previousScan?.solidGrowth, unchangedIndustries, digest);
-  const sustainability = reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest), previousScan?.sustainability, unchangedIndustries, digest);
-  const bubbleRisks = reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest), previousScan?.bubbleRisks, unchangedIndustries, digest);
-  const upcomingGrowth = reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest), previousScan?.upcomingGrowth, unchangedIndustries, digest);
-  const decliningIndustries = reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest);
+  const cleanedSections = cleanRadarSections({
+    solidGrowth: reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest), previousScan?.solidGrowth, unchangedIndustries, digest),
+    sustainability: reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest), previousScan?.sustainability, unchangedIndustries, digest),
+    bubbleRisks: reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest), previousScan?.bubbleRisks, unchangedIndustries, digest),
+    upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest), previousScan?.upcomingGrowth, unchangedIndustries, digest),
+    decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest),
+  });
+  const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = cleanedSections;
   const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
   const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
@@ -503,6 +506,97 @@ function radarItems(value, previousTitles, digest) {
       };
     })
     .filter(Boolean);
+}
+
+function cleanRadarSections(sections) {
+  const cleaned = Object.fromEntries(
+    Object.entries(sections).map(([section, items]) => [
+      section,
+      dedupeRadarItems(arrayValue(items).filter((item) => item.sourceIds?.length || item.conclusionStrength === "证据不足")),
+    ]),
+  );
+  return removeCrossSectionConflicts(cleaned);
+}
+
+function dedupeRadarItems(items) {
+  const byKey = new Map();
+  for (const item of items) {
+    const key = primaryRadarItemKey(item);
+    const existing = byKey.get(key);
+    if (!existing || radarItemQuality(item) > radarItemQuality(existing)) byKey.set(key, item);
+  }
+  return [...byKey.values()];
+}
+
+function removeCrossSectionConflicts(sections) {
+  const ordered = ["solidGrowth", "upcomingGrowth", "bubbleRisks", "decliningIndustries", "sustainability"];
+  const claimed = new Map();
+  const next = { ...sections };
+  for (const section of ordered) {
+    const items = [];
+    for (const item of next[section] ?? []) {
+      const industries = item.industries.filter((industry) => {
+        const key = canonicalIndustryKey(industry);
+        const owner = claimed.get(key);
+        if (!owner) return true;
+        if (section === owner.section) return true;
+        if (section === "decliningIndustries" && itemDeclineIsDirect(industry)) return true;
+        return false;
+      });
+      const rewritten = { ...item, industries };
+      if (rewritten.industries.length) {
+        items.push(rewritten);
+        for (const key of radarItemKeys(rewritten)) {
+          if (!claimed.has(key)) claimed.set(key, { section, title: rewritten.title });
+        }
+      }
+    }
+    next[section] = items;
+  }
+  return next;
+}
+
+function primaryRadarItemKey(item) {
+  return radarItemKeys(item)[0] || cleanStageKey(item.title);
+}
+
+function radarItemKeys(item) {
+  const values = [...stringArray(item.industries), item.title].map(canonicalIndustryKey).filter(Boolean);
+  return unique(values);
+}
+
+function canonicalIndustryKey(value) {
+  const text = cleanStageKey(value);
+  if (!text) return "";
+  if (/水泥|建材|玻璃/.test(text)) return "水泥建材";
+  if (/电网|特高压|变压器|能源基础设施/.test(text)) return "电网设备";
+  if (/电力\/水电|水电|发电|电力$|电力平稳|水电电力/.test(text)) return "电力水电";
+  if (/高速|铁路/.test(text)) return "高速铁路";
+  if (/电信|运营商/.test(text)) return "电信运营";
+  if (/银行|保险|券商/.test(text)) return "金融高股息";
+  if (/存储|DRAM|NAND|HBM/.test(text)) return "存储芯片";
+  if (/航运|集运|油运|港口|BDI|SCFI|CCFI/.test(text)) return "航运物流";
+  if (/锂电|储能|锂矿|锂盐|碳酸锂/.test(text)) return "锂电储能";
+  if (/生猪|养殖|猪价/.test(text)) return "生猪养殖";
+  if (/光伏|硅料|组件|逆变器/.test(text)) return "光伏产业链";
+  if (/地产|房地产|物业/.test(text)) return "地产链";
+  if (/燃油车|汽车零部件/.test(text)) return "传统燃油车";
+  if (/AI应用|软件/.test(text)) return "AI应用软件";
+  if (/机器人|具身/.test(text)) return "机器人具身智能";
+  return text;
+}
+
+function itemDeclineIsDirect(industry) {
+  return /地产|房地产|物业|光伏|硅料|组件|逆变器|传统燃油|燃油车|汽车零部件/.test(industry);
+}
+
+function radarItemQuality(item) {
+  const confidence = { 低: 1, 中: 2, 高: 3 }[item.confidence] ?? 1;
+  const strength = item.conclusionStrength === "正式结论" ? 12 : item.conclusionStrength === "观察" ? 6 : 0;
+  const evidenceWeight = arrayValue(item.evidenceTypes).reduce((sum, type) => sum + (EVIDENCE_WEIGHTS[type] ?? 1), 0);
+  const sourceScore = (item.sourceIds?.length ?? 0) * 6 + (item.supportingSourceCount ?? 0) * 3;
+  const currentBonus = item.changeReason?.includes("复用") ? 0 : 8;
+  return confidence * 10 + strength + evidenceWeight + sourceScore + currentBonus - (item.evidenceGaps?.length ?? 0) * 3;
 }
 
 function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustries, digest) {
