@@ -3507,6 +3507,27 @@ button:not(:disabled):active,
   gap: 14px;
 }
 
+.radar-industry-table-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfbf8;
+}
+
+.radar-industry-table-summary span {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.radar-industry-table-summary strong {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .radar-industry-table {
   display: grid;
   overflow: hidden;
@@ -4042,6 +4063,10 @@ button:not(:disabled):active,
 
   .radar-industry-table {
     overflow-x: auto;
+  }
+
+  .radar-industry-table-summary {
+    grid-template-columns: 1fr;
   }
 
   .radar-industry-row {

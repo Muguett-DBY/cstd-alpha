@@ -68,10 +68,11 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 7, changedIndustryCount: 6, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 8, changedIndustryCount: 7, unchangedIndustryCount: 1 });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务")).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "光伏产业链")).toMatchObject({ stage: "衰退" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "地产链")).toMatchObject({ stage: "衰退" });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.growth).toBeLessThan(68);
@@ -131,8 +132,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(7);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(6);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(8);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(7);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -298,6 +299,20 @@ function evidenceSnapshot() {
         industryFacts: [{ industry: "房地产开发", metric: "销售面积", value: -12 }],
         companyCandidates: [{ company: "万科A", industry: "房地产开发" }],
       },
+      {
+        group: "高景气成长",
+        industry: "新能源汽车/智能驾驶",
+        status: "scanned",
+        evidenceHash: "hash-new-energy-auto",
+        sourceCount: 4,
+        evidenceTypes: ["official", "market"],
+        signalTypes: ["industry_stat"],
+        evidenceGaps: ["缺财报"],
+        sources: [sources[2]],
+        financialFacts: [],
+        industryFacts: [{ industry: "汽车/智能驾驶" }],
+        companyCandidates: [],
+      },
     ],
   };
 }
@@ -444,6 +459,26 @@ function modelOutput() {
         riskLevel: "高",
         counterEvidenceConditions: ["销售面积和现金流连续改善"],
         turningPoints: ["开工率回升"],
+      },
+      {
+        title: "传统燃油车市场萎缩",
+        industries: ["传统燃油车", "汽车零部件（燃油）"],
+        companies: ["上汽集团(600104.SH)"],
+        thesis: "燃油车份额被新能源挤压。",
+        drivers: ["技术替代"],
+        evidence: ["S3 销量结构变化"],
+        sourceIds: ["S3"],
+        evidenceTypes: ["official"],
+        supportingSourceCount: 1,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["需求"],
+        sustainabilityTier: "中期景气",
+        confidence: "中",
+        durability: "中期",
+        riskLevel: "高",
+        counterEvidenceConditions: ["燃油车份额回升"],
+        turningPoints: ["新能源渗透率放缓"],
       },
     ],
     representativeCompanies: [{ label: "扎实增长产业中的代表公司", companies: ["百济神州", "美光"], note: "测试过滤海外公司。" }],

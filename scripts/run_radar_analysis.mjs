@@ -563,7 +563,12 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
 }
 
 function stageForIndustryPacket(packet, stageByIndustry) {
-  const keys = stageLookupKeys(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`);
+  const keys = unique([
+    ...stageLookupKeys(packet.industry),
+    ...stageLookupKeys(packet.group),
+    ...arrayValue(packet.themes).flatMap((theme) => stageLookupKeys(theme)),
+    ...stageLookupKeys(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`),
+  ]);
   let selected = "";
   for (const key of keys) {
     const stage = stageByIndustry.get(cleanStageKey(key));
@@ -578,9 +583,6 @@ function stageLookupKeys(value) {
   const keys = [text];
   for (const [alias, pattern] of STAGE_ALIAS_RULES) {
     if (pattern.test(text)) keys.push(alias);
-  }
-  for (const [topic, pattern] of TOPIC_RULES) {
-    if (pattern.test(text)) keys.push(topic);
   }
   return unique(keys.map(cleanStageKey).filter(Boolean));
 }

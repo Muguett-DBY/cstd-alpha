@@ -1558,12 +1558,15 @@ function RadarTopSignalLists({ packets, onSelectIndustry }: { packets: RadarIndu
 function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndustryPacket[]; onSelectIndustry: (industry: string) => void }) {
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
+  const [expanded, setExpanded] = useState(false);
   const rows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return packets
       .filter((packet) => (stage === "all" || (packet.stage ?? "证据不足") === stage) && (!normalizedQuery || `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`.toLowerCase().includes(normalizedQuery)))
       .sort((left, right) => radarPacketPriority(right) - radarPacketPriority(left));
   }, [packets, query, stage]);
+  const defaultVisibleCount = 24;
+  const visibleRows = expanded ? rows.slice(0, 120) : rows.slice(0, defaultVisibleCount);
   const stages = ["all", "扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
   return (
     <section className="radar-section radar-industry-table-section" id="radar-all-industries">
@@ -1583,6 +1586,17 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
           </select>
         </div>
       </header>
+      <div className="radar-industry-table-summary">
+        <span>
+          显示 {visibleRows.length} / {rows.length} 个细分产业
+        </span>
+        <strong>{expanded ? "已展开完整列表" : "默认只看高优先级，避免页面过长"}</strong>
+        {rows.length > defaultVisibleCount ? (
+          <button type="button" className="ghost-button" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "收起列表" : `展开全部 ${Math.min(rows.length, 120)} 项`}
+          </button>
+        ) : null}
+      </div>
       <div className="radar-industry-table" role="table" aria-label="全行业扫描表">
         <div role="row" className="radar-industry-row is-head">
           <span>细分产业</span>
@@ -1592,7 +1606,7 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
           <span>证据</span>
           <span>缺口</span>
         </div>
-        {rows.slice(0, 120).map((packet) => {
+        {visibleRows.map((packet) => {
           const scores = radarPacketVisualScores(packet);
           const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
           return (
