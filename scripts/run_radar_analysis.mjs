@@ -513,15 +513,16 @@ function cleanRadarSections(sections) {
   const cleaned = Object.fromEntries(
     Object.entries(sections).map(([section, items]) => [
       section,
-      dedupeRadarItems(arrayValue(items).filter(hasEnoughRadarItemEvidence)),
+      dedupeRadarItems(arrayValue(items).filter((item) => hasEnoughRadarItemEvidence(item, section))),
     ]),
   );
   return removeDuplicateSecondaryIndustries(removeCrossSectionConflicts(cleaned));
 }
 
-function hasEnoughRadarItemEvidence(item) {
+function hasEnoughRadarItemEvidence(item, section = "") {
   const sourceCount = item.sourceIds?.length ?? 0;
-  return sourceCount >= 2;
+  const needsRepresentativeCompany = /solidGrowth|sustainability|bubbleRisks|upcomingGrowth|decliningIndustries/.test(section);
+  return sourceCount >= 2 && (!needsRepresentativeCompany || item.companies?.length > 0);
 }
 
 function dedupeRadarItems(items) {
@@ -571,8 +572,11 @@ function removeDuplicateSecondaryIndustries(sections) {
         arrayValue(items)
           .map((item) => {
             const primaryKey = canonicalIndustryKey(item.industries?.[0] ?? item.title);
+            const localKeys = new Set();
             const industries = stringArray(item.industries).filter((industry, index) => {
               const key = canonicalIndustryKey(industry);
+              if (localKeys.has(key)) return false;
+              localKeys.add(key);
               return index === 0 || key === primaryKey || !primaryKeys.has(key);
             });
             return { ...item, industries };
