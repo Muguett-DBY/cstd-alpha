@@ -804,8 +804,9 @@ function stageTopicText(packet) {
 
 function isDirectStructuralDecline(packet) {
   const group = stringValue(packet.group);
+  const industry = stringValue(packet.industry);
   const topic = stageTopicText(packet);
-  return /过剩\/衰退|衰退/.test(group) || /过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(topic);
+  return /过剩\/衰退|衰退/.test(group) || /过剩|衰退/.test(topic) || /地产|房地产|光伏|传统燃油|传统/.test(industry);
 }
 
 function isProtectedGrowthTheme(packet) {
