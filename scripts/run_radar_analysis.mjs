@@ -825,6 +825,7 @@ function fallbackIndustryStage(packet, scores) {
   const positiveCycleTheme = isPositiveCycleTheme(packet);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
   if (structuralDecline && packetHasStructuralDistress(packet)) return "衰退";
+  if (structuralDecline && /过剩\/衰退|衰退/.test(stringValue(packet.group)) && scores.evidence >= 60 && !arrayValue(packet.evidenceGaps).length) return "衰退";
   if (structuralDecline && scores.declineRisk >= 52) return "衰退";
   if (structuralDecline && growthPressure >= 54) return "继续观察";
   if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
