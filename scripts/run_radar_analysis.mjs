@@ -104,7 +104,7 @@ const REPRESENTATIVE_CONTEXT_RULES = [
 ];
 const DISALLOWED_COMPANY_CONTEXT_RULES = [
   { company: /万通发展/i, context: /地产|房地产|地产链|物业/i },
-  { company: /南网储能/i, context: /水电|来水|水力发电/i },
+  { company: /南网储能/i, context: /水电|来水|水力发电|锂电|锂盐|锂矿|电池/i },
   { company: /崧盛股份/i, context: /电网|特高压|输变电|变压器|配网/i },
   { company: /帝尔激光/i, context: /硅料|硅片|组件|多晶硅|工业硅|光伏产业链/i, allow: /设备|激光|电池片|工艺/i },
 ];
