@@ -959,11 +959,17 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
   const reusable = arrayValue(previousItems)
     .filter((item) => isRecord(item) && !seen.has(item.title) && stringArray(item.industries).some((industry) => unchangedIndustries.has(industry)))
     .slice(0, 6)
-    .map((item) => ({
-      ...item,
-      sourceIds: sourceIdsForItem(item, digest),
-      changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
-    }));
+    .map((item) => {
+      const conclusionStrength = enumValue(item.conclusionStrength, CONCLUSION_STRENGTHS, "观察");
+      return {
+        ...item,
+        thesis: conclusionStrength === "正式结论" ? fixRadarText(item.thesis) : softenObservationText(item.thesis),
+        evidence: stringArray(item.evidence).map(fixRadarText),
+        conclusionStrength,
+        sourceIds: sourceIdsForItem(item, digest),
+        changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
+      };
+    });
   return [...currentItems, ...reusable];
 }
 
