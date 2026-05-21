@@ -751,7 +751,7 @@ function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMat
   if ((packet.sourceCount ?? 0) <= 0 || (scores.evidence < 28 && !hasDirectStageMatch)) return "证据不足";
   const fallback = fallbackIndustryStage(packet, scores);
   if (mappedStage === "继续观察" && fallback === "平稳现金流") return "平稳现金流";
-  if (!mappedStage) return fallback;
+  if (!mappedStage) return fallback === "扎实增长" ? "继续观察" : fallback;
   if (mappedStage === "扎实增长" && shouldRejectSolidGrowthForStructuralDecline(packet, scores)) return "衰退";
   if (mappedStage === "衰退" && shouldProtectFromBroadDecline(packet, scores)) return fallback === "衰退" ? "继续观察" : fallback;
   return mappedStage;
