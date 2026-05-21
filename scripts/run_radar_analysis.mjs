@@ -97,6 +97,10 @@ const REPRESENTATIVE_CONTEXT_RULES = [
     pattern: /燃油车|汽车|智能驾驶|零部件|新能源车/i,
     required: /汽车|车企|乘用车|整车|零部件|智能驾驶|新能源车/i,
   },
+  {
+    pattern: /创新药|医疗服务|医药|医疗器械|CXO|制药|药/i,
+    required: /创新药|医药|医疗|医疗器械|CXO|CRO|CDMO|临床|药|制药|生物|药明|康德|迪哲|百奥/i,
+  },
 ];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
@@ -1037,7 +1041,7 @@ function companyMatchesItemContext(company, itemText, sources) {
     .filter((source) => stripTicker(source.company) === name || `${source.title ?? ""} ${source.summary ?? ""}`.includes(name))
     .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
     .join(" ");
-  if (!companySourceText) return itemText.includes(name);
+  if (!companySourceText) return itemText.includes(name) || rule.required.test(name);
   return rule.required.test(companySourceText);
 }
 
