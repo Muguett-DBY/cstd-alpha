@@ -15,14 +15,26 @@ export type RadarChangeBuckets = {
 export function radarChangeBuckets(changeLog: string[]): RadarChangeBuckets {
   return changeLog.reduce(
     (groups, item) => {
-      if (/升级|上调|转强|高置信/.test(item)) groups.upgraded.push(item);
-      else if (/未延续|删除|降级|下调|转弱/.test(item)) groups.downgraded.push(item);
-      else if (/延续|维持|保留/.test(item)) groups.maintained.push(item);
-      else groups.added.push(item);
+      const displayItem = formatRadarChangeLogItem(item);
+      if (/升级|上调|转强|高置信/.test(item)) groups.upgraded.push(displayItem);
+      else if (/未延续|删除|降级|下调|转弱/.test(item)) groups.downgraded.push(displayItem);
+      else if (/延续|维持|保留/.test(item)) groups.maintained.push(displayItem);
+      else groups.added.push(displayItem);
       return groups;
     },
     { added: [] as string[], upgraded: [] as string[], downgraded: [] as string[], maintained: [] as string[] },
   );
+}
+
+function formatRadarChangeLogItem(item: string) {
+  return item
+    .replace(/\bsolidGrowth\b/g, "扎实增长")
+    .replace(/\bsustainability\b/g, "可持续性观察")
+    .replace(/\bbubbleRisks\b/g, "泡沫风险")
+    .replace(/\bupcomingGrowth\b/g, "即将增长")
+    .replace(/\bdecliningIndustries\b/g, "衰退")
+    .replace(/\brepresentativeCompanies\b/g, "代表公司")
+    .replace(/\bstageCompanies\b/g, "产业阶段公司");
 }
 
 export type RadarCardInsights = {

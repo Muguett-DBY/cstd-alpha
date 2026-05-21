@@ -18,9 +18,10 @@ describe("app initial workspace", () => {
       "算力租赁由观察条目升级为高置信结论。",
       "本次未延续：光伏玻璃，需等待后续硬数据。",
       "延续判断：工业软件国产替代。",
+      "新增航运物流为upcomingGrowth。",
     ]);
 
-    expect(buckets.added).toEqual(["新增或调整：固态电池。"]);
+    expect(buckets.added).toEqual(["新增或调整：固态电池。", "新增航运物流为即将增长。"]);
     expect(buckets.upgraded).toEqual(["算力租赁由观察条目升级为高置信结论。"]);
     expect(buckets.downgraded).toEqual(["本次未延续：光伏玻璃，需等待后续硬数据。"]);
     expect(buckets.maintained).toEqual(["延续判断：工业软件国产替代。"]);
