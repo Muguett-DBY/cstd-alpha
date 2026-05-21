@@ -1126,9 +1126,10 @@ function mergeRadarLists(primary, fallback) {
   const byLabel = new Map();
   for (const list of [...fallback, ...primary]) {
     const existing = byLabel.get(list.label);
+    const companies = existing?.companies?.length ? existing.companies : (list.companies ?? []);
     byLabel.set(list.label, {
       label: list.label,
-      companies: uniqueCompaniesByName([...(existing?.companies ?? []), ...(list.companies ?? [])]).slice(0, 8),
+      companies: uniqueCompaniesByName(companies).slice(0, 8),
       note: existing?.note || stringValue(list.note) || "",
     });
   }
