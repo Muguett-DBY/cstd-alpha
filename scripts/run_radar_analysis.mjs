@@ -949,7 +949,7 @@ function evidenceBackedCompanies(companies, sourceIds, digest) {
 function uniqueCompaniesByName(companies) {
   const seen = new Set();
   const result = [];
-  for (const company of companies) {
+  for (const company of companies.filter((value) => !NON_AH_PATTERNS.some((pattern) => pattern.test(value)))) {
     const key = stripTicker(company);
     if (!key || seen.has(key)) continue;
     seen.add(key);
