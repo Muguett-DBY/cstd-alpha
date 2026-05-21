@@ -600,7 +600,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     },
     confidenceSummary: conservativeConfidenceSummary(stringValue(record.confidenceSummary), digest.evidenceBreakdown),
     fromCache: false,
-    executiveSummary: normalizedExecutiveSummary(record.executiveSummary, formalItems, industryScope),
+    executiveSummary: normalizedExecutiveSummary(cleanedSections, industryScope),
     solidGrowth,
     sustainability,
     bubbleRisks,
@@ -608,9 +608,9 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     decliningIndustries,
     representativeCompanies: mergeRadarLists(
       representativeLists,
-      representativeCompanyLists({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }),
+      representativeCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
     ),
-    stageCompanies: mergeRadarLists(stageLists, stageCompanyLists({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
+    stageCompanies: mergeRadarLists(stageLists, stageCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }))),
     limitations: stringArray(record.limitations).slice(0, 8),
   };
   const modelChangeLog = stringArray(record.changeLog).slice(0, 8).map(fixRadarText);
@@ -620,9 +620,26 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   };
 }
 
-function normalizedExecutiveSummary(value, formalItems, industryScope) {
-  const original = stringArray(value).slice(0, 8).map(fixRadarText);
-  if (formalItems.length) return original.slice(0, 5);
+function normalizedExecutiveSummary(sections, industryScope) {
+  const sectionEntries = [
+    ...arrayValue(sections.solidGrowth).map((item) => ({ section: "solidGrowth", item })),
+    ...arrayValue(sections.upcomingGrowth).map((item) => ({ section: "upcomingGrowth", item })),
+    ...arrayValue(sections.bubbleRisks).map((item) => ({ section: "bubbleRisks", item })),
+    ...arrayValue(sections.decliningIndustries).map((item) => ({ section: "decliningIndustries", item })),
+    ...arrayValue(sections.sustainability).map((item) => ({ section: "sustainability", item })),
+  ];
+  const formalEntries = sectionEntries.filter(({ item }) => item.conclusionStrength === "正式结论");
+  if (formalEntries.length) {
+    const formalSummary = formalEntries.slice(0, 4).map(({ section, item }) => {
+      const label = radarSectionDisplayLabel(section);
+      return `${item.title}：${label}，${fixRadarText(item.thesis || "已达到正式结论门槛。")}`;
+    });
+    const observations = sectionEntries
+      .filter(({ item }) => item.conclusionStrength !== "正式结论")
+      .slice(0, Math.max(0, 5 - formalSummary.length))
+      .map(({ item }) => `${item.title}：观察，${fixRadarText(item.thesis || "已扫描到公开证据，但仍需交叉验证。")}（${item.evidenceGaps?.length ? item.evidenceGaps.join("、") : "仍需交叉验证"}）`);
+    return [...formalSummary, ...observations].slice(0, 5);
+  }
   const packets = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
     .filter((packet) => (packet.sourceCount ?? 0) > 0)
     .sort((a, b) => ((b.sourceCount ?? 0) + (b.scores?.evidence ?? 0)) - ((a.sourceCount ?? 0) + (a.scores?.evidence ?? 0)))
@@ -637,6 +654,25 @@ function normalizedExecutiveSummary(value, formalItems, industryScope) {
     }),
   ];
   return summary.slice(0, 5);
+}
+
+function radarSectionDisplayLabel(section) {
+  return {
+    solidGrowth: "扎实增长",
+    upcomingGrowth: "即将增长",
+    bubbleRisks: "泡沫/过热风险",
+    decliningIndustries: "衰退风险",
+    sustainability: "可持续性判断",
+  }[section] || "雷达结论";
+}
+
+function formalSectionsOnly(sections) {
+  return Object.fromEntries(
+    Object.entries(sections).map(([section, items]) => [
+      section,
+      arrayValue(items).filter((item) => item.conclusionStrength === "正式结论"),
+    ]),
+  );
 }
 
 function shouldUseModelChangeLog(entries, formalItems) {
@@ -724,14 +760,25 @@ function normalizeRadarItemCertainty(item, digest) {
   let conclusionStrength = item.conclusionStrength;
   if (confidence === "高" && !highReady) confidence = "中";
   if (conclusionStrength === "正式结论" && (!formalReady || hasExtremePercent)) conclusionStrength = "观察";
+  const thesis = conclusionStrength === "正式结论" ? item.thesis : softenObservationText(item.thesis);
   return {
     ...item,
+    thesis,
     confidence,
     conclusionStrength,
     evidenceTypes,
     evidenceGaps: [...gapSet],
     supportingSourceCount: sourceCount,
   };
+}
+
+function softenObservationText(text) {
+  return fixRadarText(text)
+    .replace(/得到业绩确认/g, "出现业绩线索但仍需多源确认")
+    .replace(/周期确认/g, "周期线索待确认")
+    .replace(/景气持续向上/g, "景气改善线索待验证")
+    .replace(/龙头业绩爆发/g, "部分公司业绩高增")
+    .replace(/行业触底回升/g, "触底回升线索待验证");
 }
 
 function splitRadarSignals(record) {

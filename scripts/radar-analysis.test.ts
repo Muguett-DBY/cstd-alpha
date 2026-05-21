@@ -75,14 +75,8 @@ describe("background radar analyzer", () => {
       supportingSourceCount: expect.any(Number),
     });
     expect(radarCache.radar?.solidGrowth?.[0].supportingSourceCount).toBe(radarCache.radar?.solidGrowth?.[0].sourceIds?.length);
-    expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([
-      "百济神州",
-      "药明康德",
-    ]);
-    expect(radarCache.radar?.stageCompanies?.find((item) => item.label === "上升产业中的领军人物")?.companies).toEqual([
-      "百济神州",
-      "药明康德",
-    ]);
+    expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([]);
+    expect(radarCache.radar?.stageCompanies?.find((item) => item.label === "上升产业中的领军人物")?.companies).toEqual([]);
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     const formalItems = [
       ...(radarCache.radar?.solidGrowth ?? []),
