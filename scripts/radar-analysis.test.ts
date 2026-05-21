@@ -156,32 +156,141 @@ describe("background radar analyzer", () => {
     );
 
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { reasoning_effort?: string; messages?: Array<{ content?: string }> };
-    const dynamicPayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
+    const stablePayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: Array<{ source?: string; qualityScore?: number; evidenceProfile?: string; anysearchTags?: string[]; anysearchContentTypes?: string[]; anysearchFreshness?: string }>; packets?: unknown[] };
       analysisScope?: { changedIndustryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
       structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[] };
+    };
+    const volatilePayload = JSON.parse(String(requestBody.messages?.[3].content)) as {
       previousScan?: { id?: string };
     };
 
     expect(requestBody.reasoning_effort).toBe("max");
-    expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(14);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(13);
-    expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
-    expect(dynamicPayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
-    expect(dynamicPayload.evidenceDigest?.citations?.find((source) => source.source === "AnySearch")).toMatchObject({
+    expect(volatilePayload.previousScan).toMatchObject({ id: "radar-previous" });
+    expect(JSON.stringify(stablePayload)).not.toContain("radar-previous");
+    expect(stablePayload.analysisScope?.totalIndustryCount).toBe(14);
+    expect(stablePayload.analysisScope?.changedIndustryPackets?.length).toBe(13);
+    expect(stablePayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
+    expect(stablePayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
+    expect(stablePayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
+    expect(stablePayload.evidenceDigest?.citations?.length).toBeGreaterThan(4);
+    expect(stablePayload.evidenceDigest?.citations?.find((source) => source.source === "AnySearch")).toMatchObject({
       qualityScore: 86,
       evidenceProfile: "industry_data",
       anysearchFreshness: "week",
       anysearchTags: ["finance.market", "business.industry"],
       anysearchContentTypes: ["data", "news", "web"],
     });
-    expect(dynamicPayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
-    expect(dynamicPayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
-    expect(dynamicPayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
-    expect(JSON.stringify(dynamicPayload.structuredFacts)).not.toContain("industryPackets");
+    expect(stablePayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
+    expect(stablePayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
+    expect(stablePayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
+    expect(JSON.stringify(stablePayload.structuredFacts)).not.toContain("industryPackets");
+  });
+
+  test("keeps stable evidence before volatile scan context for prefix cache reuse", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-prefix-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousAPath = join(workdir, "previous-a.json");
+    const previousBPath = join(workdir, "previous-b.json");
+    const modelPath = join(workdir, "model.json");
+    const requestAPath = join(workdir, "request-a.json");
+    const requestBPath = join(workdir, "request-b.json");
+
+    const previousA = previousRadarCache();
+    const previousB = previousRadarCache();
+    previousB.radar.id = "radar-later";
+    previousB.radar.generatedAt = "2026-05-22T02:30:00.000Z";
+    previousB.radar.executiveSummary = ["本轮摘要发生变化，但稳定证据包应仍在前缀中复用。"];
+
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousAPath, JSON.stringify(previousA), "utf8");
+    writeFileSync(previousBPath, JSON.stringify(previousB), "utf8");
+    writeFileSync(modelPath, JSON.stringify(modelOutput()), "utf8");
+
+    for (const [previousPath, requestPath] of [
+      [previousAPath, requestAPath],
+      [previousBPath, requestBPath],
+    ]) {
+      execFileSync(
+        "node",
+        [
+          "scripts/run_radar_analysis.mjs",
+          "--evidence",
+          evidencePath,
+          "--previous",
+          previousPath,
+          "--job-id",
+          "job-prefix",
+          "--mock-model-output",
+          modelPath,
+          "--debug-request-output",
+          requestPath,
+        ],
+        { stdio: "pipe" },
+      );
+    }
+
+    const requestA = readFileSync(requestAPath, "utf8");
+    const requestB = readFileSync(requestBPath, "utf8");
+    expect(commonPrefixRatio(requestA, requestB)).toBeGreaterThan(0.7);
+    expect(requestA.indexOf("evidenceDigest")).toBeLessThan(requestA.indexOf("previousScan"));
+  });
+
+  test("writes DeepSeek cache usage to the completed radar job", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-usage-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const responsePath = join(workdir, "deepseek-response.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+    const outputJobPath = join(workdir, "job.json");
+
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(
+      responsePath,
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(modelOutput()) } }],
+        usage: {
+          prompt_tokens: 1000,
+          prompt_cache_hit_tokens: 750,
+          prompt_cache_miss_tokens: 250,
+          completion_tokens: 120,
+          total_tokens: 1120,
+        },
+      }),
+      "utf8",
+    );
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-usage",
+        "--mock-deepseek-response",
+        responsePath,
+        "--output-radar",
+        outputRadarPath,
+        "--output-job",
+        outputJobPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const job = JSON.parse(readFileSync(outputJobPath, "utf8")) as {
+      tokenUsage?: { promptCacheHitTokens?: number; promptCacheMissTokens?: number; completionTokens?: number; totalTokens?: number; cacheHitRate?: number };
+    };
+    expect(job.tokenUsage).toMatchObject({
+      promptCacheHitTokens: 750,
+      promptCacheMissTokens: 250,
+      completionTokens: 120,
+      totalTokens: 1120,
+      cacheHitRate: 0.75,
+    });
   });
 
   test("does not let a low-base property item promote the property chain into solid growth", () => {
@@ -836,4 +945,11 @@ function modelOutput() {
     coverageReview: [{ label: "存储芯片", status: "insufficient", sourceCount: 0, evidenceTypes: [], sourceIds: [], note: "模型认为仍需硬数据。" }],
     limitations: [],
   };
+}
+
+function commonPrefixRatio(left: string, right: string) {
+  const max = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < max && left[index] === right[index]) index += 1;
+  return index / Math.max(left.length, right.length);
 }

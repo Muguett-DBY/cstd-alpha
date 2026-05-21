@@ -126,10 +126,17 @@ async function main() {
   if (args["debug-request-output"]) writeJsonFile(args["debug-request-output"], body);
 
   let modelPayload;
+  let tokenUsage;
   if (args["mock-model-output"]) {
     modelPayload = readJsonFile(args["mock-model-output"]);
+  } else if (args["mock-deepseek-response"]) {
+    const parsed = parseDeepSeekResponsePayload(readJsonFile(args["mock-deepseek-response"]));
+    modelPayload = parsed.output;
+    tokenUsage = parsed.tokenUsage;
   } else {
-    modelPayload = await callDeepSeek(body);
+    const parsed = await callDeepSeek(body);
+    modelPayload = parsed.output;
+    tokenUsage = parsed.tokenUsage;
   }
 
   const radar = normalizeRadarScan(modelPayload, digest, previousScan, evidence.asOfDate, industryScope);
@@ -146,6 +153,7 @@ async function main() {
     evidenceHash: evidence.evidenceHash,
     message: "后台深度分析完成。",
     radarGeneratedAt: radar.generatedAt,
+    ...(tokenUsage ? { tokenUsage } : {}),
   };
   if (args["output-radar"]) writeJsonFile(args["output-radar"], cachePayload);
   if (args["output-job"]) writeJsonFile(args["output-job"], job);
@@ -153,6 +161,11 @@ async function main() {
 }
 
 function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, industryScope) {
+  const stableEvidence = stableRadarEvidencePayload(digest, structuredFacts, industryScope);
+  const volatileContext = {
+    asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
+    previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
+  };
   return {
     model: DEEPSEEK_MODEL,
     reasoning_effort: "max",
@@ -168,7 +181,7 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
       },
       {
         role: "user",
-        content: JSON.stringify({
+        content: stableJsonStringify({
           task: "生成全市场增长、泡沫与衰退扫描。重点识别扎实增长、强观察、周期反转、泡沫/过热、衰退、平稳现金流，并给出 A/H 代表公司。",
           evidenceRules: [
             "信息差必须来自价格变化、财报拐点、业绩预告、销量/订单边际变化、产业链利润迁移，不能只复述新闻标题。",
@@ -188,20 +201,56 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
       },
       {
         role: "user",
-        content: JSON.stringify({
-          asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
-          previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
-          analysisScope: compactIndustryScopeForModel(industryScope),
-          evidenceDigest: compactDigestForModel(digest),
-          structuredFacts: {
-            financialFacts: structuredFacts.financialFacts.slice(0, 120).map(compactFinancialFact),
-            industryFacts: structuredFacts.industryFacts.slice(0, 120).map(compactIndustryFact),
-            companyCandidates: structuredFacts.companyCandidates.slice(0, 120).map(compactCompanyCandidate),
-          },
-        }),
+        content: stableJsonStringify(stableEvidence),
+      },
+      {
+        role: "user",
+        content: stableJsonStringify(volatileContext),
       },
     ],
   };
+}
+
+function stableRadarEvidencePayload(digest, structuredFacts, industryScope) {
+  const compactScope = compactIndustryScopeForModel(industryScope);
+  const compactDigest = compactDigestForModel(digest);
+  return {
+    analysisScope: {
+      ...compactScope,
+      changedIndustryPackets: sortedByStableKey(compactScope.changedIndustryPackets, industrySortKey),
+      unchangedIndustrySummaries: sortedByStableKey(compactScope.unchangedIndustrySummaries, industrySortKey),
+    },
+    evidenceDigest: {
+      ...compactDigest,
+      citations: sortedByStableKey(compactDigest.citations, (item) => stringValue(item.id) || citationSortKey(item)),
+      packets: sortedByStableKey(compactDigest.packets, (item) => stringValue(item.topic)),
+      softCoverage: sortedByStableKey(compactDigest.softCoverage, (item) => stringValue(item.label)),
+    },
+    structuredFacts: {
+      financialFacts: sortedByStableKey(structuredFacts.financialFacts.slice(0, 120).map(compactFinancialFact), factSortKey),
+      industryFacts: sortedByStableKey(structuredFacts.industryFacts.slice(0, 120).map(compactIndustryFact), factSortKey),
+      companyCandidates: sortedByStableKey(structuredFacts.companyCandidates.slice(0, 120).map(compactCompanyCandidate), factSortKey),
+    },
+  };
+}
+
+function sortedByStableKey(values, keyFn) {
+  return arrayValue(values)
+    .map((value, index) => ({ value, key: `${keyFn(value) || ""}\u0000${index}` }))
+    .sort((left, right) => left.key.localeCompare(right.key, "zh-Hans-CN"))
+    .map((entry) => entry.value);
+}
+
+function industrySortKey(item) {
+  return `${stringValue(item.group)}|${stringValue(item.industry)}`;
+}
+
+function citationSortKey(item) {
+  return `${stringValue(item.source)}|${stringValue(item.publishedAt)}|${stringValue(item.title)}|${stringValue(item.url)}`;
+}
+
+function factSortKey(item) {
+  return `${stringValue(item.industry)}|${stringValue(item.company)}|${stringValue(item.code)}|${stringValue(item.metric)}|${stringValue(item.publishedAt)}|${stringValue(item.title)}`;
 }
 
 async function callDeepSeek(body) {
@@ -214,10 +263,40 @@ async function callDeepSeek(body) {
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`DeepSeek failed: ${response.status} ${text.slice(0, 400)}`);
-  const payload = JSON.parse(text);
+  return parseDeepSeekResponsePayload(JSON.parse(text));
+}
+
+function parseDeepSeekResponsePayload(payload) {
   const content = payload.choices?.[0]?.message?.content;
   if (!content?.trim()) throw new Error("DeepSeek returned empty content");
-  return JSON.parse(jsonrepair(content));
+  return {
+    output: JSON.parse(jsonrepair(content)),
+    tokenUsage: normalizeDeepSeekUsage(payload.usage),
+  };
+}
+
+function normalizeDeepSeekUsage(rawUsage) {
+  const promptTokens = numericUsage(rawUsage?.prompt_tokens);
+  const promptCacheHitTokens = numericUsage(rawUsage?.prompt_cache_hit_tokens);
+  const explicitMiss = numericUsage(rawUsage?.prompt_cache_miss_tokens);
+  const promptCacheMissTokens = explicitMiss || Math.max(0, promptTokens - promptCacheHitTokens);
+  const completionTokens = numericUsage(rawUsage?.completion_tokens);
+  const totalTokens = numericUsage(rawUsage?.total_tokens);
+  const cacheInputTokens = promptCacheHitTokens + promptCacheMissTokens;
+  return {
+    model: DEEPSEEK_MODEL,
+    calls: 1,
+    promptTokens,
+    promptCacheHitTokens,
+    promptCacheMissTokens,
+    completionTokens,
+    totalTokens,
+    cacheHitRate: cacheInputTokens ? Number((promptCacheHitTokens / cacheInputTokens).toFixed(4)) : 0,
+  };
+}
+
+function numericUsage(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function normalizeIndustryPackets(value) {
@@ -1474,6 +1553,22 @@ function writeJsonFile(path, value) {
 
 function writeTextFile(path, value) {
   writeFileSync(path, value, "utf8");
+}
+
+function stableJsonStringify(value) {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+function stableJsonValue(value) {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.keys(value)
+    .sort((left, right) => left.localeCompare(right, "en"))
+    .reduce((result, key) => {
+      const next = stableJsonValue(value[key]);
+      if (next !== undefined) result[key] = next;
+      return result;
+    }, {});
 }
 
 function arrayValue(value) {

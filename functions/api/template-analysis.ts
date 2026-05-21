@@ -432,7 +432,14 @@ function buildTemplateMessages(
   return [
     {
       role: "system" as const,
-      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数、JSON 字段缺失或结构不完整都视为失败。\n\n${templateCacheAnchor(cacheMode)}\n\n## 本次模板原文\n模板 ID：${template.id}\n模板标题：${template.title}\n\n${template.fullPrompt}\n\n## 固定输出要求\n- 必须严格按上方完整模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。`,
+      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数、JSON 字段缺失或结构不完整都视为失败。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。`,
+    },
+    {
+      role: "user" as const,
+      content: JSON.stringify({
+        company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
+        publicEvidence: compactTemplateEvidence(evidence, false),
+      }),
     },
     {
       role: "user" as const,
@@ -442,9 +449,8 @@ function buildTemplateMessages(
           : template.id === FULL_ANALYSIS_TEMPLATE_ID
             ? `基于全部启用模板专项报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 7000-10000 个中文字符。`
             : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，目标 6000-9000 个中文字符，并包含模板要求的所有关键模块。`,
-        template: { id: template.id, title: template.title, focus: template.focus },
-        company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
-        publicEvidence: compactTemplateEvidence(evidence),
+        evidenceRetrievedAt: evidence.retrievedAt,
+        template: { id: template.id, title: template.title, focus: template.focus, fullPrompt: template.fullPrompt },
         draftToExpand: draftToExpand || undefined,
         childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
         expectedOutputShape: {
@@ -889,14 +895,14 @@ function snapshotTemplate(template: ResearchTemplate): ResearchTemplate {
   };
 }
 
-function compactTemplateEvidence(evidence: EvidenceBundle) {
+function compactTemplateEvidence(evidence: EvidenceBundle, includeRetrievedAt = true) {
   const facts = evidence.facts;
   const summary = optionalRecord(facts.summary);
   const eastmoney = optionalRecord(facts.eastmoney);
   const sec = optionalRecord(facts.sec);
   return {
     company: evidence.company,
-    retrievedAt: evidence.retrievedAt,
+    ...(includeRetrievedAt ? { retrievedAt: evidence.retrievedAt } : {}),
     sources: evidence.evidence.map(({ title, source, freshness, notes }) => ({ title, source, freshness, notes })),
     facts: {
       quote: pickKeys(optionalRecord(facts.quote), [

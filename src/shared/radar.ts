@@ -52,6 +52,17 @@ export type RadarIndustryStage = "扎实增长" | "即将增长" | "泡沫风险
 
 export type RadarAnalysisJobStatus = "queued" | "running" | "completed" | "failed";
 
+export type RadarTokenUsage = {
+  model?: string;
+  calls?: number;
+  promptTokens: number;
+  promptCacheHitTokens: number;
+  promptCacheMissTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheHitRate?: number;
+};
+
 export type RadarAnalysisJob = {
   id: string;
   status: RadarAnalysisJobStatus;
@@ -60,6 +71,7 @@ export type RadarAnalysisJob = {
   evidenceHash?: string;
   message?: string;
   radarGeneratedAt?: string;
+  tokenUsage?: RadarTokenUsage;
 };
 
 export type RadarEvidenceFreshness = {
@@ -80,6 +92,7 @@ export type RadarDiagnostics = {
   latestRadarGeneratedAt?: string;
   sourceCount?: number;
   cacheVersion?: string;
+  tokenUsage?: RadarTokenUsage;
 };
 
 export type RadarCoverageReview = {

@@ -953,6 +953,7 @@ function radarDiagnostics(cache: RadarCachePayload | null, job: RadarAnalysisJob
     latestRadarGeneratedAt: cache?.radar.generatedAt,
     sourceCount: freshness?.sourceCount ?? cache?.radar.sourceCount,
     cacheVersion: cache?.version,
+    tokenUsage: job?.tokenUsage,
   };
 }
 

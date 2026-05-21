@@ -1717,6 +1717,16 @@ function RadarDiagnosticsPanel({ diagnostics }: { diagnostics: RadarDiagnostics 
         <dd>{typeof diagnostics.evidenceAgeHours === "number" ? `${diagnostics.evidenceAgeHours} 小时` : "未知"}</dd>
         <dt>最新报告</dt>
         <dd>{diagnostics.latestRadarGeneratedAt || "无"}</dd>
+        {diagnostics.tokenUsage ? (
+          <>
+            <dt>DeepSeek Token</dt>
+            <dd>
+              命中 {formatTokens(diagnostics.tokenUsage.promptCacheHitTokens)} / 未命中 {formatTokens(diagnostics.tokenUsage.promptCacheMissTokens)} / 输出{" "}
+              {formatTokens(diagnostics.tokenUsage.completionTokens)}
+              {typeof diagnostics.tokenUsage.cacheHitRate === "number" ? ` / 命中率 ${(diagnostics.tokenUsage.cacheHitRate * 100).toFixed(1)}%` : ""}
+            </dd>
+          </>
+        ) : null}
       </dl>
     </details>
   );

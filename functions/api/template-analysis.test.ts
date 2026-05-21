@@ -248,11 +248,16 @@ describe("template model routing", () => {
     expect(anySearchBodies.map((body) => body.query).join("\n")).toContain("负面");
     expect(anySearchBodies.every((body) => Array.isArray(body.tags) && body.tags.length > 0)).toBe(true);
     const modelBody = JSON.parse(fetchMock.mock.calls[3][1].body);
-    const promptPayload = JSON.parse(modelBody.messages[1].content);
-    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("AnySearch 外部搜索");
-    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("渠道库存边际改善");
-    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("白酒行业批价");
-    expect(JSON.stringify(promptPayload.publicEvidence)).toContain("监管跟踪");
+    const stablePayload = JSON.parse(modelBody.messages[1].content);
+    const volatilePayload = JSON.parse(modelBody.messages[2].content);
+    expect(JSON.stringify(stablePayload.publicEvidence)).toContain("AnySearch 外部搜索");
+    expect(JSON.stringify(stablePayload.publicEvidence)).toContain("渠道库存边际改善");
+    expect(JSON.stringify(stablePayload.publicEvidence)).toContain("白酒行业批价");
+    expect(JSON.stringify(stablePayload.publicEvidence)).toContain("监管跟踪");
+    expect(JSON.stringify(stablePayload)).not.toContain("fullPrompt");
+    expect(volatilePayload.template.fullPrompt).toBe(RESEARCH_TEMPLATES[0].fullPrompt);
+    expect(modelBody.messages[1].content.indexOf("publicEvidence")).toBeGreaterThan(-1);
+    expect(JSON.stringify(modelBody).indexOf("publicEvidence")).toBeLessThan(JSON.stringify(modelBody).indexOf("fullPrompt"));
   });
 });
 
