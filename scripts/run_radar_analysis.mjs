@@ -484,10 +484,11 @@ function radarItems(value, previousTitles, digest) {
       const sourceIds = sourceIdsForItem(record, digest);
       const normalizedEvidence = stringArray(record.evidence).slice(0, 8).map(formatExtremePercentEvidence);
       const thesis = formatExtremePercentEvidence(stringValue(record.thesis));
+      const companies = evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest).slice(0, 6);
       return {
         title,
         industries: stringArray(record.industries).slice(0, 5),
-        companies: ahCompanies(record.companies).slice(0, 6),
+        companies,
         thesis,
         drivers: stringArray(record.drivers).slice(0, 8),
         evidence: normalizedEvidence,
@@ -924,6 +925,36 @@ function evidenceGapsForItem(record, evidence) {
 
 function stripTicker(company) {
   return String(company).replace(/\s*\([^)]*\)\s*/g, "").trim();
+}
+
+function evidenceBackedCompanies(companies, sourceIds, digest) {
+  const sourceSet = new Set(sourceIds);
+  const matchedSources = digest.citations.filter((source) => sourceSet.has(source.id));
+  const sourceCompanies = unique(
+    matchedSources
+      .map((source) => stringValue(source.company))
+      .filter(Boolean)
+      .filter((company) => !NON_AH_PATTERNS.some((pattern) => pattern.test(company))),
+  );
+  if (!sourceCompanies.length) return companies;
+  const sourceText = matchedSources.map((source) => `${source.company ?? ""} ${source.title} ${source.summary ?? ""}`).join(" ");
+  const kept = companies.filter((company) => {
+    const name = stripTicker(company);
+    return name.length >= 2 && sourceText.includes(name);
+  });
+  return uniqueCompaniesByName([...kept, ...sourceCompanies]);
+}
+
+function uniqueCompaniesByName(companies) {
+  const seen = new Set();
+  const result = [];
+  for (const company of companies) {
+    const key = stripTicker(company);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(company);
+  }
+  return result;
 }
 
 function radarCoverageReview(value, digest, formalItems) {
