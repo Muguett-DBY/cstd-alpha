@@ -546,7 +546,8 @@ function buildIndustryStageMap(sections) {
 function normalizeRadarIndustryPacket(packet, stageByIndustry) {
   const rawScores = scoreIndustryPacket(packet);
   const mappedStage = stageForIndustryPacket(packet, stageByIndustry);
-  const stage = mappedStage || fallbackIndustryStage(packet, rawScores);
+  const directMappedStage = stageByIndustry.get(cleanStageKey(packet.industry));
+  const stage = normalizedStageForPacket(packet, rawScores, mappedStage, Boolean(directMappedStage));
   const scores = reconcileScoresWithStage(rawScores, stage);
   return {
     group: packet.group,
@@ -562,6 +563,14 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
     themes: packet.themes,
     scores,
   };
+}
+
+function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMatch = false) {
+  if ((packet.sourceCount ?? 0) <= 0 || (scores.evidence < 28 && !hasDirectStageMatch)) return "证据不足";
+  const fallback = fallbackIndustryStage(packet, scores);
+  if (!mappedStage) return fallback;
+  if (mappedStage === "衰退" && shouldProtectFromBroadDecline(packet, scores)) return fallback === "衰退" ? "继续观察" : fallback;
+  return mappedStage;
 }
 
 function reconcileScoresWithStage(scores, stage) {
@@ -627,9 +636,9 @@ function cleanStageKey(value) {
 function fallbackIndustryStage(packet, scores) {
   if ((packet.sourceCount ?? 0) <= 0 || scores.evidence < 28) return "证据不足";
   const growthPressure = Math.max(scores.growth, scores.momentum);
-  const stageText = `${packet.group} ${packet.industry} ${(packet.themes ?? []).join(" ")}`;
-  const structuralDecline = /过剩\/衰退|过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(stageText);
-  const protectedGrowthTheme = /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件/.test(stageText);
+  const stageText = stageSignalText(packet);
+  const structuralDecline = isDirectStructuralDecline(packet);
+  const protectedGrowthTheme = isProtectedGrowthTheme(packet);
   if (scores.bubbleRisk >= 64 && growthPressure >= 50) return "泡沫风险";
   if (!structuralDecline && protectedGrowthTheme && scores.declineRisk >= 68) return "继续观察";
   if (scores.declineRisk >= 68 && growthPressure < 58) return "衰退";
@@ -640,6 +649,30 @@ function fallbackIndustryStage(packet, scores) {
   if (scores.growth >= 68 && scores.bubbleRisk < 56 && scores.declineRisk < 52) return "扎实增长";
   if (scores.growth >= 54 || scores.momentum >= 58) return "继续观察";
   return "证据不足";
+}
+
+function stageSignalText(packet) {
+  return `${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`;
+}
+
+function stageTopicText(packet) {
+  return `${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`;
+}
+
+function isDirectStructuralDecline(packet) {
+  const group = stringValue(packet.group);
+  const topic = stageTopicText(packet);
+  return /过剩\/衰退|衰退/.test(group) || /过剩|衰退|地产|房地产|光伏|传统燃油|传统/.test(topic);
+}
+
+function isProtectedGrowthTheme(packet) {
+  return /高景气成长|新能源汽车|智能驾驶|消费电子|端侧AI|半导体|AI算力|创新药|医疗器械|医药医疗|医药健康|医疗服务|CXO|订单恢复|电网设备|AI应用|软件|消费复苏|消费出海|品牌出海|白酒批价|高股息|保险复苏|物业现金流|储能出海/.test(stageSignalText(packet));
+}
+
+function shouldProtectFromBroadDecline(packet, scores) {
+  if (!isProtectedGrowthTheme(packet)) return false;
+  if (isDirectStructuralDecline(packet) && scores.evidence >= 45) return false;
+  return true;
 }
 
 function scoreIndustryPacket(packet) {
@@ -664,7 +697,7 @@ function scoreIndustryPacket(packet) {
   const factDiversityBonus = Math.min(28, structuredFactCount * 6);
   const rawEvidence = clampScore(sourceDepth + evidenceWeight * 4 + factDiversityBonus - gapPenalty);
   const evidence = externalOnly && hardSignalCount === 0 ? Math.min(rawEvidence, 45) : rawEvidence;
-  const positiveSignals = Math.min(8, keywordCount(text, /增长|上涨|改善|扩张|预增|回升|景气|订单|出口|涨价|放量|利润|同比|环比/g));
+  const positiveSignals = Math.min(8, keywordCount(text, /增长|上涨|改善|扩张|预增|回升|复苏|修复|景气|订单|出口|涨价|放量|利润|同比|环比/g));
   const riskSignals = Math.min(8, keywordCount(text, /泡沫|过热|透支|估值|连板|停牌|炒作|拥挤|高估/g));
   const declineSignals = Math.min(8, keywordCount(text, /下滑|亏损|过剩|去库|衰退|萎缩|价格下跌|需求弱|开工率低|减值/g));
   const hardSignalBonus = hardSignalCount * 7;
@@ -674,7 +707,7 @@ function scoreIndustryPacket(packet) {
   const growth = clampScore(18 + evidence * 0.24 + hardSignalBonus + positiveSignals * 4 - declineSignals * 5 - packet.evidenceGaps.length * 2);
   const momentum = clampScore(18 + changeStatusBonus + Math.min(6, Math.max(0, sourceDelta)) * 6 + positiveSignals * 3 + Math.min(10, sourceCount) * 1.5 - declineSignals * 3);
   const bubbleRisk = clampScore(12 + riskSignals * 13 + (packet.evidenceTypes.includes("market") ? 18 : 0) + (/机器人|低空|AI应用|商业航天/.test(`${packet.group} ${packet.industry}`) ? 8 : 0));
-  const structuralDeclineBonus = /过剩|衰退|地产|光伏|传统/.test(`${packet.group} ${packet.industry}`) ? 18 : 0;
+  const structuralDeclineBonus = isDirectStructuralDecline(packet) ? 18 : 0;
   const declineRisk = clampScore(12 + declineSignals * 9 + structuralDeclineBonus + (packet.evidenceGaps.includes("缺销量") ? 4 : 0));
   const valuationRisk = clampScore(15 + riskSignals * 10 + (packet.evidenceTypes.includes("market") ? 15 : 0) + (bubbleRisk > 60 ? 10 : 0));
   const confidence = clampScore(evidence + (packet.evidenceTypes.length >= 2 ? 12 : 0) - packet.evidenceGaps.length * 6);

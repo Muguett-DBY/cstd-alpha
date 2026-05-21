@@ -68,7 +68,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
     expect(radarCache.radar?.industryPackets?.length).toBeGreaterThanOrEqual(4);
-    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 9, changedIndustryCount: 8, unchangedIndustryCount: 1 });
+    expect(radarCache.radar?.analysisScope).toMatchObject({ totalIndustryCount: 12, changedIndustryCount: 11, unchangedIndustryCount: 1 });
     const newDrugPacket = radarCache.radar?.industryPackets?.find((packet) => packet.industry === "创新药/医疗服务");
     expect(newDrugPacket).toMatchObject({ stage: "扎实增长", scores: { evidence: expect.any(Number), growth: expect.any(Number), bubbleRisk: expect.any(Number) } });
     expect(newDrugPacket?.scores?.growth).toBeGreaterThanOrEqual(68);
@@ -81,6 +81,9 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "新能源汽车/智能驾驶")?.stage).not.toBe("衰退");
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "CXO")?.stage).not.toBe("衰退");
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "港股银行/保险")).toMatchObject({ stage: "平稳现金流" });
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "白酒")?.stage).not.toBe("衰退");
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "港股物业")).toMatchObject({ stage: "证据不足" });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: expect.not.stringMatching("扎实增长"), scores: { evidence: expect.any(Number) } });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.growth).toBeLessThan(68);
@@ -140,8 +143,8 @@ describe("background radar analyzer", () => {
 
     expect(requestBody.reasoning_effort).toBe("max");
     expect(dynamicPayload.previousScan).toMatchObject({ id: "radar-previous" });
-    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(9);
-    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(8);
+    expect(dynamicPayload.analysisScope?.totalIndustryCount).toBe(12);
+    expect(dynamicPayload.analysisScope?.changedIndustryPackets?.length).toBe(11);
     expect(dynamicPayload.analysisScope?.unchangedIndustrySummaries?.length).toBe(1);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.every((packet) => packet.scores)).toBe(true);
     expect(dynamicPayload.analysisScope?.changedIndustryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -346,6 +349,51 @@ function evidenceSnapshot() {
         financialFacts: [{ company: "药明康德", industry: "CXO" }],
         industryFacts: [],
         companyCandidates: [{ company: "药明康德", industry: "CXO" }],
+      },
+      {
+        group: "金融地产",
+        industry: "港股银行/保险",
+        status: "scanned",
+        evidenceHash: "hash-hk-bank-insurance",
+        sourceCount: 3,
+        evidenceTypes: ["news", "market"],
+        signalTypes: ["external_search"],
+        evidenceGaps: ["缺财报"],
+        themes: ["高股息", "保险复苏"],
+        sources: [{ source: "AnySearch", title: "港股高股息和保险复苏线索", sourceType: "news", signalType: "external_search", weight: 2, industry: "港股银行/保险" }],
+        financialFacts: [],
+        industryFacts: [],
+        companyCandidates: [],
+      },
+      {
+        group: "消费",
+        industry: "白酒",
+        status: "scanned",
+        evidenceHash: "hash-baijiu",
+        sourceCount: 8,
+        evidenceTypes: ["news", "hard_data", "market"],
+        signalTypes: ["external_search", "commodity_price"],
+        evidenceGaps: [],
+        themes: ["白酒批价", "消费复苏"],
+        sources: [{ source: "AnySearch", title: "白酒批价和消费复苏仍需跟踪", sourceType: "news", signalType: "external_search", weight: 2, industry: "白酒" }],
+        financialFacts: [],
+        industryFacts: [],
+        companyCandidates: [],
+      },
+      {
+        group: "金融地产",
+        industry: "港股物业",
+        status: "scanned",
+        evidenceHash: "hash-hk-property",
+        sourceCount: 1,
+        evidenceTypes: ["news"],
+        signalTypes: ["external_search"],
+        evidenceGaps: ["缺财报", "缺多源验证"],
+        themes: ["物业现金流", "地产链压力"],
+        sources: [{ source: "AnySearch", title: "港股物业现金流线索不足", sourceType: "news", signalType: "external_search", weight: 2, industry: "港股物业" }],
+        financialFacts: [],
+        industryFacts: [],
+        companyCandidates: [],
       },
     ],
   };
