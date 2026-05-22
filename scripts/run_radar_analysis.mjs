@@ -703,8 +703,8 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = balancedSections;
   const radarSectionItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const formalCoverageItems = radarSectionItems.filter((item) => item.conclusionStrength === "正式结论");
-  const coverageReview = radarCoverageReview(record.coverageReview, digest, formalCoverageItems);
   const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
+  const coverageReview = radarCoverageReview(record.coverageReview, digest, formalCoverageItems, [...industryScope.changed, ...industryScope.unchanged], stageByIndustry);
   const representativeLists = radarLists(record.representativeCompanies);
   const stageLists = radarLists(record.stageCompanies);
   const scan = {
@@ -2271,19 +2271,32 @@ function companyListFromItems(label, items, emptyNote) {
   };
 }
 
-function radarCoverageReview(value, digest, formalItems) {
+function radarCoverageReview(value, digest, formalItems, packets = [], stageByIndustry = new Map()) {
   const explicit = arrayValue(value)
     .map((item) => (isRecord(item) ? item : null))
     .filter(Boolean);
   const byLabel = new Map();
+  const packetByCanonical = new Map();
+  for (const packet of arrayValue(packets)) {
+    const label = stringValue(packet.industry || packet.topic);
+    const canonical = canonicalIndustryKey(label) || cleanStageKey(label);
+    if (!canonical) continue;
+    const existing = packetByCanonical.get(canonical);
+    if (!existing || (packet.sourceCount ?? 0) > (existing.sourceCount ?? 0)) packetByCanonical.set(canonical, packet);
+  }
   for (const coverage of digest.softCoverage) {
-    const status = coverageMatchesFormalItem(coverage.label, formalItems) ? "formal" : coverage.sourceCount >= 2 ? "watched" : "insufficient";
+    const packet = coveragePacketForLabel(coverage.label, packetByCanonical);
+    const sourceCount = Math.max(Number(coverage.sourceCount) || 0, Number(packet?.sourceCount) || 0);
+    const evidenceTypes = unique([...arrayValue(coverage.evidenceTypes), ...arrayValue(packet?.evidenceTypes)])
+      .filter((type) => Object.prototype.hasOwnProperty.call(EVIDENCE_WEIGHTS, type));
+    const sourceIds = unique([...stringArray(coverage.topSourceIds), ...arrayValue(packet?.sources).map((source) => source.id).filter(Boolean)]).slice(0, 5);
+    const status = coverageStatusForLabel(coverage.label, sourceCount, formalItems, stageByIndustry);
     byLabel.set(coverage.label, {
       label: coverage.label,
       status,
-      sourceCount: coverage.sourceCount,
-      evidenceTypes: coverage.evidenceTypes,
-      sourceIds: coverage.topSourceIds,
+      sourceCount,
+      evidenceTypes: evidenceTypes.length ? evidenceTypes : coverage.evidenceTypes,
+      sourceIds: sourceIds.length ? sourceIds : coverage.topSourceIds,
       note: status === "formal" ? "已进入正式雷达结论。" : "已扫描到公开证据，但方向分化或证据强度不足，暂未升为正式结论。",
     });
   }
@@ -2291,20 +2304,44 @@ function radarCoverageReview(value, digest, formalItems) {
     const label = stringValue(item.label);
     if (!label) continue;
     const base = byLabel.get(label);
+    const packet = coveragePacketForLabel(label, packetByCanonical);
     const explicitSourceIds = stringArray(item.sourceIds).filter((id) => digest.citations.some((source) => source.id === id)).slice(0, 5);
     const explicitEvidenceTypes = enumArray(item.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS));
-    const sourceCount = typeof item.sourceCount === "number" && item.sourceCount > 0 ? item.sourceCount : (base?.sourceCount ?? 0);
-    const status = coverageMatchesFormalItem(label, formalItems) ? "formal" : sourceCount >= 2 ? "watched" : "insufficient";
+    const sourceCount = Math.max(
+      typeof item.sourceCount === "number" && item.sourceCount > 0 ? item.sourceCount : 0,
+      base?.sourceCount ?? 0,
+      Number(packet?.sourceCount) || 0,
+    );
+    const evidenceTypes = unique([...explicitEvidenceTypes, ...arrayValue(base?.evidenceTypes), ...arrayValue(packet?.evidenceTypes)])
+      .filter((type) => Object.prototype.hasOwnProperty.call(EVIDENCE_WEIGHTS, type));
+    const sourceIds = unique([
+      ...explicitSourceIds,
+      ...arrayValue(base?.sourceIds),
+      ...arrayValue(packet?.sources).map((source) => source.id).filter(Boolean),
+    ]).slice(0, 5);
+    const status = coverageStatusForLabel(label, sourceCount, formalItems, stageByIndustry);
     byLabel.set(label, {
       label,
       status,
       sourceCount,
-      evidenceTypes: explicitEvidenceTypes.length ? explicitEvidenceTypes : (base?.evidenceTypes ?? []),
-      sourceIds: explicitSourceIds.length ? explicitSourceIds : (base?.sourceIds ?? []),
+      evidenceTypes,
+      sourceIds,
       note: status === "formal" ? "已进入正式雷达结论。" : scrubCoverageNote(stringValue(item.note) || base?.note || "", status),
     });
   }
   return [...byLabel.values()];
+}
+
+function coveragePacketForLabel(label, packetByCanonical) {
+  const canonical = canonicalIndustryKey(label) || cleanStageKey(label);
+  return canonical ? packetByCanonical.get(canonical) : undefined;
+}
+
+function coverageStatusForLabel(label, sourceCount, formalItems, stageByIndustry) {
+  if (coverageMatchesFormalItem(label, formalItems)) return "formal";
+  const keys = stageLookupKeys(label);
+  if (keys.some((key) => stageByIndustry.get(key) && stageByIndustry.get(key) !== "证据不足")) return "watched";
+  return sourceCount >= 2 ? "watched" : "insufficient";
 }
 
 function coverageMatchesFormalItem(label, formalItems) {

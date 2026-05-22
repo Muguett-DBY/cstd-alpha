@@ -436,9 +436,15 @@ describe("background radar analyzer", () => {
 
     const output = modelOutput();
     output.coverageReview = [
-      { label: "创新药/医疗服务", status: "formal", sourceCount: 6, evidenceTypes: ["announcement"], sourceIds: ["S1"], note: "已进入正式雷达结论。" },
+      { label: "创新药/医疗服务", status: "formal", sourceCount: 1, evidenceTypes: ["announcement"], sourceIds: ["S1"], note: "已进入正式雷达结论。" },
     ];
-    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    const evidence = evidenceSnapshot();
+    const newDrugPacket = evidence.industryPackets.find((packet) => packet.industry === "创新药/医疗服务");
+    if (!newDrugPacket) throw new Error("missing new drug packet fixture");
+    newDrugPacket.sourceCount = 24;
+    newDrugPacket.evidenceTypes = ["news", "official", "announcement"];
+    newDrugPacket.sources = evidence.sources.slice(0, 3);
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
     writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
     writeFileSync(modelPath, JSON.stringify(output), "utf8");
 
@@ -461,10 +467,11 @@ describe("background radar analyzer", () => {
     );
 
     const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
-      radar?: { coverageReview?: Array<{ label?: string; status?: string; note?: string }> };
+      radar?: { coverageReview?: Array<{ label?: string; status?: string; sourceCount?: number; note?: string }> };
     };
     const coverage = radarCache.radar?.coverageReview?.find((item) => item.label === "创新药/医疗服务");
-    expect(coverage?.status).not.toBe("formal");
+    expect(coverage?.status).toBe("watched");
+    expect(coverage?.sourceCount).toBe(24);
     expect(coverage?.note).not.toContain("已进入正式");
   });
 
