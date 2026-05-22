@@ -2218,9 +2218,9 @@ function buildChangeLog(previousScan, scan) {
   const retained = [...current.entries()].filter(([key]) => previous.has(key)).map(([, title]) => title);
   const removed = [...previous.entries()].filter(([key]) => !current.has(key)).map(([, title]) => title);
   return [
-    added.length ? `新增：${added.slice(0, 5).join("、")}。` : "",
-    retained.length ? `维持：${retained.slice(0, 5).join("、")}。` : "",
-    removed.length ? `撤销或降级：${removed.slice(0, 5).join("、")}。` : "",
+    ...added.slice(0, 8).map((title) => `新增：${title}。`),
+    ...retained.slice(0, 8).map((title) => `维持：${title}。`),
+    ...removed.slice(0, 8).map((title) => `撤销或降级：${title}。`),
   ].filter(Boolean);
 }
 
