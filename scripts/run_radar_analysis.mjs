@@ -1206,19 +1206,20 @@ function ruleBackedSolidGrowthItem(packet, digest) {
   if (sourceIds.length < 2) return null;
   const companies = packetBackedCompanies(packet, sourceIds, digest).slice(0, 5);
   if (!companies.length) return null;
+  const industry = refinedGrowthIndustryForPacket(packet, sourceIds, digest, companies);
   const mixedFinancialEvidence = hasNegativeFinancialDominance(packet);
   const evidenceLines = sourceIds
     .map((id) => digest.citations.find((source) => source.id === id))
     .filter(Boolean)
     .map((source) => formatExtremePercentEvidence(`${source.id} ${source.title}${source.summary ? `：${trimText(source.summary, 80)}` : ""}`))
     .slice(0, 5);
-  const title = `${packet.industry}景气与业绩共振`;
+  const title = `${industry}景气与业绩共振`;
   const item = normalizeRadarItemCertainty(
     {
       title,
-      industries: [packet.industry],
+      industries: [industry],
       companies,
-      thesis: ruleBackedSolidGrowthThesis(packet),
+      thesis: ruleBackedSolidGrowthThesis({ ...packet, industry }),
       drivers: inferDriversFromPacket(packet),
       evidence: evidenceLines,
       conclusionStrength: "正式结论",
@@ -1243,6 +1244,32 @@ function ruleBackedSolidGrowthItem(packet, digest) {
     digest,
   );
   return { ...item, title: fixRadarText(item.title), thesis: fixRadarText(item.thesis), evidence: item.evidence.map(fixRadarText), changeReason: fixRadarText(item.changeReason) };
+}
+
+function refinedGrowthIndustryForPacket(packet, sourceIds, digest, companies = []) {
+  const sourceText = digest.citations
+    .filter((source) => sourceIds.includes(source.id))
+    .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
+    .join(" ");
+  const companyText = companies.join(" ");
+  const factText = [
+    packet.industry,
+    ...arrayValue(packet.themes),
+    ...arrayValue(packet.financialFacts)
+      .filter((fact) => companies.some((company) => stripTicker(company) === stripTicker(fact.company)))
+      .map((fact) => `${fact.company ?? ""} ${JSON.stringify(fact.metrics ?? {})}`),
+    ...arrayValue(packet.companyCandidates)
+      .filter((candidate) => companies.some((company) => stripTicker(company) === stripTicker(candidate.company)))
+      .map((candidate) => `${candidate.company ?? ""} ${candidate.industry ?? ""} ${candidate.theme ?? ""}`),
+    ...companies,
+    sourceText,
+  ].join(" ");
+  if (/存储|DRAM|NAND|HBM/.test(factText) || /德明利|佰维存储|兆易创新|北京君正|江波龙/.test(companyText)) return "存储芯片";
+  if (/半导体设备|刻蚀|薄膜沉积|光刻胶|硅片|封测/.test(factText)) return "半导体设备/材料";
+  if (/光模块|CPO|PCB|服务器|算力芯片|AI服务器/.test(factText) && !/存储|DRAM|NAND|HBM/.test(factText)) return "AI算力硬件";
+  if (/稀土|钨|钼|翔鹭钨业|厦门钨业|北方稀土/.test(factText)) return "稀土/钨钼";
+  if (/铜|铝|紫金矿业|洛阳钼业|中国铝业/.test(factText)) return "铜/铝";
+  return packet.industry;
 }
 
 function ruleBackedSolidGrowthThesis(packet) {
@@ -1568,7 +1595,7 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
 function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMatch = false) {
   if ((packet.sourceCount ?? 0) <= 0 || (scores.evidence < 28 && !hasDirectStageMatch)) return "证据不足";
   const fallback = fallbackIndustryStage(packet, scores);
-  if ((mappedStage === "扎实增长" || fallback === "扎实增长") && packetHasFormalGrowthBlockingGap(packet)) return "继续观察";
+  if ((mappedStage === "扎实增长" || fallback === "扎实增长") && !hasDirectStageMatch && packetHasFormalGrowthBlockingGap(packet)) return "继续观察";
   if (mappedStage === "继续观察" && fallback === "平稳现金流") return "平稳现金流";
   if (!mappedStage) return fallback === "扎实增长" ? "继续观察" : fallback;
   if (mappedStage === "扎实增长" && shouldRejectSolidGrowthForStructuralDecline(packet, scores)) return "衰退";
