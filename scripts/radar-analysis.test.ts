@@ -47,6 +47,7 @@ describe("background radar analyzer", () => {
         model?: string;
         sourceCount?: number;
         solidGrowth?: Array<{ title?: string; companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[]; confidence?: string; conclusionStrength?: string; supportingSourceCount?: number }>;
+        upcomingGrowth?: Array<{ title?: string; companies?: string[]; sourceIds?: string[]; evidence?: string[]; evidenceGaps?: string[]; confidence?: string; conclusionStrength?: string; supportingSourceCount?: number }>;
         sustainability?: Array<{ title?: string; changeReason?: string }>;
         bubbleRisks?: Array<{ companies?: string[] }>;
         representativeCompanies?: Array<{ label?: string; companies?: string[] }>;
@@ -66,16 +67,18 @@ describe("background radar analyzer", () => {
     expect(radarCache.version).toBe("v2");
     expect(radarCache.radar?.model).toBe("deepseek-v4-flash");
     expect(radarCache.radar?.sourceCount).toBeGreaterThanOrEqual(5);
-    expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["百济神州", "药明康德"]);
-    expect(radarCache.radar?.solidGrowth?.[0].sourceIds).toContain("S1");
-    expect(radarCache.radar?.solidGrowth?.[0].evidence?.join(" ")).toContain("低基数/一次性因素需核验");
-    expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toContain("缺现金流");
-    expect(radarCache.radar?.solidGrowth?.[0]).toMatchObject({
+    const demotedGrowth = radarCache.radar?.sustainability?.find((item) => item.title === "创新药商业化利润拐点");
+    expect(radarCache.radar?.solidGrowth).toHaveLength(0);
+    expect(demotedGrowth?.companies).toEqual(["百济神州", "药明康德"]);
+    expect(demotedGrowth?.sourceIds).toContain("S1");
+    expect(demotedGrowth?.evidence?.join(" ")).toContain("低基数/一次性因素需核验");
+    expect(demotedGrowth?.evidenceGaps).toContain("缺现金流");
+    expect(demotedGrowth).toMatchObject({
       confidence: "中",
       conclusionStrength: "观察",
       supportingSourceCount: expect.any(Number),
     });
-    expect(radarCache.radar?.solidGrowth?.[0].supportingSourceCount).toBe(radarCache.radar?.solidGrowth?.[0].sourceIds?.length);
+    expect(demotedGrowth?.supportingSourceCount).toBe(demotedGrowth?.sourceIds?.length);
     expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([]);
     expect(radarCache.radar?.stageCompanies?.find((item) => item.label === "上升产业中的领军人物")?.companies).toEqual([]);
     expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
@@ -421,6 +424,197 @@ describe("background radar analyzer", () => {
     expect(propertyPacket?.stage).toBe("衰退");
     expect(propertyPacket?.scores?.growth).toBeLessThanOrEqual(49);
     expect(propertyPacket?.scores?.declineRisk).toBeGreaterThanOrEqual(72);
+  });
+
+  test("adds a rule-backed solid growth item when model misses a hard-data and financial cross-validated industry", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-rule-growth-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const shippingFinancial = {
+      source: "东方财富业绩报表",
+      query: "航运物流 财报 营收 净利润 现金流",
+      title: "招商南油 2026Q1 营收同比 14.19%，净利润同比 51.73%",
+      url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#601975",
+      sourceType: "announcement",
+      signalType: "financial_metric",
+      weight: 4,
+      company: "招商南油",
+      code: "601975.SH",
+      market: "A股",
+      industry: "航运物流",
+      summary: "航运公司财报显示收入与净利润同步改善，经营现金流为正。",
+    };
+    evidence.sources.push(shippingFinancial);
+    const shippingPacket = evidence.industryPackets.find((packet) => packet.industry === "航运物流");
+    Object.assign(shippingPacket ?? {}, {
+      sourceCount: 8,
+      evidenceTypes: ["hard_data", "announcement", "market"],
+      signalTypes: ["freight_rate", "financial_metric"],
+      evidenceGaps: [],
+      sources: [evidence.sources[4], shippingFinancial],
+      financialFacts: [
+        {
+          company: "招商南油",
+          code: "601975.SH",
+          market: "A股",
+          industry: "航运物流",
+          yoy: 51.73,
+          metrics: { revenueYoy: 14.19, netProfitYoy: 51.73, operatingCashflowPerShare: 0.06 },
+        },
+      ],
+      companyCandidates: [{ company: "招商南油", code: "601975.SH", market: "A股", industry: "航运物流", evidenceStrength: 12, sourceTypes: ["announcement", "market"] }],
+    });
+    const output = modelOutput();
+    output.solidGrowth = [];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-rule-growth",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceTypes?: string[] }>;
+        industryPackets?: Array<{ industry?: string; stage?: string }>;
+      };
+    };
+
+    expect(radarCache.radar?.solidGrowth?.[0]).toMatchObject({
+      title: "航运物流景气与业绩共振",
+      confidence: "中",
+      conclusionStrength: "正式结论",
+    });
+    expect(radarCache.radar?.solidGrowth?.[0].companies).toContain("招商南油");
+    expect(radarCache.radar?.solidGrowth?.[0].evidenceTypes).toEqual(expect.arrayContaining(["hard_data", "announcement"]));
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "航运物流")?.stage).toBe("扎实增长");
+  });
+
+  test("promotes the strongest multi-company growth observation when no hard-data solid growth survives", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-observation-growth-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const storageA = {
+      source: "东方财富业绩快报",
+      query: "存储芯片 财报 营收 净利润",
+      title: "佰维存储 2025年营收同比 68.72%，净利润同比 437.56%",
+      url: "https://data.eastmoney.com/bbsj/202512/yjbb.html#688525",
+      sourceType: "announcement",
+      signalType: "financial_metric",
+      weight: 4,
+      company: "佰维存储",
+      code: "688525.SH",
+      market: "A股",
+      industry: "存储芯片",
+    };
+    const storageB = {
+      source: "东方财富业绩预告",
+      query: "存储芯片 业绩预告 预增",
+      title: "德明利 2025年净利润预增 115.82% 至 136.77%",
+      url: "https://data.eastmoney.com/bbsj/202512/yjyg.html#001309",
+      sourceType: "announcement",
+      signalType: "financial_metric",
+      weight: 4,
+      company: "德明利",
+      code: "001309.SZ",
+      market: "A股",
+      industry: "存储芯片",
+    };
+    const storageNews = {
+      source: "AnySearch",
+      query: "存储芯片 涨价 HBM AI服务器",
+      title: "存储芯片涨价周期受 AI 服务器需求推动",
+      url: "https://anysearch.example.com/storage-cycle",
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 2,
+      industry: "存储芯片",
+    };
+    evidence.sources.push(storageA, storageB, storageNews);
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.upcomingGrowth = [
+      {
+        title: "存储芯片涨价周期",
+        industries: ["存储芯片"],
+        companies: ["佰维存储", "德明利"],
+        thesis: "存储芯片涨价周期持续，AI需求推动，多家公司公告显示营收和利润增长，可持续性需观察。",
+        drivers: ["AI需求", "价格上涨"],
+        evidence: ["S12 佰维存储财报", "S13 德明利业绩预告", "S14 存储涨价线索"],
+        sourceIds: ["S12", "S13", "S14", "S6"],
+        evidenceTypes: ["announcement", "news"],
+        supportingSourceCount: 4,
+        conclusionStrength: "观察",
+        evidenceGaps: ["缺现金流", "缺多源验证"],
+        driverTags: ["需求", "价格"],
+        sustainabilityTier: "中期景气",
+        confidence: "中",
+        durability: "中期",
+        riskLevel: "中",
+        counterEvidenceConditions: ["存储价格回落"],
+        turningPoints: ["HBM需求下修"],
+      },
+    ];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-observation-growth",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
+        upcomingGrowth?: Array<{ title?: string }>;
+      };
+    };
+
+    expect(radarCache.radar?.solidGrowth?.[0]).toMatchObject({
+      title: "存储芯片涨价周期",
+      confidence: "中",
+      conclusionStrength: "正式结论",
+    });
+    expect(radarCache.radar?.solidGrowth?.[0].companies).toEqual(["佰维存储", "德明利"]);
+    expect(radarCache.radar?.solidGrowth?.[0].evidenceGaps).toEqual(expect.arrayContaining(["缺现金流"]));
+    expect(radarCache.radar?.upcomingGrowth?.some((item) => item.title === "存储芯片涨价周期")).toBe(false);
   });
 
   test("rejects unsuitable or context-mismatched representative companies", () => {

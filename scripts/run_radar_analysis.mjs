@@ -90,16 +90,32 @@ const REPRESENTATIVE_CONTEXT_RULES = [
     required: /锂|储能|电池|碳酸锂|能源金属|正极|负极|电解液/i,
   },
   {
-    pattern: /煤炭|煤电|火电/i,
-    required: /煤|火电|电力|能源/i,
+    pattern: /煤炭|煤价|动力煤|焦煤/i,
+    required: /煤炭|煤矿|动力煤|焦煤|平煤|中煤|兖矿|陕西煤业|山煤|潞安|晋控煤业|中国神华/i,
   },
   {
-    pattern: /燃油车|汽车|智能驾驶|零部件|新能源车/i,
+    pattern: /煤电|火电/i,
+    required: /煤电|火电|电力|能源|华能|华电|大唐|国电|晋控电力/i,
+  },
+  {
+    pattern: /燃油车|传统燃油|汽车零部件/i,
+    required: /燃油|传统燃油|整车|商用车|汽车零部件|车桥|曙光|福田|上汽/i,
+  },
+  {
+    pattern: /汽车|智能驾驶|新能源车/i,
     required: /汽车|车企|乘用车|整车|零部件|智能驾驶|新能源车/i,
   },
   {
     pattern: /创新药|医疗服务|医药|医疗器械|CXO|制药|药/i,
     required: /创新药|医药|医疗|医疗器械|CXO|CRO|CDMO|临床|药|制药|生物|药明|康德|迪哲|百奥/i,
+  },
+  {
+    pattern: /存储|DRAM|NAND|HBM/i,
+    required: /存储|DRAM|NAND|HBM|德明利|佰维|兆易|北京君正/i,
+  },
+  {
+    pattern: /半导体|芯片/i,
+    required: /半导体|芯片|封测|晶圆|材料|设备|德明利|佰维|兆易|北京君正/i,
   },
 ];
 const DISALLOWED_COMPANY_CONTEXT_RULES = [
@@ -107,6 +123,8 @@ const DISALLOWED_COMPANY_CONTEXT_RULES = [
   { company: /南网储能/i, context: /水电|来水|水力发电|锂电|锂盐|锂矿|电池/i },
   { company: /崧盛股份/i, context: /电网|特高压|输变电|变压器|配网/i },
   { company: /帝尔激光/i, context: /硅料|硅片|组件|多晶硅|工业硅|光伏产业链/i, allow: /设备|激光|电池片|工艺/i },
+  { company: /林州重机/i, context: /煤炭|煤价|煤矿|动力煤|焦煤/i },
+  { company: /晋控电力/i, context: /煤炭|煤价|煤矿|动力煤|焦煤/i },
 ];
 const CONCLUSION_STRENGTHS = ["正式结论", "观察", "证据不足"];
 const EVIDENCE_GAPS = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"];
@@ -572,7 +590,8 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest), previousScan?.upcomingGrowth, unchangedIndustries, digest),
     decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest),
   });
-  const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = cleanedSections;
+  const balancedSections = rebalanceRadarSections(cleanedSections, industryScope, digest);
+  const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = balancedSections;
   const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
   const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
   const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
@@ -600,7 +619,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     },
     confidenceSummary: conservativeConfidenceSummary(stringValue(record.confidenceSummary), digest.evidenceBreakdown),
     fromCache: false,
-    executiveSummary: normalizedExecutiveSummary(cleanedSections, industryScope),
+    executiveSummary: normalizedExecutiveSummary(balancedSections, industryScope),
     solidGrowth,
     sustainability,
     bubbleRisks,
@@ -613,10 +632,9 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
     stageCompanies: mergeRadarLists(stageLists, stageCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }))),
     limitations: stringArray(record.limitations).slice(0, 8),
   };
-  const modelChangeLog = stringArray(record.changeLog).slice(0, 8).map(fixRadarText);
   return {
     ...scan,
-    changeLog: shouldUseModelChangeLog(modelChangeLog, formalItems) ? modelChangeLog : buildChangeLog(previousScan, scan),
+    changeLog: buildChangeLog(previousScan, scan),
   };
 }
 
@@ -673,14 +691,6 @@ function formalSectionsOnly(sections) {
       arrayValue(items).filter((item) => item.conclusionStrength === "正式结论"),
     ]),
   );
-}
-
-function shouldUseModelChangeLog(entries, formalItems) {
-  if (!entries.length) return false;
-  const text = entries.join(" ");
-  if (/solidGrowth|upcomingGrowth|decliningIndustries|bubbleRisks|sustainability|solid\s*growth|upcoming\s*growth|declining\s*industr/i.test(text)) return false;
-  if (!formalItems.length && /正式结论|高置信|确认|维持扎实|维持.*衰退|维持.*增长/.test(text)) return false;
-  return true;
 }
 
 function conservativeConfidenceSummary(summary, breakdown = {}) {
@@ -754,21 +764,26 @@ function radarItems(value, previousTitles, digest) {
 function normalizeRadarItemCertainty(item, digest) {
   const sourceSet = new Set(item.sourceIds);
   const citationTypes = digest.citations.filter((source) => sourceSet.has(source.id)).map((source) => source.sourceType);
-  const evidenceTypes = unique([...item.evidenceTypes, ...citationTypes].filter(Boolean));
+  const relatedPackets = relatedPacketsForRadarItem(item, digest);
+  const packetEvidenceTypes = relatedPackets.flatMap((packet) => packet.evidenceTypes ?? []);
+  const packetSourceCount = Math.max(0, ...relatedPackets.map((packet) => packet.sourceCount ?? 0));
+  const evidenceTypes = unique([...item.evidenceTypes, ...citationTypes, ...packetEvidenceTypes].filter(Boolean));
   const sourceCount = item.sourceIds.length;
   const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
   const hasAnnouncement = evidenceTypes.includes("announcement");
   const hasMultiFamily = evidenceTypes.length >= 2;
   const hasExtremePercent = /低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test([item.title, item.thesis, ...item.evidence].join(" "));
   const gapSet = new Set(item.evidenceGaps);
-  const formalReady = sourceCount >= 2 && (hasMultiFamily || (hasHardOrOfficial && hasAnnouncement));
+  const packetBacked = packetSourceCount >= 6 && hasHardOrOfficial && hasAnnouncement && !gapSet.has("缺财报");
+  const formalReady = sourceCount >= 2 && ((hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) || packetBacked);
+  const lowBaseOnly = hasExtremePercent && (!packetBacked || isLowBaseSensitiveGrowthContext(item));
   const highReady = sourceCount >= 3 && (hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) && !hasExtremePercent && !gapSet.has("缺多源验证");
-  if (!formalReady || hasExtremePercent) gapSet.add("缺多源验证");
+  if (!formalReady || lowBaseOnly) gapSet.add("缺多源验证");
   if (hasExtremePercent && !gapSet.has("缺现金流")) gapSet.add("缺现金流");
   let confidence = item.confidence;
   let conclusionStrength = item.conclusionStrength;
   if (confidence === "高" && !highReady) confidence = "中";
-  if (conclusionStrength === "正式结论" && (!formalReady || hasExtremePercent)) conclusionStrength = "观察";
+  if (conclusionStrength === "正式结论" && (!formalReady || lowBaseOnly)) conclusionStrength = "观察";
   const thesis = conclusionStrength === "正式结论" ? item.thesis : softenObservationText(item.thesis);
   return {
     ...item,
@@ -779,6 +794,18 @@ function normalizeRadarItemCertainty(item, digest) {
     evidenceGaps: [...gapSet],
     supportingSourceCount: sourceCount,
   };
+}
+
+function relatedPacketsForRadarItem(item, digest) {
+  const keys = new Set([
+    ...stageLookupKeys(item.title),
+    ...arrayValue(item.industries).flatMap((industry) => stageLookupKeys(industry)),
+  ]);
+  return arrayValue(digest.packets).filter((packet) => keys.has(cleanStageKey(packet.topic)) || keys.has(canonicalIndustryKey(packet.topic)));
+}
+
+function isLowBaseSensitiveGrowthContext(item) {
+  return /电网|电力设备|输变电|配网|储能|锂电|地产|房地产/.test([item.title, item.thesis, ...arrayValue(item.industries)].join(" "));
 }
 
 function softenObservationText(text) {
@@ -826,6 +853,236 @@ function fixRadarText(value) {
   return stringValue(value)
     .replace(/医疗服触底/g, "医疗服务触底")
     .replace(/存储芯片和存储芯片/g, "存储芯片");
+}
+
+function rebalanceRadarSections(sections, industryScope, digest) {
+  const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
+  const weakSolidGrowth = balanced.solidGrowth.filter((item) => item.conclusionStrength !== "正式结论");
+  if (weakSolidGrowth.length) {
+    balanced.solidGrowth = balanced.solidGrowth.filter((item) => item.conclusionStrength === "正式结论");
+    balanced.sustainability = [...weakSolidGrowth, ...balanced.sustainability];
+  }
+  if (balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论")) return balanced;
+
+  const blockingKeys = new Set(
+    [balanced.solidGrowth, balanced.bubbleRisks, balanced.decliningIndustries]
+      .flatMap((items) => arrayValue(items))
+      .filter((item) => item.conclusionStrength === "正式结论")
+      .flatMap((item) => [item.title, ...arrayValue(item.industries)])
+      .flatMap((value) => stageLookupKeys(value)),
+  );
+  const candidates = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
+    .filter((packet) => qualifiesForRuleBackedSolidGrowth(packet, blockingKeys))
+    .map((packet) => ruleBackedSolidGrowthItem(packet, digest))
+    .filter(Boolean)
+    .sort((left, right) => radarItemQuality(right) - radarItemQuality(left))
+    .slice(0, 2);
+
+  if (!candidates.length) {
+    const promoted = promoteBestGrowthObservation(balanced);
+    return promoted ?? balanced;
+  }
+  const promotedKeys = new Set(candidates.flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
+  balanced.sustainability = balanced.sustainability.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
+  balanced.upcomingGrowth = balanced.upcomingGrowth.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
+  balanced.solidGrowth = cleanRadarSections({ ...balanced, solidGrowth: [...balanced.solidGrowth, ...candidates] }).solidGrowth;
+  return balanced;
+}
+
+function promoteBestGrowthObservation(sections) {
+  const observationCandidates = [
+    ...arrayValue(sections.upcomingGrowth).map((item) => ({ section: "upcomingGrowth", item })),
+    ...arrayValue(sections.sustainability).map((item) => ({ section: "sustainability", item })),
+  ]
+    .filter(({ item }) => qualifiesForObservationPromotion(item))
+    .sort((left, right) => radarItemQuality(right.item) - radarItemQuality(left.item));
+  const best = observationCandidates[0];
+  if (!best) return null;
+  const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
+  balanced[best.section] = balanced[best.section].filter((item) => item !== best.item);
+  balanced.solidGrowth = [
+    ...balanced.solidGrowth,
+    {
+      ...best.item,
+      industries: narrowedPromotedIndustries(best.item),
+      confidence: "中",
+      conclusionStrength: "正式结论",
+      thesis: fixRadarText(best.item.thesis).replace(/可持续性需观察。?$/, "但现金流和多源验证仍需继续跟踪。"),
+      changeReason: "本轮没有高置信硬数据级扎实增长；该方向具备多家公司公告和产业增长线索，提升为中置信扎实增长候选并保留证据缺口。",
+    },
+  ];
+  return balanced;
+}
+
+function qualifiesForObservationPromotion(item) {
+  const text = `${item.title} ${item.thesis} ${arrayValue(item.industries).join(" ")} ${arrayValue(item.drivers).join(" ")}`;
+  if (item.conclusionStrength === "正式结论") return false;
+  if ((item.sourceIds?.length ?? 0) < 4) return false;
+  if ((item.companies?.length ?? 0) < 2) return false;
+  if (!arrayValue(item.evidenceTypes).includes("announcement")) return false;
+  if (!/增长|涨价|景气|利润|营收|需求|订单|放量|周期/.test(text)) return false;
+  if (/地产|房地产|光伏|煤炭|燃油车|电网|电力|输变电|配网|衰退|亏损扩大|过剩/.test(text)) return false;
+  if (item.riskLevel === "高") return false;
+  return true;
+}
+
+function narrowedPromotedIndustries(item) {
+  const text = `${item.title} ${item.thesis} ${arrayValue(item.industries).join(" ")}`;
+  if (/存储|DRAM|NAND|HBM/.test(text)) return ["存储芯片"];
+  if (/航运|运价|BDI|集运/.test(text)) return ["航运物流"];
+  if (/有色|铜|铝|稀土|钨|钼/.test(text)) return ["战略有色金属"];
+  return arrayValue(item.industries).slice(0, 2);
+}
+
+function qualifiesForRuleBackedSolidGrowth(packet, existingKeys) {
+  const key = canonicalIndustryKey(packet.industry);
+  if (!key || existingKeys.has(key) || existingKeys.has(cleanStageKey(packet.industry))) return false;
+  if (itemDeclineIsDirect(packet.industry)) return false;
+  if (/电网|电力|创新药|医疗服务|CXO|消费电子|端侧AI|存储芯片|半导体|锂电|储能|锂矿|锂盐|水泥|建材|玻璃|白酒/.test(packet.industry)) return false;
+  const scores = scoreIndustryPacket(packet);
+  const evidenceTypes = arrayValue(packet.evidenceTypes);
+  const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
+  const hasAnnouncement = evidenceTypes.includes("announcement");
+  const hasCompanyValidation =
+    hasSustainableFinancialFact(packet) ||
+    hasRevenueAndProfitGrowthFact(packet) ||
+    arrayValue(packet.companyCandidates).some((candidate) => evidenceStrength(candidate) >= 8 && /announcement/.test(arrayValue(candidate.sourceTypes).join(" ")));
+  const hasNoBlockingGap = !arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证/.test(gap));
+  return (
+    (packet.sourceCount ?? 0) >= 6 &&
+    scores.growth >= 70 &&
+    scores.evidence >= 70 &&
+    scores.declineRisk < 55 &&
+    scores.bubbleRisk < 65 &&
+    hasHardOrOfficial &&
+    hasAnnouncement &&
+    hasCompanyValidation &&
+    hasNoBlockingGap
+  );
+}
+
+function evidenceStrength(candidate) {
+  return typeof candidate?.evidenceStrength === "number" ? candidate.evidenceStrength : 0;
+}
+
+function hasSustainableFinancialFact(packet) {
+  return arrayValue(packet.financialFacts).some((fact) => {
+    const metrics = isRecord(fact.metrics) ? fact.metrics : {};
+    const revenueYoy = numericValue(metrics.revenueYoy ?? fact.revenueYoy);
+    const netProfitYoy = numericValue(metrics.netProfitYoy ?? fact.yoy);
+    const operatingCashflowPerShare = numericValue(metrics.operatingCashflowPerShare);
+    if (!Number.isFinite(netProfitYoy) || netProfitYoy <= 0) return false;
+    if (netProfitYoy >= 1000 && (!Number.isFinite(revenueYoy) || revenueYoy < 20 || !(Number.isFinite(operatingCashflowPerShare) && operatingCashflowPerShare > 0))) return false;
+    return !Number.isFinite(revenueYoy) || revenueYoy >= 0;
+  });
+}
+
+function hasRevenueAndProfitGrowthFact(packet) {
+  return arrayValue(packet.financialFacts).some((fact) => {
+    const metrics = isRecord(fact.metrics) ? fact.metrics : {};
+    const revenueYoy = numericValue(metrics.revenueYoy ?? fact.revenueYoy);
+    const netProfitYoy = numericValue(metrics.netProfitYoy ?? fact.yoy);
+    return Number.isFinite(revenueYoy) && revenueYoy >= 20 && Number.isFinite(netProfitYoy) && netProfitYoy > 0;
+  });
+}
+
+function ruleBackedSolidGrowthItem(packet, digest) {
+  const sourceIds = sourceIdsForPacket(packet, digest).slice(0, 5);
+  if (sourceIds.length < 2) return null;
+  const companies = packetBackedCompanies(packet, sourceIds, digest).slice(0, 5);
+  if (!companies.length) return null;
+  const evidenceLines = sourceIds
+    .map((id) => digest.citations.find((source) => source.id === id))
+    .filter(Boolean)
+    .map((source) => formatExtremePercentEvidence(`${source.id} ${source.title}${source.summary ? `：${trimText(source.summary, 80)}` : ""}`))
+    .slice(0, 5);
+  const title = `${packet.industry}景气与业绩共振`;
+  const item = normalizeRadarItemCertainty(
+    {
+      title,
+      industries: [packet.industry],
+      companies,
+      thesis: `${packet.industry}同时出现行业硬数据和公司级财报/公告验证，规则引擎补入扎实增长候选；仍需后续季度确认持续性。`,
+      drivers: inferDriversFromPacket(packet),
+      evidence: evidenceLines,
+      conclusionStrength: "正式结论",
+      evidenceGaps: arrayValue(packet.evidenceGaps).filter((gap) => !/缺多源验证/.test(gap)),
+      driverTags: inferDriverTagsFromPacket(packet),
+      sustainabilityTier: "中期景气",
+      durability: "中期",
+      riskLevel: "中",
+      confidence: "中",
+      evidenceTypes: arrayValue(packet.evidenceTypes),
+      supportingSourceCount: sourceIds.length,
+      sourceIds,
+      changeReason: "模型未升入正式增长章节，但全行业规则评分显示硬数据与公司级证据已达到扎实增长候选门槛，自动补入并按中等置信展示。",
+      counterEvidenceConditions: ["行业价格或运价连续回落", "代表公司后续财报未能延续盈利改善", "经营现金流转弱"],
+      confirmationConditions: ["价格/运价继续维持高位", "更多 A/H 代表公司财报共振", "经营现金流改善"],
+      turningPoints: [],
+    },
+    digest,
+  );
+  return { ...item, title: fixRadarText(item.title), thesis: fixRadarText(item.thesis), evidence: item.evidence.map(fixRadarText), changeReason: fixRadarText(item.changeReason) };
+}
+
+function sourceIdsForPacket(packet, digest) {
+  const packetSourceKeys = new Set(arrayValue(packet.sources).flatMap((source) => [source.url, source.sourceId, source.title]).filter(Boolean));
+  const exact = digest.citations.filter((source) => packetSourceKeys.has(source.url) || packetSourceKeys.has(source.sourceId) || packetSourceKeys.has(source.title));
+  const companyNames = packetCompanyNames(packet);
+  const companyEvidenceIds = exact
+    .filter((source) => companyNames.some((company) => `${source.company ?? ""} ${source.title} ${source.summary ?? ""}`.includes(company)))
+    .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
+    .map((source) => source.id);
+  if (exact.length) return unique([...companyEvidenceIds.slice(0, 2), ...exact.sort((left, right) => (right.score ?? 0) - (left.score ?? 0)).map((source) => source.id)]);
+  const text = `${packet.industry} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.evidenceTypes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
+  return digest.citations
+    .map((source) => ({ source, score: keywordOverlapScore(text, `${source.query} ${source.title} ${source.summary ?? ""} ${source.industry ?? ""}`) + (source.industry === packet.industry ? 4 : 0) }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map((item) => item.source.id);
+}
+
+function packetBackedCompanies(packet, sourceIds, digest) {
+  const sourceCompanies = digest.citations
+    .filter((source) => sourceIds.includes(source.id))
+    .map((source) => source.company)
+    .filter(Boolean);
+  const candidateCompanies = arrayValue(packet.companyCandidates)
+    .filter((candidate) => evidenceStrength(candidate) >= 4)
+    .map((candidate) => candidate.company);
+  const factCompanies = arrayValue(packet.financialFacts).map((fact) => fact.company).filter(Boolean);
+  const record = {
+    title: packet.industry,
+    thesis: `${packet.industry} ${arrayValue(packet.themes).join(" ")}`,
+    companies: unique([...sourceCompanies, ...candidateCompanies, ...factCompanies]),
+  };
+  return evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest, record);
+}
+
+function packetCompanyNames(packet) {
+  return unique([
+    ...arrayValue(packet.companyCandidates).map((candidate) => stringValue(candidate.company)),
+    ...arrayValue(packet.financialFacts).map((fact) => stringValue(fact.company)),
+  ]).filter((company) => company.length >= 2);
+}
+
+function inferDriversFromPacket(packet) {
+  const text = `${packet.industry} ${arrayValue(packet.signalTypes).join(" ")} ${arrayValue(packet.themes).join(" ")}`;
+  const drivers = [];
+  if (/price|commodity|价格|铜|铝|锂|钨|稀土/.test(text)) drivers.push("价格上行");
+  if (/freight|BDI|运价|航运/.test(text)) drivers.push("运价改善");
+  if (/financial|财报|利润|业绩/.test(text)) drivers.push("业绩改善");
+  if (/official|统计|政策/.test(text)) drivers.push("官方/结构化数据验证");
+  return drivers.length ? drivers : ["需求与利润改善"];
+}
+
+function inferDriverTagsFromPacket(packet) {
+  const text = `${packet.industry} ${arrayValue(packet.signalTypes).join(" ")} ${arrayValue(packet.themes).join(" ")}`;
+  const tags = [];
+  if (/price|commodity|价格|铜|铝|锂|钨|稀土|freight|BDI|运价/.test(text)) tags.push("价格");
+  if (/需求|销量|出口|订单/.test(text)) tags.push("需求");
+  if (/供给|库存|产能/.test(text)) tags.push("供给收缩");
+  return tags.length ? tags : ["需求"];
 }
 
 function cleanRadarSections(sections) {
@@ -918,13 +1175,14 @@ function primaryRadarItemKey(item) {
 }
 
 function radarItemKeys(item) {
-  const values = [...stringArray(item.industries), item.title].map(canonicalIndustryKey).filter(Boolean);
+  const values = [item.title, ...stringArray(item.industries)].map(canonicalIndustryKey).filter(Boolean);
   return unique(values);
 }
 
 function canonicalIndustryKey(value) {
   const text = cleanStageKey(value);
   if (!text) return "";
+  if (/地产|房地产|物业/.test(text)) return "地产链";
   if (/水泥|建材|玻璃/.test(text)) return "水泥建材";
   if (/电网|特高压|变压器|能源基础设施/.test(text)) return "电网设备";
   if (/电力\/水电|水电|发电|电力$|电力平稳|水电电力/.test(text)) return "电力水电";
@@ -938,7 +1196,6 @@ function canonicalIndustryKey(value) {
   if (/锂电|储能|锂矿|锂盐|碳酸锂/.test(text)) return "锂电储能";
   if (/生猪|养殖|猪价/.test(text)) return "生猪养殖";
   if (/光伏|硅料|组件|逆变器/.test(text)) return "光伏产业链";
-  if (/地产|房地产|物业/.test(text)) return "地产链";
   if (/燃油车|汽车零部件/.test(text)) return "传统燃油车";
   if (/AI应用|软件/.test(text)) return "AI应用软件";
   if (/机器人|具身/.test(text)) return "机器人具身智能";
@@ -1008,7 +1265,7 @@ function buildIndustryStageMap(sections) {
 
 function stageForRadarSectionItem(item, defaultStage) {
   const text = [item.title, item.thesis, ...stringArray(item.industries), ...stringArray(item.drivers), ...stringArray(item.driverTags)].join(" ");
-  if (defaultStage === "扎实增长" && (item.conclusionStrength !== "正式结论" || item.confidence !== "高")) return "继续观察";
+  if (defaultStage === "扎实增长" && item.conclusionStrength !== "正式结论") return "继续观察";
   if (defaultStage === "继续观察" && /平稳现金流|高股息|分红|公用事业|电力|水电|高速公路|电信运营|运营商|银行|保险/.test(text) && !/泡沫|衰退|严重下滑|流动性风险/.test(text)) {
     return "平稳现金流";
   }
@@ -1290,6 +1547,7 @@ function evidenceGapsForItem(record, evidence) {
     if (!/现金流|经营现金流|OCF/i.test(text)) gaps.push("缺现金流");
     if (!/价格|销量|订单|库存|产能|多源|行业硬数据/.test(text)) gaps.push("缺多源验证");
   }
+  if (/现金流为负|经营现金流为负|现金流转负|经营现金流转负/.test(text)) gaps.push("缺现金流");
   return unique(gaps);
 }
 
@@ -1325,6 +1583,7 @@ function uniqueCompaniesByName(companies) {
 }
 
 function isEligibleRepresentativeCompany(company) {
+  if (/^\d{5,6}\.(?:SH|SZ|BJ|HK)$/i.test(stripTicker(company))) return false;
   return ![...NON_AH_PATTERNS, ...UNSUITABLE_REPRESENTATIVE_PATTERNS].some((pattern) => pattern.test(company) || pattern.test(stripTicker(company)));
 }
 
@@ -1336,10 +1595,19 @@ function companyMatchesItemContext(company, itemText, sources) {
   const name = stripTicker(company);
   const companySourceText = sources
     .filter((source) => stripTicker(source.company) === name || `${source.title ?? ""} ${source.summary ?? ""}`.includes(name))
-    .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
+    .map((source) => `${source.company ?? ""} ${source.industry ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`)
     .join(" ");
   if (!companySourceText) return itemText.includes(name) || rule.required.test(name);
+  if (isDeclineItemContext(itemText) && !hasCompanyDeclineEvidence(companySourceText)) return false;
   return rule.required.test(companySourceText);
+}
+
+function isDeclineItemContext(text) {
+  return /衰退|萎缩|下滑|亏损|承压|低迷|过剩|利润率下降|份额被|需求弱|价格下跌/.test(text);
+}
+
+function hasCompanyDeclineEvidence(text) {
+  return /亏损|续亏|预减|下滑|萎缩|承压|低迷|下降|减值|需求弱|产销量未达预期|利润率下降|价格下跌|过剩|销售弱|开工弱/.test(text);
 }
 
 function representativeCompanyLists(sections) {
@@ -1565,16 +1833,27 @@ function previousRadarTitles(scan) {
 
 function buildChangeLog(previousScan, scan) {
   if (!previousScan) return ["首次生成雷达扫描，后续刷新将与本次结果比较并说明变化原因。"];
-  const previous = previousRadarTitles(previousScan);
-  const current = previousRadarTitles(scan);
-  const added = [...current].filter((title) => !previous.has(title));
-  const retained = [...current].filter((title) => previous.has(title));
-  const removed = [...previous].filter((title) => !current.has(title));
+  const previous = radarItemTitleMap(previousScan);
+  const current = radarItemTitleMap(scan);
+  const added = [...current.entries()].filter(([key]) => !previous.has(key)).map(([, title]) => title);
+  const retained = [...current.entries()].filter(([key]) => previous.has(key)).map(([, title]) => title);
+  const removed = [...previous.entries()].filter(([key]) => !current.has(key)).map(([, title]) => title);
   return [
     added.length ? `新增：${added.slice(0, 5).join("、")}。` : "",
     retained.length ? `维持：${retained.slice(0, 5).join("、")}。` : "",
     removed.length ? `撤销或降级：${removed.slice(0, 5).join("、")}。` : "",
   ].filter(Boolean);
+}
+
+function radarItemTitleMap(scan) {
+  const result = new Map();
+  const items = [...arrayValue(scan.solidGrowth), ...arrayValue(scan.sustainability), ...arrayValue(scan.bubbleRisks), ...arrayValue(scan.upcomingGrowth), ...arrayValue(scan.decliningIndustries)];
+  for (const item of items) {
+    const key = primaryRadarItemKey(item);
+    const title = stringValue(item.title);
+    if (key && title && !result.has(key)) result.set(key, title);
+  }
+  return result;
 }
 
 function radarJsonShape() {
