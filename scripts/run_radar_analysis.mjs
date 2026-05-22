@@ -701,8 +701,9 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   });
   const balancedSections = rebalanceRadarSections(cleanedSections, industryScope, digest);
   const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = balancedSections;
-  const formalItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
-  const coverageReview = radarCoverageReview(record.coverageReview, digest, formalItems);
+  const radarSectionItems = [...solidGrowth, ...sustainability, ...bubbleRisks, ...upcomingGrowth, ...decliningIndustries];
+  const formalCoverageItems = radarSectionItems.filter((item) => item.conclusionStrength === "正式结论");
+  const coverageReview = radarCoverageReview(record.coverageReview, digest, formalCoverageItems);
   const stageByIndustry = buildIndustryStageMap({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries });
   const representativeLists = radarLists(record.representativeCompanies);
   const stageLists = radarLists(record.stageCompanies);
@@ -739,7 +740,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
       representativeCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
     ),
     stageCompanies: mergeRadarLists(stageLists, stageCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }))),
-    limitations: sanitizeLimitations(record.limitations, formalItems),
+    limitations: sanitizeLimitations(record.limitations, radarSectionItems),
   };
   return {
     ...scan,
@@ -2222,13 +2223,12 @@ function companyListFromItems(label, items, emptyNote) {
 }
 
 function radarCoverageReview(value, digest, formalItems) {
-  const formalText = formalItems.flatMap((item) => [item.title, ...item.industries, ...item.companies]).join(" ");
   const explicit = arrayValue(value)
     .map((item) => (isRecord(item) ? item : null))
     .filter(Boolean);
   const byLabel = new Map();
   for (const coverage of digest.softCoverage) {
-    const status = keywordOverlapScore(coverage.label, formalText) > 0 ? "formal" : coverage.sourceCount >= 2 ? "watched" : "insufficient";
+    const status = coverageMatchesFormalItem(coverage.label, formalItems) ? "formal" : coverage.sourceCount >= 2 ? "watched" : "insufficient";
     byLabel.set(coverage.label, {
       label: coverage.label,
       status,
@@ -2244,16 +2244,35 @@ function radarCoverageReview(value, digest, formalItems) {
     const base = byLabel.get(label);
     const explicitSourceIds = stringArray(item.sourceIds).filter((id) => digest.citations.some((source) => source.id === id)).slice(0, 5);
     const explicitEvidenceTypes = enumArray(item.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS));
+    const sourceCount = typeof item.sourceCount === "number" && item.sourceCount > 0 ? item.sourceCount : (base?.sourceCount ?? 0);
+    const status = coverageMatchesFormalItem(label, formalItems) ? "formal" : sourceCount >= 2 ? "watched" : "insufficient";
     byLabel.set(label, {
       label,
-      status: enumValue(item.status, ["formal", "watched", "insufficient"], "watched"),
-      sourceCount: typeof item.sourceCount === "number" && item.sourceCount > 0 ? item.sourceCount : (base?.sourceCount ?? 0),
+      status,
+      sourceCount,
       evidenceTypes: explicitEvidenceTypes.length ? explicitEvidenceTypes : (base?.evidenceTypes ?? []),
       sourceIds: explicitSourceIds.length ? explicitSourceIds : (base?.sourceIds ?? []),
-      note: stringValue(item.note) || base?.note || "",
+      note: status === "formal" ? "已进入正式雷达结论。" : scrubCoverageNote(stringValue(item.note) || base?.note || "", status),
     });
   }
   return [...byLabel.values()];
+}
+
+function coverageMatchesFormalItem(label, formalItems) {
+  const labelText = stringValue(label);
+  const labelKeys = new Set(identityKeys(labelText));
+  return arrayValue(formalItems).some((item) => {
+    const itemText = [item.title, ...arrayValue(item.industries), ...arrayValue(item.companies)].join(" ");
+    const itemKeys = new Set([item.title, ...arrayValue(item.industries)].flatMap(identityKeys));
+    if ([...labelKeys].some((key) => itemKeys.has(key))) return true;
+    return relatedIndustryContextMatches(labelText, itemText) || keywordOverlapScore(labelText, itemText) >= 2;
+  });
+}
+
+function scrubCoverageNote(note, status) {
+  if (status === "formal") return "已进入正式雷达结论。";
+  if (/正式|已进入|已形成|形成.*判断|形成.*结论/.test(note)) return status === "watched" ? "已扫描到公开证据，但方向分化或证据强度不足，暂未升为正式结论。" : "证据不足，暂未升为正式结论。";
+  return note || (status === "watched" ? "已扫描到公开证据，但方向分化或证据强度不足，暂未升为正式结论。" : "证据不足，暂未升为正式结论。");
 }
 
 function radarLists(value) {

@@ -414,6 +414,47 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.sourceCount).toBeGreaterThan(0);
   });
 
+  test("does not mark coverage review as formal when only an observation survived", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-coverage-status-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const output = modelOutput();
+    output.coverageReview = [
+      { label: "创新药/医疗服务", status: "formal", sourceCount: 6, evidenceTypes: ["announcement"], sourceIds: ["S1"], note: "已进入正式雷达结论。" },
+    ];
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-coverage-status",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { coverageReview?: Array<{ label?: string; status?: string; note?: string }> };
+    };
+    const coverage = radarCache.radar?.coverageReview?.find((item) => item.label === "创新药/医疗服务");
+    expect(coverage?.status).not.toBe("formal");
+    expect(coverage?.note).not.toContain("已进入正式");
+  });
+
   test("does not let a low-base property item promote the property chain into solid growth", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-property-"));
     const evidencePath = join(workdir, "evidence.json");
