@@ -1313,6 +1313,168 @@ describe("background radar analyzer", () => {
     expect(item?.sourceIds?.length).toBeGreaterThanOrEqual(1);
   });
 
+  test("promotes strong growth observations when formal growth coverage is too thin", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-promote-observation-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const storageCompanySources = [
+      {
+        source: "东方财富业绩报表",
+        query: "存储芯片 财报 营收 净利润",
+        title: "佰维存储 2026Q1 营收同比 341.53%，净利润同比 567.85%",
+        url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#688525",
+        publishedAt: "2026-04-16T00:00:00Z",
+        summary: "公司级财报：营收和净利润大幅增长，但经营现金流仍需复核。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        weight: 4,
+        company: "佰维存储",
+        code: "688525.SH",
+        market: "A股",
+        industry: "存储芯片",
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "存储芯片 财报 营收 净利润",
+        title: "德明利 2026Q1 营收同比 502.08%，净利润同比 943.39%",
+        url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#001309",
+        publishedAt: "2026-04-30T00:00:00Z",
+        summary: "公司级财报：营收和净利润大幅增长，存储链业绩弹性显著。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        weight: 4,
+        company: "德明利",
+        code: "001309.SZ",
+        market: "A股",
+        industry: "存储芯片",
+      },
+    ];
+    evidence.sources.push(...storageCompanySources);
+    evidence.financialFacts.push(
+      { source: "东方财富业绩报表", company: "佰维存储", code: "688525.SH", market: "A股", industry: "存储芯片", metric: "净利润", value: 800000000, yoy: 567.85, publishedAt: "2026-04-16T00:00:00Z" },
+      { source: "东方财富业绩报表", company: "德明利", code: "001309.SZ", market: "A股", industry: "存储芯片", metric: "净利润", value: 500000000, yoy: 943.39, publishedAt: "2026-04-30T00:00:00Z" },
+    );
+    const storagePacket = evidence.industryPackets.find((packet) => packet.industry === "存储芯片");
+    if (!storagePacket) throw new Error("missing storage packet fixture");
+    storagePacket.sourceCount = 4;
+    storagePacket.evidenceTypes = ["announcement", "news"];
+    storagePacket.signalTypes = ["financial_metric", "external_search"];
+    storagePacket.evidenceGaps = ["缺价格"];
+    storagePacket.sources = [...storageCompanySources, ...storagePacket.sources];
+    storagePacket.financialFacts = storageCompanySources.map((source) => ({ company: source.company, industry: "存储芯片", yoy: source.company === "德明利" ? 943.39 : 567.85 }));
+    storagePacket.companyCandidates = storageCompanySources.map((source) => ({ company: source.company, industry: "存储芯片", evidenceStrength: 4 }));
+
+    const output = modelOutput();
+    output.solidGrowth = [
+      {
+        title: "战略有色金属（铜、锂）",
+        industries: ["战略有色金属"],
+        companies: ["盛新锂能"],
+        thesis: "价格和财报共同验证战略金属景气。",
+        evidence: ["S4 铜价高位", "S2 盛新锂能业绩增长"],
+        sourceIds: ["S4", "S2"],
+        evidenceTypes: ["hard_data", "announcement"],
+        conclusionStrength: "正式结论",
+        confidence: "中",
+        riskLevel: "中",
+      },
+      {
+        title: "半导体/AI算力",
+        industries: ["半导体/AI算力"],
+        companies: ["中芯国际", "寒武纪"],
+        thesis: "AI算力需求带动半导体产业链业绩增长。",
+        evidence: ["S1 半导体公司业绩改善", "S5 AI算力需求线索"],
+        sourceIds: ["S1", "S5"],
+        evidenceTypes: ["announcement", "news"],
+        conclusionStrength: "正式结论",
+        confidence: "中",
+        riskLevel: "中",
+      },
+    ];
+    output.sustainability = [
+      {
+        title: "存储芯片景气与业绩共振",
+        industries: ["存储芯片"],
+        companies: ["佰维存储", "德明利"],
+        thesis: "AI算力需求与国产替代带动存储链收入和利润改善，可持续性需继续观察。",
+        evidence: ["S6 佰维存储业绩增长", "S7 德明利业绩增长", "S8 存储需求线索", "S9 HBM扩容线索"],
+        sourceIds: ["S6", "S7", "S8", "S9"],
+        evidenceTypes: ["announcement", "news"],
+        evidenceGaps: ["缺价格", "缺多源验证"],
+        conclusionStrength: "观察",
+        confidence: "中",
+        riskLevel: "中",
+        driverTags: ["需求", "技术"],
+      },
+    ];
+    output.upcomingGrowth = [];
+    output.bubbleRisks = [];
+    output.decliningIndustries = [];
+
+    const previous = previousRadarCache();
+    previous.radar.sustainability.push({
+      title: "存储芯片景气与业绩共振",
+      industries: ["存储芯片"],
+      companies: ["佰维存储", "德明利"],
+      thesis: "存储芯片出现业绩改善线索但仍需观察。",
+      drivers: ["需求"],
+      evidence: ["旧证据"],
+      conclusionStrength: "观察",
+      evidenceGaps: ["缺价格"],
+      driverTags: ["需求"],
+      sustainabilityTier: "中期景气",
+      durability: "中期",
+      riskLevel: "中",
+      confidence: "中",
+      sourceIds: [],
+      evidenceTypes: ["announcement", "news"],
+      counterEvidenceConditions: [],
+      turningPoints: [],
+    });
+
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previous), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-promote-observation",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        solidGrowth?: Array<{ title?: string; conclusionStrength?: string; confidence?: string; evidenceGaps?: string[] }>;
+        sustainability?: Array<{ title?: string }>;
+        industryPackets?: Array<{ industry?: string; stage?: string }>;
+        changeLog?: string[];
+      };
+    };
+    const promoted = radarCache.radar?.solidGrowth?.find((item) => item.title === "存储芯片景气与业绩共振");
+    expect(promoted).toMatchObject({ conclusionStrength: "正式结论", confidence: "中" });
+    expect(promoted?.evidenceGaps).toContain("缺价格");
+    expect(promoted?.evidenceGaps).not.toContain("缺多源验证");
+    expect(radarCache.radar?.sustainability?.some((item) => item.title === "存储芯片景气与业绩共振")).toBe(false);
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "存储芯片")).toMatchObject({ stage: "扎实增长" });
+    expect(radarCache.radar?.changeLog?.some((line) => line.includes("升级：存储芯片景气与业绩共振"))).toBe(true);
+  });
+
   test("rejects unsuitable or context-mismatched representative companies", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-company-filter-"));
     const evidencePath = join(workdir, "evidence.json");

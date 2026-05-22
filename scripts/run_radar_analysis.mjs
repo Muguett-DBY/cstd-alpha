@@ -1062,11 +1062,11 @@ function rebalanceRadarSections(sections, industryScope, digest) {
     balanced.solidGrowth = balanced.solidGrowth.filter((item) => item.conclusionStrength === "正式结论");
     balanced.sustainability = [...weakSolidGrowth, ...balanced.sustainability];
   }
+  const targetFormalGrowthCount = 3;
   const candidates = supplementalSolidGrowthCandidates(balanced, industryScope, digest);
 
   if (!candidates.length) {
-    const promoted = balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论") ? null : promoteBestGrowthObservation(balanced);
-    return ensureSustainabilityObservations(promoted ?? balanced, industryScope, digest);
+    return ensureSustainabilityObservations(promoteGrowthObservationsToTarget(balanced, targetFormalGrowthCount), industryScope, digest);
   }
   const promotedKeys = new Set(candidates.flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
   balanced.sustainability = balanced.sustainability.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
@@ -1076,7 +1076,7 @@ function rebalanceRadarSections(sections, industryScope, digest) {
   const observedGrowthCandidates = cleanedGrowthCandidates.filter((item) => item.conclusionStrength !== "正式结论");
   balanced.solidGrowth = formalGrowthCandidates;
   balanced.sustainability = [...observedGrowthCandidates, ...balanced.sustainability];
-  return ensureSustainabilityObservations(balanced, industryScope, digest);
+  return ensureSustainabilityObservations(promoteGrowthObservationsToTarget(balanced, targetFormalGrowthCount), industryScope, digest);
 }
 
 function supplementalSolidGrowthCandidates(sections, industryScope, digest) {
@@ -1268,37 +1268,51 @@ function sustainabilityPacketCompanies(packet) {
   );
 }
 
-function promoteBestGrowthObservation(sections) {
+function promoteGrowthObservationsToTarget(sections, targetFormalCount = 3) {
+  const formalCount = arrayValue(sections.solidGrowth).filter((item) => item.conclusionStrength === "正式结论").length;
+  const slots = Math.max(0, targetFormalCount - formalCount);
+  if (!slots) return sections;
   const observationCandidates = [
     ...arrayValue(sections.upcomingGrowth).map((item) => ({ section: "upcomingGrowth", item })),
     ...arrayValue(sections.sustainability).map((item) => ({ section: "sustainability", item })),
   ]
     .filter(({ item }) => qualifiesForObservationPromotion(item))
     .sort((left, right) => radarItemQuality(right.item) - radarItemQuality(left.item));
-  const best = observationCandidates[0];
-  if (!best) return null;
   const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
-  balanced[best.section] = balanced[best.section].filter((item) => item !== best.item);
-  balanced.solidGrowth = [
-    ...balanced.solidGrowth,
-    {
-      ...best.item,
-      industries: narrowedPromotedIndustries(best.item),
-      confidence: "中",
-      conclusionStrength: "正式结论",
-      thesis: fixRadarText(best.item.thesis).replace(/可持续性需观察。?$/, "但现金流和多源验证仍需继续跟踪。"),
-      changeReason: "本轮没有高置信硬数据级扎实增长；该方向具备多家公司公告和产业增长线索，提升为中置信扎实增长候选并保留证据缺口。",
-    },
-  ];
+  const promotedKeys = new Set(arrayValue(balanced.solidGrowth).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)));
+  for (const candidate of observationCandidates) {
+    if (arrayValue(balanced.solidGrowth).filter((item) => item.conclusionStrength === "正式结论").length >= targetFormalCount) break;
+    const candidateKeys = [candidate.item.title, ...arrayValue(candidate.item.industries)].flatMap(identityKeys);
+    if (candidateKeys.some((key) => promotedKeys.has(key))) continue;
+    balanced[candidate.section] = balanced[candidate.section].filter((item) => item !== candidate.item);
+    for (const key of candidateKeys) promotedKeys.add(key);
+    balanced.solidGrowth.push(promotedGrowthObservation(candidate.item));
+  }
   return balanced;
+}
+
+function promotedGrowthObservation(item) {
+  return {
+    ...item,
+    industries: narrowedPromotedIndustries(item),
+    confidence: "中",
+    conclusionStrength: "正式结论",
+    evidenceGaps: normalizeEvidenceGaps(item.evidenceGaps).filter((gap) => gap !== "缺多源验证"),
+    thesis: fixRadarText(item.thesis).replace(/可持续性需观察。?$/, "但现金流、价格或订单仍需继续跟踪。"),
+    changeReason: "模型保持观察，但该方向具备多家公司公告和产业增长线索，规则引擎补入中置信扎实增长候选并保留证据缺口。",
+  };
 }
 
 function qualifiesForObservationPromotion(item) {
   const text = `${item.title} ${item.thesis} ${arrayValue(item.industries).join(" ")} ${arrayValue(item.drivers).join(" ")}`;
   if (item.conclusionStrength === "正式结论") return false;
-  if ((item.sourceIds?.length ?? 0) < 4) return false;
-  if ((item.companies?.length ?? 0) < 2) return false;
+  const sourceCount = item.sourceIds?.length ?? item.supportingSourceCount ?? 0;
+  const companyCount = item.companies?.length ?? 0;
+  const evidenceFamilies = arrayValue(item.evidenceTypes).length;
+  if (sourceCount < 4 && !(sourceCount >= 2 && companyCount >= 2 && evidenceFamilies >= 2)) return false;
+  if (companyCount < 2) return false;
   if (!arrayValue(item.evidenceTypes).includes("announcement")) return false;
+  if (arrayValue(item.evidenceGaps).some((gap) => /缺财报|缺公司公告/.test(gap))) return false;
   if (!/增长|涨价|景气|利润|营收|需求|订单|放量|周期/.test(text)) return false;
   if (/地产|房地产|光伏|煤炭|燃油车|电网|电力|输变电|配网|衰退|亏损扩大|过剩/.test(text)) return false;
   if (item.riskLevel === "高") return false;
@@ -2481,25 +2495,44 @@ function previousRadarTitles(scan) {
 
 function buildChangeLog(previousScan, scan) {
   if (!previousScan) return ["首次生成雷达扫描，后续刷新将与本次结果比较并说明变化原因。"];
-  const previous = radarItemTitleMap(previousScan);
-  const current = radarItemTitleMap(scan);
-  const added = [...current.entries()].filter(([key]) => !previous.has(key)).map(([, title]) => title);
-  const retained = [...current.entries()].filter(([key]) => previous.has(key)).map(([, title]) => title);
-  const removed = [...previous.entries()].filter(([key]) => !current.has(key)).map(([, title]) => title);
+  const previous = radarItemStageMap(previousScan);
+  const current = radarItemStageMap(scan);
+  const added = [...current.entries()].filter(([key]) => !previous.has(key)).map(([, item]) => item);
+  const changed = [...current.entries()]
+    .filter(([key, item]) => previous.has(key) && previous.get(key).stage !== item.stage)
+    .map(([key, item]) => ({ previous: previous.get(key), current: item }));
+  const upgraded = changed.filter(({ previous, current }) => (STAGE_PRIORITY[current.stage] ?? 0) > (STAGE_PRIORITY[previous.stage] ?? 0));
+  const downgraded = changed.filter(({ previous, current }) => (STAGE_PRIORITY[current.stage] ?? 0) < (STAGE_PRIORITY[previous.stage] ?? 0));
+  const retained = [...current.entries()].filter(([key, item]) => previous.has(key) && previous.get(key).stage === item.stage).map(([, item]) => item);
+  const removed = [...previous.entries()].filter(([key]) => !current.has(key)).map(([, item]) => item);
   return [
-    ...added.slice(0, 8).map((title) => `新增：${title}。`),
-    ...retained.slice(0, 8).map((title) => `维持：${title}。`),
-    ...removed.slice(0, 8).map((title) => `撤销或降级：${title}。`),
+    ...added.slice(0, 8).map((item) => `新增：${item.title}（${item.stage}）。`),
+    ...upgraded.slice(0, 8).map(({ previous, current }) => `升级：${current.title}（${previous.stage} → ${current.stage}）。`),
+    ...downgraded.slice(0, 8).map(({ previous, current }) => `降级：${current.title}（${previous.stage} → ${current.stage}）。`),
+    ...retained.slice(0, 8).map((item) => `维持：${item.title}（${item.stage}）。`),
+    ...removed.slice(0, 8).map((item) => `撤销：${item.title}（上次 ${item.stage}）。`),
   ].filter(Boolean);
 }
 
-function radarItemTitleMap(scan) {
+function radarItemStageMap(scan) {
   const result = new Map();
-  const items = [...arrayValue(scan.solidGrowth), ...arrayValue(scan.sustainability), ...arrayValue(scan.bubbleRisks), ...arrayValue(scan.upcomingGrowth), ...arrayValue(scan.decliningIndustries)];
-  for (const item of items) {
-    const key = primaryRadarItemKey(item);
-    const title = stringValue(item.title);
-    if (key && title && !result.has(key)) result.set(key, title);
+  for (const [stage, items] of [
+    ["扎实增长", scan.solidGrowth],
+    ["继续观察", scan.sustainability],
+    ["泡沫风险", scan.bubbleRisks],
+    ["即将增长", scan.upcomingGrowth],
+    ["衰退", scan.decliningIndustries],
+  ]) {
+    for (const item of arrayValue(items)) {
+      const key = primaryRadarItemKey(item);
+      const title = stringValue(item.title);
+      if (!key || !title) continue;
+      const itemStage = stageForRadarSectionItem(item, stage);
+      const existing = result.get(key);
+      if (!existing || (STAGE_PRIORITY[itemStage] ?? 0) >= (STAGE_PRIORITY[existing.stage] ?? 0)) {
+        result.set(key, { title, stage: itemStage });
+      }
+    }
   }
   return result;
 }
