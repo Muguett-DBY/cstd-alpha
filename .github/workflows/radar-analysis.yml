@@ -33,10 +33,59 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Validate queued radar job
+        id: validate_job
+        run: |
+          mkdir -p dist-radar
+          npx wrangler kv key get "radar-analysis:job:${RADAR_JOB_ID}" \
+            --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
+            --remote > dist-radar/job-current.json || true
+          node <<'NODE'
+          const fs = require("fs");
+          const jobId = process.env.RADAR_JOB_ID;
+          const raw = fs.existsSync("dist-radar/job-current.json")
+            ? fs.readFileSync("dist-radar/job-current.json", "utf8").trim()
+            : "";
+          if (!raw || raw === "null") {
+            throw new Error(`No queued radar job was found in KV for ${jobId}; refusing to run DeepSeek.`);
+          }
+          let job;
+          try {
+            job = JSON.parse(raw);
+          } catch (error) {
+            throw new Error(`Queued radar job ${jobId} is not valid JSON; refusing to run DeepSeek.`);
+          }
+          if (!job || job.id !== jobId) {
+            throw new Error(`Radar job id mismatch for ${jobId}; refusing to run DeepSeek.`);
+          }
+          if (!/^radar-\d+-[0-9a-f-]{8}$/i.test(job.id)) {
+            throw new Error(`Radar job ${jobId} was not created by the website scan endpoint; refusing to run DeepSeek.`);
+          }
+          if (job.status !== "queued") {
+            throw new Error(`Radar job ${jobId} is ${job.status}, not queued; refusing to run DeepSeek.`);
+          }
+          const updatedAt = Date.parse(job.updatedAt || "");
+          if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 60 * 60 * 1000) {
+            throw new Error(`Radar job ${jobId} is stale; refusing to run DeepSeek.`);
+          }
+          console.log(`Validated queued website radar job ${jobId}.`);
+          NODE
+
       - name: Mark radar job running
         run: |
           mkdir -p dist-radar
-          node -e "const fs=require('fs'); const now=new Date().toISOString(); const job={id:process.env.RADAR_JOB_ID,status:'running',createdAt:now,updatedAt:now,message:'后台深度分析运行中。'}; fs.writeFileSync('dist-radar/job-running.json', JSON.stringify(job));"
+          node <<'NODE'
+          const fs = require("fs");
+          const now = new Date().toISOString();
+          const current = JSON.parse(fs.readFileSync("dist-radar/job-current.json", "utf8"));
+          const job = {
+            ...current,
+            status: "running",
+            updatedAt: now,
+            message: "后台深度分析运行中。"
+          };
+          fs.writeFileSync("dist-radar/job-running.json", JSON.stringify(job));
+          NODE
           npx wrangler kv key put "radar-analysis:job:${RADAR_JOB_ID}" \
             --path dist-radar/job-running.json \
             --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
@@ -88,10 +137,23 @@ jobs:
             --file dist-radar/radar-history.sql
 
       - name: Mark radar job failed
-        if: failure()
+        if: failure() && steps.validate_job.outcome == 'success'
         run: |
           mkdir -p dist-radar
-          node -e "const fs=require('fs'); const now=new Date().toISOString(); const job={id:process.env.RADAR_JOB_ID,status:'failed',createdAt:now,updatedAt:now,message:'本次刷新失败，已保留上次扫描。'}; fs.writeFileSync('dist-radar/job-failed.json', JSON.stringify(job));"
+          node <<'NODE'
+          const fs = require("fs");
+          const now = new Date().toISOString();
+          const current = fs.existsSync("dist-radar/job-current.json")
+            ? JSON.parse(fs.readFileSync("dist-radar/job-current.json", "utf8"))
+            : { id: process.env.RADAR_JOB_ID, createdAt: now };
+          const job = {
+            ...current,
+            status: "failed",
+            updatedAt: now,
+            message: "本次刷新失败，已保留上次扫描。"
+          };
+          fs.writeFileSync("dist-radar/job-failed.json", JSON.stringify(job));
+          NODE
           npx wrangler kv key put "radar-analysis:job:${RADAR_JOB_ID}" \
             --path dist-radar/job-failed.json \
             --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \

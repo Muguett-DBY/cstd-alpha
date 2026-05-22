@@ -5,6 +5,18 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("background radar analyzer", () => {
+  test("workflow refuses to run DeepSeek unless a fresh queued website job exists", () => {
+    const workflow = readFileSync(".github/workflows/radar-analysis.yml", "utf8");
+    const validateIndex = workflow.indexOf("Validate queued radar job");
+    const deepSeekIndex = workflow.indexOf("Run DeepSeek radar analysis");
+
+    expect(validateIndex).toBeGreaterThanOrEqual(0);
+    expect(deepSeekIndex).toBeGreaterThan(validateIndex);
+    expect(workflow).toContain('job.status !== "queued"');
+    expect(workflow).toContain("refusing to run DeepSeek");
+    expect(workflow).toContain("steps.validate_job.outcome == 'success'");
+  });
+
   test("reads full evidence facts, previous radar, and writes a normalized radar cache payload", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-"));
     const evidencePath = join(workdir, "evidence.json");
