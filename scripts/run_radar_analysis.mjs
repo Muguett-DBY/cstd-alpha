@@ -589,11 +589,11 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const previousTitles = previousRadarTitles(previousScan);
   const unchangedIndustries = new Set(industryScope.unchanged.map((packet) => packet.industry));
   const cleanedSections = cleanRadarSections({
-    solidGrowth: reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest, "solidGrowth"), previousScan?.solidGrowth, unchangedIndustries, digest),
-    sustainability: reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest, "sustainability"), previousScan?.sustainability, unchangedIndustries, digest),
-    bubbleRisks: reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest, "bubbleRisks"), previousScan?.bubbleRisks, unchangedIndustries, digest),
-    upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest, "upcomingGrowth"), previousScan?.upcomingGrowth, unchangedIndustries, digest),
-    decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest, "decliningIndustries"), previousScan?.decliningIndustries, unchangedIndustries, digest),
+    solidGrowth: reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest, "solidGrowth"), previousScan?.solidGrowth, unchangedIndustries, digest, "solidGrowth"),
+    sustainability: reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest, "sustainability"), previousScan?.sustainability, unchangedIndustries, digest, "sustainability"),
+    bubbleRisks: reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest, "bubbleRisks"), previousScan?.bubbleRisks, unchangedIndustries, digest, "bubbleRisks"),
+    upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest, "upcomingGrowth"), previousScan?.upcomingGrowth, unchangedIndustries, digest, "upcomingGrowth"),
+    decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest, "decliningIndustries"), previousScan?.decliningIndustries, unchangedIndustries, digest, "decliningIndustries"),
   });
   const balancedSections = rebalanceRadarSections(cleanedSections, industryScope, digest);
   const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = balancedSections;
@@ -1530,7 +1530,7 @@ function radarItemQuality(item) {
   return confidence * 10 + strength + evidenceWeight + sourceScore + currentBonus - (item.evidenceGaps?.length ?? 0) * 3;
 }
 
-function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustries, digest) {
+function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustries, digest, section = "") {
   const seen = new Set(currentItems.map((item) => item.title));
   const reusable = arrayValue(previousItems)
     .filter((item) => isRecord(item) && !seen.has(item.title) && stringArray(item.industries).some((industry) => unchangedIndustries.has(industry)))
@@ -1538,7 +1538,7 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
     .map((item) => {
       const conclusionStrength = enumValue(item.conclusionStrength, CONCLUSION_STRENGTHS, "观察");
       const sourceIds = sourceIdsForItem(item, digest);
-      return {
+      return refineRadarItemTopic({
         ...item,
         companies: evidenceBackedCompanies(ahCompanies(item.companies), sourceIds, digest, item).slice(0, 6),
         thesis: conclusionStrength === "正式结论" ? fixRadarText(item.thesis) : softenObservationText(item.thesis),
@@ -1546,7 +1546,7 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
         conclusionStrength,
         sourceIds,
         changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
-      };
+      }, section);
     });
   return [...currentItems, ...reusable];
 }
