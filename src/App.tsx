@@ -1358,7 +1358,7 @@ function RadarSectionNav() {
 
 function RadarBrief({ radar }: { radar: RadarScan }) {
   const focusCards = [
-    { label: "高置信增长", item: highestPriorityRadarItem(radar.solidGrowth) },
+    { label: "增长重点", item: highestPriorityRadarItem(radar.solidGrowth) },
     { label: "泡沫/衰退风险", item: highestPriorityRadarItem([...radar.bubbleRisks, ...radar.decliningIndustries]) },
     { label: "即将进入增长期", item: highestPriorityRadarItem(radar.upcomingGrowth) },
   ].filter((entry): entry is { label: string; item: RadarItem } => Boolean(entry.item));

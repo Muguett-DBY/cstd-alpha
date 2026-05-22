@@ -901,24 +901,10 @@ function rebalanceRadarSections(sections, industryScope, digest) {
     balanced.solidGrowth = balanced.solidGrowth.filter((item) => item.conclusionStrength === "正式结论");
     balanced.sustainability = [...weakSolidGrowth, ...balanced.sustainability];
   }
-  if (balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论")) return ensureSustainabilityObservations(balanced, industryScope, digest);
-
-  const blockingKeys = new Set(
-    [balanced.solidGrowth, balanced.bubbleRisks, balanced.decliningIndustries]
-      .flatMap((items) => arrayValue(items))
-      .filter((item) => item.conclusionStrength === "正式结论")
-      .flatMap((item) => [item.title, ...arrayValue(item.industries)])
-      .flatMap((value) => stageLookupKeys(value)),
-  );
-  const candidates = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
-    .filter((packet) => qualifiesForRuleBackedSolidGrowth(packet, blockingKeys))
-    .map((packet) => ruleBackedSolidGrowthItem(packet, digest))
-    .filter(Boolean)
-    .sort((left, right) => radarItemQuality(right) - radarItemQuality(left))
-    .slice(0, 2);
+  const candidates = supplementalSolidGrowthCandidates(balanced, industryScope, digest);
 
   if (!candidates.length) {
-    const promoted = promoteBestGrowthObservation(balanced);
+    const promoted = balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论") ? null : promoteBestGrowthObservation(balanced);
     return ensureSustainabilityObservations(promoted ?? balanced, industryScope, digest);
   }
   const promotedKeys = new Set(candidates.flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
@@ -928,27 +914,48 @@ function rebalanceRadarSections(sections, industryScope, digest) {
   return ensureSustainabilityObservations(balanced, industryScope, digest);
 }
 
+function supplementalSolidGrowthCandidates(sections, industryScope, digest) {
+  const existingFormalCount = arrayValue(sections.solidGrowth).filter((item) => item.conclusionStrength === "正式结论").length;
+  const targetFormalCount = 3;
+  const slots = Math.max(0, targetFormalCount - existingFormalCount);
+  if (!slots) return [];
+  const blockingKeys = new Set(
+    [sections.solidGrowth, sections.bubbleRisks, sections.decliningIndustries]
+      .flatMap((items) => arrayValue(items))
+      .filter((item) => item.conclusionStrength === "正式结论")
+      .flatMap((item) => [item.title, ...arrayValue(item.industries)])
+      .flatMap(identityKeys),
+  );
+  return [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
+    .filter((packet) => qualifiesForRuleBackedSolidGrowth(packet, blockingKeys))
+    .map((packet) => ruleBackedSolidGrowthItem(packet, digest))
+    .filter(Boolean)
+    .sort((left, right) => radarItemQuality(right) - radarItemQuality(left))
+    .slice(0, slots);
+}
+
 function ensureSustainabilityObservations(sections, industryScope, digest) {
   const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
-  const existingKeys = new Set(arrayValue(balanced.sustainability).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
+  const existingKeys = new Set(arrayValue(balanced.sustainability).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)));
+  const targetSustainabilityCount = 6;
   const companionItems = [
     ...arrayValue(balanced.solidGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "扎实增长")),
     ...arrayValue(balanced.upcomingGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "即将增长")),
   ]
     .filter(Boolean)
-    .filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => existingKeys.has(key)));
+    .filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap(identityKeys).some((key) => existingKeys.has(key)));
 
   for (const item of companionItems) {
     balanced.sustainability.push(item);
-    for (const key of [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))) existingKeys.add(key);
-    if (balanced.sustainability.length >= 4) break;
+    for (const key of [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)) existingKeys.add(key);
+    if (balanced.sustainability.length >= targetSustainabilityCount) break;
   }
 
-  if (balanced.sustainability.length < 3) {
+  if (balanced.sustainability.length < targetSustainabilityCount) {
     const sectionKeys = new Set(
       [balanced.solidGrowth, balanced.upcomingGrowth, balanced.bubbleRisks, balanced.decliningIndustries, balanced.sustainability]
         .flatMap((items) => arrayValue(items))
-        .flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))),
+        .flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)),
     );
     const packetItems = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
       .filter((packet) => qualifiesForSustainabilityObservation(packet, sectionKeys))
@@ -957,7 +964,7 @@ function ensureSustainabilityObservations(sections, industryScope, digest) {
       .sort((left, right) => radarItemQuality(right) - radarItemQuality(left));
     for (const item of packetItems) {
       balanced.sustainability.push(item);
-      if (balanced.sustainability.length >= 4) break;
+      if (balanced.sustainability.length >= targetSustainabilityCount) break;
     }
   }
 
@@ -980,7 +987,7 @@ function sustainabilityObservationFromRadarItem(item, sourceStage) {
 }
 
 function qualifiesForSustainabilityObservation(packet, sectionKeys) {
-  const keys = stageLookupKeys(packet.industry);
+  const keys = identityKeys(packet.industry);
   if (keys.some((key) => sectionKeys.has(key))) return false;
   if (itemDeclineIsDirect(packet.industry) || isDirectStructuralDecline(packet)) return false;
   const scores = scoreIndustryPacket(packet);
@@ -991,7 +998,7 @@ function qualifiesForSustainabilityObservation(packet, sectionKeys) {
   if ((packet.sourceCount ?? 0) < 4 || growthPressure < 52 || scores.evidence < 55) return false;
   if (!reliableEvidence || !hasCompany) return false;
   if (scores.bubbleRisk >= 60 || scores.declineRisk >= 70) return false;
-  if (arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证|缺价格/.test(gap))) return false;
+  if (arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证/.test(gap))) return false;
   return !hasNegativeFinancialDominance(packet);
 }
 
@@ -1452,7 +1459,7 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
 function buildIndustryStageMap(sections) {
   const stageByIndustry = new Map();
   const setStage = (key, stage) => {
-    const keys = unique([cleanStageKey(key), canonicalIndustryKey(key)].filter(Boolean));
+    const keys = identityKeys(key);
     for (const normalized of keys) {
       const existing = stageByIndustry.get(normalized);
       if (!existing || (STAGE_PRIORITY[stage] ?? 0) >= (STAGE_PRIORITY[existing] ?? 0)) stageByIndustry.set(normalized, stage);
@@ -1467,9 +1474,9 @@ function buildIndustryStageMap(sections) {
   ]) {
     for (const item of items) {
       const itemStage = stageForRadarSectionItem(item, stage);
-      for (const key of stageLookupKeys(item.title)) setStage(key, itemStage);
+      for (const key of identityKeys(item.title)) setStage(key, itemStage);
       for (const industry of item.industries ?? []) {
-        for (const key of stageLookupKeys(industry)) setStage(key, itemStage);
+        for (const key of identityKeys(industry)) setStage(key, itemStage);
       }
     }
   }
@@ -1555,12 +1562,10 @@ function reconcileScoresWithStage(scores, stage) {
 
 function stageForIndustryPacket(packet, stageByIndustry) {
   const keys = unique([
-    canonicalIndustryKey(packet.industry),
-    canonicalIndustryKey(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`),
-    ...stageLookupKeys(packet.industry),
-    ...stageLookupKeys(packet.group),
-    ...arrayValue(packet.themes).flatMap((theme) => stageLookupKeys(theme)),
-    ...stageLookupKeys(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`),
+    ...identityKeys(packet.industry),
+    ...identityKeys(`${packet.group ?? ""} ${packet.industry ?? ""} ${arrayValue(packet.themes).join(" ")}`),
+    ...identityKeys(packet.group),
+    ...arrayValue(packet.themes).flatMap(identityKeys),
   ]);
   let selected = "";
   for (const key of keys) {
@@ -1582,6 +1587,10 @@ function stageLookupKeys(value) {
 
 function cleanStageKey(value) {
   return stringValue(value).replace(/\s+/g, "");
+}
+
+function identityKeys(value) {
+  return unique([cleanStageKey(value), canonicalIndustryKey(value)].filter(Boolean));
 }
 
 function fallbackIndustryStage(packet, scores) {
