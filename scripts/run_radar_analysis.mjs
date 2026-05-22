@@ -939,15 +939,18 @@ function ensureSustainabilityObservations(sections, industryScope, digest) {
   const existingKeys = new Set(arrayValue(balanced.sustainability).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)));
   const targetSustainabilityCount = 6;
   const companionItems = [
-    ...arrayValue(balanced.solidGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "扎实增长")),
-    ...arrayValue(balanced.upcomingGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "即将增长")),
-  ]
-    .filter(Boolean)
-    .filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap(identityKeys).some((key) => existingKeys.has(key)));
+    ...arrayValue(balanced.solidGrowth).flatMap((item) => sustainabilityObservationsFromRadarItem(item, "扎实增长")),
+    ...arrayValue(balanced.upcomingGrowth).flatMap((item) => sustainabilityObservationsFromRadarItem(item, "即将增长")),
+  ].filter(Boolean);
 
   for (const item of companionItems) {
+    const itemKeys = [item.title, ...arrayValue(item.industries)].flatMap(identityKeys);
+    balanced.sustainability = balanced.sustainability.filter((existing) => {
+      const existingItemKeys = new Set([existing.title, ...arrayValue(existing.industries)].flatMap(identityKeys));
+      return !itemKeys.some((key) => existingItemKeys.has(key));
+    });
     balanced.sustainability.push(item);
-    for (const key of [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)) existingKeys.add(key);
+    for (const key of itemKeys) existingKeys.add(key);
     if (balanced.sustainability.length >= targetSustainabilityCount) break;
   }
 
@@ -971,13 +974,20 @@ function ensureSustainabilityObservations(sections, industryScope, digest) {
   return balanced;
 }
 
-function sustainabilityObservationFromRadarItem(item, sourceStage) {
+function sustainabilityObservationsFromRadarItem(item, sourceStage) {
   if (!item?.sourceIds?.length || !item.companies?.length) return null;
+  const industries = unique(arrayValue(item.industries)).slice(0, 3);
+  const targets = industries.length ? industries : [item.title];
+  return targets.map((industry) => sustainabilityObservationFromRadarItemForIndustry(item, sourceStage, industry));
+}
+
+function sustainabilityObservationFromRadarItemForIndustry(item, sourceStage, industry) {
   const gaps = unique([...arrayValue(item.evidenceGaps), ...(item.durability === "短期" || sourceStage === "即将增长" ? ["需后续财报/订单验证"] : [])]);
-  const titleBase = arrayValue(item.industries)[0] || item.title;
+  const titleBase = industry || item.title;
   return {
     ...item,
     title: `${titleBase}增长可持续性`,
+    industries: [titleBase],
     thesis: `${fixRadarText(item.thesis)} ${gaps.length ? `可持续性仍需关注：${gaps.slice(0, 3).join("、")}。` : "当前证据支持继续跟踪其中期可持续性。"}`,
     conclusionStrength: "观察",
     confidence: item.confidence === "低" ? "低" : "中",
@@ -1322,13 +1332,16 @@ function hasEnoughRadarItemEvidence(item, section = "") {
 }
 
 function dedupeRadarItems(items) {
-  const byKey = new Map();
-  for (const item of items) {
-    const key = primaryRadarItemKey(item);
-    const existing = byKey.get(key);
-    if (!existing || radarItemQuality(item) > radarItemQuality(existing)) byKey.set(key, item);
+  const selected = [];
+  for (const item of [...items].sort((left, right) => radarItemQuality(right) - radarItemQuality(left))) {
+    const keys = radarItemKeys(item);
+    const overlaps = selected.some((existing) => {
+      const existingKeys = new Set(radarItemKeys(existing));
+      return keys.some((key) => existingKeys.has(key));
+    });
+    if (!overlaps) selected.push(item);
   }
-  return [...byKey.values()];
+  return selected;
 }
 
 function removeCrossSectionConflicts(sections) {
