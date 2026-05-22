@@ -589,11 +589,11 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
   const previousTitles = previousRadarTitles(previousScan);
   const unchangedIndustries = new Set(industryScope.unchanged.map((packet) => packet.industry));
   const cleanedSections = cleanRadarSections({
-    solidGrowth: reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest), previousScan?.solidGrowth, unchangedIndustries, digest),
-    sustainability: reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest), previousScan?.sustainability, unchangedIndustries, digest),
-    bubbleRisks: reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest), previousScan?.bubbleRisks, unchangedIndustries, digest),
-    upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest), previousScan?.upcomingGrowth, unchangedIndustries, digest),
-    decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest), previousScan?.decliningIndustries, unchangedIndustries, digest),
+    solidGrowth: reuseUnchangedRadarItems(radarItems(record.solidGrowth, previousTitles, digest, "solidGrowth"), previousScan?.solidGrowth, unchangedIndustries, digest),
+    sustainability: reuseUnchangedRadarItems(radarItems(record.sustainability, previousTitles, digest, "sustainability"), previousScan?.sustainability, unchangedIndustries, digest),
+    bubbleRisks: reuseUnchangedRadarItems(radarItems(record.bubbleRisks, previousTitles, digest, "bubbleRisks"), previousScan?.bubbleRisks, unchangedIndustries, digest),
+    upcomingGrowth: reuseUnchangedRadarItems(radarItems(record.upcomingGrowth, previousTitles, digest, "upcomingGrowth"), previousScan?.upcomingGrowth, unchangedIndustries, digest),
+    decliningIndustries: reuseUnchangedRadarItems(radarItems(record.decliningIndustries, previousTitles, digest, "decliningIndustries"), previousScan?.decliningIndustries, unchangedIndustries, digest),
   });
   const balancedSections = rebalanceRadarSections(cleanedSections, industryScope, digest);
   const { solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries } = balancedSections;
@@ -734,7 +734,7 @@ function conservativeConfidenceSummary(summary, breakdown = {}) {
   return fixRadarText(base);
 }
 
-function radarItems(value, previousTitles, digest) {
+function radarItems(value, previousTitles, digest, section = "") {
   return arrayValue(value)
     .map((item) => {
       const record = isRecord(item) ? item : {};
@@ -746,7 +746,8 @@ function radarItems(value, previousTitles, digest) {
       const companies = evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest, record).slice(0, 6);
       const evidenceTypes = enumArray(record.evidenceTypes, Object.keys(EVIDENCE_WEIGHTS));
       const signalSplit = splitRadarSignals(record);
-      const normalized = normalizeRadarItemCertainty(
+      const normalized = refineRadarItemTopic(
+        normalizeRadarItemCertainty(
         {
           title,
           industries: stringArray(record.industries).slice(0, 5),
@@ -770,6 +771,8 @@ function radarItems(value, previousTitles, digest) {
           turningPoints: signalSplit.turningPoints,
         },
         digest,
+        ),
+        section,
       );
       return {
         ...normalized,
@@ -822,6 +825,20 @@ function normalizeRadarItemCertainty(item, digest) {
     evidenceGaps: [...gapSet],
     supportingSourceCount: sourceCount,
   };
+}
+
+function refineRadarItemTopic(item, section = "") {
+  const text = `${item.title} ${item.thesis} ${arrayValue(item.industries).join(" ")} ${arrayValue(item.companies).join(" ")} ${arrayValue(item.evidence).join(" ")}`;
+  const isStorageBacked = /存储|DRAM|NAND|HBM|德明利|佰维存储|兆易创新|北京君正|江波龙/.test(text);
+  if (!/存储芯片/.test(item.title) && isStorageBacked && /半导体|AI算力|芯片|存储/.test(text)) {
+    return {
+      ...item,
+      title: section === "sustainability" ? "存储芯片增长可持续性" : section === "upcomingGrowth" ? "存储芯片增长启动" : section === "bubbleRisks" ? "存储芯片泡沫风险" : "存储芯片景气与业绩共振",
+      industries: ["存储芯片"],
+      changeReason: fixRadarText(item.changeReason).replace(/半导体\/AI算力|AI算力与存储|半导体/g, "存储芯片"),
+    };
+  }
+  return item;
 }
 
 function positiveFinancialCompaniesForPackets(packets) {
