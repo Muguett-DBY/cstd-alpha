@@ -904,6 +904,188 @@ describe("background radar analyzer", () => {
     expect(item?.evidenceGaps).toContain("盈利分化待验证");
   });
 
+  test("keeps source-backed company evidence in sustainability even when packet candidates are sparse", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-source-backed-sustainability-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const sourceBacked = [
+      {
+        source: "东方财富业绩报表",
+        query: "军工 航空航天 财报 营收 净利润",
+        title: "中航沈飞(600760.SH) 2026Q1 营收同比 31.20%，净利润同比 42.80%",
+        summary: "公司级财报：航空装备需求带动收入和利润增长。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "中航沈飞",
+        code: "600760.SH",
+        market: "A股",
+        industry: "军工/航空航天",
+        weight: 4,
+        score: 92,
+        publishedAt: "2026-05-20T00:00:00Z",
+      },
+      {
+        source: "AnySearch",
+        query: "军工 航空航天 订单 景气",
+        title: "航空装备订单推动军工链条景气改善",
+        summary: "外部搜索线索：航空装备需求改善，但仍需订单与现金流验证。",
+        sourceType: "news",
+        signalType: "external_search",
+        company: "中航沈飞",
+        code: "600760.SH",
+        market: "A股",
+        industry: "军工/航空航天",
+        weight: 2,
+        score: 80,
+        publishedAt: "2026-05-20T00:00:00Z",
+      },
+    ];
+    evidence.sources.push(...sourceBacked);
+    evidence.industryPackets.push({
+      group: "高端制造",
+      industry: "军工/航空航天",
+      status: "scanned",
+      evidenceHash: "hash-optical-source-backed",
+      sourceCount: 12,
+      evidenceTypes: ["announcement", "news", "official"],
+      signalTypes: ["financial_metric", "external_search", "industry_stat"],
+      evidenceGaps: ["缺多源验证"],
+      themes: ["订单恢复", "航空装备"],
+      sources: sourceBacked,
+      financialFacts: [],
+      industryFacts: [{ industry: "军工/航空航天", metric: "订单景气", value: 1, source: "公开统计" }],
+      companyCandidates: [],
+    });
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    output.bubbleRisks = [];
+    output.decliningIndustries = [];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-source-backed-sustainability",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { sustainability?: Array<{ title?: string; industries?: string[]; companies?: string[]; evidenceGaps?: string[]; conclusionStrength?: string }> };
+    };
+    const item = radarCache.radar?.sustainability?.find((entry) => entry.industries?.includes("军工/航空航天"));
+    expect(item).toMatchObject({ conclusionStrength: "观察", companies: ["中航沈飞"] });
+    expect(item?.evidenceGaps).toContain("缺多源验证");
+  });
+
+  test("keeps packet-priority sources and extracts listed A-share companies for growth observations", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-packet-priority-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const sourceOne = {
+      source: "Google News",
+      query: "光模块/CPO 光模块 CPO 800G 1.6T 光通信 财报 价格 销量 订单",
+      title: "中际旭创、新易盛、网传Oracle主供商现身光博会 1.6T样品集中亮相",
+      url: "https://example.com/cpo-company-news",
+      sourceType: "news",
+      signalType: "external_search",
+      publishedAt: "2026-05-20T00:00:00Z",
+    };
+    const sourceTwo = {
+      source: "AnySearch",
+      query: "光模块/CPO 光模块 CPO 800G 1.6T 光通信 价格 库存 产能 销量",
+      title: "LightCounting 预测 AI 集群光模块订单和需求同比增长",
+      url: "https://example.com/cpo-industry-data",
+      sourceType: "official",
+      signalType: "industry_stat",
+      industry: "光模块/CPO",
+      publishedAt: "2026-05-19T00:00:00Z",
+    };
+    const evidence = {
+      ...evidenceSnapshot(),
+      sources: [sourceOne, sourceTwo],
+      financialFacts: [],
+      industryFacts: [],
+      companyCandidates: [],
+      industryPackets: [
+        {
+          group: "科技成长",
+          industry: "光模块/CPO",
+          status: "scanned",
+          evidenceHash: "hash-cpo-observation",
+          sourceCount: 8,
+          evidenceTypes: ["news", "announcement", "official"],
+          signalTypes: ["external_search", "financial_metric", "industry_stat"],
+          evidenceGaps: [],
+          themes: ["光模块升级", "AI数据中心"],
+          sources: [sourceOne, sourceTwo],
+          financialFacts: [],
+          industryFacts: [
+            { industry: "光模块/CPO", signalType: "industry_stat", title: "800G/1.6T 光模块需求提升" },
+            { industry: "光模块/CPO", signalType: "industry_stat", title: "AI 数据中心光模块订单同比增长" },
+          ],
+          companyCandidates: [],
+        },
+      ],
+    };
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    output.bubbleRisks = [];
+    output.decliningIndustries = [];
+
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify({ version: "v2", radar: null }), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-cpo-observation",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { sustainability?: Array<{ title?: string; companies?: string[]; sourceIds?: string[]; conclusionStrength?: string }> };
+    };
+    const item = radarCache.radar?.sustainability?.find((entry) => /光模块\/CPO/.test(entry.title ?? ""));
+    expect(item).toMatchObject({ conclusionStrength: "观察", companies: ["中际旭创", "新易盛"] });
+    expect(item?.sourceIds?.length).toBeGreaterThanOrEqual(2);
+  });
+
   test("rejects unsuitable or context-mismatched representative companies", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-company-filter-"));
     const evidencePath = join(workdir, "evidence.json");
