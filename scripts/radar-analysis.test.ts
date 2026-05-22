@@ -367,6 +367,53 @@ describe("background radar analyzer", () => {
     });
   });
 
+  test("parses fenced DeepSeek JSON content without failing the background scan", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-fenced-json-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const responsePath = join(workdir, "deepseek-response.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    writeFileSync(evidencePath, JSON.stringify(evidenceSnapshot()), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(
+      responsePath,
+      JSON.stringify({
+        choices: [{ message: { content: `这里是模型输出：\n\n\`\`\`json\n${JSON.stringify(modelOutput())}\n\`\`\`\n` } }],
+        usage: {
+          prompt_tokens: 1000,
+          prompt_cache_hit_tokens: 900,
+          prompt_cache_miss_tokens: 100,
+          completion_tokens: 120,
+          total_tokens: 1120,
+        },
+      }),
+      "utf8",
+    );
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-fenced-json",
+        "--mock-deepseek-response",
+        responsePath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as { radar?: { title?: string; sourceCount?: number } };
+    expect(radarCache.radar?.title).toBe("行业雷达扫描");
+    expect(radarCache.radar?.sourceCount).toBeGreaterThan(0);
+  });
+
   test("does not let a low-base property item promote the property chain into solid growth", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-property-"));
     const evidencePath = join(workdir, "evidence.json");

@@ -307,15 +307,106 @@ async function callDeepSeek(body) {
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`DeepSeek failed: ${response.status} ${text.slice(0, 400)}`);
-  return parseDeepSeekResponsePayload(JSON.parse(text));
+  const payload = JSON.parse(text);
+  try {
+    return parseDeepSeekResponsePayload(payload);
+  } catch (error) {
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content?.trim()) throw error;
+    const repaired = await repairDeepSeekJsonContent(content, apiKey);
+    return {
+      output: parseModelJsonContent(repaired.outputText),
+      tokenUsage: mergeDeepSeekUsage(normalizeDeepSeekUsage(payload.usage), repaired.tokenUsage),
+    };
+  }
 }
 
 function parseDeepSeekResponsePayload(payload) {
   const content = payload.choices?.[0]?.message?.content;
   if (!content?.trim()) throw new Error("DeepSeek returned empty content");
   return {
-    output: JSON.parse(jsonrepair(content)),
+    output: parseModelJsonContent(content),
     tokenUsage: normalizeDeepSeekUsage(payload.usage),
+  };
+}
+
+function parseModelJsonContent(content) {
+  const candidates = jsonContentCandidates(content);
+  const errors = [];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(jsonrepair(candidate));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  const lastError = errors.at(-1);
+  throw new Error(lastError?.message || "DeepSeek returned invalid JSON");
+}
+
+function jsonContentCandidates(content) {
+  const text = String(content).trim();
+  const withoutFence = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const fenced = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)].map((match) => match[1].trim()).filter(Boolean);
+  const objectText = extractJsonObjectText(withoutFence);
+  return unique([text, withoutFence, ...fenced, objectText].filter(Boolean));
+}
+
+function extractJsonObjectText(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return "";
+  return text.slice(start, end + 1).trim();
+}
+
+async function repairDeepSeekJsonContent(content, apiKey) {
+  const repairBody = {
+    model: DEEPSEEK_MODEL,
+    response_format: { type: "json_object" },
+    stream: false,
+    temperature: 0,
+    max_tokens: 24000,
+    messages: [
+      {
+        role: "system",
+        content: "你是 JSON 修复器。只输出一个合法 JSON 对象，不要解释，不要新增事实，不要改写字段含义。",
+      },
+      {
+        role: "user",
+        content: `修复下面内容为合法 JSON。保持原有键和值，删除 Markdown、注释、尾随解释和非法片段：\n${String(content).slice(0, 160000)}`,
+      },
+    ],
+  };
+  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(repairBody),
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`DeepSeek JSON repair failed: ${response.status} ${text.slice(0, 400)}`);
+  const payload = JSON.parse(text);
+  const outputText = payload.choices?.[0]?.message?.content;
+  if (!outputText?.trim()) throw new Error("DeepSeek JSON repair returned empty content");
+  return { outputText, tokenUsage: normalizeDeepSeekUsage(payload.usage) };
+}
+
+function mergeDeepSeekUsage(primary, fallback) {
+  const promptTokens = (primary.promptTokens ?? 0) + (fallback.promptTokens ?? 0);
+  const promptCacheHitTokens = (primary.promptCacheHitTokens ?? 0) + (fallback.promptCacheHitTokens ?? 0);
+  const promptCacheMissTokens = (primary.promptCacheMissTokens ?? 0) + (fallback.promptCacheMissTokens ?? 0);
+  const completionTokens = (primary.completionTokens ?? 0) + (fallback.completionTokens ?? 0);
+  const totalTokens = (primary.totalTokens ?? 0) + (fallback.totalTokens ?? 0);
+  const cacheBase = promptCacheHitTokens + promptCacheMissTokens;
+  return {
+    promptTokens,
+    promptCacheHitTokens,
+    promptCacheMissTokens,
+    completionTokens,
+    totalTokens,
+    cacheHitRate: cacheBase > 0 ? Number((promptCacheHitTokens / cacheBase).toFixed(4)) : undefined,
   };
 }
 
