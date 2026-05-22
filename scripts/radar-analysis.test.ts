@@ -617,6 +617,171 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.upcomingGrowth?.some((item) => item.title === "存储芯片涨价周期")).toBe(false);
   });
 
+  test("promotes rich company-level semiconductor evidence without requiring price data", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-rich-semi-growth-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const semiSources = [
+      {
+        source: "东方财富业绩报表",
+        query: "半导体 财报 营收 净利润",
+        title: "德明利 2026Q1 营收同比 502.08%，净利润同比 4943.39%",
+        url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#001309",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        weight: 4,
+        company: "德明利",
+        code: "001309.SZ",
+        market: "A股",
+        industry: "半导体",
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "半导体 财报 营收 净利润",
+        title: "源杰科技 2025年营收同比 138.50%，净利润同比 3212.62%",
+        url: "https://data.eastmoney.com/bbsj/202512/yjbb.html#688498",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        weight: 4,
+        company: "源杰科技",
+        code: "688498.SH",
+        market: "A股",
+        industry: "半导体",
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "半导体 财报 营收 净利润",
+        title: "华虹公司 2026Q1 营收同比 18.22%，净利润同比 513.10%",
+        url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#688347",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        weight: 4,
+        company: "华虹公司",
+        code: "688347.SH",
+        market: "A股",
+        industry: "半导体",
+      },
+      {
+        source: "AnySearch",
+        query: "半导体 AI算力 财报 景气",
+        title: "AI算力需求推动半导体链条景气改善",
+        url: "https://anysearch.example.com/semi-ai",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 2,
+        industry: "半导体/AI算力",
+      },
+    ];
+    evidence.sources.push(...semiSources);
+    evidence.industryPackets.push({
+      group: "科技成长",
+      industry: "半导体/AI算力",
+      status: "scanned",
+      evidenceHash: "hash-rich-semi",
+      sourceCount: 12,
+      evidenceTypes: ["news", "announcement", "market"],
+      signalTypes: ["external_search", "financial_metric"],
+      evidenceGaps: ["缺价格"],
+      sources: semiSources,
+      financialFacts: [
+        { company: "德明利", code: "001309.SZ", market: "A股", industry: "半导体", metrics: { revenueYoy: 502.08, netProfitYoy: 4943.39, netProfit: 3346185437.62, operatingCashflowPerShare: -1.06 } },
+        { company: "源杰科技", code: "688498.SH", market: "A股", industry: "半导体", metrics: { revenueYoy: 138.5, netProfitYoy: 3212.62, netProfit: 190924031.75, operatingCashflowPerShare: 1.74 } },
+        { company: "华虹公司", code: "688347.SH", market: "A股", industry: "半导体", metrics: { revenueYoy: 18.22, netProfitYoy: 513.1, netProfit: 139562597, operatingCashflowPerShare: 0.52 } },
+        { company: "盛合晶微", code: "688820.SH", market: "A股", industry: "半导体", metrics: { revenueYoy: 13.13, netProfitYoy: 51.55, netProfit: 191328450.33, operatingCashflowPerShare: 0.36 } },
+      ],
+      industryFacts: [],
+      companyCandidates: [
+        { company: "德明利", code: "001309.SZ", market: "A股", industry: "半导体", evidenceStrength: 16, sourceTypes: ["announcement"] },
+        { company: "源杰科技", code: "688498.SH", market: "A股", industry: "半导体", evidenceStrength: 12, sourceTypes: ["announcement"] },
+        { company: "华虹公司", code: "688347.SH", market: "A股", industry: "半导体", evidenceStrength: 8, sourceTypes: ["announcement"] },
+      ],
+    });
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-rich-semi-growth",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
+        industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }>;
+      };
+    };
+
+    expect(radarCache.radar?.solidGrowth?.some((item) => item.title === "半导体/AI算力景气与业绩共振")).toBe(true);
+    const solid = radarCache.radar?.solidGrowth?.find((item) => item.title === "半导体/AI算力景气与业绩共振");
+    expect(solid).toMatchObject({ confidence: "中", conclusionStrength: "正式结论" });
+    expect(solid?.companies).toEqual(expect.arrayContaining(["源杰科技", "华虹公司"]));
+    expect(solid?.companies).not.toContain("德明利");
+    expect(solid?.evidenceGaps).toEqual(expect.arrayContaining(["缺价格"]));
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "半导体/AI算力")?.stage).toBe("扎实增长");
+  });
+
+  test("does not show a missing-financials packet as solid growth in the all-industry table", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-missing-financials-stage-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-missing-financials-stage",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }> };
+    };
+    expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "钢铁长材/板材")?.stage).not.toBe("扎实增长");
+  });
+
   test("rejects unsuitable or context-mismatched representative companies", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-company-filter-"));
     const evidencePath = join(workdir, "evidence.json");

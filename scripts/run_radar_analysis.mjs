@@ -30,6 +30,11 @@ const TOPIC_RULES = [
   ["机器人/AI应用", /机器人|人形机器人|具身智能|AI应用|大模型/i],
 ];
 const STAGE_ALIAS_RULES = [
+  ["半导体/AI算力", /半导体|AI算力|算力|芯片|晶圆|封测|存储|DRAM|NAND|HBM|光模块|PCB|CPO/i],
+  ["创新药/医疗服务", /创新药|医疗服务|医药|医疗|CXO|CRO|CDMO|制药|药/i],
+  ["电网设备", /电网|特高压|输变电|配网|变压器|电力设备|能源基础设施/i],
+  ["锂电储能", /锂电|储能|电池|碳酸锂|锂矿|锂盐/i],
+  ["航运物流", /航运|集运|油运|港口|物流|BDI|SCFI|CCFI/i],
   ["地产链", /地产链|房地产|地产开发|房地产开发|房地产服务|房企|保交楼|销售面积|新开工|竣工/i],
   ["传统燃油车/零部件", /传统燃油车|燃油车|汽车零部件/i],
   ["光伏产业链", /光伏|硅料|硅片|组件|逆变器|电池片/i],
@@ -775,8 +780,9 @@ function normalizeRadarItemCertainty(item, digest) {
   const hasExtremePercent = /低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test([item.title, item.thesis, ...item.evidence].join(" "));
   const gapSet = new Set(item.evidenceGaps);
   const packetBacked = packetSourceCount >= 6 && hasHardOrOfficial && hasAnnouncement && !gapSet.has("缺财报");
+  const lowBaseCrossChecked = Boolean(item._lowBaseCrossChecked) || relatedPackets.some((packet) => hasMultiplePositiveFinancialFacts(packet, 3));
   const formalReady = sourceCount >= 2 && ((hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) || packetBacked);
-  const lowBaseOnly = hasExtremePercent && (!packetBacked || isLowBaseSensitiveGrowthContext(item));
+  const lowBaseOnly = hasExtremePercent && !lowBaseCrossChecked && (!packetBacked || isLowBaseSensitiveGrowthContext(item));
   const highReady = sourceCount >= 3 && (hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) && !hasExtremePercent && !gapSet.has("缺多源验证");
   if (!formalReady || lowBaseOnly) gapSet.add("缺多源验证");
   if (hasExtremePercent && !gapSet.has("缺现金流")) gapSet.add("缺现金流");
@@ -785,8 +791,9 @@ function normalizeRadarItemCertainty(item, digest) {
   if (confidence === "高" && !highReady) confidence = "中";
   if (conclusionStrength === "正式结论" && (!formalReady || lowBaseOnly)) conclusionStrength = "观察";
   const thesis = conclusionStrength === "正式结论" ? item.thesis : softenObservationText(item.thesis);
+  const { _lowBaseCrossChecked, ...publicItem } = item;
   return {
-    ...item,
+    ...publicItem,
     thesis,
     confidence,
     conclusionStrength,
@@ -938,24 +945,29 @@ function qualifiesForRuleBackedSolidGrowth(packet, existingKeys) {
   const key = canonicalIndustryKey(packet.industry);
   if (!key || existingKeys.has(key) || existingKeys.has(cleanStageKey(packet.industry))) return false;
   if (itemDeclineIsDirect(packet.industry)) return false;
-  if (/电网|电力|创新药|医疗服务|CXO|消费电子|端侧AI|存储芯片|半导体|锂电|储能|锂矿|锂盐|水泥|建材|玻璃|白酒/.test(packet.industry)) return false;
+  if (/创新药|医疗服务|CXO|消费电子|端侧AI|锂电|储能|锂矿|锂盐|水泥|建材|玻璃|白酒/.test(packet.industry)) return false;
   const scores = scoreIndustryPacket(packet);
   const evidenceTypes = arrayValue(packet.evidenceTypes);
   const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
   const hasAnnouncement = evidenceTypes.includes("announcement");
+  const richCompanyValidation = hasMultiplePositiveFinancialFacts(packet, 3);
   const hasCompanyValidation =
     hasSustainableFinancialFact(packet) ||
     hasRevenueAndProfitGrowthFact(packet) ||
+    richCompanyValidation ||
     arrayValue(packet.companyCandidates).some((candidate) => evidenceStrength(candidate) >= 8 && /announcement/.test(arrayValue(candidate.sourceTypes).join(" ")));
-  const hasNoBlockingGap = !arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证/.test(gap));
+  const hasReliableGrowthEvidence = (hasHardOrOfficial && hasAnnouncement) || (hasAnnouncement && richCompanyValidation);
+  const hasNoBlockingGap = !arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证|缺现金流/.test(gap));
+  const protectedGrowth = /半导体|AI算力|芯片|晶圆|封测|存储|DRAM|NAND|HBM|航运|运价|BDI|SCFI|CCFI/.test(`${packet.industry} ${arrayValue(packet.themes).join(" ")}`);
+  const requiredGrowth = protectedGrowth && richCompanyValidation ? 52 : 70;
+  const allowedDeclineRisk = protectedGrowth && richCompanyValidation ? 65 : 55;
   return (
     (packet.sourceCount ?? 0) >= 6 &&
-    scores.growth >= 70 &&
+    scores.growth >= requiredGrowth &&
     scores.evidence >= 70 &&
-    scores.declineRisk < 55 &&
+    scores.declineRisk < allowedDeclineRisk &&
     scores.bubbleRisk < 65 &&
-    hasHardOrOfficial &&
-    hasAnnouncement &&
+    hasReliableGrowthEvidence &&
     hasCompanyValidation &&
     hasNoBlockingGap
   );
@@ -986,6 +998,25 @@ function hasRevenueAndProfitGrowthFact(packet) {
   });
 }
 
+function hasMultiplePositiveFinancialFacts(packet, minimum = 3) {
+  const positiveCompanies = new Set();
+  for (const fact of arrayValue(packet.financialFacts)) {
+    const metrics = isRecord(fact.metrics) ? fact.metrics : {};
+    const revenueYoy = numericValue(metrics.revenueYoy ?? fact.revenueYoy);
+    const netProfitYoy = numericValue(metrics.netProfitYoy ?? fact.yoy);
+    const netProfit = numericValue(metrics.netProfit ?? fact.value);
+    const operatingCashflowPerShare = numericValue(metrics.operatingCashflowPerShare);
+    const company = stringValue(fact.company);
+    if (!company) continue;
+    if (!Number.isFinite(netProfitYoy) || netProfitYoy <= 0) continue;
+    if (Number.isFinite(netProfit) && netProfit <= 0) continue;
+    if (Number.isFinite(revenueYoy) && revenueYoy < 8) continue;
+    if (netProfitYoy >= 1000 && !(Number.isFinite(operatingCashflowPerShare) && operatingCashflowPerShare > 0)) continue;
+    positiveCompanies.add(company);
+  }
+  return positiveCompanies.size >= minimum;
+}
+
 function ruleBackedSolidGrowthItem(packet, digest) {
   const sourceIds = sourceIdsForPacket(packet, digest).slice(0, 5);
   if (sourceIds.length < 2) return null;
@@ -1002,7 +1033,7 @@ function ruleBackedSolidGrowthItem(packet, digest) {
       title,
       industries: [packet.industry],
       companies,
-      thesis: `${packet.industry}同时出现行业硬数据和公司级财报/公告验证，规则引擎补入扎实增长候选；仍需后续季度确认持续性。`,
+      thesis: ruleBackedSolidGrowthThesis(packet),
       drivers: inferDriversFromPacket(packet),
       evidence: evidenceLines,
       conclusionStrength: "正式结论",
@@ -1015,6 +1046,7 @@ function ruleBackedSolidGrowthItem(packet, digest) {
       evidenceTypes: arrayValue(packet.evidenceTypes),
       supportingSourceCount: sourceIds.length,
       sourceIds,
+      _lowBaseCrossChecked: hasMultiplePositiveFinancialFacts(packet, 3),
       changeReason: "模型未升入正式增长章节，但全行业规则评分显示硬数据与公司级证据已达到扎实增长候选门槛，自动补入并按中等置信展示。",
       counterEvidenceConditions: ["行业价格或运价连续回落", "代表公司后续财报未能延续盈利改善", "经营现金流转弱"],
       confirmationConditions: ["价格/运价继续维持高位", "更多 A/H 代表公司财报共振", "经营现金流改善"],
@@ -1023,6 +1055,15 @@ function ruleBackedSolidGrowthItem(packet, digest) {
     digest,
   );
   return { ...item, title: fixRadarText(item.title), thesis: fixRadarText(item.thesis), evidence: item.evidence.map(fixRadarText), changeReason: fixRadarText(item.changeReason) };
+}
+
+function ruleBackedSolidGrowthThesis(packet) {
+  const evidenceTypes = arrayValue(packet.evidenceTypes);
+  const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
+  if (hasHardOrOfficial) {
+    return `${packet.industry}同时出现行业硬数据和公司级财报/公告验证，规则引擎补入扎实增长候选；仍需后续季度确认持续性。`;
+  }
+  return `${packet.industry}出现多家公司财报/公告共振和产业线索，规则引擎补入中置信扎实增长候选；由于行业价格或订单硬数据仍不完整，需要继续跟踪。`;
 }
 
 function sourceIdsForPacket(packet, digest) {
@@ -1043,20 +1084,42 @@ function sourceIdsForPacket(packet, digest) {
 }
 
 function packetBackedCompanies(packet, sourceIds, digest) {
+  const positiveCompanies = positiveFinancialFactCompanies(packet);
   const sourceCompanies = digest.citations
     .filter((source) => sourceIds.includes(source.id))
     .map((source) => source.company)
-    .filter(Boolean);
+    .filter((company) => company && (!positiveCompanies.size || positiveCompanies.has(company)));
   const candidateCompanies = arrayValue(packet.companyCandidates)
-    .filter((candidate) => evidenceStrength(candidate) >= 4)
+    .filter((candidate) => evidenceStrength(candidate) >= 4 && (!positiveCompanies.size || positiveCompanies.has(candidate.company)))
     .map((candidate) => candidate.company);
-  const factCompanies = arrayValue(packet.financialFacts).map((fact) => fact.company).filter(Boolean);
+  const factCompanies = arrayValue(packet.financialFacts)
+    .filter(isPositiveFinancialFact)
+    .map((fact) => fact.company)
+    .filter(Boolean);
   const record = {
     title: packet.industry,
     thesis: `${packet.industry} ${arrayValue(packet.themes).join(" ")}`,
     companies: unique([...sourceCompanies, ...candidateCompanies, ...factCompanies]),
+    allowedCompanies: positiveCompanies.size ? [...positiveCompanies] : [],
   };
   return evidenceBackedCompanies(ahCompanies(record.companies), sourceIds, digest, record);
+}
+
+function positiveFinancialFactCompanies(packet) {
+  return new Set(arrayValue(packet.financialFacts).filter(isPositiveFinancialFact).map((fact) => fact.company).filter(Boolean));
+}
+
+function isPositiveFinancialFact(fact) {
+  const metrics = isRecord(fact.metrics) ? fact.metrics : {};
+  const revenueYoy = numericValue(metrics.revenueYoy ?? fact.revenueYoy);
+  const netProfitYoy = numericValue(metrics.netProfitYoy ?? fact.yoy);
+  const netProfit = numericValue(metrics.netProfit ?? fact.value);
+  const operatingCashflowPerShare = numericValue(metrics.operatingCashflowPerShare);
+  if (!Number.isFinite(netProfitYoy) || netProfitYoy <= 0) return false;
+  if (Number.isFinite(netProfit) && netProfit <= 0) return false;
+  if (Number.isFinite(revenueYoy) && revenueYoy < 8) return false;
+  if (netProfitYoy >= 1000 && !(Number.isFinite(operatingCashflowPerShare) && operatingCashflowPerShare > 0)) return false;
+  return true;
 }
 
 function packetCompanyNames(packet) {
@@ -1297,11 +1360,16 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
 function normalizedStageForPacket(packet, scores, mappedStage, hasDirectStageMatch = false) {
   if ((packet.sourceCount ?? 0) <= 0 || (scores.evidence < 28 && !hasDirectStageMatch)) return "证据不足";
   const fallback = fallbackIndustryStage(packet, scores);
+  if ((mappedStage === "扎实增长" || fallback === "扎实增长") && packetHasFormalGrowthBlockingGap(packet)) return "继续观察";
   if (mappedStage === "继续观察" && fallback === "平稳现金流") return "平稳现金流";
   if (!mappedStage) return fallback === "扎实增长" ? "继续观察" : fallback;
   if (mappedStage === "扎实增长" && shouldRejectSolidGrowthForStructuralDecline(packet, scores)) return "衰退";
   if (mappedStage === "衰退" && shouldProtectFromBroadDecline(packet, scores)) return fallback === "衰退" ? "继续观察" : fallback;
   return mappedStage;
+}
+
+function packetHasFormalGrowthBlockingGap(packet) {
+  return arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证|缺现金流/.test(gap));
 }
 
 function reconcileScoresWithStage(scores, stage) {
@@ -1559,14 +1627,18 @@ function evidenceBackedCompanies(companies, sourceIds, digest, record = {}) {
   const sourceSet = new Set(sourceIds);
   const matchedSources = digest.citations.filter((source) => sourceSet.has(source.id));
   const itemText = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.drivers), ...stringArray(record.evidence)].join(" ");
+  const allowedCompanies = new Set(stringArray(record.allowedCompanies));
   const sourceCompanies = unique(
     matchedSources
       .map((source) => stringValue(source.company))
       .filter(Boolean)
+      .filter((company) => !allowedCompanies.size || allowedCompanies.has(company))
       .filter((company) => isEligibleRepresentativeCompany(company))
       .filter((company) => companyMatchesItemContext(company, itemText, matchedSources)),
   );
-  const explicitCompanies = companies.filter((company) => companyMatchesItemContext(company, itemText, matchedSources));
+  const explicitCompanies = companies
+    .filter((company) => !allowedCompanies.size || allowedCompanies.has(company))
+    .filter((company) => companyMatchesItemContext(company, itemText, matchedSources));
   return uniqueCompaniesByName([...explicitCompanies, ...sourceCompanies]);
 }
 
