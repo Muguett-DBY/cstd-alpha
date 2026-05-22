@@ -191,6 +191,7 @@ SOURCE_WEIGHTS = {
     "news": 2,
     "research": 1,
 }
+WEAK_INDUSTRY_KEYWORDS = {"AI", "AR", "VR", "MR", "手机", "移动", "出口", "品牌", "设备", "材料", "电池", "销量", "库存", "药", "猪"}
 
 DATA_SIGNAL_WORDS = ("价格", "库存", "产能", "订单", "营收", "净利润", "毛利率", "现金流", "销量", "装机", "开工率", "同比", "环比")
 RISK_SIGNAL_WORDS = ("泡沫", "过剩", "亏损", "下滑", "衰退", "库存高企", "停牌", "异动")
@@ -2051,7 +2052,7 @@ def industry_packets_from_sources(
     for taxonomy in FINE_INDUSTRY_TAXONOMY:
         industry = taxonomy["industry"]
         keywords = tuple(taxonomy["keywords"])
-        matched_sources = [source for source in sources if industry_matches(source_text(source), industry, keywords)]
+        matched_sources = [source for source in sources if industry_matches(source_match_text(source), industry, keywords)]
         matched_financial = [fact for fact in financial_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('company', '')}", industry, keywords)]
         matched_industry = [fact for fact in industry_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('summary', '')}", industry, keywords)]
         matched_companies = [candidate for candidate in company_candidates if industry_matches(f"{candidate.get('industry', '')} {candidate.get('triggerEvidence', '')} {candidate.get('company', '')}", industry, keywords)]
@@ -2090,10 +2091,37 @@ def industry_packets_from_sources(
 
 
 def industry_matches(text: str, industry: str, keywords: tuple[str, ...]) -> bool:
-    lowered = text.lower()
+    cleaned = clean_text(text)
+    lowered = cleaned.lower()
     if industry.lower() in lowered:
         return True
-    return any(keyword.lower() in lowered for keyword in keywords)
+    hits = [keyword for keyword in keywords if keyword_matches_text(keyword, cleaned)]
+    if not hits:
+        return False
+    # Very short Latin theme words such as AR/VR/MR/AI are discovery hints, not
+    # enough to attach a hard-data item to an industry packet. Without this,
+    # "AKShare" matched the "AR" keyword and leaked commodity data into
+    # consumer-electronics packets.
+    strong_hits = [keyword for keyword in hits if is_strong_industry_keyword(keyword)]
+    return bool(strong_hits)
+
+
+def keyword_matches_text(keyword: str, text: str) -> bool:
+    cleaned_keyword = clean_text(keyword)
+    if not cleaned_keyword:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9]{1,3}", cleaned_keyword):
+        return bool(re.search(rf"(?<![A-Za-z0-9]){re.escape(cleaned_keyword)}(?![A-Za-z0-9])", text, re.I))
+    return cleaned_keyword.lower() in text.lower()
+
+
+def is_strong_industry_keyword(keyword: str) -> bool:
+    cleaned_keyword = clean_text(keyword)
+    if cleaned_keyword in WEAK_INDUSTRY_KEYWORDS:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9]{1,3}", cleaned_keyword):
+        return False
+    return len(cleaned_keyword) >= 2
 
 
 def industry_evidence_hash(industry: str, sources: list[dict[str, Any]], financial_facts: list[dict[str, Any]], industry_facts: list[dict[str, Any]], company_candidates: list[dict[str, Any]]) -> str:
@@ -2182,6 +2210,10 @@ def count_where(sources: list[dict[str, Any]], predicate: Any) -> int:
 
 def source_text(source: dict[str, Any]) -> str:
     return " ".join(clean_text(source.get(key)) for key in ("source", "query", "title", "summary"))
+
+
+def source_match_text(source: dict[str, Any]) -> str:
+    return " ".join(clean_text(source.get(key)) for key in ("industry", "company", "title", "summary"))
 
 
 def evidence_hash(sources: list[dict[str, Any]]) -> str:

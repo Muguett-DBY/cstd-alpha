@@ -103,7 +103,7 @@ describe("rolling radar evidence collector", () => {
           "sources=m.baostock_industry_sources(rows)",
           "candidates=m.company_candidates_from_sources([m.classify_source(source) for source in sources])",
           "print(json.dumps({'sources': sources, 'candidates': candidates}, ensure_ascii=False))",
-        ].join("; "),
+        ].join("\n"),
       ],
       { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } },
     );
@@ -230,7 +230,7 @@ describe("rolling radar evidence collector", () => {
           "base={'source':'AnySearch','query':'存储芯片 价格 库存','title':'存储芯片 价格 库存 订单','summary':'价格 库存 同比','sourceType':'official','signalType':'external_search','weight':4,'anysearchContentTypes':['data','news','web'],'publishedAt':'2026-05-19T00:00:00Z'}",
           "a={**base,'qualityScore':0.86}; b={**base,'qualityScore':86}",
           "print(json.dumps([m.score_source(a), m.score_source(b)]))",
-        ].join("; "),
+        ].join("\n"),
       ],
       { encoding: "utf8" },
     );
@@ -295,6 +295,34 @@ describe("rolling radar evidence collector", () => {
     expect(result.drug).not.toContain("缺销量");
     expect(result.storage).toEqual(expect.arrayContaining(["缺财报", "缺价格", "缺库存"]));
     expect(result.sameTypeMulti).not.toContain("缺多源验证");
+  });
+
+  test("does not route unrelated AKShare hard data into AR/VR consumer electronics packets", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "sources=[",
+          " {'source':'AKShare/Sina期货日线','industry':'生猪养殖','query':'生猪养殖 生猪 现货 期货 基差 价格','title':'pig-hard-data-11020','summary':'生猪现货价格硬数据','sourceType':'hard_data','signalType':'commodity_price'},",
+          " {'source':'AnySearch','industry':'消费电子/端侧AI','query':'消费电子 端侧AI 手机 可穿戴 AR VR 财报','title':'longqi-ai-terminal-growth','summary':'智能手机、AI PC、智能眼镜业务线索','sourceType':'news','signalType':'external_search'}",
+          "]",
+          "packets=m.industry_packets_from_sources(sources, [], [], [])",
+          "consumer=next(packet for packet in packets if packet['industry']=='消费电子/端侧AI')",
+          "pig=next(packet for packet in packets if packet['industry']=='生猪养殖')",
+          "print(json.dumps({'consumerTitles':[item['title'] for item in consumer['sources']], 'pigTitles':[item['title'] for item in pig['sources']]}, ensure_ascii=False))",
+        ].join("\n"),
+      ],
+      { encoding: "utf8" },
+    );
+    const result = JSON.parse(output) as { consumerTitles: string[]; pigTitles: string[] };
+
+    expect(result.consumerTitles.join(" ")).toContain("longqi-ai-terminal-growth");
+    expect(result.consumerTitles.join(" ")).not.toContain("pig-hard-data-11020");
+    expect(result.pigTitles.join(" ")).toContain("pig-hard-data-11020");
   });
 
   test("refuses to emit a live-quality snapshot when evidence is only Google News", () => {
