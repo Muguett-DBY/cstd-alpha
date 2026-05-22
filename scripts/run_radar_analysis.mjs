@@ -936,64 +936,32 @@ function supplementalSolidGrowthCandidates(sections, industryScope, digest) {
 
 function ensureSustainabilityObservations(sections, industryScope, digest) {
   const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
+  const blockedSectionKeys = new Set(
+    [balanced.solidGrowth, balanced.upcomingGrowth, balanced.bubbleRisks, balanced.decliningIndustries]
+      .flatMap((items) => arrayValue(items))
+      .flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)),
+  );
+  balanced.sustainability = balanced.sustainability.filter((item) => {
+    const itemKeys = [item.title, ...arrayValue(item.industries)].flatMap(identityKeys);
+    return !itemKeys.some((key) => blockedSectionKeys.has(key));
+  });
   const existingKeys = new Set(arrayValue(balanced.sustainability).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)));
   const targetSustainabilityCount = 6;
-  const companionItems = [
-    ...arrayValue(balanced.solidGrowth).flatMap((item) => sustainabilityObservationsFromRadarItem(item, "扎实增长")),
-    ...arrayValue(balanced.upcomingGrowth).flatMap((item) => sustainabilityObservationsFromRadarItem(item, "即将增长")),
-  ].filter(Boolean);
-
-  for (const item of companionItems) {
-    const itemKeys = [item.title, ...arrayValue(item.industries)].flatMap(identityKeys);
-    balanced.sustainability = balanced.sustainability.filter((existing) => {
-      const existingItemKeys = new Set([existing.title, ...arrayValue(existing.industries)].flatMap(identityKeys));
-      return !itemKeys.some((key) => existingItemKeys.has(key));
-    });
-    balanced.sustainability.push(item);
-    for (const key of itemKeys) existingKeys.add(key);
-    if (balanced.sustainability.length >= targetSustainabilityCount) break;
-  }
-
   if (balanced.sustainability.length < targetSustainabilityCount) {
-    const sectionKeys = new Set(
-      [balanced.solidGrowth, balanced.upcomingGrowth, balanced.bubbleRisks, balanced.decliningIndustries, balanced.sustainability]
-        .flatMap((items) => arrayValue(items))
-        .flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)),
-    );
+    const sectionKeys = new Set([...blockedSectionKeys, ...existingKeys]);
     const packetItems = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
       .filter((packet) => qualifiesForSustainabilityObservation(packet, sectionKeys))
       .map((packet) => ruleBackedSustainabilityItem(packet, digest))
       .filter(Boolean)
       .sort((left, right) => radarItemQuality(right) - radarItemQuality(left));
     for (const item of packetItems) {
+      for (const key of [item.title, ...arrayValue(item.industries)].flatMap(identityKeys)) sectionKeys.add(key);
       balanced.sustainability.push(item);
       if (balanced.sustainability.length >= targetSustainabilityCount) break;
     }
   }
 
   return balanced;
-}
-
-function sustainabilityObservationsFromRadarItem(item, sourceStage) {
-  if (!item?.sourceIds?.length || !item.companies?.length) return null;
-  const industries = unique(arrayValue(item.industries)).slice(0, 3);
-  const targets = industries.length ? industries : [item.title];
-  return targets.map((industry) => sustainabilityObservationFromRadarItemForIndustry(item, sourceStage, industry));
-}
-
-function sustainabilityObservationFromRadarItemForIndustry(item, sourceStage, industry) {
-  const gaps = unique([...arrayValue(item.evidenceGaps), ...(item.durability === "短期" || sourceStage === "即将增长" ? ["需后续财报/订单验证"] : [])]);
-  const titleBase = industry || item.title;
-  return {
-    ...item,
-    title: `${titleBase}增长可持续性`,
-    industries: [titleBase],
-    thesis: `${fixRadarText(item.thesis)} ${gaps.length ? `可持续性仍需关注：${gaps.slice(0, 3).join("、")}。` : "当前证据支持继续跟踪其中期可持续性。"}`,
-    conclusionStrength: "观察",
-    confidence: item.confidence === "低" ? "低" : "中",
-    evidenceGaps: gaps,
-    changeReason: `${sourceStage}方向同步进入增长可持续性复核，避免只给阶段判断而不评估持续性。`,
-  };
 }
 
 function qualifiesForSustainabilityObservation(packet, sectionKeys) {
@@ -1028,9 +996,15 @@ function hasNegativeFinancialDominance(packet) {
 
 function ruleBackedSustainabilityItem(packet, digest) {
   const sourceIds = sourceIdsForPacket(packet, digest).slice(0, 5);
-  if (sourceIds.length < 2) return null;
-  const companies = packetBackedCompanies(packet, sourceIds, digest).slice(0, 5);
-  if (!companies.length) return null;
+  if (sourceIds.length < 2 && !canUseSingleCoreSourceForObservation(packet, sourceIds)) return null;
+  const packetCompanyKeys = new Set(packetCompanyNames(packet).map(stripTicker));
+  const backedCompanies = packetBackedCompanies(packet, sourceIds, digest).filter((company) => !packetCompanyKeys.size || packetCompanyKeys.has(stripTicker(company)));
+  const companies = (backedCompanies.length ? backedCompanies : sustainabilityPacketCompanies(packet)).slice(0, 5);
+  const evidenceGaps = unique([
+    ...arrayValue(packet.evidenceGaps),
+    ...(!companies.length ? ["缺公司公告"] : []),
+    ...(!arrayValue(packet.financialFacts).length ? ["缺财报"] : []),
+  ]);
   const evidenceLines = sourceIds
     .map((id) => digest.citations.find((source) => source.id === id))
     .filter(Boolean)
@@ -1045,7 +1019,7 @@ function ruleBackedSustainabilityItem(packet, digest) {
       drivers: inferDriversFromPacket(packet),
       evidence: evidenceLines,
       conclusionStrength: "观察",
-      evidenceGaps: unique(arrayValue(packet.evidenceGaps)),
+      evidenceGaps,
       driverTags: inferDriverTagsFromPacket(packet),
       sustainabilityTier: "中期景气",
       durability: "中期",
@@ -1060,6 +1034,24 @@ function ruleBackedSustainabilityItem(packet, digest) {
       turningPoints: [],
     },
     digest,
+  );
+}
+
+function canUseSingleCoreSourceForObservation(packet, sourceIds) {
+  return sourceIds.length >= 1 && (packet.sourceCount ?? 0) >= 8 && arrayValue(packet.evidenceTypes).some((type) => type === "announcement" || type === "hard_data" || type === "official");
+}
+
+function sustainabilityPacketCompanies(packet) {
+  const itemText = `${packet.industry} ${packet.group ?? ""} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
+  return uniqueCompaniesByName(
+    ahCompanies([
+      ...arrayValue(packet.financialFacts)
+        .filter(isPositiveFinancialFact)
+        .map((fact) => fact.company),
+      ...arrayValue(packet.companyCandidates).map((candidate) => candidate.company),
+    ])
+      .filter(Boolean)
+      .filter((company) => companyMatchesItemContext(company, itemText, [])),
   );
 }
 
@@ -1235,19 +1227,35 @@ function ruleBackedSolidGrowthThesis(packet) {
 
 function sourceIdsForPacket(packet, digest) {
   const packetSourceKeys = new Set(arrayValue(packet.sources).flatMap((source) => [source.url, source.sourceId, source.title]).filter(Boolean));
-  const exact = digest.citations.filter((source) => packetSourceKeys.has(source.url) || packetSourceKeys.has(source.sourceId) || packetSourceKeys.has(source.title));
   const companyNames = packetCompanyNames(packet);
+  const exact = digest.citations
+    .filter((source) => packetSourceKeys.has(source.url) || packetSourceKeys.has(source.sourceId) || packetSourceKeys.has(source.title))
+    .filter((source) => sourceMatchesPacketContext(source, packet, companyNames));
   const companyEvidenceIds = exact
     .filter((source) => companyNames.some((company) => `${source.company ?? ""} ${source.title} ${source.summary ?? ""}`.includes(company)))
     .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
     .map((source) => source.id);
-  if (exact.length) return unique([...companyEvidenceIds.slice(0, 2), ...exact.sort((left, right) => (right.score ?? 0) - (left.score ?? 0)).map((source) => source.id)]);
   const text = `${packet.industry} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.evidenceTypes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
-  return digest.citations
+  const inferred = digest.citations
     .map((source) => ({ source, score: keywordOverlapScore(text, `${source.query} ${source.title} ${source.summary ?? ""} ${source.industry ?? ""}`) + (source.industry === packet.industry ? 4 : 0) }))
     .filter((item) => item.score > 0)
+    .filter((item) => sourceMatchesPacketContext(item.source, packet, companyNames))
     .sort((left, right) => right.score - left.score)
     .map((item) => item.source.id);
+  if (exact.length) return unique([...companyEvidenceIds.slice(0, 2), ...exact.sort((left, right) => (right.score ?? 0) - (left.score ?? 0)).map((source) => source.id), ...inferred.slice(0, 6)]);
+  return inferred;
+}
+
+function sourceMatchesPacketContext(source, packet, companyNames = []) {
+  const sourceText = `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`;
+  const sourceCompanyKey = source.company ? stripTicker(source.company) : "";
+  if (sourceCompanyKey && companyNames.some((company) => stripTicker(company) === sourceCompanyKey)) return true;
+  if (source.industry && cleanStageKey(source.industry) === cleanStageKey(packet.industry)) return true;
+  const packetCanonical = canonicalIndustryKey(packet.industry);
+  const aliasRule = STAGE_ALIAS_RULES.find(([alias]) => canonicalIndustryKey(alias) === packetCanonical);
+  if (aliasRule?.[1]?.test(sourceText)) return true;
+  const topicText = `${packet.industry} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
+  return keywordOverlapScore(topicText, sourceText) > 0;
 }
 
 function packetBackedCompanies(packet, sourceIds, digest) {

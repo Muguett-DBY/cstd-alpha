@@ -729,7 +729,7 @@ describe("background radar analyzer", () => {
     const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
       radar?: {
         solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
-        sustainability?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
+        sustainability?: Array<{ title?: string; industries?: string[]; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
         industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }>;
       };
     };
@@ -740,11 +740,8 @@ describe("background radar analyzer", () => {
     expect(solid?.companies).toEqual(expect.arrayContaining(["源杰科技", "华虹公司"]));
     expect(solid?.companies).not.toContain("德明利");
     expect(solid?.evidenceGaps).toEqual(expect.arrayContaining(["缺价格"]));
-    expect(radarCache.radar?.sustainability?.some((item) => item.title === "半导体/AI算力增长可持续性")).toBe(true);
-    expect(radarCache.radar?.sustainability?.find((item) => item.title === "半导体/AI算力增长可持续性")).toMatchObject({
-      confidence: "中",
-      conclusionStrength: "观察",
-    });
+    expect(radarCache.radar?.sustainability?.some((item) => item.title === "半导体/AI算力增长可持续性")).toBe(false);
+    expect(radarCache.radar?.sustainability?.some((item) => item.industries?.includes("半导体/AI算力"))).toBe(false);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "半导体/AI算力")?.stage).toBe("扎实增长");
   });
 
