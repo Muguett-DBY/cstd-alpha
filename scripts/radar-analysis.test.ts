@@ -729,6 +729,7 @@ describe("background radar analyzer", () => {
     const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
       radar?: {
         solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
+        sustainability?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; companies?: string[]; evidenceGaps?: string[] }>;
         industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }>;
       };
     };
@@ -739,6 +740,11 @@ describe("background radar analyzer", () => {
     expect(solid?.companies).toEqual(expect.arrayContaining(["源杰科技", "华虹公司"]));
     expect(solid?.companies).not.toContain("德明利");
     expect(solid?.evidenceGaps).toEqual(expect.arrayContaining(["缺价格"]));
+    expect(radarCache.radar?.sustainability?.some((item) => item.title === "半导体/AI算力增长可持续性")).toBe(true);
+    expect(radarCache.radar?.sustainability?.find((item) => item.title === "半导体/AI算力增长可持续性")).toMatchObject({
+      confidence: "中",
+      conclusionStrength: "观察",
+    });
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "半导体/AI算力")?.stage).toBe("扎实增长");
   });
 
@@ -777,9 +783,13 @@ describe("background radar analyzer", () => {
     );
 
     const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
-      radar?: { industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }> };
+      radar?: {
+        sustainability?: Array<{ title?: string }>;
+        industryPackets?: Array<{ industry?: string; stage?: string; evidenceGaps?: string[] }>;
+      };
     };
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "钢铁长材/板材")?.stage).not.toBe("扎实增长");
+    expect(radarCache.radar?.sustainability?.some((item) => item.title?.includes("钢铁长材"))).toBe(false);
   });
 
   test("rejects unsuitable or context-mismatched representative companies", () => {

@@ -869,7 +869,7 @@ function rebalanceRadarSections(sections, industryScope, digest) {
     balanced.solidGrowth = balanced.solidGrowth.filter((item) => item.conclusionStrength === "正式结论");
     balanced.sustainability = [...weakSolidGrowth, ...balanced.sustainability];
   }
-  if (balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论")) return balanced;
+  if (balanced.solidGrowth.some((item) => item.conclusionStrength === "正式结论")) return ensureSustainabilityObservations(balanced, industryScope, digest);
 
   const blockingKeys = new Set(
     [balanced.solidGrowth, balanced.bubbleRisks, balanced.decliningIndustries]
@@ -887,13 +887,131 @@ function rebalanceRadarSections(sections, industryScope, digest) {
 
   if (!candidates.length) {
     const promoted = promoteBestGrowthObservation(balanced);
-    return promoted ?? balanced;
+    return ensureSustainabilityObservations(promoted ?? balanced, industryScope, digest);
   }
   const promotedKeys = new Set(candidates.flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
   balanced.sustainability = balanced.sustainability.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
   balanced.upcomingGrowth = balanced.upcomingGrowth.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
   balanced.solidGrowth = cleanRadarSections({ ...balanced, solidGrowth: [...balanced.solidGrowth, ...candidates] }).solidGrowth;
+  return ensureSustainabilityObservations(balanced, industryScope, digest);
+}
+
+function ensureSustainabilityObservations(sections, industryScope, digest) {
+  const balanced = Object.fromEntries(Object.entries(sections).map(([section, items]) => [section, [...arrayValue(items)]]));
+  const existingKeys = new Set(arrayValue(balanced.sustainability).flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
+  const companionItems = [
+    ...arrayValue(balanced.solidGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "扎实增长")),
+    ...arrayValue(balanced.upcomingGrowth).map((item) => sustainabilityObservationFromRadarItem(item, "即将增长")),
+  ]
+    .filter(Boolean)
+    .filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => existingKeys.has(key)));
+
+  for (const item of companionItems) {
+    balanced.sustainability.push(item);
+    for (const key of [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))) existingKeys.add(key);
+    if (balanced.sustainability.length >= 4) break;
+  }
+
+  if (balanced.sustainability.length < 3) {
+    const sectionKeys = new Set(
+      [balanced.solidGrowth, balanced.upcomingGrowth, balanced.bubbleRisks, balanced.decliningIndustries, balanced.sustainability]
+        .flatMap((items) => arrayValue(items))
+        .flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))),
+    );
+    const packetItems = [...arrayValue(industryScope.changed), ...arrayValue(industryScope.unchanged)]
+      .filter((packet) => qualifiesForSustainabilityObservation(packet, sectionKeys))
+      .map((packet) => ruleBackedSustainabilityItem(packet, digest))
+      .filter(Boolean)
+      .sort((left, right) => radarItemQuality(right) - radarItemQuality(left));
+    for (const item of packetItems) {
+      balanced.sustainability.push(item);
+      if (balanced.sustainability.length >= 4) break;
+    }
+  }
+
   return balanced;
+}
+
+function sustainabilityObservationFromRadarItem(item, sourceStage) {
+  if (!item?.sourceIds?.length || !item.companies?.length) return null;
+  const gaps = unique([...arrayValue(item.evidenceGaps), ...(item.durability === "短期" || sourceStage === "即将增长" ? ["需后续财报/订单验证"] : [])]);
+  const titleBase = arrayValue(item.industries)[0] || item.title;
+  return {
+    ...item,
+    title: `${titleBase}增长可持续性`,
+    thesis: `${fixRadarText(item.thesis)} ${gaps.length ? `可持续性仍需关注：${gaps.slice(0, 3).join("、")}。` : "当前证据支持继续跟踪其中期可持续性。"}`,
+    conclusionStrength: "观察",
+    confidence: item.confidence === "低" ? "低" : "中",
+    evidenceGaps: gaps,
+    changeReason: `${sourceStage}方向同步进入增长可持续性复核，避免只给阶段判断而不评估持续性。`,
+  };
+}
+
+function qualifiesForSustainabilityObservation(packet, sectionKeys) {
+  const keys = stageLookupKeys(packet.industry);
+  if (keys.some((key) => sectionKeys.has(key))) return false;
+  if (itemDeclineIsDirect(packet.industry) || isDirectStructuralDecline(packet)) return false;
+  const scores = scoreIndustryPacket(packet);
+  const growthPressure = Math.max(scores.growth, scores.momentum);
+  const evidenceTypes = arrayValue(packet.evidenceTypes);
+  const reliableEvidence = evidenceTypes.some((type) => type === "hard_data" || type === "official" || type === "announcement");
+  const hasCompany = packetBackedCompanies(packet, sourceIdsForPacket(packet, { citations: [], packets: [] }), { citations: [] }).length > 0 || arrayValue(packet.companyCandidates).length > 0 || arrayValue(packet.financialFacts).length > 0;
+  if ((packet.sourceCount ?? 0) < 4 || growthPressure < 52 || scores.evidence < 55) return false;
+  if (!reliableEvidence || !hasCompany) return false;
+  if (scores.bubbleRisk >= 60 || scores.declineRisk >= 70) return false;
+  if (arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证|缺价格/.test(gap))) return false;
+  return !hasNegativeFinancialDominance(packet);
+}
+
+function hasNegativeFinancialDominance(packet) {
+  const facts = arrayValue(packet.financialFacts);
+  if (!facts.length) return false;
+  const positive = facts.filter(isPositiveFinancialFact).length;
+  const negative = facts.filter((fact) => {
+    const metrics = isRecord(fact.metrics) ? fact.metrics : {};
+    const revenueYoy = numericValue(metrics.revenueYoy ?? fact.revenueYoy);
+    const netProfitYoy = numericValue(metrics.netProfitYoy ?? fact.yoy);
+    const netProfit = numericValue(metrics.netProfit ?? fact.value);
+    return (Number.isFinite(revenueYoy) && revenueYoy < 0) || (Number.isFinite(netProfitYoy) && netProfitYoy < 0) || (Number.isFinite(netProfit) && netProfit < 0);
+  }).length;
+  return negative > positive;
+}
+
+function ruleBackedSustainabilityItem(packet, digest) {
+  const sourceIds = sourceIdsForPacket(packet, digest).slice(0, 5);
+  if (sourceIds.length < 2) return null;
+  const companies = packetBackedCompanies(packet, sourceIds, digest).slice(0, 5);
+  if (!companies.length) return null;
+  const evidenceLines = sourceIds
+    .map((id) => digest.citations.find((source) => source.id === id))
+    .filter(Boolean)
+    .map((source) => formatExtremePercentEvidence(`${source.id} ${source.title}${source.summary ? `：${trimText(source.summary, 80)}` : ""}`))
+    .slice(0, 5);
+  return normalizeRadarItemCertainty(
+    {
+      title: `${packet.industry}增长可持续性`,
+      industries: [packet.industry],
+      companies,
+      thesis: `${packet.industry}已扫描到增长或景气改善线索，但证据仍不足以升为扎实增长；本项用于跟踪增长质量、现金流、订单和后续财报确认。`,
+      drivers: inferDriversFromPacket(packet),
+      evidence: evidenceLines,
+      conclusionStrength: "观察",
+      evidenceGaps: unique(arrayValue(packet.evidenceGaps)),
+      driverTags: inferDriverTagsFromPacket(packet),
+      sustainabilityTier: "中期景气",
+      durability: "中期",
+      riskLevel: "中",
+      confidence: "中",
+      evidenceTypes: arrayValue(packet.evidenceTypes),
+      supportingSourceCount: sourceIds.length,
+      sourceIds,
+      changeReason: "规则引擎识别到较强增长线索但正式增长门槛未完全满足，补入增长可持续性观察。",
+      counterEvidenceConditions: ["后续财报未延续收入和利润改善", "订单或价格数据转弱", "经营现金流恶化"],
+      confirmationConditions: ["更多 A/H 公司财报共振", "订单/价格/销量硬数据继续改善", "经营现金流同步转强"],
+      turningPoints: [],
+    },
+    digest,
+  );
 }
 
 function promoteBestGrowthObservation(sections) {
