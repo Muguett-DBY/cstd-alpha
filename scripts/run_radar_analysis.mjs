@@ -635,7 +635,7 @@ function normalizeRadarScan(value, digest, previousScan, asOfDate, industryScope
       representativeCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries })),
     ),
     stageCompanies: mergeRadarLists(stageLists, stageCompanyLists(formalSectionsOnly({ solidGrowth, sustainability, bubbleRisks, upcomingGrowth, decliningIndustries }))),
-    limitations: stringArray(record.limitations).slice(0, 8),
+    limitations: sanitizeLimitations(record.limitations, formalItems),
   };
   return {
     ...scan,
@@ -696,6 +696,22 @@ function formalSectionsOnly(sections) {
       arrayValue(items).filter((item) => item.conclusionStrength === "正式结论"),
     ]),
   );
+}
+
+function sanitizeLimitations(limitations, formalItems) {
+  return stringArray(limitations)
+    .filter((limitation) => {
+      const matchedItem = formalItems.find((item) => {
+        const labels = [item.title, ...arrayValue(item.industries)].map(stringValue).filter(Boolean);
+        return labels.some((label) => limitation.includes(label));
+      });
+      if (!matchedItem) return true;
+      const hasStructuredEvidence = arrayValue(matchedItem.evidenceTypes).some((type) => type === "announcement" || type === "hard_data" || type === "official");
+      const hasCompanyEvidence = arrayValue(matchedItem.companies).length > 0;
+      if (hasStructuredEvidence && hasCompanyEvidence && /仅有新闻|缺乏上市公司财报验证|缺乏财报硬数据|只由新闻/.test(limitation)) return false;
+      return true;
+    })
+    .slice(0, 8);
 }
 
 function conservativeConfidenceSummary(summary, breakdown = {}) {
