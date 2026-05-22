@@ -267,7 +267,7 @@ function compactStableIndustryPacket(packet) {
     sourceCount: typeof packet.sourceCount === "number" ? packet.sourceCount : undefined,
     evidenceTypes: stringArray(packet.evidenceTypes),
     signalTypes: stringArray(packet.signalTypes),
-    evidenceGaps: stringArray(packet.evidenceGaps),
+    evidenceGaps: normalizeEvidenceGaps(packet.evidenceGaps),
     themes: stringArray(packet.themes).slice(0, 8),
     scores: scoreIndustryPacket(packet),
     factCounts: {
@@ -453,7 +453,7 @@ function normalizeIndustryPackets(value) {
         financialFacts: arrayValue(record.financialFacts).slice(0, 10),
         industryFacts: arrayValue(record.industryFacts).slice(0, 10),
         companyCandidates: arrayValue(record.companyCandidates).slice(0, 10),
-        evidenceGaps: stringArray(record.evidenceGaps).slice(0, 6),
+        evidenceGaps: normalizeEvidenceGaps(record.evidenceGaps).slice(0, 6),
       };
     })
     .filter(Boolean);
@@ -892,7 +892,8 @@ function radarItems(value, previousTitles, digest, section = "") {
 
 function normalizeRadarItemCertainty(item, digest) {
   const sourceSet = new Set(item.sourceIds);
-  const citationTypes = digest.citations.filter((source) => sourceSet.has(source.id)).map((source) => source.sourceType);
+  const matchedCitations = digest.citations.filter((source) => sourceSet.has(source.id));
+  const citationTypes = matchedCitations.map((source) => source.sourceType);
   const relatedPackets = relatedPacketsForRadarItem(item, digest);
   const positivePacketCompanies = positiveFinancialCompaniesForPackets(relatedPackets);
   const packetEvidenceTypes = relatedPackets.flatMap((packet) => packet.evidenceTypes ?? []);
@@ -902,14 +903,22 @@ function normalizeRadarItemCertainty(item, digest) {
   const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
   const hasAnnouncement = evidenceTypes.includes("announcement");
   const hasMultiFamily = evidenceTypes.length >= 2;
+  const citationFinancialCompanies = unique(
+    matchedCitations
+      .filter((source) => source.signalType === "financial_metric" || source.sourceType === "announcement")
+      .filter((source) => isPositiveFinancialText(`${source.title ?? ""} ${source.summary ?? ""}`))
+      .map((source) => stripTicker(source.company ?? ""))
+      .filter(Boolean),
+  );
+  const multiCompanyFinancialEvidence = unique([...citationFinancialCompanies, ...positivePacketCompanies.map(stripTicker)]).length >= 2;
   const hasExtremePercent = /低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test([item.title, item.thesis, ...item.evidence].join(" "));
   const relatedPacketGaps = relatedPackets.flatMap((packet) => arrayValue(packet.evidenceGaps));
-  const gapSet = new Set([...item.evidenceGaps, ...relatedPacketGaps]);
+  const gapSet = new Set(normalizeEvidenceGaps([...item.evidenceGaps, ...relatedPacketGaps]));
   const packetBacked = packetSourceCount >= 6 && hasHardOrOfficial && hasAnnouncement && !gapSet.has("缺财报");
   const lowBaseCrossChecked = Boolean(item._lowBaseCrossChecked) || relatedPackets.some((packet) => hasMultiplePositiveFinancialFacts(packet, 3));
-  const formalReady = sourceCount >= 2 && ((hasMultiFamily || (hasHardOrOfficial && hasAnnouncement)) || packetBacked);
+  const formalReady = sourceCount >= 2 && ((hasMultiFamily || (hasHardOrOfficial && hasAnnouncement) || multiCompanyFinancialEvidence) || packetBacked);
   const lowBaseOnly = hasExtremePercent && !lowBaseCrossChecked && (!packetBacked || isLowBaseSensitiveGrowthContext(item));
-  if (!hasHardOrOfficial && isGrowthConclusionContext(item)) gapSet.add("缺多源验证");
+  if (!hasHardOrOfficial && isGrowthConclusionContext(item) && !hasMultiFamily && !multiCompanyFinancialEvidence) gapSet.add("缺多源验证");
   const highReady = sourceCount >= 3 && hasHardOrOfficial && hasAnnouncement && !hasExtremePercent && !hasConfidenceBlockingGap(gapSet);
   if (!formalReady || lowBaseOnly) gapSet.add("缺多源验证");
   if (hasExtremePercent && !gapSet.has("缺现金流")) gapSet.add("缺现金流");
@@ -922,6 +931,10 @@ function normalizeRadarItemCertainty(item, digest) {
   const companies = growthItemShouldUsePositivePacketCompanies(item, conclusionStrength, positivePacketCompanies)
     ? preferredPositiveCompanies(item.companies, positivePacketCompanies)
     : item.companies;
+  const evidenceGaps = normalizeEvidenceGaps([...gapSet]).filter((gap) => {
+    if (gap === "缺多源验证" && conclusionStrength === "正式结论" && (hasMultiFamily || multiCompanyFinancialEvidence || packetBacked)) return false;
+    return true;
+  });
   return {
     ...publicItem,
     companies,
@@ -929,7 +942,7 @@ function normalizeRadarItemCertainty(item, digest) {
     confidence,
     conclusionStrength,
     evidenceTypes,
-    evidenceGaps: [...gapSet],
+    evidenceGaps,
     supportingSourceCount: sourceCount,
   };
 }
@@ -1199,7 +1212,7 @@ function ruleBackedSustainabilityItem(packet, digest) {
   const mixedFinancialEvidence = hasNegativeFinancialDominance(packet);
   const evidenceGaps = unique([
     ...arrayValue(packet.evidenceGaps),
-    ...(mixedFinancialEvidence ? ["盈利分化待验证"] : []),
+    ...(mixedFinancialEvidence ? ["缺现金流"] : []),
     ...(!companies.length ? ["缺公司公告"] : []),
     ...(!arrayValue(packet.financialFacts).length ? ["缺财报"] : []),
   ]);
@@ -1807,7 +1820,7 @@ function normalizeRadarIndustryPacket(packet, stageByIndustry) {
     sourceCount: packet.sourceCount,
     evidenceTypes: packet.evidenceTypes,
     signalTypes: packet.signalTypes,
-    evidenceGaps: packet.evidenceGaps,
+    evidenceGaps: normalizeEvidenceGaps(packet.evidenceGaps),
     themes: packet.themes,
     scores,
   };
@@ -2089,7 +2102,7 @@ function formatExtremePercentEvidence(text) {
 }
 
 function evidenceGapsForItem(record, evidence) {
-  const gaps = enumArray(record.evidenceGaps, EVIDENCE_GAPS);
+  const gaps = normalizeEvidenceGaps(record.evidenceGaps);
   const text = [record.title, record.thesis, ...stringArray(record.drivers), ...evidence].join(" ");
   if (/低基数|一次性因素需核验|原始[+-]?\d{4,}(?:\.\d+)?%/.test(text)) {
     if (!/现金流|经营现金流|OCF/i.test(text)) gaps.push("缺现金流");
@@ -2097,6 +2110,28 @@ function evidenceGapsForItem(record, evidence) {
   }
   if (/现金流为负|经营现金流为负|现金流转负|经营现金流转负/.test(text)) gaps.push("缺现金流");
   return unique(gaps);
+}
+
+function normalizeEvidenceGaps(values) {
+  return unique(
+    arrayValue(values)
+      .map((gap) => {
+        const text = stringValue(gap);
+        if (EVIDENCE_GAPS.includes(text)) return text;
+        if (/财报|盈利|利润|业绩|毛利|分化|低基数/.test(text)) return "缺财报";
+        if (/价格|现货|期货|报价/.test(text)) return "缺价格";
+        if (/销量|装机|出货/.test(text)) return "缺销量";
+        if (/订单|中标|合同/.test(text)) return "缺订单";
+        if (/库存/.test(text)) return "缺库存";
+        if (/产能|开工/.test(text)) return "缺产能";
+        if (/现金流|经营现金/.test(text)) return "缺现金流";
+        if (/政策|监管|细则/.test(text)) return "缺政策细则";
+        if (/公告|公司/.test(text)) return "缺公司公告";
+        if (/多源|交叉|验证|确认|待验证/.test(text)) return "缺多源验证";
+        return "";
+      })
+      .filter(Boolean),
+  );
 }
 
 function stripTicker(company) {
@@ -2260,13 +2295,25 @@ function radarCoverageReview(value, digest, formalItems) {
 
 function coverageMatchesFormalItem(label, formalItems) {
   const labelText = stringValue(label);
-  const labelKeys = new Set(identityKeys(labelText));
   return arrayValue(formalItems).some((item) => {
     const itemText = [item.title, ...arrayValue(item.industries), ...arrayValue(item.companies)].join(" ");
-    const itemKeys = new Set([item.title, ...arrayValue(item.industries)].flatMap(identityKeys));
-    if ([...labelKeys].some((key) => itemKeys.has(key))) return true;
-    return relatedIndustryContextMatches(labelText, itemText) || keywordOverlapScore(labelText, itemText) >= 2;
+    const labelKey = cleanStageKey(labelText);
+    const itemKeys = [item.title, ...arrayValue(item.industries)].map(cleanStageKey).filter(Boolean);
+    if (itemKeys.some((key) => key === labelKey || key.includes(labelKey) || labelKey.includes(key))) return true;
+    const labelCanonical = canonicalIndustryKey(labelText);
+    const itemCanonicals = unique([item.title, ...arrayValue(item.industries)].map(canonicalIndustryKey).filter(Boolean));
+    return itemCanonicals.includes(labelCanonical) && coverageCanonicalMatchAllowed(labelText, itemText, labelCanonical);
   });
+}
+
+function coverageCanonicalMatchAllowed(labelText, itemText, canonical) {
+  if (!canonical) return false;
+  if (canonical === "地产链") {
+    if (/物业/.test(labelText) && !/物业/.test(itemText)) return false;
+    return /地产链|房地产|地产开发|房企|钢铁|水泥|建材|玻璃/.test(`${labelText} ${itemText}`);
+  }
+  if (canonical === "金融高股息") return cleanStageKey(labelText) === cleanStageKey(itemText);
+  return true;
 }
 
 function scrubCoverageNote(note, status) {

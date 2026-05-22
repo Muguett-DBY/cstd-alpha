@@ -132,6 +132,7 @@ describe("background radar analyzer", () => {
     });
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceCount).toBeGreaterThan(0);
     expect(radarCache.radar?.coverageReview?.find((item) => item.label === "存储芯片")?.sourceIds?.length).toBeGreaterThan(0);
+    expect(radarCache.radar?.coverageReview?.find((item) => item.label === "港股物业")?.status).not.toBe("formal");
     expect(radarCache.radar?.sustainability?.some((item) => item.sourceIds?.length === 0)).toBe(false);
     expect(radarCache.radar?.sustainability?.filter((item) => /平稳现金流|高股息/.test(item.title ?? ""))).toHaveLength(0);
     expect(radarCache.radar?.decliningIndustries?.filter((item) => /光伏/.test(item.title ?? "") || item.industries?.some((industry) => /光伏/.test(industry ?? "")))).toHaveLength(1);
@@ -840,6 +841,7 @@ describe("background radar analyzer", () => {
     expect(solid?.companies).toEqual(expect.arrayContaining(["源杰科技", "华虹公司"]));
     expect(solid?.companies).not.toContain("德明利");
     expect(solid?.evidenceGaps).toEqual(expect.arrayContaining(["缺价格"]));
+    expect(solid?.evidenceGaps).not.toContain("缺多源验证");
     expect(radarCache.radar?.sustainability?.some((item) => item.title === "半导体/AI算力增长可持续性")).toBe(false);
     expect(radarCache.radar?.sustainability?.some((item) => item.industries?.includes("半导体/AI算力"))).toBe(false);
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "半导体/AI算力")?.stage).toBe("扎实增长");
@@ -1001,7 +1003,8 @@ describe("background radar analyzer", () => {
     };
     const item = radarCache.radar?.sustainability?.find((entry) => entry.industries?.includes("电网设备"));
     expect(item).toMatchObject({ conclusionStrength: "观察", companies: ["南网储能"] });
-    expect(item?.evidenceGaps).toContain("盈利分化待验证");
+    expect(item?.evidenceGaps).toContain("缺现金流");
+    expect(item?.evidenceGaps).not.toContain("盈利分化待验证");
   });
 
   test("keeps source-backed company evidence in sustainability even when packet candidates are sparse", () => {
