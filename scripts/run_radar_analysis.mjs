@@ -1247,14 +1247,14 @@ function sourceIdsForPacket(packet, digest) {
 }
 
 function sourceMatchesPacketContext(source, packet, companyNames = []) {
-  const sourceText = `${source.company ?? ""} ${source.industry ?? ""} ${source.query ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`;
+  const sourceText = `${source.company ?? ""} ${source.industry ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`;
   const sourceCompanyKey = source.company ? stripTicker(source.company) : "";
-  if (sourceCompanyKey && companyNames.some((company) => stripTicker(company) === sourceCompanyKey)) return true;
+  const topicText = `${packet.industry} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
+  if (sourceCompanyKey && companyNames.some((company) => stripTicker(company) === sourceCompanyKey) && companyMatchesItemContext(source.company, topicText, [source])) return true;
   if (source.industry && cleanStageKey(source.industry) === cleanStageKey(packet.industry)) return true;
   const packetCanonical = canonicalIndustryKey(packet.industry);
   const aliasRule = STAGE_ALIAS_RULES.find(([alias]) => canonicalIndustryKey(alias) === packetCanonical);
   if (aliasRule?.[1]?.test(sourceText)) return true;
-  const topicText = `${packet.industry} ${arrayValue(packet.themes).join(" ")} ${arrayValue(packet.signalTypes).join(" ")}`;
   return keywordOverlapScore(topicText, sourceText) > 0;
 }
 
@@ -1336,6 +1336,7 @@ function cleanRadarSections(sections) {
 function hasEnoughRadarItemEvidence(item, section = "") {
   const sourceCount = item.sourceIds?.length ?? 0;
   const needsRepresentativeCompany = /solidGrowth|sustainability|bubbleRisks|upcomingGrowth/.test(section);
+  if (section === "solidGrowth" && item.conclusionStrength !== "正式结论") return sourceCount >= 1 && (!needsRepresentativeCompany || item.companies?.length > 0);
   return sourceCount >= 2 && (!needsRepresentativeCompany || item.companies?.length > 0);
 }
 
@@ -1747,29 +1748,51 @@ function sourceIdsForItem(record, digest) {
     .map((source) => {
       const sourceText = `${source.company ?? ""} ${source.title} ${source.summary ?? ""} ${source.query}`;
       const matched = companyNames.some((company) => sourceText.includes(company));
-      return { id: source.id, matched, score: source.weight + keywordOverlapScore(text, sourceText) };
+      return { source, id: source.id, matched, score: source.weight + keywordOverlapScore(text, sourceText) };
     })
     .filter((source) => source.matched)
+    .filter(({ source }) => sourceMatchesRadarItemContext(source, record))
     .sort((left, right) => right.score - left.score)
     .slice(0, 3)
     .map((source) => source.id);
-  const evidenceMentioned = unique(stringArray(record.evidence).flatMap((line) => [...String(line).matchAll(/\bS\d+\b/g)].map((match) => match[0]))).filter((id) => valid.has(id));
+  const evidenceMentioned = unique(stringArray(record.evidence).flatMap((line) => [...String(line).matchAll(/\bS\d+\b/g)].map((match) => match[0])))
+    .filter((id) => valid.has(id))
+    .map((id) => digest.citations.find((source) => source.id === id))
+    .filter(Boolean)
+    .filter((source) => sourceMatchesRadarItemContext(source, record))
+    .map((source) => source.id);
   const explicit = stringArray(record.sourceIds)
     .filter((id) => valid.has(id))
     .map((id) => digest.citations.find((source) => source.id === id))
     .filter(Boolean)
-    .filter((source) => keywordOverlapScore(text, `${source.title} ${source.summary ?? ""} ${source.query}`) > 0)
+    .filter((source) => sourceMatchesRadarItemContext(source, record))
     .map((source) => source.id);
   const inferred = digest.citations
     .map((source) => {
       const overlap = keywordOverlapScore(text, `${source.title} ${source.summary ?? ""} ${source.query}`);
-      return { id: source.id, overlap, score: overlap * 10 + source.weight };
+      return { source, id: source.id, overlap, score: overlap * 10 + source.weight };
     })
     .filter((source) => source.overlap > 0)
+    .filter(({ source }) => sourceMatchesRadarItemContext(source, record))
     .sort((left, right) => right.score - left.score)
     .slice(0, 4)
     .map((source) => source.id);
   return unique([...companyMatched, ...evidenceMentioned, ...inferred, ...explicit]).slice(0, 5);
+}
+
+function sourceMatchesRadarItemContext(source, record) {
+  const itemText = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.drivers)].join(" ");
+  const sourceText = `${source.company ?? ""} ${source.industry ?? ""} ${source.title ?? ""} ${source.summary ?? ""}`;
+  const sourceCompanyKey = source.company ? stripTicker(source.company) : "";
+  const itemCompanies = ahCompanies(record.companies).map(stripTicker);
+  if (sourceCompanyKey && itemCompanies.includes(sourceCompanyKey) && companyMatchesItemContext(source.company, itemText, [source])) return true;
+  for (const industry of stringArray(record.industries)) {
+    if (source.industry && cleanStageKey(source.industry) === cleanStageKey(industry)) return true;
+    const canonical = canonicalIndustryKey(industry);
+    const aliasRule = STAGE_ALIAS_RULES.find(([alias]) => canonicalIndustryKey(alias) === canonical);
+    if (aliasRule?.[1]?.test(sourceText)) return true;
+  }
+  return keywordOverlapScore([record.title, ...stringArray(record.industries), ...stringArray(record.drivers)].join(" "), sourceText) > 0;
 }
 
 function formatExtremePercentEvidence(text) {
