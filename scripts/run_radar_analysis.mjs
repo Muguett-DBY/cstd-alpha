@@ -2350,11 +2350,18 @@ function coverageMatchesFormalItem(label, formalItems) {
     const itemText = [item.title, ...arrayValue(item.industries), ...arrayValue(item.companies)].join(" ");
     const labelKey = cleanStageKey(labelText);
     const itemKeys = [item.title, ...arrayValue(item.industries)].map(cleanStageKey).filter(Boolean);
-    if (itemKeys.some((key) => key === labelKey || key.includes(labelKey) || labelKey.includes(key))) return true;
+    if (itemKeys.some((key) => coverageStageKeyMatches(labelKey, key))) return true;
     const labelCanonical = canonicalIndustryKey(labelText);
     const itemCanonicals = unique([item.title, ...arrayValue(item.industries)].map(canonicalIndustryKey).filter(Boolean));
     return itemCanonicals.includes(labelCanonical) && coverageCanonicalMatchAllowed(labelText, itemText, labelCanonical);
   });
+}
+
+function coverageStageKeyMatches(labelKey, itemKey) {
+  if (!labelKey || !itemKey) return false;
+  if (labelKey === itemKey) return true;
+  if (labelKey.length < 4 || itemKey.length < 4) return false;
+  return itemKey.includes(labelKey) || labelKey.includes(itemKey);
 }
 
 function coverageCanonicalMatchAllowed(labelText, itemText, canonical) {

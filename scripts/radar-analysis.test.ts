@@ -437,6 +437,7 @@ describe("background radar analyzer", () => {
     const output = modelOutput();
     output.coverageReview = [
       { label: "创新药/医疗服务", status: "formal", sourceCount: 1, evidenceTypes: ["announcement"], sourceIds: ["S1"], note: "已进入正式雷达结论。" },
+      { label: "锂电储能", status: "formal", sourceCount: 5, evidenceTypes: ["announcement"], sourceIds: ["S1"], note: "已进入正式雷达结论。" },
     ];
     const evidence = evidenceSnapshot();
     const newDrugPacket = evidence.industryPackets.find((packet) => packet.industry === "创新药/医疗服务");
@@ -473,6 +474,7 @@ describe("background radar analyzer", () => {
     expect(coverage?.status).toBe("watched");
     expect(coverage?.sourceCount).toBe(24);
     expect(coverage?.note).not.toContain("已进入正式");
+    expect(radarCache.radar?.coverageReview?.find((item) => item.label === "锂电储能")?.status).not.toBe("formal");
   });
 
   test("does not let a low-base property item promote the property chain into solid growth", () => {
