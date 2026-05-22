@@ -805,7 +805,7 @@ function normalizeRadarItemCertainty(item, digest) {
   const positivePacketCompanies = positiveFinancialCompaniesForPackets(relatedPackets);
   const packetEvidenceTypes = relatedPackets.flatMap((packet) => packet.evidenceTypes ?? []);
   const packetSourceCount = Math.max(0, ...relatedPackets.map((packet) => packet.sourceCount ?? 0));
-  const evidenceTypes = unique([...item.evidenceTypes, ...citationTypes, ...packetEvidenceTypes].filter(Boolean));
+  const evidenceTypes = unique([...arrayValue(item.evidenceTypes), ...citationTypes, ...packetEvidenceTypes].filter(Boolean));
   const sourceCount = item.sourceIds.length;
   const hasHardOrOfficial = evidenceTypes.some((type) => type === "hard_data" || type === "official");
   const hasAnnouncement = evidenceTypes.includes("announcement");
@@ -1649,7 +1649,7 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
     .map((item) => {
       const conclusionStrength = enumValue(item.conclusionStrength, CONCLUSION_STRENGTHS, "观察");
       const sourceIds = sourceIdsForItem(item, digest);
-      return refineRadarItemTopic({
+      const reusedItem = {
         ...item,
         companies: evidenceBackedCompanies(ahCompanies(item.companies), sourceIds, digest, item).slice(0, 6),
         thesis: conclusionStrength === "正式结论" ? fixRadarText(item.thesis) : softenObservationText(item.thesis),
@@ -1657,7 +1657,8 @@ function reuseUnchangedRadarItems(currentItems, previousItems, unchangedIndustri
         conclusionStrength,
         sourceIds,
         changeReason: "本轮全行业扫描已完成，该行业证据 hash 未明显变化，复用上次稳定结论。",
-      }, section);
+      };
+      return refineRadarItemTopic(normalizeRadarItemCertainty(reusedItem, digest), section);
     });
   return [...currentItems, ...reusable];
 }

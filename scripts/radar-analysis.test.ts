@@ -1086,6 +1086,130 @@ describe("background radar analyzer", () => {
     expect(item?.sourceIds?.length).toBeGreaterThanOrEqual(2);
   });
 
+  test("renormalizes reused formal conclusions instead of keeping stale high confidence", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-reused-certainty-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const semiSourceOne = {
+      source: "东方财富业绩报表",
+      query: "半导体 AI算力 财报 营收 净利润",
+      title: "中芯国际 2026Q1 营收同比 18.4%，净利润同比 22.1%",
+      url: "https://data.eastmoney.com/bbsj/202603/yjbb.html#688981",
+      sourceType: "announcement",
+      signalType: "financial_metric",
+      company: "中芯国际",
+      code: "688981.SH",
+      market: "A股",
+      industry: "半导体/AI算力",
+      publishedAt: "2026-05-20T00:00:00Z",
+    };
+    const semiSourceTwo = {
+      source: "AnySearch",
+      query: "半导体 AI算力 需求 景气",
+      title: "AI算力需求带动半导体产业链景气改善",
+      url: "https://example.com/semi-ai-demand",
+      sourceType: "news",
+      signalType: "external_search",
+      industry: "半导体/AI算力",
+      publishedAt: "2026-05-20T00:00:00Z",
+    };
+    const evidence = {
+      ...evidenceSnapshot(),
+      sources: [semiSourceOne, semiSourceTwo],
+      industryPackets: [
+        {
+          group: "科技成长",
+          industry: "半导体/AI算力",
+          status: "scanned",
+          evidenceHash: "hash-semi-unchanged",
+          sourceCount: 8,
+          evidenceTypes: ["announcement", "news"],
+          signalTypes: ["financial_metric", "external_search"],
+          evidenceGaps: [],
+          themes: ["AI算力", "国产替代"],
+          sources: [semiSourceOne, semiSourceTwo],
+          financialFacts: [
+            { company: "中芯国际", code: "688981.SH", market: "A股", industry: "半导体/AI算力", metrics: { revenueYoy: 18.4, netProfitYoy: 22.1 } },
+          ],
+          industryFacts: [],
+          companyCandidates: [
+            { company: "中芯国际", code: "688981.SH", market: "A股", industry: "半导体/AI算力", evidenceStrength: 10, sourceTypes: ["announcement"] },
+          ],
+        },
+      ],
+    };
+    const previous = previousRadarCache();
+    previous.radar.solidGrowth = [
+      {
+        title: "半导体/AI算力",
+        industries: ["半导体/AI算力"],
+        companies: ["中芯国际"],
+        thesis: "AI算力带动半导体链条业绩增长。",
+        drivers: ["需求扩张"],
+        evidence: ["上次高置信结论"],
+        sourceIds: [],
+        evidenceTypes: ["announcement"],
+        supportingSourceCount: 1,
+        conclusionStrength: "正式结论",
+        evidenceGaps: [],
+        driverTags: ["需求"],
+        sustainabilityTier: "中期景气",
+        confidence: "高",
+        durability: "中期",
+        riskLevel: "中",
+        counterEvidenceConditions: ["需求回落"],
+        turningPoints: ["订单不及预期"],
+      },
+    ];
+    previous.radar.industryPackets = [
+      { group: "科技成长", industry: "半导体/AI算力", status: "scanned", evidenceHash: "hash-semi-unchanged", sourceCount: 8, evidenceTypes: ["announcement", "news"], signalTypes: ["financial_metric", "external_search"], evidenceGaps: [] },
+    ];
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    output.bubbleRisks = [];
+    output.decliningIndustries = [];
+
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previous), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-reused-certainty",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: {
+        solidGrowth?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; evidenceGaps?: string[]; evidenceTypes?: string[]; sourceIds?: string[] }>;
+        sustainability?: Array<{ title?: string; confidence?: string; conclusionStrength?: string; evidenceGaps?: string[]; evidenceTypes?: string[]; sourceIds?: string[] }>;
+      };
+    };
+    const allGrowthItems = [...(radarCache.radar?.solidGrowth ?? []), ...(radarCache.radar?.sustainability ?? [])];
+    const item = allGrowthItems.find((entry) => entry.title === "半导体/AI算力");
+    expect(item).toMatchObject({ confidence: "中", conclusionStrength: "观察" });
+    expect(item?.evidenceGaps).toContain("缺多源验证");
+    expect(item?.evidenceTypes).toEqual(expect.arrayContaining(["announcement", "news"]));
+    expect(item?.sourceIds?.length).toBeGreaterThanOrEqual(1);
+  });
+
   test("rejects unsuitable or context-mismatched representative companies", () => {
     const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-company-filter-"));
     const evidencePath = join(workdir, "evidence.json");
