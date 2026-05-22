@@ -770,6 +770,7 @@ function normalizeRadarItemCertainty(item, digest) {
   const sourceSet = new Set(item.sourceIds);
   const citationTypes = digest.citations.filter((source) => sourceSet.has(source.id)).map((source) => source.sourceType);
   const relatedPackets = relatedPacketsForRadarItem(item, digest);
+  const positivePacketCompanies = positiveFinancialCompaniesForPackets(relatedPackets);
   const packetEvidenceTypes = relatedPackets.flatMap((packet) => packet.evidenceTypes ?? []);
   const packetSourceCount = Math.max(0, ...relatedPackets.map((packet) => packet.sourceCount ?? 0));
   const evidenceTypes = unique([...item.evidenceTypes, ...citationTypes, ...packetEvidenceTypes].filter(Boolean));
@@ -792,8 +793,12 @@ function normalizeRadarItemCertainty(item, digest) {
   if (conclusionStrength === "正式结论" && (!formalReady || lowBaseOnly)) conclusionStrength = "观察";
   const thesis = conclusionStrength === "正式结论" ? item.thesis : softenObservationText(item.thesis);
   const { _lowBaseCrossChecked, ...publicItem } = item;
+  const companies = growthItemShouldUsePositivePacketCompanies(item, conclusionStrength, positivePacketCompanies)
+    ? preferredPositiveCompanies(item.companies, positivePacketCompanies)
+    : item.companies;
   return {
     ...publicItem,
+    companies,
     thesis,
     confidence,
     conclusionStrength,
@@ -801,6 +806,33 @@ function normalizeRadarItemCertainty(item, digest) {
     evidenceGaps: [...gapSet],
     supportingSourceCount: sourceCount,
   };
+}
+
+function positiveFinancialCompaniesForPackets(packets) {
+  return uniqueCompaniesByName(
+    arrayValue(packets)
+      .flatMap((packet) => arrayValue(packet.financialFacts))
+      .filter(isPositiveFinancialFact)
+      .map((fact) => fact.company)
+      .filter(Boolean),
+  );
+}
+
+function growthItemShouldUsePositivePacketCompanies(item, conclusionStrength, positiveCompanies) {
+  if (!positiveCompanies.length) return false;
+  const text = `${item.title} ${item.thesis} ${arrayValue(item.industries).join(" ")} ${arrayValue(item.drivers).join(" ")}`;
+  if (conclusionStrength === "正式结论" && /增长|景气|算力|半导体|存储|锂电|储能|航运|运价|创新药|电网|订单/.test(text)) return true;
+  return item.conclusionStrength === "观察" && /增长可持续性|可持续|景气|增长/.test(text);
+}
+
+function preferredPositiveCompanies(companies, positiveCompanies) {
+  const positiveKeys = new Set(positiveCompanies.map((company) => cleanCompanyKey(company)));
+  const filtered = arrayValue(companies).filter((company) => positiveKeys.has(cleanCompanyKey(company)));
+  return uniqueCompaniesByName(filtered.length ? filtered : positiveCompanies).slice(0, 6);
+}
+
+function cleanCompanyKey(company) {
+  return stripTicker(company).replace(/\s+/g, "");
 }
 
 function relatedPacketsForRadarItem(item, digest) {
