@@ -69,7 +69,7 @@ describe("background radar analyzer", () => {
     expect(radarCache.radar?.sourceCount).toBeGreaterThanOrEqual(5);
     const demotedGrowth = radarCache.radar?.sustainability?.find((item) => item.title === "创新药商业化利润拐点");
     expect(radarCache.radar?.solidGrowth).toHaveLength(0);
-    expect(demotedGrowth?.companies).toEqual(["百济神州", "药明康德"]);
+    expect(demotedGrowth?.companies).toEqual(["百济神州"]);
     expect(demotedGrowth?.sourceIds?.length).toBeGreaterThanOrEqual(1);
     expect(demotedGrowth?.evidence?.join(" ")).toContain("低基数/一次性因素需核验");
     expect(demotedGrowth?.evidenceGaps).toContain("缺现金流");
@@ -81,7 +81,7 @@ describe("background radar analyzer", () => {
     expect(demotedGrowth?.supportingSourceCount).toBe(demotedGrowth?.sourceIds?.length);
     expect(radarCache.radar?.representativeCompanies?.find((item) => item.label === "扎实增长产业中的代表公司")?.companies).toEqual([]);
     expect(radarCache.radar?.stageCompanies?.find((item) => item.label === "上升产业中的领军人物")?.companies).toEqual([]);
-    expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威(002085.SZ)"]);
+    expect(radarCache.radar?.bubbleRisks?.[0].companies).toEqual(["万丰奥威"]);
     const formalItems = [
       ...(radarCache.radar?.solidGrowth ?? []),
       ...(radarCache.radar?.sustainability ?? []),
@@ -787,6 +787,121 @@ describe("background radar analyzer", () => {
     };
     expect(radarCache.radar?.industryPackets?.find((packet) => packet.industry === "钢铁长材/板材")?.stage).not.toBe("扎实增长");
     expect(radarCache.radar?.sustainability?.some((item) => item.title?.includes("钢铁长材"))).toBe(false);
+  });
+
+  test("keeps mixed but evidence-rich growth industries in sustainability observations", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "radar-analysis-mixed-sustainability-"));
+    const evidencePath = join(workdir, "evidence.json");
+    const previousPath = join(workdir, "previous.json");
+    const modelPath = join(workdir, "model.json");
+    const outputRadarPath = join(workdir, "radar-cache.json");
+
+    const evidence = evidenceSnapshot();
+    const mixedSources = [
+      {
+        source: "东方财富业绩报表",
+        query: "电网设备 财报 营收 净利润",
+        title: "南网储能(600995.SH) 2026Q1 营收同比 18.80%，净利润同比 21.34%",
+        summary: "公司级财报：营收增长，净利润增长。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "南网储能",
+        code: "600995.SH",
+        market: "A股",
+        industry: "电网设备",
+        weight: 4,
+        score: 90,
+        publishedAt: "2026-05-20T00:00:00Z",
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "电网设备 财报 营收 净利润",
+        title: "科陆电子(002121.SZ) 2026Q1 营收同比 7.88%，净利润同比 -159.87%",
+        summary: "公司级财报：收入增长但净利润亏损，盈利分化。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "科陆电子",
+        code: "002121.SZ",
+        market: "A股",
+        industry: "电网设备",
+        weight: 4,
+        score: 88,
+        publishedAt: "2026-05-20T00:00:00Z",
+      },
+      {
+        source: "东方财富业绩报表",
+        query: "电网设备 财报 营收 净利润",
+        title: "双杰电气(300444.SZ) 2026Q1 营收同比 -7.12%，净利润同比 29615.01%",
+        summary: "公司级财报：收入下滑且低基数修复，需核验。",
+        sourceType: "announcement",
+        signalType: "financial_metric",
+        company: "双杰电气",
+        code: "300444.SZ",
+        market: "A股",
+        industry: "电网设备",
+        weight: 4,
+        score: 86,
+        publishedAt: "2026-05-20T00:00:00Z",
+      },
+    ];
+    evidence.sources.push(...mixedSources);
+    evidence.industryPackets.push({
+      group: "高端制造",
+      industry: "电网设备",
+      status: "scanned",
+      evidenceHash: "hash-grid-mixed",
+      sourceCount: 8,
+      evidenceTypes: ["announcement", "official"],
+      signalTypes: ["financial_metric", "industry_stat"],
+      evidenceGaps: [],
+      themes: ["电网投资", "AI用电"],
+      sources: mixedSources,
+      financialFacts: [
+        { company: "南网储能", code: "600995.SH", market: "A股", industry: "电网设备", metrics: { revenueYoy: 18.8, netProfitYoy: 21.34, netProfit: 453818300 } },
+        { company: "科陆电子", code: "002121.SZ", market: "A股", industry: "电网设备", metrics: { revenueYoy: 7.88, netProfitYoy: -159.87, netProfit: -40380811 } },
+        { company: "双杰电气", code: "300444.SZ", market: "A股", industry: "电网设备", metrics: { revenueYoy: -7.12, netProfitYoy: 29615.01, netProfit: 281483070, operatingCashflowPerShare: -0.22 } },
+      ],
+      industryFacts: [],
+      companyCandidates: [
+        { company: "南网储能", code: "600995.SH", market: "A股", industry: "电网设备", evidenceStrength: 12, sourceTypes: ["announcement"] },
+        { company: "科陆电子", code: "002121.SZ", market: "A股", industry: "电网设备", evidenceStrength: 12, sourceTypes: ["announcement"] },
+        { company: "双杰电气", code: "300444.SZ", market: "A股", industry: "电网设备", evidenceStrength: 12, sourceTypes: ["announcement"] },
+      ],
+    });
+    const output = modelOutput();
+    output.solidGrowth = [];
+    output.sustainability = [];
+    output.upcomingGrowth = [];
+    output.bubbleRisks = [];
+    output.decliningIndustries = [];
+    writeFileSync(evidencePath, JSON.stringify(evidence), "utf8");
+    writeFileSync(previousPath, JSON.stringify(previousRadarCache()), "utf8");
+    writeFileSync(modelPath, JSON.stringify(output), "utf8");
+
+    execFileSync(
+      "node",
+      [
+        "scripts/run_radar_analysis.mjs",
+        "--evidence",
+        evidencePath,
+        "--previous",
+        previousPath,
+        "--job-id",
+        "job-mixed-sustainability",
+        "--mock-model-output",
+        modelPath,
+        "--output-radar",
+        outputRadarPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    const radarCache = JSON.parse(readFileSync(outputRadarPath, "utf8")) as {
+      radar?: { sustainability?: Array<{ title?: string; industries?: string[]; companies?: string[]; evidenceGaps?: string[]; conclusionStrength?: string }> };
+    };
+    const item = radarCache.radar?.sustainability?.find((entry) => entry.industries?.includes("电网设备"));
+    expect(item).toMatchObject({ conclusionStrength: "观察", companies: ["南网储能"] });
+    expect(item?.evidenceGaps).toContain("盈利分化待验证");
   });
 
   test("rejects unsuitable or context-mismatched representative companies", () => {

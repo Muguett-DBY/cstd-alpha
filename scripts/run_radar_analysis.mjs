@@ -910,7 +910,11 @@ function rebalanceRadarSections(sections, industryScope, digest) {
   const promotedKeys = new Set(candidates.flatMap((item) => [item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value))));
   balanced.sustainability = balanced.sustainability.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
   balanced.upcomingGrowth = balanced.upcomingGrowth.filter((item) => ![item.title, ...arrayValue(item.industries)].flatMap((value) => stageLookupKeys(value)).some((key) => promotedKeys.has(key)));
-  balanced.solidGrowth = cleanRadarSections({ ...balanced, solidGrowth: [...balanced.solidGrowth, ...candidates] }).solidGrowth;
+  const cleanedGrowthCandidates = cleanRadarSections({ ...balanced, solidGrowth: [...balanced.solidGrowth, ...candidates] }).solidGrowth;
+  const formalGrowthCandidates = cleanedGrowthCandidates.filter((item) => item.conclusionStrength === "正式结论");
+  const observedGrowthCandidates = cleanedGrowthCandidates.filter((item) => item.conclusionStrength !== "正式结论");
+  balanced.solidGrowth = formalGrowthCandidates;
+  balanced.sustainability = [...observedGrowthCandidates, ...balanced.sustainability];
   return ensureSustainabilityObservations(balanced, industryScope, digest);
 }
 
@@ -977,7 +981,8 @@ function qualifiesForSustainabilityObservation(packet, sectionKeys) {
   if (!reliableEvidence || !hasCompany) return false;
   if (scores.bubbleRisk >= 60 || scores.declineRisk >= 70) return false;
   if (arrayValue(packet.evidenceGaps).some((gap) => /缺财报|缺多源验证/.test(gap))) return false;
-  return !hasNegativeFinancialDominance(packet);
+  if (hasNegativeFinancialDominance(packet) && growthPressure < 58) return false;
+  return true;
 }
 
 function hasNegativeFinancialDominance(packet) {
@@ -1000,8 +1005,10 @@ function ruleBackedSustainabilityItem(packet, digest) {
   const packetCompanyKeys = new Set(packetCompanyNames(packet).map(stripTicker));
   const backedCompanies = packetBackedCompanies(packet, sourceIds, digest).filter((company) => !packetCompanyKeys.size || packetCompanyKeys.has(stripTicker(company)));
   const companies = (backedCompanies.length ? backedCompanies : sustainabilityPacketCompanies(packet)).slice(0, 5);
+  const mixedFinancialEvidence = hasNegativeFinancialDominance(packet);
   const evidenceGaps = unique([
     ...arrayValue(packet.evidenceGaps),
+    ...(mixedFinancialEvidence ? ["盈利分化待验证"] : []),
     ...(!companies.length ? ["缺公司公告"] : []),
     ...(!arrayValue(packet.financialFacts).length ? ["缺财报"] : []),
   ]);
@@ -1015,7 +1022,9 @@ function ruleBackedSustainabilityItem(packet, digest) {
       title: `${packet.industry}增长可持续性`,
       industries: [packet.industry],
       companies,
-      thesis: `${packet.industry}已扫描到增长或景气改善线索，但证据仍不足以升为扎实增长；本项用于跟踪增长质量、现金流、订单和后续财报确认。`,
+      thesis: mixedFinancialEvidence
+        ? `${packet.industry}已扫描到增长或景气改善线索，但公司财报表现分化，暂不升为扎实增长；本项用于跟踪增长质量、现金流、订单和后续财报确认。`
+        : `${packet.industry}已扫描到增长或景气改善线索，但证据仍不足以升为扎实增长；本项用于跟踪增长质量、现金流、订单和后续财报确认。`,
       drivers: inferDriversFromPacket(packet),
       evidence: evidenceLines,
       conclusionStrength: "观察",
@@ -1181,6 +1190,7 @@ function ruleBackedSolidGrowthItem(packet, digest) {
   if (sourceIds.length < 2) return null;
   const companies = packetBackedCompanies(packet, sourceIds, digest).slice(0, 5);
   if (!companies.length) return null;
+  const mixedFinancialEvidence = hasNegativeFinancialDominance(packet);
   const evidenceLines = sourceIds
     .map((id) => digest.citations.find((source) => source.id === id))
     .filter(Boolean)
@@ -1196,7 +1206,10 @@ function ruleBackedSolidGrowthItem(packet, digest) {
       drivers: inferDriversFromPacket(packet),
       evidence: evidenceLines,
       conclusionStrength: "正式结论",
-      evidenceGaps: arrayValue(packet.evidenceGaps).filter((gap) => !/缺多源验证/.test(gap)),
+      evidenceGaps: unique([
+        ...arrayValue(packet.evidenceGaps).filter((gap) => !/缺多源验证/.test(gap)),
+        ...(mixedFinancialEvidence ? ["盈利分化待验证"] : []),
+      ]),
       driverTags: inferDriverTagsFromPacket(packet),
       sustainabilityTier: "中期景气",
       durability: "中期",
@@ -1831,18 +1844,49 @@ function evidenceBackedCompanies(companies, sourceIds, digest, record = {}) {
   const matchedSources = digest.citations.filter((source) => sourceSet.has(source.id));
   const itemText = [record.title, record.thesis, ...stringArray(record.industries), ...stringArray(record.drivers), ...stringArray(record.evidence)].join(" ");
   const allowedCompanies = new Set(stringArray(record.allowedCompanies));
-  const sourceCompanies = unique(
-    matchedSources
-      .map((source) => stringValue(source.company))
-      .filter(Boolean)
-      .filter((company) => !allowedCompanies.size || allowedCompanies.has(company))
-      .filter((company) => isEligibleRepresentativeCompany(company))
-      .filter((company) => companyMatchesItemContext(company, itemText, matchedSources)),
-  );
+  const sourceCompanies = rankedSourceCompanies(matchedSources, itemText, allowedCompanies);
   const explicitCompanies = companies
     .filter((company) => !allowedCompanies.size || allowedCompanies.has(company))
     .filter((company) => companyMatchesItemContext(company, itemText, matchedSources));
-  return uniqueCompaniesByName([...explicitCompanies, ...sourceCompanies]);
+  return uniqueCompaniesByName(sourceCompanies.length ? sourceCompanies : explicitCompanies);
+}
+
+function rankedSourceCompanies(matchedSources, itemText, allowedCompanies) {
+  const bestByCompany = new Map();
+  for (const source of matchedSources) {
+    const company = stringValue(source.company);
+    if (!company || (allowedCompanies.size && !allowedCompanies.has(company))) continue;
+    if (!isEligibleRepresentativeCompany(company)) continue;
+    if (!companyMatchesItemContext(company, itemText, matchedSources)) continue;
+    const score = companyEvidenceQuality(source);
+    const key = stripTicker(company);
+    const existing = bestByCompany.get(key);
+    if (!existing || score > existing.score) bestByCompany.set(key, { company, score });
+  }
+  return [...bestByCompany.values()]
+    .sort((left, right) => right.score - left.score || left.company.localeCompare(right.company, "zh-Hans-CN"))
+    .map((entry) => entry.company);
+}
+
+function companyEvidenceQuality(source) {
+  const text = `${source.title ?? ""} ${source.summary ?? ""}`;
+  const revenueYoy = firstPercentAfter(text, /营收同比/);
+  const profitYoy = firstPercentAfter(text, /净利润同比/);
+  let score = Number(source.score) || 0;
+  if (Number.isFinite(revenueYoy) && revenueYoy >= 8) score += 18;
+  if (Number.isFinite(profitYoy) && profitYoy > 0 && profitYoy < 1000) score += 18;
+  if (/高速增长|预增|略增|利润增长|净利润增长|营收增长/.test(text)) score += 10;
+  if (/经营现金流\s*-|每股经营现金流\s*-|现金流为负/.test(text)) score -= 30;
+  if (Number.isFinite(revenueYoy) && revenueYoy < 0) score -= 35;
+  if (Number.isFinite(profitYoy) && profitYoy < 0) score -= 24;
+  if (Number.isFinite(profitYoy) && profitYoy >= 1000) score -= 50;
+  if (/减亏|扭亏|低基数|一次性|待验证/.test(text)) score -= 8;
+  return score;
+}
+
+function firstPercentAfter(text, marker) {
+  const match = String(text).match(new RegExp(`${marker.source}\\s*([+-]?\\d+(?:\\.\\d+)?)%`));
+  return match ? Number(match[1]) : undefined;
 }
 
 function uniqueCompaniesByName(companies) {
