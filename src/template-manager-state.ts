@@ -13,6 +13,15 @@ export function resolveTemplateManagerView(
   return { view: templates.length ? "list" : "summary", editingTemplateId: "" };
 }
 
+export function shouldScrollTemplateEditor(
+  previousView: TemplateManagerView,
+  previousEditingTemplateId: string,
+  nextView: TemplateManagerView,
+  nextEditingTemplateId: string,
+) {
+  return nextView === "edit" && Boolean(nextEditingTemplateId) && (previousView !== "edit" || previousEditingTemplateId !== nextEditingTemplateId);
+}
+
 export function buildFullAnalysisTemplateCardState(
   enabledTemplateCount: number,
   phase: TemplateGenerationPhase,

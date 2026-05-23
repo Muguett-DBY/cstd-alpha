@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { normalizeMarkdownForReading } from "./markdown-report";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
-import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView } from "./template-manager-state";
+import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView, shouldScrollTemplateEditor } from "./template-manager-state";
 
 describe("template manager navigation", () => {
   test("keeps a valid template edit screen selected", () => {
@@ -23,6 +23,13 @@ describe("template manager navigation", () => {
       view: "summary",
       editingTemplateId: "",
     });
+  });
+
+  test("scrolls the editor into view when opening or switching template edits", () => {
+    expect(shouldScrollTemplateEditor("list", "", "edit", RESEARCH_TEMPLATES[10].id)).toBe(true);
+    expect(shouldScrollTemplateEditor("edit", RESEARCH_TEMPLATES[0].id, "edit", RESEARCH_TEMPLATES[10].id)).toBe(true);
+    expect(shouldScrollTemplateEditor("edit", RESEARCH_TEMPLATES[0].id, "edit", RESEARCH_TEMPLATES[0].id)).toBe(false);
+    expect(shouldScrollTemplateEditor("edit", RESEARCH_TEMPLATES[0].id, "list", "")).toBe(false);
   });
 });
 

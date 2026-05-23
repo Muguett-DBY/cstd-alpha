@@ -27,7 +27,13 @@ import {
   type UserSession,
   type WatchlistItem,
 } from "./shared/user-research";
-import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView, type TemplateGenerationPhase, type TemplateManagerView } from "./template-manager-state";
+import {
+  buildFullAnalysisTemplateCardState,
+  resolveTemplateManagerView,
+  shouldScrollTemplateEditor,
+  type TemplateGenerationPhase,
+  type TemplateManagerView,
+} from "./template-manager-state";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -458,6 +464,8 @@ function TemplateManager({
     error: "",
     notice: "",
   });
+  const editorPanelRef = useRef<HTMLElement | null>(null);
+  const previousEditorNavigationRef = useRef<{ view: TemplateManagerView; editingTemplateId: string }>({ view: "summary", editingTemplateId: "" });
 
   if (draftState.source !== templates) {
     setDraftState({ source: templates, drafts: templates });
@@ -472,6 +480,14 @@ function TemplateManager({
   const hasInvalidTemplate = drafts.some((template) => !template.title.trim() || !template.prompt.trim() || !template.fullPrompt.trim());
   const hasChanges = JSON.stringify(normalizeTemplateDrafts(drafts)) !== JSON.stringify(normalizeTemplateDrafts(templates));
   const editingTemplate = drafts.find((template) => template.id === currentEditingTemplateId) ?? null;
+
+  useEffect(() => {
+    const previous = previousEditorNavigationRef.current;
+    if (shouldScrollTemplateEditor(previous.view, previous.editingTemplateId, currentView, currentEditingTemplateId)) {
+      editorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    previousEditorNavigationRef.current = { view: currentView, editingTemplateId: currentEditingTemplateId };
+  }, [currentView, currentEditingTemplateId]);
 
   function updateDrafts(updater: (current: ResearchTemplate[]) => ResearchTemplate[]) {
     setDraftState((current) => {
@@ -658,7 +674,7 @@ function TemplateManager({
       {currentView === "edit" && editingTemplate ? (
         <div className="template-manager-view">
           {renderToolbar()}
-          <article className={editingTemplate.enabled === false ? "template-editor template-edit-panel is-disabled" : "template-editor template-edit-panel"}>
+          <article ref={editorPanelRef} className={editingTemplate.enabled === false ? "template-editor template-edit-panel is-disabled" : "template-editor template-edit-panel"}>
             <div className="template-edit-header">
               <div>
                 <p className="eyebrow">{editingTemplate.isSystem ? "默认模板" : "自定义模板"}</p>
