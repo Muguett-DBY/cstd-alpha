@@ -7,7 +7,6 @@ import {
   RESEARCH_TEMPLATES,
   activeResearchTemplates,
   completedTemplateAnalysesForFull,
-  minimumResearchMarkdownChars,
   type ResearchTemplate,
   type TemplateAnalysisResult,
   type TemplateAnalysisStatus,
@@ -52,12 +51,10 @@ type GenerateBody = {
 type TemplateProgressWriter = (event: Record<string, unknown>) => void;
 type GeneratedTemplateAnalysis = ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
 type TemplateReasoningEffort = "high" | "max";
-type TemplateCacheMode = "free" | "paid" | "paid-retry";
-type TemplateCompletionMode = "normal" | "rescue";
+type TemplateCacheMode = "free" | "paid";
 type TemplateGenerationAttempt = {
   reasoningEffort: TemplateReasoningEffort;
   cacheMode: TemplateCacheMode;
-  completionMode: TemplateCompletionMode;
   maxTokens: number;
 };
 
@@ -388,10 +385,11 @@ async function generateSingleTemplateAnalysis(
 }
 
 export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
-  const generated = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
-  if (!shouldExpandTemplateReport(generated, template)) return generated;
-  const expanded = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses, generated.markdown);
-  return expanded.markdown.trim().length > generated.markdown.trim().length ? expanded : generated;
+  try {
+    return await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
+  } catch (error) {
+    return buildEvidenceFallbackTemplateReport(watchlist, evidence, template, error);
+  }
 }
 
 async function requestTemplateReportOnce(
@@ -400,9 +398,7 @@ async function requestTemplateReportOnce(
   evidence: EvidenceBundle,
   template: ResearchTemplate,
   childAnalyses: TemplateAnalysisResult[],
-  draftToExpand?: string,
 ) {
-  const minLength = minimumMarkdownLength(template);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("model-timeout"), MODEL_REQUEST_TIMEOUT_MS);
   try {
@@ -417,10 +413,7 @@ async function requestTemplateReportOnce(
             enrichedEvidence,
             template,
             childAnalyses,
-            minLength,
-            draftToExpand,
             attempt.cacheMode,
-            attempt.completionMode,
           );
           const response = await fetchTemplateModel(route.url, buildTemplateRequest(route, messages, attempt.maxTokens, attempt.reasoningEffort, controller.signal));
           if (!response.ok) {
@@ -455,22 +448,16 @@ function buildTemplateMessages(
   evidence: EvidenceBundle,
   template: ResearchTemplate,
   childAnalyses: TemplateAnalysisResult[],
-  minLength: number,
-  draftToExpand?: string,
   cacheMode: TemplateCacheMode = "free",
-  completionMode: TemplateCompletionMode = "normal",
 ) {
-  const rescueMode = completionMode === "rescue";
-  const markdownTarget = rescueMode ? "3500-6000" : template.id === FULL_ANALYSIS_TEMPLATE_ID ? "7000-10000" : "6000-9000";
-  const markdownTask = draftToExpand
-    ? `上一次 Markdown 正文过短。请在不改变结论方向的前提下扩写为真正深度报告，正文至少 ${minLength} 个中文字符，目标 ${markdownTarget} 个中文字符，必须补足证据链、推理链、反证条件、估值/仓位规则和待复核清单。`
-    : template.id === FULL_ANALYSIS_TEMPLATE_ID
-      ? `基于全部启用模板专项报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。Markdown 正文至少 ${minLength} 个中文字符，目标 ${markdownTarget} 个中文字符。`
-      : `严格按完整模板原文生成一份超级深度专项报告。不是摘要，不是短 JSON。Markdown 正文至少 ${minLength} 个中文字符，目标 ${markdownTarget} 个中文字符，并包含模板要求的所有关键模块。`;
+  const markdownTask =
+    template.id === FULL_ANALYSIS_TEMPLATE_ID
+      ? "基于全部启用模板专项报告生成最终全面分析。要求交叉验证、指出分歧、形成最终结论。不要为了篇幅重复扩写；只要把关键判断、证据、反证和动作建议写完整。"
+      : "严格按完整模板原文逐项回答。不是摘要，不是短 JSON。每个有实质信息的模板小节都要包含结论、证据依据、反证条件和跟踪指标；缺证据的部分明确写证据缺口。不要为了凑字扩写。";
   return [
     {
       role: "system" as const,
-      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。正文不足最低字数、JSON 字段缺失或结构不完整都视为失败。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。${rescueMode ? "\n- 救援模式：上一次 Max 思考未返回最终正文。本次用更紧凑结构完成所有字段，宁可正文略短，也必须返回完整可解析 JSON。" : ""}`,
+      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。`,
     },
     {
       role: "user" as const,
@@ -482,20 +469,19 @@ function buildTemplateMessages(
     {
       role: "user" as const,
       content: JSON.stringify({
-        task: rescueMode ? `救援模式：${markdownTask} 请先输出完整 JSON，再保证 Markdown 深度。` : markdownTask,
+        task: markdownTask,
         evidenceRetrievedAt: evidence.retrievedAt,
         template: { id: template.id, title: template.title, focus: template.focus, fullPrompt: template.fullPrompt },
-        draftToExpand: draftToExpand || undefined,
         childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
         expectedOutputShape: {
           title: "报告标题",
           score: "0-100 数字，必填",
           verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
-          summary: "300-600 字摘要，必须明确结论、估值、风险和跟踪重点",
+          summary: "摘要必须明确结论、估值、风险和跟踪重点",
           keyPoints: ["至少 5 条核心正面判断，每条必须有证据或推理"],
           riskFlags: ["至少 5 条风险、反证或不确定性，每条必须可跟踪"],
           followUps: ["至少 5 条后续跟踪指标，每条必须具体"],
-          markdown: `完整中文 Markdown 深度报告，使用二级/三级标题，必须覆盖模板原文要求；需要有证据、推理、反证、结论和仓位/动作建议。最低 ${minLength} 个中文字符，目标 ${markdownTarget} 个中文字符；必须保证 JSON 完整闭合。`,
+          markdown: "完整中文 Markdown 报告，使用二级/三级标题，必须覆盖模板原文要求；每个关键小节都要有证据、推理、反证、结论和仓位/动作建议。无需凑字，必须保证 JSON 完整闭合。",
         },
       }),
     },
@@ -503,27 +489,18 @@ function buildTemplateMessages(
 }
 
 function templateCacheAnchor(cacheMode: TemplateCacheMode) {
-  if (cacheMode === "paid-retry") return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(Math.max(FREE_TEMPLATE_CACHE_REPEAT, 80));
   return TEMPLATE_CACHE_ANCHOR_SENTENCE.repeat(cacheMode === "paid" ? PAID_TEMPLATE_CACHE_REPEAT : FREE_TEMPLATE_CACHE_REPEAT);
 }
 
 function templateGenerationAttempts(templateId: string, maxTokens: number, cacheMode: TemplateCacheMode): TemplateGenerationAttempt[] {
   const primaryEffort = templateReasoningEffort(templateId);
-  const attempts: TemplateGenerationAttempt[] = [
+  return [
     {
       reasoningEffort: primaryEffort,
       cacheMode,
-      completionMode: "normal",
       maxTokens,
     },
   ];
-  attempts.push({
-    reasoningEffort: "high",
-    cacheMode: cacheMode === "paid" ? "paid-retry" : cacheMode,
-    completionMode: "rescue",
-    maxTokens,
-  });
-  return attempts;
 }
 
 async function enrichTemplateEvidenceWithAnySearch(
@@ -694,38 +671,97 @@ export function templateReasoningEffort(templateId: string): TemplateReasoningEf
 }
 
 async function fetchTemplateModel(url: string, init: RequestInit) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await fetch(url, init);
-      if (!isRetryableHttpStatus(response.status) || attempt === 2) return response;
-      lastError = new Error(`模板分析通道暂时不可用：${response.status} ${(await response.text()).slice(0, 300)}`);
-    } catch (error) {
-      lastError = error;
-      if (isAbortLikeError(error) || attempt === 2) throw error;
-    }
-    await delay(800 * (attempt + 1));
-  }
-  throw lastError instanceof Error ? lastError : new Error("模板分析模型请求失败。");
+  return fetch(url, init);
 }
 
-function isRetryableHttpStatus(status: number) {
-  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function minimumMarkdownLength(template: ResearchTemplate) {
-  return minimumResearchMarkdownChars(template.id);
-}
-
-function shouldExpandTemplateReport(generated: GeneratedTemplateAnalysis, template: ResearchTemplate) {
-  const markdownLength = generated.markdown.trim().length;
-  if (!markdownLength) return false;
-  if (template.id === FULL_ANALYSIS_TEMPLATE_ID) return false;
-  return markdownLength < minimumMarkdownLength(template);
+function buildEvidenceFallbackTemplateReport(watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, error: unknown): GeneratedTemplateAnalysis {
+  const evidenceItems = evidence.evidence.slice(0, 10).map((item, index) => {
+    const withId = item as typeof item & { id?: string; evidenceType?: string };
+    return {
+      id: withId.id || `E${index + 1}`,
+      title: item.title,
+      source: item.source,
+      freshness: item.freshness,
+      notes: item.notes,
+      evidenceType: withId.evidenceType,
+      url: item.url,
+    };
+  });
+  const evidenceLines = evidenceItems.length
+    ? evidenceItems.map((item) => `- ${item.id}: ${item.title}（${item.source || "公开来源"}，${item.freshness || "时间待核验"}）${item.notes ? ` - ${item.notes}` : ""}`).join("\n")
+    : "- 当前证据包没有可用来源，必须先补充公司财报、行情、公告或外部搜索证据。";
+  const quote = optionalRecord(evidence.facts.quote);
+  const summary = optionalRecord(evidence.facts.summary);
+  const quoteLines = [
+    quote?.regularMarketPrice !== undefined ? `- 最新价格：${String(quote.regularMarketPrice)}${quote.currency ? ` ${String(quote.currency)}` : ""}` : "",
+    quote?.marketCap !== undefined ? `- 市值：${String(quote.marketCap)}` : "",
+    quote?.trailingPE !== undefined ? `- TTM PE：${String(quote.trailingPE)}` : "",
+    quote?.priceToBook !== undefined ? `- PB：${String(quote.priceToBook)}` : "",
+    summary?.longBusinessSummary ? `- 主营摘要：${String(summary.longBusinessSummary).slice(0, 260)}` : "",
+  ].filter(Boolean);
+  const modelIssue = normalizeTemplateAnalysisError(error);
+  const markdown = [
+    `# ${watchlist.company_name}（${watchlist.ticker}）${template.shortTitle}`,
+    "",
+    "> 本报告为证据包基础版：模型本次未返回可用正文，系统没有再次调用模型，而是基于已缓存的公开证据生成可复核框架。后续如需更深推理，可在证据包更新后重新生成。",
+    "",
+    "## 核心结论",
+    `${watchlist.company_name} 当前结论设为“需复核”。已有证据可以支撑基础事实整理，但不足以替代完整模型推理；投资动作应等待关键财务、估值、行业和反证条件补齐后再决定。`,
+    "",
+    "## 已使用证据",
+    evidenceLines,
+    "",
+    "## 关键事实快照",
+    quoteLines.length ? quoteLines.join("\n") : "- 当前结构化行情或财务摘要不足，需要补充价格、市值、估值、营收、利润、现金流和资产负债数据。",
+    "",
+    "## 按模板待完成的问题",
+    `- 模板：${template.title}`,
+    `- 研究重点：${template.focus}`,
+    "- 需要逐项核验：商业模式、行业阶段、财务质量、估值安全边际、反证条件、仓位规则和跟踪指标。",
+    "",
+    "## 风险与反证",
+    "- 如果关键财务数据缺失、行业数据无法交叉验证，任何高分结论都应降级为观察。",
+    "- 如果估值、盈利质量、现金流或治理出现明确负面证据，应优先降低仓位或回避。",
+    "- 如果证据只来自单一来源或新闻线索，不应视为可投资结论。",
+    "",
+    "## 后续跟踪",
+    "- 补齐最近一期财报、经营现金流、毛利率、净利润和资本开支。",
+    "- 跟踪所属行业价格、销量、库存、订单或政策变化。",
+    "- 复核估值分位、股价动量和市场预期变化。",
+    "- 检查重大公告、监管事件、诉讼、减持和治理风险。",
+    "- 在证据包发生实质变化后重新生成模板报告。",
+    "",
+    "## 本次未使用模型生成的原因",
+    `- ${modelIssue}`,
+  ].join("\n");
+  return {
+    ...normalizeGeneratedAnalysis(
+      {
+        title: `${watchlist.company_name}${template.shortTitle}基础版`,
+        score: 49,
+        verdict: "需复核",
+        summary: "模型本次未返回可用正文，系统未再次调用模型；此报告基于证据包生成基础研究框架，避免空结果和重复消耗。",
+        keyPoints: [
+          "已返回可读基础报告，避免空内容。",
+          "报告仅使用当前证据包，不额外调用模型。",
+          "结论保持保守，避免无证据高分。",
+          "列出已使用证据，便于复核。",
+          "给出后续需要补齐的关键跟踪项。",
+        ],
+        riskFlags: [
+          "该报告不是完整模型推理结果。",
+          "证据包可能缺少最新财报或行业硬数据。",
+          "不能用单一新闻线索替代财务验证。",
+          "估值和仓位结论需要重新生成后确认。",
+          "若模型服务持续不可用，应先检查 API 状态和证据包质量。",
+        ],
+        followUps: ["补齐财报", "补齐行业数据", "复核估值", "复核风险事件", "证据变化后重新生成"],
+        markdown,
+      },
+      template,
+    ),
+    modelUsed: "evidence-fallback",
+  };
 }
 
 async function writeCompletedAnalysis(

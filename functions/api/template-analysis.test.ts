@@ -154,54 +154,29 @@ describe("template model routing", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
 
-  test("expands short completed template reports once with high reasoning", async () => {
-    const expandedMarkdown = `## 扩写后的深度报告\n${"扩写后补足证据链、估值框架、反证条件和跟踪指标。".repeat(180)}`;
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify({
-                  title: "短报告",
-                  score: 58,
-                  verdict: "观察",
-                  summary: "模型返回了可解析但过短的模板分析。",
-                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
-                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
-                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                  markdown: "## 短报告\n内容太薄。",
-                }),
-              },
+  test("accepts short completed template reports without expansion when fields are complete", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: JSON.stringify({
+                title: "短报告",
+                score: 58,
+                verdict: "观察",
+                summary: "模型返回了可解析但精简的模板分析。",
+                keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                markdown: "## 短报告\n内容短，但关键字段完整。",
+              }),
             },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify({
-                  title: "扩写成功报告",
-                  score: 66,
-                  verdict: "观察",
-                  summary: "第二次基于草稿扩写后返回了更完整的模板分析。",
-                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
-                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
-                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                  markdown: expandedMarkdown,
-                }),
-              },
-            },
-          ],
-        }),
-      });
+          },
+        ],
+      }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
@@ -212,51 +187,23 @@ describe("template model routing", () => {
       [],
     );
 
-    expect(generated.markdown).toBe(expandedMarkdown);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(firstBody.reasoning_effort).toBe("high");
-    expect(secondBody.reasoning_effort).toBe("high");
-    expect(secondBody.messages[2].content).toContain("上一次 Markdown 正文过短");
+    expect(generated.markdown).toContain("内容短，但关键字段完整");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
 
-  test("retries with compact high reasoning when high reasoning returns no final content", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "length",
-              message: { content: "" },
-            },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify({
-                  title: "重试成功报告",
-                  score: 72,
-                  verdict: "观察",
-                  summary: "High 思考耗尽输出后，紧凑 high 模式成功返回完整模板分析。",
-                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
-                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
-                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                  markdown: `## 深度报告\n紧凑 high 模式返回完整 Markdown。\n${"救援模式补足证据、判断、反证和跟踪指标。".repeat(220)}`,
-                }),
-              },
-            },
-          ],
-        }),
-      });
+  test("returns an evidence fallback without a second model call when high reasoning returns no final content", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: "length",
+            message: { content: "" },
+          },
+        ],
+      }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
@@ -267,14 +214,10 @@ describe("template model routing", () => {
       [],
     );
 
-    expect(generated.markdown).toContain("紧凑 high 模式");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(firstBody.reasoning_effort).toBe("high");
-    expect(secondBody.reasoning_effort).toBe("high");
-    expect(secondBody.messages[2].content).toContain("救援模式");
-    expect(secondBody.messages[0].content.length).toBeLessThan(firstBody.messages[0].content.length);
+    expect(generated.markdown).toContain("证据包基础版");
+    expect(generated.modelUsed).toBe("evidence-fallback");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
 
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
