@@ -13,6 +13,7 @@ import {
   buildRadarEvidenceDigest,
   buildRadarRequest,
   classifyRadarSource,
+  generateRadarScan,
   onRequestGet,
   onRequestPost,
   radarModelRoutes,
@@ -158,6 +159,18 @@ describe("radar scan async job API", () => {
     expect(response.status).toBe(202);
     expect(json.radar?.fromCache).toBe(true);
     expect(json.job).toMatchObject({ id: job.id, status: "running" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  test("Cloudflare fallback analysis never performs live source crawling", async () => {
+    const env = {
+      AUTH_SECRET: "secret",
+      DEEPSEEK_API_KEY: "paid-key",
+      REPORT_CACHE: kvWith({}),
+    };
+    globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
+
+    await expect(generateRadarScan(env, new AbortController().signal, null)).rejects.toThrow("雷达证据包过薄");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 

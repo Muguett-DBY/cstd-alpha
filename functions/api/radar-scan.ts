@@ -172,6 +172,8 @@ const RADAR_COMPANY_UNIVERSE_RULES = [
   "不得把美光、Micron、英伟达、NVIDIA、苹果、Apple、特斯拉、Tesla、ASML、台积电、TSMC 等海外上市主体作为代表公司。",
 ];
 
+const ENABLE_PAGES_RADAR_SOURCE_FETCH = false;
+
 const NON_AH_REPRESENTATIVE_PATTERNS = [
   /美光|Micron/i,
   /英伟达|NVIDIA/i,
@@ -368,6 +370,7 @@ export async function generateRadarScan(env: Env, signal: AbortSignal, previousS
 }
 
 async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSource[]> {
+  void signal;
   const rollingSnapshot = await readRadarEvidenceSnapshot(env);
   if (rollingSnapshot && rollingSnapshot.length >= MIN_RADAR_SOURCE_COUNT) {
     await writeRadarSourceCache(env, rollingSnapshot);
@@ -383,6 +386,10 @@ async function loadRadarSources(env: Env, signal: AbortSignal): Promise<RadarSou
       await writeRadarSourceCache(env, legacy);
       return legacy;
     }
+  }
+
+  if (!ENABLE_PAGES_RADAR_SOURCE_FETCH) {
+    return cached ?? rollingSnapshot ?? [];
   }
 
   const sources = await fetchRadarSources(signal);

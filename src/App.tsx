@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
-import { RankingView, type RankingMarket } from "./RankingView";
-import { MyResearchView } from "./MyResearchView";
+import type { RankingMarket } from "./RankingView";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
 import { buildRadarSourceLibrary, isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation, radarRefreshFallbackMessage } from "./radar-ui";
@@ -23,6 +22,8 @@ type BeforeInstallPromptEvent = Event & {
 
 export const DEFAULT_APP_VIEW: AppView = "radar";
 const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
+const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
+const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -590,20 +591,22 @@ function App() {
       </aside>
 
       <section className="workspace">
-        {activeView === "ranking" ? (
-          <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
-        ) : activeView === "mine" ? (
-          <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
-        ) : activeView === "radar" ? (
-          <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
-        ) : (
-          <>
-            {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
-              <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
-            ) : null}
-            {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
-          </>
-        )}
+        <Suspense fallback={<section className="empty-state"><h2>正在加载视图</h2><p>只加载当前需要的功能模块。</p></section>}>
+          {activeView === "ranking" ? (
+            <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
+          ) : activeView === "mine" ? (
+            <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
+          ) : activeView === "radar" ? (
+            <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
+          ) : (
+            <>
+              {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
+                <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
+              ) : null}
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
+            </>
+          )}
+        </Suspense>
       </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
