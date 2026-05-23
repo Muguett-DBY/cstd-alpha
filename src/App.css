@@ -195,10 +195,12 @@ button:not(:disabled):active,
 }
 
 @media (min-width: 1101px) {
+  .app-shell.view-mine,
   .app-shell.view-radar {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .app-shell.view-mine .input-rail,
   .app-shell.view-radar .input-rail {
     position: sticky;
     top: 0;
@@ -216,6 +218,7 @@ button:not(:disabled):active,
     backdrop-filter: blur(14px);
   }
 
+  .app-shell.view-mine .input-rail > div:first-child,
   .app-shell.view-radar .input-rail > div:first-child {
     display: flex;
     gap: 12px;
@@ -223,6 +226,18 @@ button:not(:disabled):active,
     min-width: 0;
   }
 
+  .app-shell.view-mine .input-rail h1,
+  .app-shell.view-mine .rail-copy,
+  .app-shell.view-mine .input-rail .muted,
+  .app-shell.view-mine .report-form,
+  .app-shell.view-mine .selected-company,
+  .app-shell.view-mine .input-rail > .generate-button,
+  .app-shell.view-mine .input-rail > .refresh-button,
+  .app-shell.view-mine .input-rail > .cancel-button,
+  .app-shell.view-mine .chart-controls,
+  .app-shell.view-mine .progress-panel,
+  .app-shell.view-mine .input-rail > .cache-notice,
+  .app-shell.view-mine .input-rail > .error-text,
   .app-shell.view-radar .input-rail h1,
   .app-shell.view-radar .rail-copy,
   .app-shell.view-radar .input-rail .muted,
@@ -238,15 +253,18 @@ button:not(:disabled):active,
     display: none;
   }
 
+  .app-shell.view-mine .brand,
   .app-shell.view-radar .brand {
     white-space: nowrap;
   }
 
+  .app-shell.view-mine .input-rail .ghost-button,
   .app-shell.view-radar .input-rail .ghost-button {
     min-height: 34px;
     padding-inline: 10px;
   }
 
+  .app-shell.view-mine .view-tabs,
   .app-shell.view-radar .view-tabs {
     display: flex;
     gap: 8px;
@@ -257,6 +275,7 @@ button:not(:disabled):active,
     scrollbar-width: thin;
   }
 
+  .app-shell.view-mine .view-tabs button,
   .app-shell.view-radar .view-tabs button {
     flex: 0 0 auto;
     min-width: 96px;
@@ -264,6 +283,7 @@ button:not(:disabled):active,
     padding-inline: 12px;
   }
 
+  .app-shell.view-mine .view-tabs button.wide-tab,
   .app-shell.view-radar .view-tabs button.wide-tab {
     grid-column: auto;
   }
@@ -1009,9 +1029,15 @@ button:not(:disabled):active,
 .my-workspace {
   display: grid;
   gap: 18px;
-  width: min(100%, 1480px);
+  width: min(100%, 1540px);
   margin: 0 auto;
   min-width: 0;
+}
+
+.app-shell.view-mine .workspace {
+  background:
+    linear-gradient(180deg, rgba(237, 242, 240, 0.62), transparent 260px),
+    var(--bg);
 }
 
 .my-actions {
@@ -1064,9 +1090,10 @@ button:not(:disabled):active,
   display: grid;
   gap: 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 10px;
+  padding: 16px;
   background: var(--surface);
+  box-shadow: 0 10px 26px rgba(18, 20, 23, 0.05);
 }
 
 .mine-search-card h3 {
@@ -1106,9 +1133,10 @@ button:not(:disabled):active,
   display: grid;
   gap: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 10px;
+  padding: 16px;
   background: var(--surface);
+  box-shadow: 0 10px 26px rgba(18, 20, 23, 0.05);
 }
 
 .template-manager header {
@@ -1295,7 +1323,7 @@ button:not(:disabled):active,
 
 .my-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.45fr) minmax(0, 1fr);
+  grid-template-columns: minmax(290px, 0.38fr) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -1307,40 +1335,78 @@ button:not(:disabled):active,
 .my-list,
 .analysis-panel {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 16px;
   background: var(--surface);
+  box-shadow: 0 14px 34px rgba(18, 20, 23, 0.06);
 }
 
-.my-list h3,
+.my-list-header {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.my-list-header h3,
 .analysis-panel h3 {
   margin-top: 0;
+}
+
+.my-list-header h3 {
+  margin-bottom: 0;
+}
+
+.my-list-header > span {
+  border: 1px solid #d7e6e2;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #f3fbf8;
+  color: var(--teal);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.watchlist-filter {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.watchlist-filter input {
+  min-height: 40px;
+  background: #fbfffd;
 }
 
 .my-list article {
   display: grid;
   gap: 10px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfbf8;
   transition:
     background-color 0.14s ease,
+    border-color 0.14s ease,
     box-shadow 0.14s ease,
-    padding-inline 0.14s ease;
+    transform 0.14s ease;
 }
 
-.my-list article:first-of-type {
-  border-top: 0;
+.my-list article + article {
+  margin-top: 10px;
 }
 
 .my-list article.active {
   background: #f6fbf8;
-  padding-inline: 10px;
+  border-color: #b7d6cf;
   box-shadow: inset 3px 0 0 var(--teal);
 }
 
 .my-list article:not(.active):hover {
-  background: #fbfff8;
-  padding-inline: 8px;
+  border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
+  background: #fbfffd;
+  transform: translateY(-1px);
 }
 
 .my-list article > div {
@@ -1351,6 +1417,68 @@ button:not(:disabled):active,
 
 .my-list article button {
   min-height: 34px;
+}
+
+.my-list article .ranking-company {
+  gap: 6px;
+}
+
+.watchlist-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.company-workbench-header {
+  border: 1px solid #dde8e5;
+  border-radius: 12px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, #f6fbf8 0%, #fff 62%),
+    var(--surface);
+}
+
+.workbench-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.workbench-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.workbench-kpis span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid #d7e6e2;
+  border-radius: 10px;
+  padding: 8px;
+  background: white;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.workbench-kpis strong {
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.workbench-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.workbench-actions button {
+  min-height: 36px;
+  padding-inline: 12px;
 }
 
 .analysis-result {
@@ -1456,8 +1584,6 @@ button:not(:disabled):active,
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
   align-items: start;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
 }
 
 .company-workbench-header h3 {
