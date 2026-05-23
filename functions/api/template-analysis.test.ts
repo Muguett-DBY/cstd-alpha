@@ -154,6 +154,62 @@ describe("template model routing", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
   });
 
+  test("retries with compact high reasoning when max reasoning returns no final content", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "length",
+              message: { content: "" },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "重试成功报告",
+                  score: 72,
+                  verdict: "观察",
+                  summary: "Max 思考耗尽输出后，紧凑 high 模式成功返回完整模板分析。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: "## 深度报告\n紧凑 high 模式返回完整 Markdown。",
+                }),
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const generated = await requestTemplateReport(
+      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[9],
+      [],
+    );
+
+    expect(generated.markdown).toContain("紧凑 high 模式");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(firstBody.reasoning_effort).toBe("max");
+    expect(secondBody.reasoning_effort).toBe("high");
+    expect(secondBody.messages[2].content).toContain("救援模式");
+    expect(secondBody.messages[0].content.length).toBeLessThan(firstBody.messages[0].content.length);
+  });
+
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
     const fetchMock = vi
       .fn()
