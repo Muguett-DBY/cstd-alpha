@@ -193,7 +193,7 @@ describe("template model routing", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
 
-  test("returns an evidence fallback without a second model call when high reasoning returns no final content", async () => {
+  test("fails instead of writing an evidence fallback when high reasoning returns no final content", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -207,16 +207,16 @@ describe("template model routing", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const generated = await requestTemplateReport(
-      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
-      watchlistRow(),
-      evidenceBundle(),
-      RESEARCH_TEMPLATES[9],
-      [],
-    );
+    await expect(
+      requestTemplateReport(
+        { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+        watchlistRow(),
+        evidenceBundle(),
+        RESEARCH_TEMPLATES[9],
+        [],
+      ),
+    ).rejects.toThrow("未返回完整模板分析内容");
 
-    expect(generated.markdown).toContain("证据包基础版");
-    expect(generated.modelUsed).toBe("evidence-fallback");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
@@ -327,6 +327,89 @@ describe("template model routing", () => {
     expect(volatilePayload.template.fullPrompt).toBe(RESEARCH_TEMPLATES[0].fullPrompt);
     expect(modelBody.messages[1].content.indexOf("publicEvidence")).toBeGreaterThan(-1);
     expect(JSON.stringify(modelBody).indexOf("publicEvidence")).toBeLessThan(JSON.stringify(modelBody).indexOf("fullPrompt"));
+  });
+
+  test("uses AnySearch without R2 bindings in GitHub Action template jobs", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: "贵州茅台 最新公告",
+              url: "https://example.com/company",
+              content: "公司公告证据。",
+              source: "doc",
+              quality_score: 0.9,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: "白酒行业变化",
+              url: "https://example.com/industry",
+              content: "行业证据。",
+              source: "data",
+              quality_score: 0.86,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: "贵州茅台 风险跟踪",
+              url: "https://example.com/risk",
+              content: "风险证据。",
+              source: "news",
+              quality_score: 0.84,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "Action 模板报告",
+                  score: 67,
+                  verdict: "观察",
+                  summary: "GitHub Action 环境无 R2 binding 时仍能完成模型生成。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: `## Action 报告\n无 R2 binding 也不应触发 undefined.get。\n${"结合公司证据、外部搜索证据、评分约束和反证条件展开分析。".repeat(180)}`,
+                }),
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const generated = await requestTemplateReport(
+      { ANYSEARCH_API_KEY: "any-key", DEEPSEEK_API_KEY: "paid-key" },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[0],
+      [],
+    );
+
+    expect(generated.modelUsed).toBe("deepseek-v4-flash");
+    expect(generated.markdown).not.toContain("证据包基础版");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[3][0]).toBe("https://api.deepseek.com/chat/completions");
   });
 
   test("adds SearXNG supplemental evidence when configured without AnySearch", async () => {

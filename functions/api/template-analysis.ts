@@ -41,8 +41,8 @@ type DurableTemplateEnv = {
   DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
-  REPORT_LIBRARY_DB: D1Database;
-  REPORT_LIBRARY_BUCKET: R2Bucket;
+  REPORT_LIBRARY_DB?: D1Database;
+  REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 type TemplateCacheEnv = {
   REPORT_LIBRARY_DB?: D1Database;
@@ -271,11 +271,7 @@ export function shouldStartFullAnalysis(existing: TemplateAnalysisResult | null,
 }
 
 export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
-  try {
-    return await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
-  } catch (error) {
-    return buildEvidenceFallbackTemplateReport(watchlist, evidence, template, error);
-  }
+  return await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
 }
 
 async function requestTemplateReportOnce(
@@ -415,7 +411,8 @@ async function enrichTemplateEvidenceWithAnySearch(
   const apiKey = env.ANYSEARCH_API_KEY?.trim();
   const searxngEndpoints = env.SEARXNG_ENDPOINTS?.trim();
   if (!apiKey && !searxngEndpoints) return evidence;
-  const cached = await readTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template);
+  const bucket = env.REPORT_LIBRARY_BUCKET;
+  const cached = bucket ? await readTemplateAnySearchCache(bucket, watchlist, template) : null;
   const queries = templateSupplementalSearchQueries(watchlist);
   const anySearchEvidence =
     cached ??
@@ -435,7 +432,7 @@ async function enrichTemplateEvidenceWithAnySearch(
           })
         : []),
     ];
-  if (!cached) await writeTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template, anySearchEvidence);
+  if (!cached && bucket) await writeTemplateAnySearchCache(bucket, watchlist, template, anySearchEvidence);
   if (!anySearchEvidence.length) return evidence;
   return {
     ...evidence,
@@ -585,96 +582,6 @@ export function templateReasoningEffort(templateId: string): TemplateReasoningEf
 
 async function fetchTemplateModel(url: string, init: RequestInit) {
   return fetch(url, init);
-}
-
-function buildEvidenceFallbackTemplateReport(watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, error: unknown): GeneratedTemplateAnalysis {
-  const evidenceItems = evidence.evidence.slice(0, 10).map((item, index) => {
-    const withId = item as typeof item & { id?: string; evidenceType?: string };
-    return {
-      id: withId.id || `E${index + 1}`,
-      title: item.title,
-      source: item.source,
-      freshness: item.freshness,
-      notes: item.notes,
-      evidenceType: withId.evidenceType,
-      url: item.url,
-    };
-  });
-  const evidenceLines = evidenceItems.length
-    ? evidenceItems.map((item) => `- ${item.id}: ${item.title}（${item.source || "公开来源"}，${item.freshness || "时间待核验"}）${item.notes ? ` - ${item.notes}` : ""}`).join("\n")
-    : "- 当前证据包没有可用来源，必须先补充公司财报、行情、公告或外部搜索证据。";
-  const quote = optionalRecord(evidence.facts.quote);
-  const summary = optionalRecord(evidence.facts.summary);
-  const quoteLines = [
-    quote?.regularMarketPrice !== undefined ? `- 最新价格：${String(quote.regularMarketPrice)}${quote.currency ? ` ${String(quote.currency)}` : ""}` : "",
-    quote?.marketCap !== undefined ? `- 市值：${String(quote.marketCap)}` : "",
-    quote?.trailingPE !== undefined ? `- TTM PE：${String(quote.trailingPE)}` : "",
-    quote?.priceToBook !== undefined ? `- PB：${String(quote.priceToBook)}` : "",
-    summary?.longBusinessSummary ? `- 主营摘要：${String(summary.longBusinessSummary).slice(0, 260)}` : "",
-  ].filter(Boolean);
-  const modelIssue = normalizeTemplateAnalysisError(error);
-  const markdown = [
-    `# ${watchlist.company_name}（${watchlist.ticker}）${template.shortTitle}`,
-    "",
-    "> 本报告为证据包基础版：模型本次未返回可用正文，系统没有再次调用模型，而是基于已缓存的公开证据生成可复核框架。后续如需更深推理，可在证据包更新后重新生成。",
-    "",
-    "## 核心结论",
-    `${watchlist.company_name} 当前结论设为“需复核”。已有证据可以支撑基础事实整理，但不足以替代完整模型推理；投资动作应等待关键财务、估值、行业和反证条件补齐后再决定。`,
-    "",
-    "## 已使用证据",
-    evidenceLines,
-    "",
-    "## 关键事实快照",
-    quoteLines.length ? quoteLines.join("\n") : "- 当前结构化行情或财务摘要不足，需要补充价格、市值、估值、营收、利润、现金流和资产负债数据。",
-    "",
-    "## 按模板待完成的问题",
-    `- 模板：${template.title}`,
-    `- 研究重点：${template.focus}`,
-    "- 需要逐项核验：商业模式、行业阶段、财务质量、估值安全边际、反证条件、仓位规则和跟踪指标。",
-    "",
-    "## 风险与反证",
-    "- 如果关键财务数据缺失、行业数据无法交叉验证，任何高分结论都应降级为观察。",
-    "- 如果估值、盈利质量、现金流或治理出现明确负面证据，应优先降低仓位或回避。",
-    "- 如果证据只来自单一来源或新闻线索，不应视为可投资结论。",
-    "",
-    "## 后续跟踪",
-    "- 补齐最近一期财报、经营现金流、毛利率、净利润和资本开支。",
-    "- 跟踪所属行业价格、销量、库存、订单或政策变化。",
-    "- 复核估值分位、股价动量和市场预期变化。",
-    "- 检查重大公告、监管事件、诉讼、减持和治理风险。",
-    "- 在证据包发生实质变化后重新生成模板报告。",
-    "",
-    "## 本次未使用模型生成的原因",
-    `- ${modelIssue}`,
-  ].join("\n");
-  return {
-    ...normalizeGeneratedAnalysis(
-      {
-        title: `${watchlist.company_name}${template.shortTitle}基础版`,
-        score: 49,
-        verdict: "需复核",
-        summary: "模型本次未返回可用正文，系统未再次调用模型；此报告基于证据包生成基础研究框架，避免空结果和重复消耗。",
-        keyPoints: [
-          "已返回可读基础报告，避免空内容。",
-          "报告仅使用当前证据包，不额外调用模型。",
-          "结论保持保守，避免无证据高分。",
-          "列出已使用证据，便于复核。",
-          "给出后续需要补齐的关键跟踪项。",
-        ],
-        riskFlags: [
-          "该报告不是完整模型推理结果。",
-          "证据包可能缺少最新财报或行业硬数据。",
-          "不能用单一新闻线索替代财务验证。",
-          "估值和仓位结论需要重新生成后确认。",
-          "若模型服务持续不可用，应先检查 API 状态和证据包质量。",
-        ],
-        followUps: ["补齐财报", "补齐行业数据", "复核估值", "复核风险事件", "证据变化后重新生成"],
-        markdown,
-      },
-      template,
-    ),
-    modelUsed: "evidence-fallback",
-  };
 }
 
 export async function writeCompletedAnalysis(
