@@ -16,6 +16,7 @@ import {
 } from "./api";
 import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
+import { normalizeMarkdownForReading } from "./markdown-report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   activeResearchTemplates,
@@ -1177,24 +1178,50 @@ function MarkdownReport({ markdown }: { markdown: string }) {
                 .filter(Boolean)
                 .map((line) => (
                   <li key={line}>{line}</li>
-                ))}
+              ))}
             </ul>
           );
         }
+        if (isMarkdownTable(block)) return <MarkdownTable key={index} block={block} />;
         return <p key={index}>{renderInline(block)}</p>;
       })}
     </div>
   );
 }
 
-function normalizeMarkdownForReading(markdown: string) {
-  return markdown
-    .replace(/\r\n/g, "\n")
-    .replace(/\s+(?=\d{1,2}\.\s+)/g, "\n\n")
-    .replace(/\s+(估值与仓位规则|待复核清单|总结)\b/g, "\n\n## $1")
-    .replace(/\s+(?=\*\*反证条件：\*\*)/g, "\n")
-    .replace(/\s+(?=\*\*待复核：\*\*)/g, "\n")
-    .trim();
+function MarkdownTable({ block }: { block: string }) {
+  const rows = parseMarkdownTable(block);
+  if (rows.length < 2) return <p>{renderInline(block)}</p>;
+  const [head, ...body] = rows;
+  return (
+    <div className="markdown-table-wrap">
+      <table>
+        <thead>
+          <tr>{head.map((cell, index) => <th key={`${cell}-${index}`}>{renderInline(cell)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {body.map((row, rowIndex) => (
+            <tr key={row.join("|") || rowIndex}>
+              {row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{renderInline(cell)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function isMarkdownTable(block: string) {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.length >= 2 && lines[0].startsWith("|") && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[1]);
+}
+
+function parseMarkdownTable(block: string) {
+  return block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line, index) => line && index !== 1)
+    .map((line) => line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()));
 }
 
 function splitNumberedSection(body: string) {

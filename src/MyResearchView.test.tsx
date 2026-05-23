@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { normalizeMarkdownForReading } from "./markdown-report";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView } from "./template-manager-state";
 
@@ -37,5 +38,17 @@ describe("full analysis template card", () => {
   test("disables full analysis only when no templates are enabled or generation is running", () => {
     expect(buildFullAnalysisTemplateCardState(0, "ready").disabled).toBe(true);
     expect(buildFullAnalysisTemplateCardState(3, "generating").disabled).toBe(true);
+  });
+});
+
+describe("markdown report normalization", () => {
+  test("turns escaped newlines from model output into real markdown breaks", () => {
+    const markdown = "## 估值分析\\n\\n### DCF\\n使用TTM自由现金流。\\n\\n| 项目 | 分数 |\\n| --- | --- |\\n| 财务 | 95 |";
+
+    const normalized = normalizeMarkdownForReading(markdown);
+
+    expect(normalized).toContain("## 估值分析\n\n### DCF");
+    expect(normalized).toContain("| 项目 | 分数 |\n| --- | --- |");
+    expect(normalized).not.toContain("\\n");
   });
 });
