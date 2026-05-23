@@ -58,15 +58,7 @@ function App() {
   const [radarError, setRadarError] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
-
-  useEffect(() => {
-    if (!checking && showSplash) {
-      const t = setTimeout(() => setShowSplash(false), 450);
-      return () => clearTimeout(t);
-    }
-  }, [checking, showSplash]);
 
   const loadRadar = useCallback(
     async (forceRefresh: boolean) => {
@@ -431,23 +423,7 @@ function App() {
     setCacheNotice("已从我的自选股打开公司，可生成或查看完整评分报告。");
   }
 
-  if (showSplash) {
-    return (
-      <div className={`loading-screen ${!checking ? "loading-fade-out" : ""}`}>
-        <div className="loading-logo">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CSTD Alpha">
-            <rect width="512" height="512" rx="96" fill="#0f766e" />
-            <path d="M116 142h280v54H116zM116 229h220v54H116zM116 316h280v54H116z" fill="#f7f7f4" />
-            <circle cx="376" cy="256" r="42" fill="none" stroke="#f7f7f4" stroke-width="28" />
-            <path d="M404 285l54 54" stroke="#f7f7f4" stroke-width="28" stroke-linecap="round" />
-          </svg>
-        </div>
-        <h1 className="loading-title">CSTD Alpha</h1>
-        <p className="loading-subtitle">私人公司深度研究工具</p>
-        <div className="loading-dots"><span /><span /><span /></div>
-      </div>
-    );
-  }
+  if (checking) return <div className="loading-screen">CSTD Alpha</div>;
 
   if (!authenticated) {
     return (

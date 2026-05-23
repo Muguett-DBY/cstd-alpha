@@ -17,7 +17,6 @@ import {
 import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
 import { normalizeMarkdownForReading } from "./markdown-report";
-import { filterWatchlistItems, summarizeWatchlistAnalysis } from "./my-research-state";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   activeResearchTemplates,
@@ -56,7 +55,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [activeAnalysis, setActiveAnalysis] = useState<TemplateAnalysisResult | null>(null);
   const [activeNews, setActiveNews] = useState(false);
   const [companyQuery, setCompanyQuery] = useState("");
-  const [watchlistQuery, setWatchlistQuery] = useState("");
   const [companyCandidates, setCompanyCandidates] = useState<CompanyCandidate[]>([]);
   const [searchingCompany, setSearchingCompany] = useState(false);
   const [phase, setPhase] = useState<"loading" | "ready" | "generating" | "error">("loading");
@@ -90,11 +88,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
   const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
-  const filteredItems = useMemo(() => filterWatchlistItems(items, watchlistQuery), [items, watchlistQuery]);
-  const selectedAnalysisSummary = useMemo(
-    () => (selectedItem ? summarizeWatchlistAnalysis(analyses, selectedItem.id) : { total: 0, completed: 0, running: 0, failed: 0 }),
-    [analyses, selectedItem],
-  );
 
   useEffect(() => {
     selectedWatchlistIdRef.current = selectedItem?.id || "";
@@ -349,94 +342,10 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           </div>
         </div>
       ) : null}
-      {notice ? <p className="cache-notice">{notice}</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
-
-      <div className={`my-grid ${activeAnalysis || activeNews ? "reading-mode" : ""}`}>
-        {!activeAnalysis && !activeNews ? (
-          <section className="my-list">
-            <div className="my-list-header">
-              <div>
-                <p className="eyebrow">自选池</p>
-                <h3>我的自选股</h3>
-              </div>
-              <span>{filteredItems.length} / {items.length}</span>
-            </div>
-            <label className="watchlist-filter">
-              <span>搜索自选</span>
-              <input
-                value={watchlistQuery}
-                onChange={(event) => setWatchlistQuery(event.target.value)}
-                placeholder="公司名、代码、市场、交易所"
-              />
-            </label>
-            {filteredItems.length ? (
-              filteredItems.map((item) => {
-                const itemSummary = summarizeWatchlistAnalysis(analyses, item.id);
-                return (
-                <article key={item.id} className={item.id === selectedItem?.id ? "active" : ""}>
-                  <button
-                    type="button"
-                    className="ranking-company"
-                    onClick={() => {
-                      setSelectedWatchlistId(item.id);
-                      setActiveAnalysis(null);
-                      setActiveNews(false);
-                    }}
-                  >
-                    <CompanyIdentity company={item.company} size="sm" />
-                    <span className="watchlist-meta">
-                      {item.company.code} / {item.company.listingPlace || item.company.marketType || "市场待确认"} / 已完成 {itemSummary.completed}
-                    </span>
-                  </button>
-                  <div>
-                    <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
-                      基础报告
-                    </button>
-                    <button type="button" className="ghost-button" onClick={() => void deleteItem(item)}>
-                      移除
-                    </button>
-                  </div>
-                </article>
-                );
-              })
-            ) : (
-              <p className="muted">{items.length ? "没有匹配的自选股，换个公司名、代码或市场试试。" : "先在报告页或排行榜打开一家公司，再加入当前公司。"}</p>
-            )}
-          </section>
-        ) : null}
-
-        <section className="analysis-panel">
-          {selectedItem ? (
-            <CompanyWorkbench
-              item={selectedItem}
-              analysisByTemplate={analysisByTemplate}
-              activeAnalysis={activeAnalysis}
-              activeNews={activeNews}
-              phase={phase}
-              templates={templates}
-              analysisSummary={selectedAnalysisSummary}
-              activeGeneration={activeGeneration}
-              onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
-              onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
-              onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
-              onOpenNews={() => setActiveNews(true)}
-              onBackToTemplates={() => setActiveAnalysis(null)}
-              onBackFromNews={() => setActiveNews(false)}
-            />
-          ) : (
-            <>
-              <h3>公司工作台</h3>
-              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告。</p>
-            </>
-          )}
-        </section>
-      </div>
-
       <section className="mine-search-card" aria-label="搜索并加入自选股">
         <div>
           <h3>添加自选公司</h3>
-          <p className="muted">搜索全市场公司并加入“我的”；上方自选搜索只筛选已加入的公司。</p>
+          <p className="muted">在这里直接搜索公司名或股票代码，确认上市主体后加入“我的”，不必先回到生成报告页。</p>
         </div>
         <form onSubmit={submitCompanySearch} className="mine-search-form">
           <input value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} placeholder="例如：贵州茅台、000333、AMZN" />
@@ -457,7 +366,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           </div>
         ) : null}
       </section>
-
       <TemplateManager
         templates={templates}
         disabled={phase === "generating"}
@@ -466,6 +374,68 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         onResetDefault={() => void resetTemplates()}
         onRefresh={() => void refreshTemplates()}
       />
+      {notice ? <p className="cache-notice">{notice}</p> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+
+      <div className={`my-grid ${activeAnalysis || activeNews ? "reading-mode" : ""}`}>
+        {!activeAnalysis && !activeNews ? (
+          <section className="my-list">
+            <h3>我的自选股</h3>
+            {items.length ? (
+              items.map((item) => (
+                <article key={item.id} className={item.id === selectedItem?.id ? "active" : ""}>
+                  <button
+                    type="button"
+                    className="ranking-company"
+                    onClick={() => {
+                      setSelectedWatchlistId(item.id);
+                      setActiveAnalysis(null);
+                      setActiveNews(false);
+                    }}
+                  >
+                    <CompanyIdentity company={item.company} size="sm" />
+                  </button>
+                  <div>
+                    <button type="button" className="secondary-button" onClick={() => onOpenCompany(item.company)}>
+                      基础报告
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => void deleteItem(item)}>
+                      移除
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="muted">先在报告页或排行榜打开一家公司，再加入当前公司。</p>
+            )}
+          </section>
+        ) : null}
+
+        <section className="analysis-panel">
+          {selectedItem ? (
+            <CompanyWorkbench
+              item={selectedItem}
+              analysisByTemplate={analysisByTemplate}
+              activeAnalysis={activeAnalysis}
+              activeNews={activeNews}
+              phase={phase}
+              templates={templates}
+              activeGeneration={activeGeneration}
+              onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
+              onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
+              onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
+              onOpenNews={() => setActiveNews(true)}
+              onBackToTemplates={() => setActiveAnalysis(null)}
+              onBackFromNews={() => setActiveNews(false)}
+            />
+          ) : (
+            <>
+              <h3>公司工作台</h3>
+              <p className="muted">选择或加入一家公司后，可以在这里生成单模板深度报告。</p>
+            </>
+          )}
+        </section>
+      </div>
     </section>
   );
 }
@@ -793,7 +763,6 @@ function CompanyWorkbench({
   activeNews,
   phase,
   templates,
-  analysisSummary,
   activeGeneration,
   onGenerate,
   onOpenAnalysis,
@@ -808,7 +777,6 @@ function CompanyWorkbench({
   activeNews: boolean;
   phase: TemplateGenerationPhase;
   templates: ResearchTemplate[];
-  analysisSummary: ReturnType<typeof summarizeWatchlistAnalysis>;
   activeGeneration: ActiveGeneration | null;
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
   onOpenAnalysis: (analysis: TemplateAnalysisResult) => void;
@@ -840,24 +808,9 @@ function CompanyWorkbench({
             已启用 {activeTemplates.length} 个模板；单模板会独立读取公开公司证据并按完整模板生成，全面分析会先跑完启用模板，再做最终交叉整合。
           </p>
         </div>
-        <div className="workbench-side">
-          <div className="workbench-kpis" aria-label="当前公司模板任务状态">
-            <span><strong>{analysisSummary.completed}</strong>已完成</span>
-            <span><strong>{analysisSummary.running}</strong>进行中</span>
-            <span><strong>{analysisSummary.failed}</strong>待复核</span>
-          </div>
-          <div className="workbench-actions">
-            <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
-              基础报告
-            </button>
-            <button type="button" className="secondary-button" onClick={onOpenNews}>
-              新闻雷达
-            </button>
-            <button type="button" disabled={fullAnalysisCard.disabled} onClick={() => onGenerate(FULL_ANALYSIS_TEMPLATE_ID)}>
-              全面分析
-            </button>
-          </div>
-        </div>
+        <button type="button" className="secondary-button" onClick={onOpenBaseReport}>
+          打开基础深度报告
+        </button>
       </div>
 
       <NewsEntryCard item={item} onOpen={onOpenNews} />
