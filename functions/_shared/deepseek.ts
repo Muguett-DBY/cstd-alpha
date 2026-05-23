@@ -10,6 +10,7 @@ import {
   type ReportSections,
 } from "../../src/shared/report";
 import { jsonrepair } from "jsonrepair";
+import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "./deepseek-cache";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
@@ -246,23 +247,24 @@ async function requestScoringJsonOnce({
     messages: [
       {
         role: "system",
-        content: buildScoringSystemPrompt(language, strictLength),
+        content: withCacheProtocol(buildScoringSystemPrompt(language, strictLength), "report-scoring"),
       },
       {
         role: "user",
-        content: JSON.stringify(
-          {
+        content: cacheStableUserContent({
+          kind: "report-scoring",
+          stable: {
             task: strictLength
               ? "Generate the minimum complete structured scoring JSON. Keep all text very short."
               : "Generate the structured scoring JSON only. Do not write the long narrative fullSections in this pass.",
             moduleWeights: strictLength ? undefined : MODULE_WEIGHTS,
             scoreItems20: SCORE_ITEMS_20.map(({ id, title, moduleId, weight }) => ({ id, title, moduleId, weight })),
-            expectedOutputShape: buildScoringOutputShape(evidence, strictLength),
+            expectedOutputShape: buildScoringOutputShapeForPrompt(strictLength),
+          },
+          volatile: {
             evidence: compactEvidenceForPrompt(evidence),
           },
-          null,
-          2,
-        ),
+        }),
       },
     ],
   });
@@ -459,12 +461,27 @@ async function requestScoreItemDetailBatchOnce({
     messages: [
       {
         role: "system",
-        content: buildScoreItemDetailSystemPrompt(language, strictLength),
+        content: withCacheProtocol(buildScoreItemDetailSystemPrompt(language, strictLength), "report-score-item-detail"),
       },
       {
         role: "user",
-        content: JSON.stringify(
-          {
+        content: cacheStableUserContent({
+          kind: "report-score-item-detail",
+          stable: {
+            task: "Enrich only the requested score item text. Do not change numeric scores.",
+            expectedOutputShape: {
+              scoreItemDetails: [
+                {
+                  id: "score-item-id",
+                  evidence: ["1-2 条最新公开证据，写明财报期/行情时间/数据来源"],
+                  deductions: ["1-2 条明确扣分点"],
+                  recentChange: "最近 12 个月变化及对分数影响",
+                  reason: strictLength ? "60-100 字中文评分理由" : "90-140 字中文评分理由",
+                },
+              ],
+            },
+          },
+          volatile: {
             sharedContext: {
               version: "cstd-alpha-shared-v1",
               company: scoringReport.company,
@@ -473,7 +490,6 @@ async function requestScoreItemDetailBatchOnce({
               valuationAnalysis: scoringReport.valuationAnalysis,
               evidence: compactEvidenceReferences(evidence),
             },
-            task: "Enrich only the requested score item text. Do not change numeric scores.",
             requestedItemIds: itemIds,
             requestedScoreItems: scoringReport.scoreItems20
               .filter((item) => itemIds.includes(item.id))
@@ -499,9 +515,7 @@ async function requestScoreItemDetailBatchOnce({
               })),
             },
           },
-          null,
-          2,
-        ),
+        }),
       },
     ],
   });
@@ -610,25 +624,27 @@ async function requestNarrativeBatchOnce({
     messages: [
       {
         role: "system",
-        content: buildNarrativeSystemPrompt(language, strictLength),
+        content: withCacheProtocol(buildNarrativeSystemPrompt(language, strictLength), "report-narrative"),
       },
       {
         role: "user",
-        content: JSON.stringify(
-          {
+        content: cacheStableUserContent({
+          kind: "report-narrative",
+          stable: {
+            task: "Generate only the requested fullSections keys for the already validated scoring report.",
+            expectedOutputShape: { fullSections: { requestedKey: "完整中文 Markdown 小节" } },
+          },
+          volatile: {
             sharedContext: {
               version: "cstd-alpha-shared-v2",
               scoringReport: compactReportForNarrative(scoringReport),
               evidence: compactEvidenceReferences(evidence),
             },
-            task: "Generate only the requested fullSections keys for the already validated scoring report.",
             requestedFullSectionKeys: keys,
             requestedScoreItems: compactScoreItemsForNarrative(scoringReport, keys),
-            expectedOutputShape: buildNarrativeOutputShape(keys),
+            requestedOutputShape: buildNarrativeOutputShape(keys),
           },
-          null,
-          2,
-        ),
+        }),
       },
     ],
   });
@@ -715,21 +731,15 @@ function buildDeepSeekRequest(
   maxTokens: number,
   signal: AbortSignal | undefined,
 ): RequestInit {
-  return {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+  return buildDeepSeekRequestInit({
+    apiKey: route.apiKey,
     signal,
-    body: JSON.stringify({
-      model: route.model,
-      reasoning_effort: "max",
-      ...(route.isFree ? { thinking: { type: "enabled" } } : {}),
-      response_format: { type: "json_object" },
-      stream: false,
-      temperature: 0.1,
-      max_tokens: maxTokens,
-      messages,
-    }),
-  };
+    model: route.model,
+    reasoningEffort: "max",
+    thinking: route.isFree ? { type: "enabled" } : undefined,
+    maxTokens,
+    messages,
+  });
 }
 
 async function fetchDeepSeekWithRetry(fetchImpl: FetchLike, url: string, init: RequestInit) {
@@ -1069,6 +1079,18 @@ function buildScoringOutputShape(evidence: EvidenceBundle, strictLength: boolean
       shareholderPosition: "",
     },
   };
+}
+
+function buildScoringOutputShapeForPrompt(strictLength: boolean) {
+  return buildScoringOutputShape(
+    {
+      company: { name: "公司名称", ticker: "股票代码", market: "市场", industry: "行业", sector: "板块" },
+      retrievedAt: "证据截止时间",
+      evidence: [],
+      facts: {},
+    },
+    strictLength,
+  );
 }
 
 function buildNarrativeOutputShape(keys: FullSectionKey[]) {

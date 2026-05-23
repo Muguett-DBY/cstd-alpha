@@ -1,5 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import { readSessionCookie } from "../_shared/auth";
+import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
 import type {
   RadarCitation,
@@ -271,26 +272,26 @@ export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
 
 export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest, signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
   const asOfDate = new Date().toISOString().slice(0, 10);
-  return {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+  return buildDeepSeekRequestInit({
+    apiKey: route.apiKey,
     signal,
-    body: JSON.stringify({
-      model: route.model,
-      ...(RADAR_MODEL_REASONING[route.model] ? { reasoning_effort: RADAR_MODEL_REASONING[route.model], thinking: { type: "enabled", budget_tokens: 1024 } } : {}),
-      response_format: { type: "json_object" },
-      stream: false,
-      temperature: 0.1,
-      max_tokens: 4500,
-      messages: [
+    model: route.model,
+    reasoningEffort: RADAR_MODEL_REASONING[route.model],
+    thinking: RADAR_MODEL_REASONING[route.model] ? { type: "enabled", budget_tokens: 1024 } : undefined,
+    maxTokens: 4500,
+    messages: [
         {
           role: "system",
-          content:
+          content: withCacheProtocol(
             "你是 CSTD Alpha 的行业雷达分析师。只输出 JSON。必须基于证据包和长期产业逻辑，不要编造具体数据。短时间内不要因为单条新闻改变结论；只有当多源证据或长期基本面支持时才改变行业归类。区分业绩增长、股价泡沫、产业泡沫、周期复苏和长期衰退。证据不足时必须明确写入 limitations。",
+            "pages-radar-analysis",
+          ),
         },
         {
           role: "user",
-          content: JSON.stringify({
+          content: cacheStableUserContent({
+            kind: "pages-radar-analysis-rules",
+            stable: {
             task: RADAR_PROMPT,
             evidenceRules: [
               "先按公开信息源归纳，再做模型自己的投资分析。",
@@ -327,19 +328,23 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
               research: 1,
             },
             expectedJsonShape: RADAR_JSON_SHAPE,
+            },
           }),
         },
         {
           role: "user",
-          content: JSON.stringify({
+          content: cacheStableUserContent({
+            kind: "pages-radar-analysis-evidence",
+            stable: { inputContract: "previousScan and evidenceDigest are volatile run context; sourceIds must reference evidenceDigest.citations." },
+            volatile: {
             asOfDate,
             previousScan: previousScan ? summarizePreviousScan(previousScan) : null,
             evidenceDigest: compactRadarEvidenceDigest(digest),
+            },
           }),
         },
       ],
-    }),
-  };
+  });
 }
 
 export async function generateRadarScan(env: Env, signal: AbortSignal, previousScan: RadarScan | null, preloadedDigest?: RadarEvidenceDigest | null): Promise<RadarScan> {

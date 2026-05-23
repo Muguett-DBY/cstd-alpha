@@ -1,5 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../_shared/anysearch";
+import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
 import { getOrCreateCompanyEvidencePackage, type CompanyEvidencePackage } from "../_shared/company-evidence";
 import type { EvidenceBundle } from "../_shared/providers";
 import {
@@ -472,32 +473,47 @@ function buildTemplateMessages(
   return [
     {
       role: "system" as const,
-      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 必须逐项覆盖 user 消息中的 sectionRequirements；每项至少达到对应 minChars 的实质内容，并覆盖 requiredPoints。若证据不足，可以短于 minChars，但必须明确写“证据不足”及缺口。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。`,
+      content: withCacheProtocol(
+        `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 必须逐项覆盖 user 消息中的 sectionRequirements；每项至少达到对应 minChars 的实质内容，并覆盖 requiredPoints。若证据不足，可以短于 minChars，但必须明确写“证据不足”及缺口。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。`,
+        "template-analysis",
+      ),
     },
     {
       role: "user" as const,
-      content: JSON.stringify({
-        company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
-        publicEvidence: compactTemplateEvidence(evidence, false),
+      content: cacheStableUserContent({
+        kind: "template-analysis-evidence",
+        stable: {
+          evidenceContract:
+            "publicEvidence 是唯一事实来源；关键结论必须引用 evidence id 或来源类型；缺少财报、公告、价格、销量或现金流时必须写证据缺口。",
+        },
+        volatile: {
+          company: { name: watchlist.company_name, ticker: watchlist.ticker, market: watchlist.market },
+          publicEvidence: compactTemplateEvidence(evidence, false),
+        },
       }),
     },
     {
       role: "user" as const,
-      content: JSON.stringify({
-        task: markdownTask,
-        evidenceRetrievedAt: evidence.retrievedAt,
-        template: { id: template.id, title: template.title, focus: template.focus, fullPrompt: template.fullPrompt },
-        sectionRequirements: normalizeTemplateSectionRequirements(template),
-        childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
-        expectedOutputShape: {
-          title: "报告标题",
-          score: "0-100 数字，必填",
-          verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
-          summary: "摘要必须明确结论、估值、风险和跟踪重点",
-          keyPoints: ["至少 5 条核心正面判断，每条必须有证据或推理"],
-          riskFlags: ["至少 5 条风险、反证或不确定性，每条必须可跟踪"],
-          followUps: ["至少 5 条后续跟踪指标，每条必须具体"],
-          markdown: "完整中文 Markdown 报告，使用二级/三级标题，必须覆盖模板原文要求；每个关键小节都要有证据、推理、反证、结论和仓位/动作建议。无需凑字，必须保证 JSON 完整闭合。",
+      content: cacheStableUserContent({
+        kind: "template-analysis-task",
+        stable: {
+          task: markdownTask,
+          expectedOutputShape: {
+            title: "报告标题",
+            score: "0-100 数字，必填",
+            verdict: "买入/持有/观察/回避/减仓之一或简短中文结论",
+            summary: "摘要必须明确结论、估值、风险和跟踪重点",
+            keyPoints: ["至少 5 条核心正面判断，每条必须有证据或推理"],
+            riskFlags: ["至少 5 条风险、反证或不确定性，每条必须可跟踪"],
+            followUps: ["至少 5 条后续跟踪指标，每条必须具体"],
+            markdown: "完整中文 Markdown 报告，使用二级/三级标题，必须覆盖模板原文要求；每个关键小节都要有证据、推理、反证、结论和仓位/动作建议。无需凑字，必须保证 JSON 完整闭合。",
+          },
+        },
+        volatile: {
+          evidenceRetrievedAt: evidence.retrievedAt,
+          template: { id: template.id, title: template.title, focus: template.focus, fullPrompt: template.fullPrompt },
+          sectionRequirements: normalizeTemplateSectionRequirements(template),
+          childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
         },
       }),
     },
@@ -683,20 +699,14 @@ function buildTemplateRequest(
   reasoningEffort: TemplateReasoningEffort,
   signal: AbortSignal,
 ): RequestInit {
-  return {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+  return buildDeepSeekRequestInit({
+    apiKey: route.apiKey,
     signal,
-    body: JSON.stringify({
-      model: route.model,
-      reasoning_effort: reasoningEffort,
-      response_format: { type: "json_object" },
-      stream: false,
-      temperature: 0.1,
-      max_tokens: maxTokens,
-      messages,
-    }),
-  };
+    model: route.model,
+    reasoningEffort,
+    maxTokens,
+    messages,
+  });
 }
 
 export function templateReasoningEffort(templateId: string): TemplateReasoningEffort {

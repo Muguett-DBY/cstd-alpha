@@ -6,6 +6,7 @@ const RADAR_CACHE_VERSION = "v2";
 const RADAR_VALID_HOURS = 12;
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_CACHE_PROTOCOL = "CSTD_ALPHA_DEEPSEEK_CACHE_PROTOCOL_V1";
 const EVIDENCE_WEIGHTS = {
   hard_data: 5,
   official: 4,
@@ -206,8 +207,13 @@ function buildRadarRequestBody(digest, structuredFacts, previousScan, asOfDate, 
     messages: [
       {
         role: "system",
-        content:
+        content: [
           "你是 CSTD Alpha 的行业雷达分析师。只输出 JSON。你必须基于结构化证据、公开来源和产业逻辑做投资雷达判断。不要编造具体数据；证据不足的方向只能进入覆盖复核或观察，不要冒充正式结论。",
+          "",
+          "## Cache-stability protocol",
+          `${DEEPSEEK_CACHE_PROTOCOL}; task=radar-analysis.`,
+          "Stable rules and output schema are before evidence; volatile run metadata and previous-scan summaries are last.",
+        ].join("\n"),
       },
       {
         role: "user",
@@ -372,7 +378,12 @@ async function repairDeepSeekJsonContent(content, apiKey) {
     messages: [
       {
         role: "system",
-        content: "你是 JSON 修复器。只输出一个合法 JSON 对象，不要解释，不要新增事实，不要改写字段含义。",
+        content: [
+          "你是 JSON 修复器。只输出一个合法 JSON 对象，不要解释，不要新增事实，不要改写字段含义。",
+          "",
+          "## Cache-stability protocol",
+          `${DEEPSEEK_CACHE_PROTOCOL}; task=radar-json-repair.`,
+        ].join("\n"),
       },
       {
         role: "user",
