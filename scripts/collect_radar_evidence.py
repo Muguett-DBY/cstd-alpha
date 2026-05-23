@@ -33,6 +33,9 @@ ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search"
 ANYSEARCH_MAX_QUERIES = int(os.environ.get("ANYSEARCH_MAX_QUERIES", "360"))
 ANYSEARCH_RESULTS_PER_QUERY = int(os.environ.get("ANYSEARCH_RESULTS_PER_QUERY", "2"))
 ANYSEARCH_CONCURRENCY = max(1, int(os.environ.get("ANYSEARCH_CONCURRENCY", "10")))
+SEARXNG_ENDPOINTS = [endpoint.strip().rstrip("/") for endpoint in re.split(r"[\n,]", os.environ.get("SEARXNG_ENDPOINTS", "")) if endpoint.strip().startswith(("http://", "https://"))]
+SEARXNG_MAX_QUERIES = int(os.environ.get("SEARXNG_MAX_QUERIES", "120"))
+SEARXNG_CONCURRENCY = max(1, int(os.environ.get("SEARXNG_CONCURRENCY", "6")))
 
 ANYSEARCH_EVIDENCE_PROFILES = [
     {
@@ -422,6 +425,7 @@ def collect_sources() -> list[dict[str, Any]]:
         ("sina_boards", fetch_sina_boards),
         ("google_news", fetch_google_news),
         ("anysearch", fetch_anysearch),
+        ("searxng", fetch_searxng),
         ("akshare", fetch_akshare),
         ("baostock", fetch_baostock),
     ]:
@@ -912,6 +916,32 @@ def fetch_anysearch() -> list[dict[str, Any]]:
     return sources
 
 
+def fetch_searxng() -> list[dict[str, Any]]:
+    if not SEARXNG_ENDPOINTS:
+        print("collector_warning searxng: SEARXNG_ENDPOINTS not configured; skipping low-weight supplemental search")
+        return []
+    sources: list[dict[str, Any]] = []
+    query_plans = anysearch_query_plans()[:SEARXNG_MAX_QUERIES]
+    with ThreadPoolExecutor(max_workers=min(SEARXNG_CONCURRENCY, max(1, len(query_plans)))) as executor:
+        futures = [executor.submit(fetch_searxng_query_plan, query_plan) for query_plan in query_plans]
+        for future in as_completed(futures):
+            sources.extend(future.result())
+    return sources
+
+
+def fetch_searxng_query_plan(query_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    for endpoint in SEARXNG_ENDPOINTS:
+        try:
+            url = f"{endpoint}/search?{urlencode({'q': query_plan['query'], 'format': 'json', 'language': 'zh-CN', 'categories': 'general,news'})}"
+            payload = read_json(url)
+            sources = searxng_sources_from_payload(payload, query_plan)
+            if sources:
+                return sources
+        except Exception as exc:
+            print(f"collector_warning searxng.{query_plan['profile']}.{query_plan['industry']}: {type(exc).__name__}: {str(exc)[:160]}")
+    return []
+
+
 def fetch_anysearch_query_plan(query_plan: dict[str, Any], api_key: str) -> list[dict[str, Any]]:
     try:
         request_body = {
@@ -1025,6 +1055,45 @@ def anysearch_sources_from_payload(payload: dict[str, Any], query_plan: dict[str
                     "anysearchSource": anysearch_source,
                     "anysearchRequestId": clean_text(metadata.get("request_id")),
                     "cached": metadata.get("cached") if isinstance(metadata.get("cached"), bool) else False,
+                }
+            )
+        )
+    return sources
+
+
+def searxng_sources_from_payload(payload: dict[str, Any], query_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+    sources: list[dict[str, Any]] = []
+    for result in results[:2]:
+        if not isinstance(result, dict):
+            continue
+        title = clean_text(result.get("title"))
+        url = clean_text(result.get("url"))
+        if not title or not url:
+            continue
+        content = clean_text(result.get("content")) or clean_text(result.get("snippet"))
+        source_type = "official" if re.search(r"(sec\.gov|sse\.com\.cn|szse\.cn|hkexnews\.hk|gov\.cn|eastmoney\.com)", url, re.I) else "news"
+        sources.append(
+            compact_dict(
+                {
+                    "source": "SearXNG",
+                    "query": query_plan["query"],
+                    "title": title,
+                    "url": url,
+                    "publishedAt": clean_text(result.get("publishedDate") or result.get("published_date")),
+                    "summary": trim_text(content, 700),
+                    "sourceType": source_type,
+                    "signalType": "external_search",
+                    "weight": 1 if source_type == "news" else 2,
+                    "topic": query_plan["industry"],
+                    "industry": query_plan["industry"],
+                    "evidenceProfile": query_plan.get("profile"),
+                    "anysearchTags": query_plan.get("tags"),
+                    "anysearchContentTypes": query_plan.get("contentTypes"),
+                    "anysearchFreshness": query_plan.get("freshness"),
+                    "anysearchScore": numeric(result.get("score")),
+                    "anysearchSource": clean_text(result.get("engine")),
+                    "cached": False,
                 }
             )
         )

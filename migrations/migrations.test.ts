@@ -53,6 +53,6 @@ describe("D1 migrations", () => {
     expect(() => db.exec(readMigration("0006_company_evidence_packages.sql"))).not.toThrow();
 
     const columns = tableColumns(db, "company_evidence_packages");
-    for (const column of ["user_key", "watchlist_id", "evidence_hash", "stable_hash", "fresh_hash", "object_key", "status", "fetched_at"]) expect(columns).toContain(column);
+    for (const column of ["user_key", "watchlist_id", "evidence_hash", "material_hash", "stable_hash", "fresh_hash", "object_key", "status", "fetched_at"]) expect(columns).toContain(column);
   });
 });

@@ -1,5 +1,5 @@
 import { jsonrepair } from "jsonrepair";
-import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, type AnySearchEvidence } from "../_shared/anysearch";
+import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../_shared/anysearch";
 import { getOrCreateCompanyEvidencePackage, type CompanyEvidencePackage } from "../_shared/company-evidence";
 import type { EvidenceBundle } from "../_shared/providers";
 import {
@@ -28,6 +28,7 @@ type Env = {
   AUTH_SECRET: string;
   DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
+  SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
@@ -35,6 +36,7 @@ type Env = {
 type DurableTemplateEnv = {
   DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
+  SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB: D1Database;
   REPORT_LIBRARY_BUCKET: R2Bucket;
 };
@@ -127,12 +129,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
   const enabledTemplates = activeResearchTemplates(userTemplates);
 
-  const durableEnv = { ANYSEARCH_API_KEY: env.ANYSEARCH_API_KEY, DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY, REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
+  const durableEnv = {
+    ANYSEARCH_API_KEY: env.ANYSEARCH_API_KEY,
+    SEARXNG_ENDPOINTS: env.SEARXNG_ENDPOINTS,
+    DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
+    REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB,
+    REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET,
+  };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     if (!enabledTemplates.length) return json({ error: "没有启用任何模板，无法进行全部模板分析。" }, 400);
     const fullTemplate = fullAnalysisTemplate(enabledTemplates);
     const evidencePackage = await fetchTemplateEvidence(env, session.userId, watchlist, request.signal);
-    const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, fullTemplate, evidencePackage.evidenceHash) : null;
+    const cacheEvidenceHash = templateEvidenceCacheHash(evidencePackage);
+    const cachedFull = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, fullTemplate, cacheEvidenceHash) : null;
     if (cachedFull) return json({ analyses: [cachedFull], watchlistItem: watchlistRowToItem(watchlist) });
     const existingFull = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, FULL_ANALYSIS_TEMPLATE_ID);
     const existingFullResult = existingFull ? analysisRowToResult(existingFull) : null;
@@ -143,7 +152,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB!, session.userId, watchlist, fullTemplate, "running");
       write({ type: "progress", stage: "full_started", label: "全部模板全面分析", detail: "正在检查已完成模板；缺失模板会由前端分批生成，避免单次 Worker 请求超出 Cloudflare subrequest 限制。" });
       try {
-        const children = await readCompletedTemplateAnalysesForFull(env, session.userId, watchlist.id, enabledTemplates, write);
+        const children = await readCompletedTemplateAnalysesForFull(env, session.userId, watchlist.id, enabledTemplates, write, cacheEvidenceHash);
         const completedChildren = completedTemplateAnalysesForFull(children, enabledTemplates);
         if (completedChildren.length < enabledTemplates.length) {
           const missingTitles = enabledTemplates
@@ -163,7 +172,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           return;
         }
         write({ type: "progress", stage: "evidence", label: "读取公司证据包", detail: "正在读取公司财务、行情、公告与外部证据包，供最终汇总使用。" });
-        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, enabledTemplates, forceRefresh, children, write, evidencePackage.evidenceHash);
+        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, enabledTemplates, forceRefresh, children, write, cacheEvidenceHash);
         write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
       } catch (error) {
         await writeAnalysisFailure(
@@ -184,12 +193,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!template) return json({ error: "未知模板。" }, 400);
   if (template.enabled === false) return json({ error: "该模板未启用。" }, 400);
   const evidencePackage = await fetchTemplateEvidence(env, session.userId, watchlist, request.signal);
-  const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template, evidencePackage.evidenceHash) : null;
+  const cacheEvidenceHash = templateEvidenceCacheHash(evidencePackage);
+  const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template, cacheEvidenceHash) : null;
   if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
   return streamTemplateGeneration(async (write) => {
     write({ type: "progress", stage: "evidence", label: "读取公司证据包", detail: "正在整理公司财务、行情、公告与外部证据包。" });
     write({ type: "progress", stage: "template_analysis", label: "生成模板深度报告", detail: `${template.shortTitle} 正在用 DeepSeek Flash Max 生成。` });
-    const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, template, forceRefresh, [], write, evidencePackage.evidenceHash);
+    const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, template, forceRefresh, [], write, cacheEvidenceHash);
     write({ type: "final", analysis, watchlistItem: watchlistRowToItem(watchlist) });
   });
 };
@@ -236,6 +246,10 @@ function streamTemplateGeneration(run: (write: TemplateProgressWriter) => Promis
 }
 
 type TemplateEvidencePackage = CompanyEvidencePackage;
+
+export function templateEvidenceCacheHash(pkg: Pick<CompanyEvidencePackage, "evidenceHash"> & { materialHash?: string }) {
+  return pkg.materialHash || pkg.evidenceHash;
+}
 
 async function fetchTemplateEvidence(env: TemplateCacheEnv, userId: string, watchlist: WatchlistRow, signal: AbortSignal): Promise<TemplateEvidencePackage> {
   return getOrCreateCompanyEvidencePackage(env, userId, watchlist, signal);
@@ -292,10 +306,11 @@ async function readCompletedTemplateAnalysesForFull(
   watchlistId: string,
   templates: ResearchTemplate[],
   write?: TemplateProgressWriter,
+  evidenceHash?: string,
 ) {
   const analyses: TemplateAnalysisResult[] = [];
   for (const template of templates) {
-    const cached = await readCompletedAnalysisCache(env, userId, watchlistId, template);
+    const cached = await readCompletedAnalysisCache(env, userId, watchlistId, template, evidenceHash);
     if (cached) {
       write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
       analyses.push(cached);
@@ -512,46 +527,28 @@ async function enrichTemplateEvidenceWithAnySearch(
   signal: AbortSignal,
 ): Promise<EvidenceBundle> {
   const apiKey = env.ANYSEARCH_API_KEY?.trim();
-  if (!apiKey) return evidence;
+  const searxngEndpoints = env.SEARXNG_ENDPOINTS?.trim();
+  if (!apiKey && !searxngEndpoints) return evidence;
   const cached = await readTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template);
+  const queries = templateSupplementalSearchQueries(watchlist);
   const anySearchEvidence =
     cached ??
-    (await fetchAnySearchEvidence({
-      apiKey,
-      signal,
-      queries: [
-        {
-          query: `${watchlist.company_name} ${watchlist.ticker} 最新公告 财报 业绩预告 经营现金流 毛利率 订单`,
-          topic: `${watchlist.company_name} 模板分析补充证据`,
-          sourceType: "official",
-          maxResults: 3,
-          domains: ["finance", "business", "legal"],
-          tags: ["finance.company", "business.company"],
-          contentTypes: ["news", "web", "doc", "data"],
-          freshness: "month",
-        },
-        {
-          query: `${watchlist.company_name} ${watchlist.ticker} 所属行业 最新变化 竞争格局 价格 销量 库存 产能`,
-          topic: `${watchlist.company_name} 所属行业补充证据`,
-          sourceType: "official",
-          maxResults: 3,
-          domains: ["finance", "business"],
-          tags: ["finance.market", "business.industry"],
-          contentTypes: ["data", "news", "web"],
-          freshness: "week",
-        },
-        {
-          query: `${watchlist.company_name} ${watchlist.ticker} 负面 舆情 监管 风险 亏损 下滑 停牌 异动`,
-          topic: `${watchlist.company_name} 风险监管补充证据`,
-          sourceType: "news",
-          maxResults: 3,
-          domains: ["finance", "business", "legal"],
-          tags: ["finance.risk", "legal.regulation"],
-          contentTypes: ["news", "web", "doc"],
-          freshness: "month",
-        },
-      ],
-    }));
+    [
+      ...(apiKey
+        ? await fetchAnySearchEvidence({
+            apiKey,
+            signal,
+            queries,
+          })
+        : []),
+      ...(searxngEndpoints
+        ? await fetchSearxngEvidence({
+            endpoints: searxngEndpoints,
+            signal,
+            queries: queries.map((query) => ({ ...query, maxResults: 2 })),
+          })
+        : []),
+    ];
   if (!cached) await writeTemplateAnySearchCache(env.REPORT_LIBRARY_BUCKET, watchlist, template, anySearchEvidence);
   if (!anySearchEvidence.length) return evidence;
   return {
@@ -575,6 +572,41 @@ async function enrichTemplateEvidenceWithAnySearch(
       },
     },
   };
+}
+
+function templateSupplementalSearchQueries(watchlist: WatchlistRow): AnySearchQuery[] {
+  return [
+    {
+      query: `${watchlist.company_name} ${watchlist.ticker} 最新公告 财报 业绩预告 经营现金流 毛利率 订单`,
+      topic: `${watchlist.company_name} 模板分析补充证据`,
+      sourceType: "official" as const,
+      maxResults: 3,
+      domains: ["finance", "business", "legal"],
+      tags: ["finance.company", "business.company"],
+      contentTypes: ["news", "web", "doc", "data"],
+      freshness: "month",
+    },
+    {
+      query: `${watchlist.company_name} ${watchlist.ticker} 所属行业 最新变化 竞争格局 价格 销量 库存 产能`,
+      topic: `${watchlist.company_name} 所属行业补充证据`,
+      sourceType: "official" as const,
+      maxResults: 3,
+      domains: ["finance", "business"],
+      tags: ["finance.market", "business.industry"],
+      contentTypes: ["data", "news", "web"],
+      freshness: "week",
+    },
+    {
+      query: `${watchlist.company_name} ${watchlist.ticker} 负面 舆情 监管 风险 亏损 下滑 停牌 异动`,
+      topic: `${watchlist.company_name} 风险监管补充证据`,
+      sourceType: "news" as const,
+      maxResults: 3,
+      domains: ["finance", "business", "legal"],
+      tags: ["finance.risk", "legal.regulation"],
+      contentTypes: ["news", "web", "doc"],
+      freshness: "month",
+    },
+  ];
 }
 
 async function readTemplateAnySearchCache(bucket: R2Bucket, watchlist: WatchlistRow, template: ResearchTemplate): Promise<AnySearchEvidence[] | null> {

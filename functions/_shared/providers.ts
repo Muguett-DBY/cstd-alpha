@@ -581,8 +581,6 @@ export async function searchCompanyCandidates(query: string, fetchImpl: FetchLik
     .map(normalizeEastmoneyCandidate)
     .filter((item): item is CompanyCandidate => Boolean(item));
 
-  if (eastmoneyCandidates.length > 0) return dedupeCandidates(eastmoneyCandidates);
-
   const yahooJson = await fetchJson(
     `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trimmed)}&quotesCount=8&newsCount=0`,
     fetchImpl,
@@ -591,7 +589,7 @@ export async function searchCompanyCandidates(query: string, fetchImpl: FetchLik
     .map(normalizeYahooCandidate)
     .filter((item): item is CompanyCandidate => Boolean(item));
 
-  return dedupeCandidates(yahooCandidates);
+  return rankCompanyCandidates(dedupeCandidates([...eastmoneyCandidates, ...yahooCandidates]), trimmed);
 }
 
 async function searchYahooQuote(companyName: string, fetchImpl: FetchLike) {
@@ -1377,6 +1375,28 @@ function dedupeCandidates(candidates: CompanyCandidate[]) {
     seen.add(key);
     return true;
   });
+}
+
+function rankCompanyCandidates(candidates: CompanyCandidate[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  return [...candidates].sort((left, right) => candidateSearchScore(right, normalizedQuery) - candidateSearchScore(left, normalizedQuery));
+}
+
+function candidateSearchScore(candidate: CompanyCandidate, query: string) {
+  const code = candidate.code.toLowerCase();
+  const name = candidate.name.toLowerCase();
+  const isExactCode = code === query;
+  const isExactName = name === query;
+  const isChineseQuery = /[\u4e00-\u9fff]/.test(query);
+  let score = 0;
+  if (isExactCode) score += 100;
+  if (isExactName) score += 90;
+  if (code.startsWith(query)) score += 30;
+  if (name.includes(query)) score += 25;
+  if (candidate.source === "eastmoney" && isChineseQuery) score += 20;
+  if (candidate.source === "yahoo" && /^[a-z.:-]+$/i.test(query)) score += 20;
+  if (isAStockListedCompany(candidate) || isHongKongListedCompany(candidate) || isUsListedCompany(candidate)) score += 10;
+  return score;
 }
 
 function withAbortSignal(fetchImpl: FetchLike, signal?: AbortSignal): FetchLike {

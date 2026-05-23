@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch";
+  source: "AnySearch" | "SearXNG";
   query: string;
   title: string;
   url: string;
@@ -80,6 +80,19 @@ type AnySearchResponse = {
     request_id?: string;
     cached?: boolean;
   };
+};
+
+type SearxngResponse = {
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    snippet?: string;
+    engine?: string;
+    score?: number;
+    publishedDate?: string;
+    published_date?: string;
+  }>;
 };
 
 const ANYSEARCH_URL = "https://api.anysearch.com/v1/search";
@@ -136,6 +149,42 @@ export async function fetchAnySearchEvidence({
   return dedupeAnySearchEvidence(evidence);
 }
 
+export async function fetchSearxngEvidence({
+  queries,
+  endpoints,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  endpoints?: string;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const normalizedEndpoints = normalizeSearxngEndpoints(endpoints);
+  if (!normalizedEndpoints.length) return [];
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    for (const endpoint of normalizedEndpoints) {
+      try {
+        const response = await fetchImpl(buildSearxngSearchUrl(endpoint, query.query), {
+          headers: { accept: "application/json", "user-agent": "CSTD Alpha/1.0" },
+          signal,
+        });
+        if (!response.ok) continue;
+        const payload = (await response.json().catch(() => null)) as SearxngResponse | null;
+        const items = normalizeSearxngResults(payload, query);
+        if (items.length) {
+          evidence.push(...items);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
 export function normalizeAnySearchResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
   const envelope = isRecord(payload) ? payload : {};
   const record = isRecord(envelope.data) ? envelope.data : envelope;
@@ -179,8 +228,8 @@ export function normalizeAnySearchResults(payload: unknown, context: AnySearchQu
 
 export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], retrievedAt = new Date().toISOString()): EvidenceItem[] {
   return items.map((item) => ({
-    title: `AnySearch 外部搜索：${item.title}`,
-    source: "AnySearch 外部搜索",
+    title: `${item.source} 外部搜索：${item.title}`,
+    source: `${item.source} 外部搜索`,
     url: item.url,
     retrievedAt,
     freshness: item.publishedAt ? "latest-public" : "stale",
@@ -192,11 +241,75 @@ export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], re
       item.summary,
       typeof item.qualityScore === "number" ? `quality_score=${item.qualityScore}` : "",
       item.anysearchRequestId ? `request_id=${item.anysearchRequestId}` : "",
+      item.source === "SearXNG" ? "SearXNG 为低权重补召回来源。" : "",
       "仅作为外部搜索线索，不能替代财报、公告、价格或销量硬数据。",
     ]
       .filter(Boolean)
       .join("；"),
   }));
+}
+
+function normalizeSearxngResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const results = Array.isArray(record.results) ? record.results : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of results) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const content = cleanText(raw.content) || cleanText(raw.snippet);
+    const sourceType = inferSearxngSourceType(url, context.sourceType);
+    items.push({
+      source: "SearXNG",
+      query: context.query,
+      title,
+      url,
+      summary: trimText(content, MAX_SUMMARY_CHARS),
+      content: trimText(content, MAX_CONTENT_CHARS) || undefined,
+      sourceType,
+      signalType: "external_search",
+      weight: sourceType === "official" ? 3 : 1,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: cleanText(raw.publishedDate) || cleanText(raw.published_date) || undefined,
+      score: numberValue(raw.score),
+      anysearchSource: cleanText(raw.engine) || undefined,
+      contentType: "web",
+      cached: false,
+    });
+  }
+  return items;
+}
+
+function normalizeSearxngEndpoints(value: string | undefined) {
+  return (value || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim().replace(/\/+$/, ""))
+    .filter((item) => /^https?:\/\//i.test(item));
+}
+
+function buildSearxngSearchUrl(endpoint: string, query: string) {
+  const url = new URL(`${endpoint}/search`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("language", "zh-CN");
+  url.searchParams.set("categories", "general,news");
+  return url.toString();
+}
+
+function inferSearxngSourceType(url: string, fallback: SupplementalSourceType | undefined): SupplementalSourceType {
+  const host = (() => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return url.toLowerCase();
+    }
+  })();
+  if (/(^|\.)sec\.gov$|(^|\.)sse\.com\.cn$|(^|\.)szse\.cn$|(^|\.)hkexnews\.hk$|(^|\.)gov\.cn$|(^|\.)eastmoney\.com$/.test(host)) return "official";
+  return fallback ?? "news";
 }
 
 function dedupeAnySearchEvidence(items: AnySearchEvidence[]) {

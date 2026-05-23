@@ -13,6 +13,7 @@ export type CompanyEvidencePackage = {
   watchlistId: string;
   companyKey: string;
   evidenceHash: string;
+  materialHash: string;
   stableHash: string;
   freshHash: string;
   fetchedAt: string;
@@ -41,6 +42,7 @@ export async function ensureCompanyEvidenceSchema(db: D1Database) {
         ticker TEXT NOT NULL,
         market TEXT NOT NULL,
         evidence_hash TEXT NOT NULL,
+        material_hash TEXT NOT NULL DEFAULT '',
         stable_hash TEXT NOT NULL,
         fresh_hash TEXT NOT NULL,
         object_key TEXT NOT NULL,
@@ -52,6 +54,7 @@ export async function ensureCompanyEvidenceSchema(db: D1Database) {
       )`,
     )
     .run();
+  await db.prepare(`ALTER TABLE company_evidence_packages ADD COLUMN material_hash TEXT NOT NULL DEFAULT ''`).run().catch(() => undefined);
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_company_evidence_user ON company_evidence_packages (user_key, updated_at DESC)`).run();
 }
 
@@ -93,7 +96,7 @@ export async function readCompanyEvidencePackage(env: CompanyEvidenceEnv, userId
   const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key).catch(() => null);
   if (!object) return null;
   const payload = (await object.json().catch(() => null)) as CompanyEvidencePackage | null;
-  return payload && payload.evidenceHash ? payload : null;
+  return payload && payload.evidenceHash ? { ...payload, materialHash: payload.materialHash || payload.evidenceHash } : null;
 }
 
 export async function getOrCreateCompanyEvidencePackage(env: CompanyEvidenceEnv, userId: string, watchlist: WatchlistRow, signal?: AbortSignal) {
@@ -122,19 +125,20 @@ export async function writeCompanyEvidencePackage(
   const objectKey = companyEvidenceObjectKey(userId, watchlist.id, pkg.evidenceHash);
   await env.REPORT_LIBRARY_BUCKET.put(objectKey, JSON.stringify(pkg), {
     httpMetadata: { contentType: "application/json; charset=utf-8" },
-    customMetadata: { ticker: watchlist.ticker, market: watchlist.market, evidenceHash: pkg.evidenceHash },
+    customMetadata: { ticker: watchlist.ticker, market: watchlist.market, evidenceHash: pkg.evidenceHash, materialHash: pkg.materialHash },
   });
   const now = new Date().toISOString();
   await env.REPORT_LIBRARY_DB.prepare(
     `INSERT INTO company_evidence_packages (
-      id, user_id, user_key, watchlist_id, company_name, ticker, market, evidence_hash, stable_hash, fresh_hash, object_key, status, fetched_at, updated_at, error_message
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL)
+      id, user_id, user_key, watchlist_id, company_name, ticker, market, evidence_hash, material_hash, stable_hash, fresh_hash, object_key, status, fetched_at, updated_at, error_message
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, NULL)
     ON CONFLICT(user_key, watchlist_id) DO UPDATE SET
       user_id = excluded.user_id,
       company_name = excluded.company_name,
       ticker = excluded.ticker,
       market = excluded.market,
       evidence_hash = excluded.evidence_hash,
+      material_hash = excluded.material_hash,
       stable_hash = excluded.stable_hash,
       fresh_hash = excluded.fresh_hash,
       object_key = excluded.object_key,
@@ -152,6 +156,7 @@ export async function writeCompanyEvidencePackage(
       watchlist.ticker,
       watchlist.market,
       pkg.evidenceHash,
+      pkg.materialHash,
       pkg.stableHash,
       pkg.freshHash,
       objectKey,
@@ -170,8 +175,8 @@ export async function writeCompanyEvidenceFailure(db: D1Database, userId: string
   await db
     .prepare(
       `INSERT INTO company_evidence_packages (
-        id, user_id, user_key, watchlist_id, company_name, ticker, market, evidence_hash, stable_hash, fresh_hash, object_key, status, fetched_at, updated_at, error_message
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '', '', '', 'failed_retryable', ?8, ?9, ?10)
+        id, user_id, user_key, watchlist_id, company_name, ticker, market, evidence_hash, material_hash, stable_hash, fresh_hash, object_key, status, fetched_at, updated_at, error_message
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '', '', '', '', 'failed_retryable', ?8, ?9, ?10)
       ON CONFLICT(user_key, watchlist_id) DO UPDATE SET
         status = excluded.status,
         updated_at = excluded.updated_at,
@@ -188,12 +193,14 @@ export async function buildCompanyEvidencePackage({ userId, watchlistId, evidenc
   const stableHash = await hashStable(stableFacts);
   const freshHash = await hashStable(freshSignals);
   const evidenceHash = await hashStable({ company: evidence.company, stableHash, freshHash });
+  const materialHash = await hashStable({ company: evidence.company, stableFacts, materialSignals: materialCompanySignals(evidence, normalizedEvidence) });
   return {
     version: 1,
     userId,
     watchlistId,
     companyKey: `${evidence.company.market || ""}:${evidence.company.ticker || evidence.company.name}`,
     evidenceHash,
+    materialHash,
     stableHash,
     freshHash,
     fetchedAt: evidence.retrievedAt,
@@ -206,9 +213,10 @@ export async function buildCompanyEvidencePackage({ userId, watchlistId, evidenc
         ...evidence.facts,
         companyEvidence: {
           evidenceHash,
+          materialHash,
           stableHash,
           freshHash,
-          note: "模板分析使用公司证据包；关键结论必须引用 E1/E2 这类证据编号或明确来源类型。",
+          note: "模板分析使用公司证据包；缓存复用优先看 materialHash，关键结论必须引用 E1/E2 这类证据编号或明确来源类型。",
         },
       },
     },
@@ -248,6 +256,31 @@ function freshCompanySignals(evidence: EvidenceBundle, items: CompanyEvidenceIte
   };
 }
 
+function materialCompanySignals(evidence: EvidenceBundle, items: CompanyEvidenceItem[]) {
+  const facts = evidence.facts as Record<string, unknown>;
+  const quote = facts.quote && typeof facts.quote === "object" ? (facts.quote as Record<string, unknown>) : undefined;
+  return {
+    quote: quote
+      ? pickDefined(quote, [
+          "symbol",
+          "currency",
+          "regularMarketPrice",
+          "regularMarketPreviousClose",
+          "regularMarketChange",
+          "regularMarketChangePercent",
+          "regularMarketVolume",
+          "marketCap",
+          "trailingPE",
+          "priceToBook",
+          "quoteSourceName",
+        ])
+      : undefined,
+    hardEvidence: items
+      .filter((item) => item.evidenceType === "financial" || item.evidenceType === "quote" || item.evidenceType === "official")
+      .map(({ title, source, url, freshness, notes, evidenceType }) => ({ title, source, url, freshness, notes, evidenceType })),
+  };
+}
+
 function classifyEvidenceType(item: EvidenceItem): CompanyEvidenceItem["evidenceType"] {
   const text = `${item.title} ${item.source} ${item.notes}`.toLowerCase();
   if (/financial|finance|财务|财报|cashflow|income|balance|sec edgar/.test(text)) return "financial";
@@ -260,6 +293,10 @@ function classifyEvidenceType(item: EvidenceItem): CompanyEvidenceItem["evidence
 
 async function hashStable(value: unknown) {
   return sha256(stableStringify(value));
+}
+
+function pickDefined(record: Record<string, unknown>, keys: string[]) {
+  return Object.fromEntries(keys.filter((key) => record[key] !== undefined).map((key) => [key, record[key]]));
 }
 
 function evidenceSortKey(item: EvidenceItem) {

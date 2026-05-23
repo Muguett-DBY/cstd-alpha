@@ -352,6 +352,31 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
 
+      <section className="mine-search-card" aria-label="搜索并加入自选股">
+        <div>
+          <h3>添加自选公司</h3>
+          <p className="muted">先搜索全市场上市主体，确认代码、市场和交易所后加入自选。</p>
+        </div>
+        <form onSubmit={submitCompanySearch} className="mine-search-form">
+          <input value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} placeholder="例如：贵州茅台、000333、AMZN、英伟达" />
+          <button type="submit" disabled={searchingCompany || phase === "generating"}>
+            {searchingCompany ? "搜索中..." : "搜索公司"}
+          </button>
+        </form>
+        {companyCandidates.length ? (
+          <div className="mine-candidate-list">
+            {companyCandidates.map((candidate) => (
+              <button key={candidate.id} type="button" onClick={() => void addCompanyToMine(candidate)}>
+                <strong>{candidate.name}</strong>
+                <span>
+                  {candidate.code} / {candidate.listingPlace} / {candidate.exchange}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
       <div className={`my-grid ${activeAnalysis || activeNews ? "reading-mode" : ""}`}>
         {!activeAnalysis && !activeNews ? (
           <section className="my-list">
@@ -436,31 +461,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
           )}
         </section>
       </div>
-
-      <section className="mine-search-card" aria-label="搜索并加入自选股">
-        <div>
-          <h3>添加自选公司</h3>
-          <p className="muted">在这里直接搜索公司名或股票代码，确认上市主体后加入“我的”，不必先回到生成报告页。</p>
-        </div>
-        <form onSubmit={submitCompanySearch} className="mine-search-form">
-          <input value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} placeholder="例如：贵州茅台、000333、AMZN" />
-          <button type="submit" disabled={searchingCompany || phase === "generating"}>
-            {searchingCompany ? "搜索中..." : "搜索公司"}
-          </button>
-        </form>
-        {companyCandidates.length ? (
-          <div className="mine-candidate-list">
-            {companyCandidates.map((candidate) => (
-              <button key={candidate.id} type="button" onClick={() => void addCompanyToMine(candidate)}>
-                <strong>{candidate.name}</strong>
-                <span>
-                  {candidate.code} / {candidate.listingPlace} / {candidate.exchange}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </section>
 
       <TemplateManager
         templates={templates}

@@ -46,4 +46,68 @@ describe("company evidence packages", () => {
 
     expect(left.evidenceHash).toBe(right.evidenceHash);
   });
+
+  test("keeps the material hash stable for retrieval time and external search noise", async () => {
+    const base = {
+      company: { name: "公司A", ticker: "000001", market: "A股" },
+      retrievedAt: "2026-05-20T00:00:00.000Z",
+      evidence: [
+        { title: "公司A Eastmoney financial statements", source: "Eastmoney public financial statement endpoints", retrievedAt: "2026-05-20T00:00:00.000Z", freshness: "latest-public", notes: "财报" },
+        { title: "公司A 外部搜索线索", source: "AnySearch 外部搜索", url: "https://example.com/a", retrievedAt: "2026-05-20T00:00:00.000Z", freshness: "latest-public", notes: "新闻线索" },
+      ],
+      facts: {
+        quote: { regularMarketPrice: 10, marketCap: 100 },
+        financialTenYear: { rows: [{ year: "2025", revenue: 1 }] },
+        externalSearch: { items: [{ title: "旧线索", cached: true }] },
+      },
+    };
+
+    const left = await buildCompanyEvidencePackage({ userId: "u", watchlistId: "w", evidence: base });
+    const right = await buildCompanyEvidencePackage({
+      userId: "u",
+      watchlistId: "w",
+      evidence: {
+        ...base,
+        retrievedAt: "2026-05-21T00:00:00.000Z",
+        evidence: [
+          { title: "公司A Eastmoney financial statements", source: "Eastmoney public financial statement endpoints", retrievedAt: "2026-05-21T00:00:00.000Z", freshness: "latest-public", notes: "财报" },
+          { title: "公司A 外部搜索线索", source: "AnySearch 外部搜索", url: "https://example.com/b", retrievedAt: "2026-05-21T00:00:00.000Z", freshness: "latest-public", notes: "新闻线索更新" },
+        ],
+        facts: {
+          ...base.facts,
+          externalSearch: { items: [{ title: "新线索", cached: false }] },
+        },
+      },
+    });
+
+    expect(left.evidenceHash).not.toBe(right.evidenceHash);
+    expect(left.materialHash).toBe(right.materialHash);
+  });
+
+  test("changes the material hash when hard data changes", async () => {
+    const evidence = {
+      company: { name: "公司A", ticker: "000001", market: "A股" },
+      retrievedAt: "2026-05-20T00:00:00.000Z",
+      evidence: [{ title: "公司A Eastmoney financial statements", source: "Eastmoney public financial statement endpoints", retrievedAt: "2026-05-20T00:00:00.000Z", freshness: "latest-public", notes: "财报" }],
+      facts: {
+        quote: { regularMarketPrice: 10, marketCap: 100 },
+        financialTenYear: { rows: [{ year: "2025", revenue: 1 }] },
+      },
+    };
+
+    const left = await buildCompanyEvidencePackage({ userId: "u", watchlistId: "w", evidence });
+    const right = await buildCompanyEvidencePackage({
+      userId: "u",
+      watchlistId: "w",
+      evidence: {
+        ...evidence,
+        facts: {
+          ...evidence.facts,
+          quote: { regularMarketPrice: 12, marketCap: 100 },
+        },
+      },
+    });
+
+    expect(left.materialHash).not.toBe(right.materialHash);
+  });
 });

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS company_evidence_packages (
   ticker TEXT NOT NULL,
   market TEXT NOT NULL,
   evidence_hash TEXT NOT NULL,
+  material_hash TEXT NOT NULL DEFAULT '',
   stable_hash TEXT NOT NULL,
   fresh_hash TEXT NOT NULL,
   object_key TEXT NOT NULL,

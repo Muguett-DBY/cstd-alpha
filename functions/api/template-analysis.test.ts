@@ -8,6 +8,7 @@ import {
   requestTemplateReport,
   runFullTemplateChildrenCacheAware,
   shouldStartFullAnalysis,
+  templateEvidenceCacheHash,
   templateModelRoutes,
   templateReasoningEffort,
 } from "./template-analysis";
@@ -327,6 +328,60 @@ describe("template model routing", () => {
     expect(modelBody.messages[1].content.indexOf("publicEvidence")).toBeGreaterThan(-1);
     expect(JSON.stringify(modelBody).indexOf("publicEvidence")).toBeLessThan(JSON.stringify(modelBody).indexOf("fullPrompt"));
   });
+
+  test("adds SearXNG supplemental evidence when configured without AnySearch", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [{ title: "贵州茅台 SEC 风险复核", url: "https://www.sec.gov/example", content: "低权重搜索线索。", engine: "google" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "SearXNG补充报告",
+                  score: 60,
+                  verdict: "观察",
+                  summary: "已纳入低权重搜索线索。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: "## 报告\n已纳入 SearXNG 搜索线索。",
+                }),
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestTemplateReport(
+      { SEARXNG_ENDPOINTS: "https://search.example.com", DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[0],
+      [],
+    );
+
+    expect(fetchMock.mock.calls[0][0]).toContain("https://search.example.com/search?");
+    const modelBody = JSON.parse(fetchMock.mock.calls[3][1].body);
+    expect(JSON.stringify(modelBody.messages[1].content)).toContain("SearXNG 外部搜索");
+  });
 });
 
 describe("template evidence hash cache", () => {
@@ -342,6 +397,11 @@ describe("template evidence hash cache", () => {
     expect(isTemplateAnalysisCacheReusable(row, "template-a", "evidence-b", false)).toBe(false);
     expect(isTemplateAnalysisCacheReusable(row, "template-b", "evidence-a", false)).toBe(false);
     expect(isTemplateAnalysisCacheReusable(row, "template-a", "evidence-a", true)).toBe(false);
+  });
+
+  test("prefers the material evidence hash for template cache reuse", () => {
+    expect(templateEvidenceCacheHash({ evidenceHash: "fresh-a", materialHash: "material-a" })).toBe("material-a");
+    expect(templateEvidenceCacheHash({ evidenceHash: "fresh-a" })).toBe("fresh-a");
   });
 });
 

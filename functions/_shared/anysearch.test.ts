@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAnySearchRequestBody, fetchAnySearchEvidence, normalizeAnySearchResults } from "./anysearch";
+import { buildAnySearchRequestBody, fetchAnySearchEvidence, fetchSearxngEvidence, normalizeAnySearchResults } from "./anysearch";
 
 describe("AnySearch helper", () => {
   test("builds finance-oriented requests with freshness and vertical filters", () => {
@@ -103,5 +103,38 @@ describe("AnySearch helper", () => {
       "https://api.anysearch.com/v1/search",
       expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer key" }) }),
     );
+  });
+
+  test("normalizes SearXNG results as low-weight supplemental search evidence", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          {
+            title: "英伟达 最新财报",
+            url: "https://www.sec.gov/Archives/nvda",
+            content: "SEC filings and company results.",
+            engine: "google",
+            score: 0.7,
+          },
+        ],
+      }),
+    });
+
+    const items = await fetchSearxngEvidence({
+      endpoints: "https://search.example.com",
+      queries: [{ query: "NVDA 财报 风险", topic: "英伟达", sourceType: "news" }],
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("https://search.example.com/search?"), expect.any(Object));
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "SearXNG",
+        sourceType: "official",
+        signalType: "external_search",
+        topic: "英伟达",
+      }),
+    ]);
   });
 });

@@ -33,6 +33,53 @@ describe("public data providers", () => {
     expect(result[0].name).not.toContain("Agilent");
   });
 
+  test("keeps Yahoo global candidates when Eastmoney also returns local matches", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          QuotationCodeTable: {
+            Data: [
+              {
+                Code: "000001",
+                Name: "平安银行",
+                JYS: "6",
+                Classify: "AStock",
+                SecurityTypeName: "深A",
+                QuoteID: "0.000001",
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          quotes: [
+            {
+              symbol: "NVDA",
+              shortname: "NVIDIA Corporation",
+              longname: "NVIDIA Corporation",
+              quoteType: "EQUITY",
+              exchange: "NMS",
+              exchDisp: "NASDAQ",
+            },
+          ],
+        }),
+      });
+
+    const result = await searchCompanyCandidates("NVDA", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "000001", source: "eastmoney" }),
+        expect.objectContaining({ code: "NVDA", source: "yahoo" }),
+      ]),
+    );
+  });
+
   test("passes an abort signal to provider fetch requests", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn().mockResolvedValue({
@@ -50,13 +97,17 @@ describe("public data providers", () => {
   });
 
   test("normalizes common Chinese company searches across A/H/US markets", async () => {
-    const responses = [
-      [{ Code: "AAPL", Name: "苹果", JYS: "NASDAQ", Classify: "UsStock", SecurityTypeName: "美股", QuoteID: "105.AAPL" }],
-      [{ Code: "00700", Name: "腾讯控股", JYS: "HK", Classify: "HK", SecurityTypeName: "港股", QuoteID: "116.00700" }],
-      [{ Code: "600519", Name: "贵州茅台", JYS: "2", Classify: "AStock", SecurityTypeName: "沪A", QuoteID: "1.600519" }],
-    ];
-    const fetchMock = vi.fn().mockImplementation(() => {
-      const Data = responses.shift() ?? [];
+    const responses: Record<string, Array<Record<string, string>>> = {
+      苹果: [{ Code: "AAPL", Name: "苹果", JYS: "NASDAQ", Classify: "UsStock", SecurityTypeName: "美股", QuoteID: "105.AAPL" }],
+      腾讯: [{ Code: "00700", Name: "腾讯控股", JYS: "HK", Classify: "HK", SecurityTypeName: "港股", QuoteID: "116.00700" }],
+      贵州茅台: [{ Code: "600519", Name: "贵州茅台", JYS: "2", Classify: "AStock", SecurityTypeName: "沪A", QuoteID: "1.600519" }],
+    };
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("query2.finance.yahoo.com")) {
+        return Promise.resolve({ ok: true, json: async () => ({ quotes: [] }) });
+      }
+      const input = decodeURIComponent(new URL(url).searchParams.get("input") || "");
+      const Data = responses[input] ?? [];
       return Promise.resolve({
         ok: true,
         json: async () => ({ QuotationCodeTable: { Data } }),
