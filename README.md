@@ -21,6 +21,7 @@
 - `GET/POST/DELETE /api/watchlist`：按 `user_id` 隔离的自选股。
 - `GET/POST /api/template-analysis`：模板专项报告元数据存在 D1，正文 Markdown 存在 R2。
 - `POST /api/company-evidence-refresh`：受 `COMPANY_EVIDENCE_REFRESH_TOKEN` 保护的公司证据包刷新入口，供 GitHub Actions 每日刷新“我的”自选股证据包。
+- `GET/POST /api/template-analysis-job`：受 `TEMPLATE_ANALYSIS_WORKER_TOKEN` 保护的后台模板分析任务接口，供 GitHub Actions 读取 queued/running 任务并回写结果。
 - `GET/POST /api/radar-scan`：读取或刷新行业雷达；`POST` 只创建后台分析 job 并触发 GitHub Action，页面继续显示旧缓存并轮询 job 状态，DeepSeek 不在 Cloudflare Pages 请求内运行。
 
 ## 本地开发
@@ -59,6 +60,8 @@ CSTD_USER_PASSWORD="..." node scripts/create-fixed-user.mjs --username=alice --d
 
 “我的”模板分析使用公司级证据包：加入自选股时会尽力预抓一次，`.github/workflows/company-evidence.yml` 每日调用线上刷新入口，把公司财报、行情、公告、公开搜索线索归一化为 D1/R2 证据包。模板报告按“模板版本 + 公司证据指纹”复用缓存；证据无实质变化时不会重复调用 DeepSeek。模板分析和模板补全都走 DeepSeek 官方 API，正式模板报告使用 `reasoning_effort: "max"`。
 
+模板深度报告由 `.github/workflows/template-analysis.yml` 在用户点击模板生成时触发：Pages Function 只创建/复用 running 任务并触发 GitHub workflow dispatch；Action 读取受保护任务接口，调用 DeepSeek，完成后通过同一接口写回 D1/R2。定时公司证据刷新不会调用 DeepSeek。
+
 行业雷达深度分析由 `.github/workflows/radar-analysis.yml` 在用户点击“雷达扫描”时触发：Pages Function 只写入 `radar-analysis:job:*` 并调用 GitHub workflow dispatch；Action 读取完整证据库和上次报告，调用 DeepSeek，完成后写回 `radar-scan:v2:latest`。
 
 GitHub 仓库 secrets：
@@ -66,6 +69,8 @@ GitHub 仓库 secrets：
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `DEEPSEEK_API_KEY`
+- `TEMPLATE_ANALYSIS_WORKER_TOKEN`
+- `TEMPLATE_ANALYSIS_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/template-analysis-job`）
 
 Cloudflare Pages secrets：
 
@@ -73,6 +78,8 @@ Cloudflare Pages secrets：
 - `AUTH_SECRET`
 - `DEEPSEEK_API_KEY`（公司报告仍在 Pages Function 中使用）
 - `GITHUB_RADAR_DISPATCH_TOKEN`（fine-grained token，允许触发本仓库 Actions workflow）
+- `GITHUB_TEMPLATE_DISPATCH_TOKEN`（可选；缺省复用 `GITHUB_RADAR_DISPATCH_TOKEN`）
+- `TEMPLATE_ANALYSIS_WORKER_TOKEN`（和 GitHub secret 保持一致，仅供后台模板 Action 读写任务）
 
 项目：
 

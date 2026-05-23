@@ -19,7 +19,6 @@ import type { CompanyCandidate } from "./shared/report";
 import { normalizeMarkdownForReading } from "./markdown-report";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
-  activeResearchTemplates,
   isRetryableTemplateStatus,
   type ResearchTemplate,
   type TemplateAnalysisResult,
@@ -160,12 +159,6 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     setError("");
     setNotice("");
     try {
-      if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
-        await generateFullAnalysisFromClient(target, forceRefresh);
-        setPhase("ready");
-        setActiveGeneration(null);
-        return;
-      }
       const result = await generateTemplateAnalysis({ watchlistId: target.id, templateId, forceRefresh }, (progress) => {
         if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
       });
@@ -173,6 +166,13 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       setAnalyses((current) => mergeAnalyses(current, nextAnalyses));
       const completed = nextAnalyses.find((analysis) => analysis.status === "completed") ?? nextAnalyses[0];
       if (completed && selectedWatchlistIdRef.current === target.id) setActiveAnalysis(completed);
+      if (completed?.status === "running") {
+        setNotice(`${target.company.name}：${completed.templateTitle} 已进入后台分析，完成后会自动打开。`);
+        await pollTemplateAnalysis(target, templateId);
+        setPhase("ready");
+        setActiveGeneration(null);
+        return;
+      }
       setNotice(
         templateId === FULL_ANALYSIS_TEMPLATE_ID
           ? "全面分析任务已更新：启用模板会逐项生成，已完成的模板会直接复用缓存。"
@@ -189,82 +189,29 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     }
   }
 
-  async function generateFullAnalysisFromClient(target: WatchlistItem, forceRefresh: boolean) {
-    setNotice(`${target.company.name} 全面分析任务已提交：会先逐个补齐缺失模板，再生成最终汇总。`);
-    const latest = await fetchTemplateAnalyses(target.id);
-    setAnalyses((current) => mergeAnalyses(current, latest.analyses));
-
-    const activeTemplates = activeResearchTemplates(templates);
-    const completedByTemplate = new Map(latest.analyses.filter((analysis) => analysis.status === "completed").map((analysis) => [analysis.templateId, analysis]));
-    for (const template of activeTemplates) {
-      if (completedByTemplate.has(template.id)) continue;
-      if (selectedWatchlistIdRef.current === target.id) {
-        setActiveGeneration({ watchlistId: target.id, templateId: template.id, label: template.shortTitle, companyName: target.company.name });
-        setNotice(`正在补齐 ${template.shortTitle}：全面分析需要先完成所有启用模板。`);
-      }
-      const childResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: template.id }, (progress) => {
-        if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
-      });
-      const childAnalyses = childResult.analyses ?? (childResult.analysis ? [childResult.analysis] : []);
-      setAnalyses((current) => mergeAnalyses(current, childAnalyses));
-      const child = childAnalyses.find((analysis) => analysis.templateId === template.id);
-      if (child?.status === "completed") {
-        completedByTemplate.set(template.id, child);
-        continue;
-      }
-      if (child && selectedWatchlistIdRef.current === target.id) setActiveAnalysis(child);
-      throw new Error(`${template.shortTitle} 未完成：${child?.summary || "请稍后重试该模板。"}`);
-    }
-
-    if (selectedWatchlistIdRef.current === target.id) {
-      setActiveGeneration({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, label: "全面分析", companyName: target.company.name });
-      setNotice(`${target.company.name} 启用模板已完成，正在生成全面分析汇总。`);
-    }
-    const initialResult = await generateTemplateAnalysis({ watchlistId: target.id, templateId: FULL_ANALYSIS_TEMPLATE_ID, forceRefresh }, (progress) => {
-      if (progress.stage !== "heartbeat" && selectedWatchlistIdRef.current === target.id) setNotice(`${progress.label}：${progress.detail}`);
-    });
-    const initialAnalyses = initialResult.analyses ?? (initialResult.analysis ? [initialResult.analysis] : []);
-    setAnalyses((current) => mergeAnalyses(current, initialAnalyses));
-    const full = initialAnalyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID);
-    if (full?.status === "completed") {
-      const hydrated = await fetchTemplateAnalysis(full.id);
-      setAnalyses((current) => mergeAnalyses(current, [hydrated]));
-      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
-      setNotice(full.fromCache ? `已打开 ${target.company.name} 缓存中的全面分析。` : `${target.company.name} 全面分析已生成并写入报告库。`);
-      return;
-    }
-    if (full && isRetryableTemplateStatus(full.status)) {
-      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
-      setNotice(`${target.company.name} 全面分析暂停：上一次生成未完成，可稍后重试。`);
-      return;
-    }
-    await pollFullAnalysis(target);
-  }
-
-  async function pollFullAnalysis(target: WatchlistItem) {
+  async function pollTemplateAnalysis(target: WatchlistItem, templateId: string) {
     const startedAt = Date.now();
-    const timeoutMs = 12 * 60 * 1000;
+    const timeoutMs = 18 * 60 * 1000;
     while (Date.now() - startedAt < timeoutMs) {
       await wait(5000);
       const data = await fetchTemplateAnalyses(target.id);
       setAnalyses((current) => mergeAnalyses(current, data.analyses));
-      const full = data.analyses.find((analysis) => analysis.templateId === FULL_ANALYSIS_TEMPLATE_ID);
-      if (!full || full.status === "pending" || full.status === "running") {
-        if (selectedWatchlistIdRef.current === target.id) setNotice("全面分析仍在后台生成：页面会自动刷新状态，已完成模板会直接复用缓存。");
+      const analysis = data.analyses.find((item) => item.templateId === templateId);
+      if (!analysis || analysis.status === "pending" || analysis.status === "running") {
+        if (selectedWatchlistIdRef.current === target.id) setNotice(`${target.company.name} 模板报告仍在后台生成，页面会自动刷新。`);
         continue;
       }
-      if (full.status === "completed") {
-        const hydrated = await fetchTemplateAnalysis(full.id);
+      if (analysis.status === "completed") {
+        const hydrated = await fetchTemplateAnalysis(analysis.id);
         setAnalyses((current) => mergeAnalyses(current, [hydrated]));
         if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(hydrated);
-        setNotice(`${target.company.name} 全面分析已生成并写入报告库。`);
+        setNotice(analysis.fromCache ? `已打开 ${target.company.name} 的缓存报告。` : `${target.company.name} 模板报告已生成并写入报告库。`);
         return;
       }
-      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(full);
-      setNotice(`${target.company.name} 全面分析暂停：模型连接超时或通道限流，任务已可重试。`);
-      return;
+      if (selectedWatchlistIdRef.current === target.id) setActiveAnalysis(analysis);
+      throw new Error(analysis.errorMessage || analysis.summary || "模板后台分析失败。");
     }
-    throw new Error("全面分析仍在后台生成，请稍后刷新我的研究查看。");
+    throw new Error("模板报告仍在后台生成，请稍后刷新我的研究查看。");
   }
 
   async function openAnalysis(analysis: TemplateAnalysisResult) {

@@ -7,7 +7,6 @@ import {
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
   activeResearchTemplates,
-  completedTemplateAnalysesForFull,
   normalizeTemplateSectionRequirements,
   type ResearchTemplate,
   type TemplateAnalysisResult,
@@ -30,6 +29,10 @@ type Env = {
   DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
+  GITHUB_RADAR_DISPATCH_TOKEN?: string;
+  GITHUB_TEMPLATE_DISPATCH_TOKEN?: string;
+  GITHUB_TEMPLATE_REPOSITORY?: string;
+  GITHUB_TEMPLATE_WORKFLOW?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
@@ -52,7 +55,6 @@ type GenerateBody = {
   forceRefresh?: boolean;
 };
 
-type TemplateProgressWriter = (event: Record<string, unknown>) => void;
 type GeneratedTemplateAnalysis = ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
 type TemplateReasoningEffort = "high" | "max";
 type TemplateCacheMode = "free" | "paid";
@@ -66,6 +68,8 @@ const PAID_MODEL = "deepseek-v4-flash";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
+const GITHUB_TEMPLATE_REPOSITORY = "Muguett-DBY/cstd-alpha";
+const GITHUB_TEMPLATE_WORKFLOW = "template-analysis.yml";
 const TEMPLATE_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha user-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
 const FREE_TEMPLATE_CACHE_REPEAT = 180;
@@ -114,7 +118,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ analyses: (result.results ?? []).map(analysisRowToResult), templates: await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId) });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const { request, env } = context;
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
@@ -130,13 +135,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
   const enabledTemplates = activeResearchTemplates(userTemplates);
 
-  const durableEnv = {
-    ANYSEARCH_API_KEY: env.ANYSEARCH_API_KEY,
-    SEARXNG_ENDPOINTS: env.SEARXNG_ENDPOINTS,
-    DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
-    REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB,
-    REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET,
-  };
   if (templateId === FULL_ANALYSIS_TEMPLATE_ID) {
     if (!enabledTemplates.length) return json({ error: "没有启用任何模板，无法进行全部模板分析。" }, 400);
     const fullTemplate = fullAnalysisTemplate(enabledTemplates);
@@ -149,45 +147,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!shouldStartFullAnalysis(existingFullResult, forceRefresh)) {
       return json({ analyses: [existingFullResult], watchlistItem: watchlistRowToItem(watchlist) }, 202);
     }
-    return streamTemplateGeneration(async (write) => {
-      const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB!, session.userId, watchlist, fullTemplate, "running");
-      write({ type: "progress", stage: "full_started", label: "全部模板全面分析", detail: "正在检查已完成模板；缺失模板会由前端分批生成，避免单次 Worker 请求超出 Cloudflare subrequest 限制。" });
-      try {
-        const children = await readCompletedTemplateAnalysesForFull(env, session.userId, watchlist.id, enabledTemplates, write, cacheEvidenceHash);
-        const completedChildren = completedTemplateAnalysesForFull(children, enabledTemplates);
-        if (completedChildren.length < enabledTemplates.length) {
-          const missingTitles = enabledTemplates
-            .filter((template) => !completedChildren.some((analysis) => analysis.templateId === template.id))
-            .map((template) => template.shortTitle)
-            .join("、");
-          const fullFailure = await writeAnalysisFailure(
-            env.REPORT_LIBRARY_DB!,
-            session.userId,
-            watchlist,
-            fullTemplate,
-            `启用模板尚未全部完成，缺失：${missingTitles || "未知模板"}。请先生成缺失模板后再生成全面分析。`,
-            "failed_retryable",
-            running.startedAt,
-          );
-          write({ type: "final", analyses: [fullFailure, ...children], watchlistItem: watchlistRowToItem(watchlist) });
-          return;
-        }
-        write({ type: "progress", stage: "evidence", label: "读取公司证据包", detail: "正在读取公司财务、行情、公告与外部证据包，供最终汇总使用。" });
-        const analyses = await generateFullAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, enabledTemplates, forceRefresh, children, write, cacheEvidenceHash);
-        write({ type: "final", analyses, watchlistItem: watchlistRowToItem(watchlist) });
-      } catch (error) {
-        await writeAnalysisFailure(
-          env.REPORT_LIBRARY_DB!,
-          session.userId,
-          watchlist,
-          fullTemplate,
-          normalizeTemplateAnalysisError(error),
-          isRetryableError(error) ? "failed_retryable" : "failed",
-          running.startedAt,
-        );
-        throw error;
-      }
-    });
+    const running = await queueTemplateAnalysis(env, session.userId, watchlist, fullTemplate, cacheEvidenceHash, context);
+    return json({ analyses: [running], watchlistItem: watchlistRowToItem(watchlist) }, 202);
   }
 
   const template = userTemplates.find((item) => item.id === templateId);
@@ -197,53 +158,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const cacheEvidenceHash = templateEvidenceCacheHash(evidencePackage);
   const cachedAnalysis = !forceRefresh ? await readCompletedAnalysisCache(env, session.userId, watchlist.id, template, cacheEvidenceHash) : null;
   if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
-  return streamTemplateGeneration(async (write) => {
-    write({ type: "progress", stage: "evidence", label: "读取公司证据包", detail: "正在整理公司财务、行情、公告与外部证据包。" });
-    write({ type: "progress", stage: "template_analysis", label: "生成模板深度报告", detail: `${template.shortTitle} 正在用 DeepSeek Flash Max 生成。` });
-    const analysis = await generateSingleTemplateAnalysis(durableEnv, session.userId, watchlist, evidencePackage.evidence, template, forceRefresh, [], write, cacheEvidenceHash);
-    write({ type: "final", analysis, watchlistItem: watchlistRowToItem(watchlist) });
-  });
+  const existing = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, template.id);
+  const existingResult = existing ? analysisRowToResult(existing) : null;
+  if (!forceRefresh && existingResult?.status === "running") return json({ analysis: existingResult, watchlistItem: watchlistRowToItem(watchlist) }, 202);
+  const running = await queueTemplateAnalysis(env, session.userId, watchlist, template, cacheEvidenceHash, context);
+  return json({ analysis: running, watchlistItem: watchlistRowToItem(watchlist) }, 202);
 };
 
-function streamTemplateGeneration(run: (write: TemplateProgressWriter) => Promise<void>) {
-  const encoder = new TextEncoder();
-  let closed = false;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const write: TemplateProgressWriter = (event) => {
-        if (closed) return;
-        controller.enqueue(encoder.encode(`${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`));
-      };
-      write({ type: "progress", stage: "started", label: "模板任务已开始", detail: "连接会保持打开，避免长报告生成时触发 Cloudflare 524。" });
-      heartbeat = setInterval(() => {
-        write({ type: "progress", stage: "heartbeat", label: "模板分析生成中", detail: "模型仍在生成完整深度报告，请保持等待。" });
-      }, 12_000);
-      run(write)
-        .catch((error) => {
-          write({ type: "error", error: error instanceof Error ? error.message : "模板分析生成失败。" });
-        })
-        .finally(() => {
-          if (heartbeat) clearInterval(heartbeat);
-          if (!closed) {
-            closed = true;
-            controller.close();
-          }
-        });
-    },
-    cancel() {
-      closed = true;
-      if (heartbeat) clearInterval(heartbeat);
-    },
+async function queueTemplateAnalysis(env: Env, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, evidenceHash: string | undefined, context: EventContext<Env, string, unknown>) {
+  if (!env.REPORT_LIBRARY_DB) throw new Error("REPORT_LIBRARY_DB is not configured.");
+  const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running", evidenceHash);
+  const dispatchTask = dispatchTemplateAnalysisWorkflow(env, running.id).catch(async (error) => {
+    await writeAnalysisFailure(env.REPORT_LIBRARY_DB!, userId, watchlist, template, normalizeTemplateAnalysisError(error), "failed_retryable", running.startedAt, evidenceHash);
   });
+  context.waitUntil(dispatchTask);
+  return running;
+}
 
-  return new Response(stream, {
+async function dispatchTemplateAnalysisWorkflow(env: Env, jobId: string) {
+  const token = env.GITHUB_TEMPLATE_DISPATCH_TOKEN?.trim() || env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
+  if (!token) throw new Error("missing GitHub template dispatch token");
+  const repository = env.GITHUB_TEMPLATE_REPOSITORY?.trim() || GITHUB_TEMPLATE_REPOSITORY;
+  const workflow = env.GITHUB_TEMPLATE_WORKFLOW?.trim() || GITHUB_TEMPLATE_WORKFLOW;
+  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
+    method: "POST",
     headers: {
-      "content-type": "application/x-ndjson; charset=utf-8",
-      "cache-control": "no-store",
-      "x-accel-buffering": "no",
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "CSTDAlphaTemplate/1.0",
+      "x-github-api-version": "2022-11-28",
     },
+    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
   });
+  if (!response.ok) throw new Error(`GitHub template dispatch failed: ${response.status}`);
 }
 
 type TemplateEvidencePackage = CompanyEvidencePackage;
@@ -252,7 +200,7 @@ export function templateEvidenceCacheHash(pkg: Pick<CompanyEvidencePackage, "evi
   return pkg.materialHash || pkg.evidenceHash;
 }
 
-async function fetchTemplateEvidence(env: TemplateCacheEnv, userId: string, watchlist: WatchlistRow, signal: AbortSignal): Promise<TemplateEvidencePackage> {
+export async function fetchTemplateEvidence(env: TemplateCacheEnv, userId: string, watchlist: WatchlistRow, signal: AbortSignal): Promise<TemplateEvidencePackage> {
   return getOrCreateCompanyEvidencePackage(env, userId, watchlist, signal);
 }
 
@@ -278,49 +226,7 @@ export function isTemplateAnalysisCacheReusable(
   return !evidenceHash || row.evidence_hash === evidenceHash;
 }
 
-async function generateFullAnalysis(
-  env: DurableTemplateEnv,
-  userId: string,
-  watchlist: WatchlistRow,
-  evidence: EvidenceBundle,
-  templates: ResearchTemplate[],
-  forceRefresh: boolean,
-  children: TemplateAnalysisResult[],
-  write?: TemplateProgressWriter,
-  evidenceHash?: string,
-) {
-  const fullTemplate = fullAnalysisTemplate(templates);
-  const completedChildren = completedTemplateAnalysesForFull(children, templates);
-  if (completedChildren.length < templates.length) {
-    return [
-      await writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, fullTemplate, "启用模板尚未全部完成，全部模板分析暂不可生成。", "failed_retryable"),
-      ...children,
-    ];
-  }
-  write?.({ type: "progress", stage: "full_summary", label: "生成综合汇总", detail: `${templates.length} 个启用模板已完成，正在交叉验证并生成最终全面分析。` });
-  return [await generateSingleTemplateAnalysis(env, userId, watchlist, evidence, fullTemplate, forceRefresh, completedChildren, write, evidenceHash), ...children];
-}
-
-async function readCompletedTemplateAnalysesForFull(
-  env: TemplateCacheEnv,
-  userId: string,
-  watchlistId: string,
-  templates: ResearchTemplate[],
-  write?: TemplateProgressWriter,
-  evidenceHash?: string,
-) {
-  const analyses: TemplateAnalysisResult[] = [];
-  for (const template of templates) {
-    const cached = await readCompletedAnalysisCache(env, userId, watchlistId, template, evidenceHash);
-    if (cached) {
-      write?.({ type: "progress", stage: "child_template_cache", label: "复用专项模板", detail: `${template.shortTitle} 已有缓存，直接复用。` });
-      analyses.push(cached);
-    }
-  }
-  return analyses;
-}
-
-function fullAnalysisTemplate(templates: ResearchTemplate[] = RESEARCH_TEMPLATES): ResearchTemplate {
+export function fullAnalysisTemplate(templates: ResearchTemplate[] = RESEARCH_TEMPLATES): ResearchTemplate {
   const count = templates.length;
   return {
     id: FULL_ANALYSIS_TEMPLATE_ID,
@@ -362,42 +268,6 @@ export async function runFullTemplateChildrenCacheAware<T>({
 export function shouldStartFullAnalysis(existing: TemplateAnalysisResult | null, forceRefresh: boolean) {
   if (forceRefresh) return true;
   return existing?.status !== "running";
-}
-
-async function generateSingleTemplateAnalysis(
-  env: DurableTemplateEnv,
-  userId: string,
-  watchlist: WatchlistRow,
-  evidence: EvidenceBundle,
-  template: ResearchTemplate,
-  forceRefresh: boolean,
-  childAnalyses: TemplateAnalysisResult[] = [],
-  write?: TemplateProgressWriter,
-  evidenceHash?: string,
-) {
-  const cached = !forceRefresh ? await readCompletedAnalysisCache(env, userId, watchlist.id, template, evidenceHash) : null;
-  if (cached) {
-    return cached;
-  }
-
-  await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running");
-  const startedAt = new Date().toISOString();
-  try {
-    write?.({ type: "progress", stage: "model", label: "DeepSeek 生成中", detail: `${template.shortTitle} 正在生成完整 Markdown 深度报告。` });
-    const generated = await requestTemplateReport(env, watchlist, evidence, template, childAnalyses);
-    const templateHash = await templateVersionHash(template);
-    const objectKey = `${TEMPLATE_REPORT_PREFIX}/${userId}/${watchlist.id}/${template.id}-${templateHash.slice(0, 12)}.md`;
-    await env.REPORT_LIBRARY_BUCKET.put(objectKey, generated.markdown, {
-      httpMetadata: { contentType: "text/markdown; charset=utf-8" },
-      customMetadata: { templateId: template.id, templateHash, ticker: watchlist.ticker },
-    });
-    const completedAt = new Date().toISOString();
-    const result = await writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, generated, objectKey, startedAt, completedAt, evidenceHash);
-    write?.({ type: "progress", stage: "saved", label: "模板报告已保存", detail: `${template.shortTitle} 已写入 R2/D1 报告库。` });
-    return { ...result, markdown: generated.markdown };
-  } catch (error) {
-    return writeAnalysisFailure(env.REPORT_LIBRARY_DB, userId, watchlist, template, normalizeTemplateAnalysisError(error), isRetryableError(error) ? "failed_retryable" : "failed", startedAt);
-  }
 }
 
 export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
@@ -807,7 +677,7 @@ function buildEvidenceFallbackTemplateReport(watchlist: WatchlistRow, evidence: 
   };
 }
 
-async function writeCompletedAnalysis(
+export async function writeCompletedAnalysis(
   db: D1Database,
   userId: string,
   watchlist: WatchlistRow,
@@ -851,20 +721,21 @@ async function writeCompletedAnalysis(
   return result;
 }
 
-async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, status: TemplateAnalysisStatus) {
+export async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, status: TemplateAnalysisStatus, evidenceHash?: string) {
   const now = new Date().toISOString();
   const result = {
     ...baseAnalysis(userId, watchlist, template, status, now),
     id: await analysisId(userId, watchlist.id, template.id),
     startedAt: status === "running" ? now : undefined,
     templateHash: await templateVersionHash(template),
+    evidenceHash,
     templateSnapshot: snapshotTemplate(template),
   };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [], followUps: [], sections: [] }), null);
   return result;
 }
 
-async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string) {
+export async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string, evidenceHash?: string) {
   const now = new Date().toISOString();
   const result = {
     ...baseAnalysis(userId, watchlist, template, status, now),
@@ -874,6 +745,7 @@ async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: W
     completedAt: now,
     summary: errorMessage,
     templateHash: await templateVersionHash(template),
+    evidenceHash,
     templateSnapshot: snapshotTemplate(template),
   };
   await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [errorMessage], followUps: ["稍后重试或切换可用模型通道。"], sections: [] }), errorMessage);
@@ -970,7 +842,7 @@ async function hydrateMarkdown(env: Pick<Env, "REPORT_LIBRARY_BUCKET">, analysis
   return object ? { ...analysis, markdown: await object.text() } : analysis;
 }
 
-async function readAnalysisRow(db: D1Database, userId: string, id: string) {
+export async function readAnalysisRow(db: D1Database, userId: string, id: string) {
   return db
     .prepare(
       `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json
@@ -981,7 +853,7 @@ async function readAnalysisRow(db: D1Database, userId: string, id: string) {
     .first<AnalysisRow>();
 }
 
-async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, watchlistId: string, templateId: string) {
+export async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, watchlistId: string, templateId: string) {
   return db
     .prepare(
       `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json
@@ -992,7 +864,7 @@ async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, w
     .first<AnalysisRow>();
 }
 
-async function readWatchlistRow(db: D1Database, userId: string, id: string) {
+export async function readWatchlistRow(db: D1Database, userId: string, id: string) {
   return db
     .prepare(
       `SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
@@ -1007,7 +879,7 @@ async function analysisId(userId: string, watchlistId: string, templateId: strin
   return sha256(`${userId}:${watchlistId}:${templateId}`);
 }
 
-async function templateVersionHash(template: ResearchTemplate) {
+export async function templateVersionHash(template: ResearchTemplate) {
   return sha256(
     JSON.stringify({
       id: template.id,
@@ -1191,18 +1063,6 @@ function normalizeTemplateAnalysisError(error: unknown) {
   if (message.includes("Rate limit exceeded")) return "DeepSeek Flash Max 当前触发限流，请稍后重试；任务已保存为可重试失败。";
   if (message.includes("429")) return "模板分析模型通道当前限流，请稍后重试。";
   return message || "模板分析生成失败。";
-}
-
-function isRetryableError(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
-  return (
-    message.includes("Rate limit exceeded") ||
-    message.includes("429") ||
-    message.includes("输出过短") ||
-    message.includes("未返回完整模板分析内容") ||
-    message.includes("超过 9 分钟") ||
-    /\b5\d\d\b/.test(message)
-  );
 }
 
 function isAbortLikeError(error: unknown) {

@@ -1,0 +1,41 @@
+name: Analyze Template Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Template analysis job id created by the website
+        required: true
+        type: string
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
+      SEARXNG_ENDPOINTS: ${{ secrets.SEARXNG_ENDPOINTS }}
+      TEMPLATE_ANALYSIS_WORKER_URL: ${{ secrets.TEMPLATE_ANALYSIS_WORKER_URL }}
+      TEMPLATE_ANALYSIS_WORKER_TOKEN: ${{ secrets.TEMPLATE_ANALYSIS_WORKER_TOKEN }}
+      TEMPLATE_ANALYSIS_JOB_ID: ${{ inputs.job_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate job id
+        run: |
+          node -e "const id=process.env.TEMPLATE_ANALYSIS_JOB_ID||''; if(!/^[a-f0-9]{64}$/i.test(id)){throw new Error('Invalid template analysis job id')}"
+
+      - name: Run DeepSeek template analysis
+        run: npx tsx scripts/run_template_analysis_job.ts
