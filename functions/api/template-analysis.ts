@@ -725,7 +725,7 @@ function shouldExpandTemplateReport(generated: GeneratedTemplateAnalysis, templa
   const markdownLength = generated.markdown.trim().length;
   if (!markdownLength) return false;
   if (template.id === FULL_ANALYSIS_TEMPLATE_ID) return false;
-  return markdownLength < Math.floor(minimumMarkdownLength(template) * 0.8);
+  return markdownLength < minimumMarkdownLength(template);
 }
 
 async function writeCompletedAnalysis(
