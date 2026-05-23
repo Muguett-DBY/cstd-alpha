@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { analysisRowToResult, watchlistRowToItem, type AnalysisRow, type WatchlistRow } from "./user-research-db";
+import { RESEARCH_TEMPLATES, type ResearchTemplate } from "../../src/shared/user-research";
+import { analysisRowToResult, saveUserResearchTemplates, watchlistRowToItem, type AnalysisRow, type ResearchTemplateRow, type WatchlistRow } from "./user-research-db";
 
 describe("user research row mapping", () => {
   test("keeps watchlist rows isolated by fixed account user id", () => {
@@ -59,3 +60,64 @@ describe("user research row mapping", () => {
     });
   });
 });
+
+describe("user research template persistence", () => {
+  test("saves a deleted template set without per-template lookup queries", async () => {
+    const existingRows = RESEARCH_TEMPLATES.map((template, index) => templateRow(template, index + 1));
+    const preparedSql: string[] = [];
+    const batchedStatementCounts: number[] = [];
+    const db = {
+      prepare(sql: string) {
+        preparedSql.push(sql);
+        return {
+          bind: () => ({
+            all: async () => ({ results: sql.includes("deleted_at IS NULL") ? [existingRows[0]] : existingRows }),
+            run: async () => undefined,
+            first: async () => null,
+          }),
+          run: async () => undefined,
+        };
+      },
+      batch: async (statements: unknown[]) => {
+        batchedStatementCounts.push(statements.length);
+        return [];
+      },
+    } as unknown as D1Database;
+
+    await saveUserResearchTemplates(db, "admin", [RESEARCH_TEMPLATES[0]]);
+
+    expect(preparedSql.some((sql) => sql.includes("WHERE user_key = ?1 AND id = ?2"))).toBe(false);
+    expect(batchedStatementCounts).toEqual([1]);
+    expect(preparedSql.some((sql) => sql.includes("id NOT IN"))).toBe(true);
+  });
+});
+
+function templateRow(template: ResearchTemplate, sortOrder: number): ResearchTemplateRow {
+  return {
+    id: template.id,
+    user_id: "admin",
+    user_key: "admin",
+    title: template.title,
+    short_title: template.shortTitle,
+    focus: template.focus,
+    prompt: template.prompt,
+    full_prompt: template.fullPrompt,
+    section_requirements_json: JSON.stringify(template.sectionRequirements ?? []),
+    enabled: template.enabled === false ? 0 : 1,
+    sort_order: sortOrder,
+    is_system: template.isSystem ? 1 : 0,
+    deleted_at: null,
+    default_title: template.title,
+    default_short_title: template.shortTitle,
+    default_focus: template.focus,
+    default_prompt: template.prompt,
+    default_full_prompt: template.fullPrompt,
+    default_section_requirements_json: JSON.stringify(template.sectionRequirements ?? []),
+    default_enabled: template.enabled === false ? 0 : 1,
+    default_sort_order: sortOrder,
+    default_is_system: template.isSystem ? 1 : 0,
+    default_deleted_at: null,
+    created_at: "2026-05-24T00:00:00.000Z",
+    updated_at: "2026-05-24T00:00:00.000Z",
+  };
+}

@@ -64,6 +64,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [error, setError] = useState("");
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
+  const [savingTemplates, setSavingTemplates] = useState(false);
   const selectedWatchlistIdRef = useRef(selectedWatchlistId);
 
   useEffect(() => {
@@ -280,45 +281,57 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   async function saveTemplates(nextTemplates: ResearchTemplate[], successMessage = "模板设置已保存。") {
     setError("");
     setNotice("");
+    setSavingTemplates(true);
     try {
       const saved = await saveResearchTemplates(nextTemplates);
       setTemplates(saved);
       setNotice(successMessage);
     } catch (err) {
       setError(err instanceof Error ? err.message : "模板保存失败。");
+    } finally {
+      setSavingTemplates(false);
     }
   }
 
   async function saveCurrentTemplatesAsDefault() {
     setError("");
     setNotice("");
+    setSavingTemplates(true);
     try {
       const saved = await saveResearchTemplatesAsDefault();
       setTemplates(saved);
       setNotice("已把当前模板集保存为默认设置。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "默认模板保存失败。");
+    } finally {
+      setSavingTemplates(false);
     }
   }
 
   async function resetTemplates() {
     setError("");
     setNotice("");
+    setSavingTemplates(true);
     try {
       const saved = await resetResearchTemplatesToDefault();
       setTemplates(saved);
       setNotice("已重置为默认模板设置。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "模板重置失败。");
+    } finally {
+      setSavingTemplates(false);
     }
   }
 
   async function refreshTemplates() {
     setError("");
+    setSavingTemplates(true);
     try {
       setTemplates(await fetchResearchTemplates());
     } catch (err) {
       setError(err instanceof Error ? err.message : "模板读取失败。");
+    } finally {
+      setSavingTemplates(false);
     }
   }
 
@@ -464,7 +477,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
 
       <TemplateManager
         templates={templates}
-        disabled={phase === "generating"}
+        disabled={phase === "generating" || savingTemplates}
+        saving={savingTemplates}
         onSave={(nextTemplates) => void saveTemplates(nextTemplates)}
         onSaveDefault={() => void saveCurrentTemplatesAsDefault()}
         onResetDefault={() => void resetTemplates()}
@@ -477,6 +491,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
 function TemplateManager({
   templates,
   disabled,
+  saving,
   onSave,
   onSaveDefault,
   onResetDefault,
@@ -484,6 +499,7 @@ function TemplateManager({
 }: {
   templates: ResearchTemplate[];
   disabled: boolean;
+  saving: boolean;
   onSave: (templates: ResearchTemplate[]) => void;
   onSaveDefault: () => void;
   onResetDefault: () => void;
@@ -605,7 +621,7 @@ function TemplateManager({
       <>
         <div className="template-manager-toolbar">
           <button type="button" disabled={disabled || hasInvalidTemplate || !hasChanges} onClick={() => onSave(normalizeTemplateDrafts(drafts))}>
-            保存模板
+            {saving ? "保存中..." : "保存模板"}
           </button>
           <button type="button" className="secondary-button" disabled={disabled || hasChanges} onClick={onSaveDefault}>
             保存当前为默认

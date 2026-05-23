@@ -132,10 +132,9 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
   await ensureDefaultResearchTemplates(db, userId);
   const normalized = normalizeTemplateInputs(templates);
   const now = new Date().toISOString();
-  for (const [index, template] of normalized.entries()) {
-    const existing = await readTemplateRow(db, userId, template.id);
+  const upserts = normalized.map((template, index) => {
     const sortOrder = template.sortOrder ?? index + 1;
-    await db
+    return db
       .prepare(
         `INSERT INTO user_research_templates (
           id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
@@ -169,28 +168,32 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
         template.enabled === false ? 0 : 1,
         sortOrder,
         template.isSystem ? 1 : 0,
-        existing?.default_title ?? template.title,
-        existing?.default_short_title ?? template.shortTitle,
-        existing?.default_focus ?? template.focus,
-        existing?.default_prompt ?? template.prompt,
-        existing?.default_full_prompt ?? template.fullPrompt,
-        existing?.default_section_requirements_json ?? JSON.stringify(template.sectionRequirements ?? []),
-        existing?.default_enabled ?? (template.enabled === false ? 0 : 1),
-        existing?.default_sort_order ?? sortOrder,
-        existing?.default_is_system ?? (template.isSystem ? 1 : 0),
-        existing?.default_deleted_at ?? null,
-        existing?.created_at ?? now,
+        template.title,
+        template.shortTitle,
+        template.focus,
+        template.prompt,
+        template.fullPrompt,
+        JSON.stringify(template.sectionRequirements ?? []),
+        template.enabled === false ? 0 : 1,
+        sortOrder,
+        template.isSystem ? 1 : 0,
+        null,
         now,
-      )
-      .run();
-  }
+        now,
+      );
+  });
+  if (upserts.length) await db.batch(upserts);
+
   const keepIds = new Set(normalized.map((template) => template.id));
-  const existing = await readAllTemplateRows(db, userId);
-  await Promise.all(
-    existing
-      .filter((row) => !keepIds.has(row.id) && !row.deleted_at)
-      .map((row) => db.prepare(`UPDATE user_research_templates SET deleted_at = ?1, updated_at = ?2 WHERE user_key = ?3 AND id = ?4`).bind(now, now, userId, row.id).run()),
-  );
+  if (keepIds.size) {
+    const placeholders = Array.from({ length: keepIds.size }, (_, index) => `?${index + 4}`).join(", ");
+    await db
+      .prepare(`UPDATE user_research_templates SET deleted_at = ?1, updated_at = ?2 WHERE user_key = ?3 AND deleted_at IS NULL AND id NOT IN (${placeholders})`)
+      .bind(now, now, userId, ...keepIds)
+      .run();
+  } else {
+    await db.prepare(`UPDATE user_research_templates SET deleted_at = ?1, updated_at = ?2 WHERE user_key = ?3 AND deleted_at IS NULL`).bind(now, now, userId).run();
+  }
   return readUserResearchTemplates(db, userId);
 }
 
@@ -443,19 +446,6 @@ async function ensureDefaultResearchTemplates(db: D1Database, userId: string) {
       )
       .run();
   }
-}
-
-async function readTemplateRow(db: D1Database, userId: string, id: string) {
-  return db
-    .prepare(
-      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
-              default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_section_requirements_json, default_enabled, default_sort_order, default_is_system, default_deleted_at,
-              created_at, updated_at
-       FROM user_research_templates
-       WHERE user_key = ?1 AND id = ?2`,
-    )
-    .bind(userId, id)
-    .first<ResearchTemplateRow>();
 }
 
 async function readAllTemplateRows(db: D1Database, userId: string) {
