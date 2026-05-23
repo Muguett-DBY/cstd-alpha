@@ -131,7 +131,7 @@ describe("template model routing", () => {
                 keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
                 riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
                 followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                markdown: "## 深度报告\nDeepSeek 直接生成模板分析。",
+                markdown: `## 深度报告\nDeepSeek 直接生成模板分析。\n${"证据充分的模板分析正文。".repeat(320)}`,
               }),
             },
           },
@@ -152,6 +152,73 @@ describe("template model routing", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
+  });
+
+  test("expands short completed template reports once with high reasoning", async () => {
+    const expandedMarkdown = `## 扩写后的深度报告\n${"扩写后补足证据链、估值框架、反证条件和跟踪指标。".repeat(180)}`;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "短报告",
+                  score: 58,
+                  verdict: "观察",
+                  summary: "模型返回了可解析但过短的模板分析。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: "## 短报告\n内容太薄。",
+                }),
+              },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  title: "扩写成功报告",
+                  score: 66,
+                  verdict: "观察",
+                  summary: "第二次基于草稿扩写后返回了更完整的模板分析。",
+                  keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
+                  riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
+                  followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
+                  markdown: expandedMarkdown,
+                }),
+              },
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const generated = await requestTemplateReport(
+      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      watchlistRow(),
+      evidenceBundle(),
+      RESEARCH_TEMPLATES[0],
+      [],
+    );
+
+    expect(generated.markdown).toBe(expandedMarkdown);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(firstBody.reasoning_effort).toBe("high");
+    expect(secondBody.reasoning_effort).toBe("high");
+    expect(secondBody.messages[2].content).toContain("上一次 Markdown 正文过短");
   });
 
   test("retries with compact high reasoning when high reasoning returns no final content", async () => {
@@ -183,7 +250,7 @@ describe("template model routing", () => {
                   keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
                   riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
                   followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                  markdown: "## 深度报告\n紧凑 high 模式返回完整 Markdown。",
+                  markdown: `## 深度报告\n紧凑 high 模式返回完整 Markdown。\n${"救援模式补足证据、判断、反证和跟踪指标。".repeat(220)}`,
                 }),
               },
             },
@@ -279,7 +346,7 @@ describe("template model routing", () => {
                   keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
                   riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
                   followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                  markdown: "## 报告\n已纳入 AnySearch 外部搜索证据。",
+                  markdown: `## 报告\n已纳入 AnySearch 外部搜索证据。\n${"结合外部搜索证据、公司证据包、风险条件和后续跟踪指标展开分析。".repeat(180)}`,
                 }),
               },
             },

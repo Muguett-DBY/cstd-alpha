@@ -388,7 +388,10 @@ async function generateSingleTemplateAnalysis(
 }
 
 export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
-  return requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
+  const generated = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses);
+  if (!shouldExpandTemplateReport(generated, template)) return generated;
+  const expanded = await requestTemplateReportOnce(env, watchlist, evidence, template, childAnalyses, generated.markdown);
+  return expanded.markdown.trim().length > generated.markdown.trim().length ? expanded : generated;
 }
 
 async function requestTemplateReportOnce(
@@ -716,6 +719,13 @@ function delay(ms: number) {
 
 function minimumMarkdownLength(template: ResearchTemplate) {
   return minimumResearchMarkdownChars(template.id);
+}
+
+function shouldExpandTemplateReport(generated: GeneratedTemplateAnalysis, template: ResearchTemplate) {
+  const markdownLength = generated.markdown.trim().length;
+  if (!markdownLength) return false;
+  if (template.id === FULL_ANALYSIS_TEMPLATE_ID) return false;
+  return markdownLength < Math.floor(minimumMarkdownLength(template) * 0.8);
 }
 
 async function writeCompletedAnalysis(
