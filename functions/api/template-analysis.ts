@@ -514,14 +514,12 @@ function templateGenerationAttempts(templateId: string, maxTokens: number, cache
       maxTokens,
     },
   ];
-  if (primaryEffort === "max") {
-    attempts.push({
-      reasoningEffort: "high",
-      cacheMode: cacheMode === "paid" ? "paid-retry" : cacheMode,
-      completionMode: "rescue",
-      maxTokens,
-    });
-  }
+  attempts.push({
+    reasoningEffort: "high",
+    cacheMode: cacheMode === "paid" ? "paid-retry" : cacheMode,
+    completionMode: "rescue",
+    maxTokens,
+  });
   return attempts;
 }
 
@@ -689,8 +687,7 @@ function buildTemplateRequest(
 }
 
 export function templateReasoningEffort(templateId: string): TemplateReasoningEffort {
-  void templateId;
-  return "max";
+  return templateId === FULL_ANALYSIS_TEMPLATE_ID ? "max" : "high";
 }
 
 async function fetchTemplateModel(url: string, init: RequestInit) {

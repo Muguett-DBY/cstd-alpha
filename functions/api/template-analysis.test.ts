@@ -64,8 +64,8 @@ describe("shouldStartFullAnalysis", () => {
 });
 
 describe("templateReasoningEffort", () => {
-  test("uses max for single templates and full synthesis", () => {
-    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("max");
+  test("uses high for single templates and max only for full synthesis", () => {
+    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("high");
     expect(templateReasoningEffort(FULL_ANALYSIS_TEMPLATE_ID)).toBe("max");
   });
 });
@@ -151,10 +151,10 @@ describe("template model routing", () => {
     expect(generated.markdown).toContain("DeepSeek 直接生成");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
   });
 
-  test("retries with compact high reasoning when max reasoning returns no final content", async () => {
+  test("retries with compact high reasoning when high reasoning returns no final content", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -179,7 +179,7 @@ describe("template model routing", () => {
                   title: "重试成功报告",
                   score: 72,
                   verdict: "观察",
-                  summary: "Max 思考耗尽输出后，紧凑 high 模式成功返回完整模板分析。",
+                  summary: "High 思考耗尽输出后，紧凑 high 模式成功返回完整模板分析。",
                   keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
                   riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
                   followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
@@ -204,7 +204,7 @@ describe("template model routing", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(firstBody.reasoning_effort).toBe("max");
+    expect(firstBody.reasoning_effort).toBe("high");
     expect(secondBody.reasoning_effort).toBe("high");
     expect(secondBody.messages[2].content).toContain("救援模式");
     expect(secondBody.messages[0].content.length).toBeLessThan(firstBody.messages[0].content.length);
