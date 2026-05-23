@@ -105,6 +105,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
     ensureColumn(db, "template_analysis", "completed_at", "TEXT"),
     ensureColumn(db, "template_analysis", "error_message", "TEXT"),
     ensureColumn(db, "template_analysis", "template_hash", "TEXT"),
+    ensureColumn(db, "template_analysis", "evidence_hash", "TEXT"),
     ensureColumn(db, "template_analysis", "template_snapshot_json", "TEXT"),
   ]);
 }
@@ -282,6 +283,7 @@ export function analysisRowToResult(row: AnalysisRow): TemplateAnalysisResult {
     startedAt: row.started_at || undefined,
     completedAt: row.completed_at || undefined,
     templateHash: row.template_hash || undefined,
+    evidenceHash: row.evidence_hash || undefined,
     templateSnapshot: parseTemplateSnapshot(row.template_snapshot_json),
   };
 }
@@ -362,6 +364,7 @@ export type AnalysisRow = {
   completed_at?: string | null;
   error_message?: string | null;
   template_hash?: string | null;
+  evidence_hash?: string | null;
   template_snapshot_json?: string | null;
 };
 

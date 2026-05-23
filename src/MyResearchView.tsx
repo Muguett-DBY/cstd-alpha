@@ -863,8 +863,8 @@ function TemplateCard({
         <strong>{title}</strong>
         <span>{isGenerating ? "生成中" : statusLabel(status)}</span>
       </div>
-      <p>{isGenerating ? "正在生成深度内容，完成后会自动更新到报告库。" : analysis?.summary || focus}</p>
-      {analysis?.fromCache ? <small>来自已生成缓存</small> : null}
+      <p>{isGenerating ? "正在基于公司证据包生成深度内容，完成后会自动更新到报告库。" : analysis?.summary || focus}</p>
+      {analysis?.fromCache ? <small>证据未发生实质变化，已复用缓存</small> : analysis?.evidenceHash ? <small>已绑定公司证据包</small> : null}
       <footer>
         {analysis?.status === "completed" && !isGenerating ? (
           <button type="button" className="secondary-button" onClick={() => onOpen(analysis)}>

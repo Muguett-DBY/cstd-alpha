@@ -47,4 +47,12 @@ describe("D1 migrations", () => {
     for (const column of ["entity_type", "entity_id", "indicator_name", "value", "period"]) expect(indicatorValues).toContain(column);
     for (const column of ["growth_score", "momentum_score", "evidence_score", "bubble_risk", "decline_risk"]) expect(radarItems).toContain(column);
   });
+
+  test("company evidence package migration stores latest evidence pointers and hashes", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0006_company_evidence_packages.sql"))).not.toThrow();
+
+    const columns = tableColumns(db, "company_evidence_packages");
+    for (const column of ["user_key", "watchlist_id", "evidence_hash", "stable_hash", "fresh_hash", "object_key", "status", "fetched_at"]) expect(columns).toContain(column);
+  });
 });

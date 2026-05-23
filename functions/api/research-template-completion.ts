@@ -8,11 +8,9 @@ type Env = {
 };
 
 type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt">;
-type TemplateCompletionRoute = { model: typeof FREE_MODEL | typeof PAID_MODEL; apiKey?: string; isFree: boolean };
+type TemplateCompletionRoute = { model: typeof PAID_MODEL; apiKey: string; isFree: false };
 
-const FREE_MODEL = "deepseek-v4-flash-free";
 const PAID_MODEL = "deepseek-v4-flash";
-const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const TEMPLATE_COMPLETION_TIMEOUT_MS = 240_000;
 
@@ -35,7 +33,7 @@ export async function requestTemplateCompletion(env: Pick<Env, "DEEPSEEK_API_KEY
   try {
     for (const route of templateCompletionModelRoutes(env.DEEPSEEK_API_KEY)) {
       try {
-        const response = await fetch(route.isFree ? OPENCODE_ZEN_CHAT_COMPLETIONS_URL : DEEPSEEK_CHAT_COMPLETIONS_URL, buildTemplateCompletionRequest(route, messages, controller.signal));
+        const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, buildTemplateCompletionRequest(route, messages, controller.signal));
         if (!response.ok) {
           lastError = new Error(`模板补全失败：${route.model} ${response.status} ${(await response.text()).slice(0, 500)}`);
           continue;
@@ -62,7 +60,7 @@ export function buildTemplateCompletionMessages(draft: TemplateCompletionDraft) 
     {
       role: "system",
       content:
-        "你是严谨的中文投资研究模板编辑器。任务是把用户草拟的公司分析模板补齐为可直接用于模型生成深度报告的模板，不输出公司分析结果，只输出 JSON。",
+        "你是严谨的中文投资研究模板设计器。任务是把用户草拟的投资方法论整理成可复用的公司分析模板，不输出公司分析结果，只输出 JSON。",
     },
     {
       role: "user",
@@ -75,6 +73,8 @@ export function buildTemplateCompletionMessages(draft: TemplateCompletionDraft) 
           "focus 用一到两句话说明这个模板分析什么，不要写操作说明。",
           "prompt 是给模型的短指令，要求基于公开证据、按完整模板输出深度公司分析。",
           "fullPrompt 是优化后的完整 Markdown 模板正文，结构清晰、可执行、避免口语化重复，不能删除用户核心投资思想。",
+          "fullPrompt 必须要求后续报告引用证据包中的证据编号或来源类型，区分事实、推理、反证和待复核项。",
+          "fullPrompt 必须包含反幻觉约束：缺少财报、公告、价格、销量或现金流证据时，要明确写数据不足，不能用猜测补齐。",
           "不要编造公司名称、行情或财务数据。",
         ],
         expectedJsonShape: {
@@ -98,7 +98,6 @@ export function buildTemplateCompletionRequest(route: TemplateCompletionRoute, m
     body: JSON.stringify({
       model: route.model,
       reasoning_effort: "max",
-      ...(route.isFree ? { thinking: { type: "enabled" } } : {}),
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
@@ -136,10 +135,8 @@ function normalizeDraftInput(value: Partial<TemplateCompletionDraft> | undefined
 }
 
 function templateCompletionModelRoutes(apiKey: string | undefined): TemplateCompletionRoute[] {
-  return [
-    { model: FREE_MODEL, isFree: true },
-    ...(apiKey?.trim() ? [{ model: PAID_MODEL, apiKey: apiKey.trim(), isFree: false } as const] : []),
-  ];
+  if (!apiKey?.trim()) throw new Error("DEEPSEEK_API_KEY 未配置，模板补全无法生成。");
+  return [{ model: PAID_MODEL, apiKey: apiKey.trim(), isFree: false }];
 }
 
 function stringValue(value: unknown) {

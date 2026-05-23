@@ -1,4 +1,8 @@
 import {
+  fetchAndStoreCompanyEvidence,
+  writeCompanyEvidenceFailure,
+} from "../_shared/company-evidence";
+import {
   ensureUserResearchSchema,
   json,
   normalizeCompany,
@@ -11,6 +15,7 @@ import {
 type Env = {
   AUTH_SECRET: string;
   REPORT_LIBRARY_DB?: D1Database;
+  REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -59,6 +64,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .run();
 
   const row = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, id);
+  if (row && env.REPORT_LIBRARY_BUCKET) {
+    await fetchAndStoreCompanyEvidence({
+      env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
+      userId: session.userId,
+      watchlist: row,
+      signal: request.signal,
+    }).catch((error) => writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB!, session.userId, row, error));
+  }
   return json({ item: row ? watchlistRowToItem(row) : null });
 };
 

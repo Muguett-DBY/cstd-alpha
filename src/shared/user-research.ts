@@ -64,6 +64,7 @@ export type TemplateAnalysisResult = {
   completedAt?: string;
   fromCache?: boolean;
   templateHash?: string;
+  evidenceHash?: string;
   templateSnapshot?: ResearchTemplate;
 };
 

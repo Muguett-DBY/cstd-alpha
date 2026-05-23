@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { FULL_ANALYSIS_TEMPLATE_ID, RESEARCH_TEMPLATES } from "../../src/shared/user-research";
 import {
   buildChildTemplateReportsForPrompt,
+  isTemplateAnalysisCacheReusable,
   isUsableTemplateAnalysisCache,
   normalizeGeneratedAnalysis,
   requestTemplateReport,
@@ -63,8 +64,8 @@ describe("shouldStartFullAnalysis", () => {
 });
 
 describe("templateReasoningEffort", () => {
-  test("uses high for single templates and max for full synthesis", () => {
-    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("high");
+  test("uses max for single templates and full synthesis", () => {
+    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("max");
     expect(templateReasoningEffort(FULL_ANALYSIS_TEMPLATE_ID)).toBe("max");
   });
 });
@@ -107,14 +108,14 @@ describe("isUsableTemplateAnalysisCache", () => {
 });
 
 describe("template model routing", () => {
-  test("keeps OpenCode free first even for full synthesis when a paid key exists", () => {
+  test("uses DeepSeek paid model first when a paid key exists", () => {
     const routes = templateModelRoutes("paid-key", true);
 
-    expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash-free", isFree: true });
-    expect(routes[1]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
+    expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
+    expect(routes.some((route) => route.isFree)).toBe(false);
   });
 
-  test("accepts short free-model template output without retrying or switching to paid", async () => {
+  test("calls DeepSeek directly for template reports", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -126,11 +127,11 @@ describe("template model routing", () => {
                 title: "短报告",
                 score: 60,
                 verdict: "观察",
-                summary: "免费模型返回较短，但仍应保存。",
+                summary: "DeepSeek 返回模板分析。",
                 keyPoints: ["要点1", "要点2", "要点3", "要点4", "要点5"],
                 riskFlags: ["风险1", "风险2", "风险3", "风险4", "风险5"],
                 followUps: ["跟踪1", "跟踪2", "跟踪3", "跟踪4", "跟踪5"],
-                markdown: "## 短报告\n免费模型返回不足最低字数，也不应改走付费。",
+                markdown: "## 深度报告\nDeepSeek 直接生成模板分析。",
               }),
             },
           },
@@ -147,9 +148,10 @@ describe("template model routing", () => {
       [],
     );
 
-    expect(generated.markdown).toContain("不足最低字数");
+    expect(generated.markdown).toContain("DeepSeek 直接生成");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
   });
 
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
@@ -258,6 +260,22 @@ describe("template model routing", () => {
     expect(volatilePayload.template.fullPrompt).toBe(RESEARCH_TEMPLATES[0].fullPrompt);
     expect(modelBody.messages[1].content.indexOf("publicEvidence")).toBeGreaterThan(-1);
     expect(JSON.stringify(modelBody).indexOf("publicEvidence")).toBeLessThan(JSON.stringify(modelBody).indexOf("fullPrompt"));
+  });
+});
+
+describe("template evidence hash cache", () => {
+  test("reuses completed reports only when template and evidence fingerprints match", () => {
+    const row = {
+      status: "completed",
+      object_key: "user-research/v1/u/w/template.md",
+      template_hash: "template-a",
+      evidence_hash: "evidence-a",
+    };
+
+    expect(isTemplateAnalysisCacheReusable(row, "template-a", "evidence-a", false)).toBe(true);
+    expect(isTemplateAnalysisCacheReusable(row, "template-a", "evidence-b", false)).toBe(false);
+    expect(isTemplateAnalysisCacheReusable(row, "template-b", "evidence-a", false)).toBe(false);
+    expect(isTemplateAnalysisCacheReusable(row, "template-a", "evidence-a", true)).toBe(false);
   });
 });
 

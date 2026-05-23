@@ -1,0 +1,36 @@
+name: Build Company Evidence
+
+on:
+  schedule:
+    - cron: "32 18 * * *"
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "Optional user id"
+        required: false
+      watchlist_id:
+        description: "Optional watchlist id"
+        required: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      COMPANY_EVIDENCE_REFRESH_URL: ${{ secrets.COMPANY_EVIDENCE_REFRESH_URL }}
+      COMPANY_EVIDENCE_REFRESH_TOKEN: ${{ secrets.COMPANY_EVIDENCE_REFRESH_TOKEN }}
+      COMPANY_EVIDENCE_USER_ID: ${{ inputs.user_id }}
+      COMPANY_EVIDENCE_WATCHLIST_ID: ${{ inputs.watchlist_id }}
+      COMPANY_EVIDENCE_LIMIT: 80
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Refresh company evidence packages
+        run: node scripts/refresh-company-evidence.mjs

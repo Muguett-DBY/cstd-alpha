@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { buildTemplateCompletionMessages, buildTemplateCompletionRequest, normalizeTemplateCompletion } from "./research-template-completion";
 
 describe("research template completion", () => {
-  test("builds a max-reasoning JSON request for the free template completion model", () => {
+  test("builds a max-reasoning JSON request for the DeepSeek template completion model", () => {
     const signal = new AbortController().signal;
     const messages = buildTemplateCompletionMessages({
       title: "自定义模板12",
@@ -12,16 +12,16 @@ describe("research template completion", () => {
       fullPrompt: "第12模板\n\n实体经营者思维。",
     });
 
-    const request = buildTemplateCompletionRequest({ model: "deepseek-v4-flash-free", isFree: true }, messages, signal);
+    const request = buildTemplateCompletionRequest({ model: "deepseek-v4-flash", apiKey: "paid-key", isFree: false }, messages, signal);
     const body = JSON.parse(String(request.body)) as Record<string, unknown>;
 
     expect(body).toMatchObject({
-      model: "deepseek-v4-flash-free",
+      model: "deepseek-v4-flash",
       reasoning_effort: "max",
       response_format: { type: "json_object" },
       stream: false,
     });
-    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.thinking).toBeUndefined();
     expect(JSON.stringify(body.messages)).toContain("实体经营者思维");
   });
 
