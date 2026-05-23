@@ -658,6 +658,11 @@ button:not(:disabled):active,
   font-size: 12px;
 }
 
+.lightweight-price-chart {
+  min-height: 220px;
+  width: 100%;
+}
+
 .financial-mini-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3347,6 +3352,44 @@ button:not(:disabled):active,
   gap: 14px;
 }
 
+.radar-echarts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.radar-echart-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: linear-gradient(180deg, #ffffff, #f8faf8);
+}
+
+.radar-echart-card h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.radar-echart-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.radar-echart-canvas {
+  min-height: 360px;
+  width: 100%;
+}
+
+.radar-stage-chart {
+  min-height: 310px;
+}
+
 .radar-heatmap {
   position: relative;
   min-height: 440px;
@@ -3717,6 +3760,22 @@ button:not(:disabled):active,
   border-top: 0;
 }
 
+.radar-industry-scroll {
+  max-height: min(680px, 72vh);
+  overflow: auto;
+}
+
+.radar-industry-virtual-space {
+  position: relative;
+  min-width: 100%;
+}
+
+.radar-industry-virtual-space .radar-industry-row {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
 .radar-industry-row:hover {
   background: #fbfbf8;
 }
@@ -3728,6 +3787,24 @@ button:not(:disabled):active,
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
+}
+
+.radar-industry-row.is-head button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.radar-industry-row.is-head .sortable-table-head {
+  cursor: pointer;
+}
+
+.radar-industry-row.is-head .sortable-table-head:hover {
+  color: var(--ink);
 }
 
 .radar-industry-row strong {
@@ -4034,6 +4111,7 @@ button:not(:disabled):active,
   .radar-brief-main,
   .radar-market-kpis,
   .radar-market-layout,
+  .radar-echarts-grid,
   .radar-top-lists,
   .radar-signal-bars,
   .radar-focus-grid,

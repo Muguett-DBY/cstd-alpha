@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": [
+    "functions/api/session.ts",
+    "functions/api/report.ts",
+    "functions/api/report-library.ts",
+    "functions/api/company-search.ts",
+    "functions/api/company-evidence.ts",
+    "functions/api/company-evidence-refresh.ts",
+    "functions/api/company-news.ts",
+    "functions/api/chart-data.ts",
+    "functions/api/watchlist.ts",
+    "functions/api/template-analysis.ts",
+    "functions/api/template-analysis-job.ts",
+    "functions/api/research-templates.ts",
+    "functions/api/research-template-completion.ts",
+    "functions/api/radar-scan.ts",
+    "functions/_shared/auth.ts",
+    "functions/_shared/providers.ts",
+    "functions/_shared/deepseek.ts",
+    "functions/_shared/company-evidence.ts",
+    "functions/_shared/user-research-db.ts",
+    "src/shared/report.ts",
+    "src/shared/report-library.ts",
+    "src/shared/ranking.ts",
+    "src/shared/chart.ts",
+    "src/shared/news.ts",
+    "src/shared/user-research.ts",
+    "src/shared/radar.ts"
+  ]
+}

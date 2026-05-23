@@ -1,6 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
+import { LightweightPriceChart } from "./LightweightPriceChart";
+import { RadarVisualCharts } from "./RadarVisualCharts";
 import type { RankingMarket } from "./RankingView";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
@@ -778,7 +782,7 @@ function ChartDashboard({
 
       <div className="chart-grid">
         <ChartCard title="十年股价走势" empty={!hasPriceData} emptyText="公开历史价格数据不足，无法绘制股价图。">
-          <LineChart series={priceSeries} stroke="#255f54" />
+          <LightweightPriceChart series={priceSeries} />
         </ChartCard>
         <ChartCard title="最大回撤曲线" empty={!drawdownSeries.length} emptyText="价格序列不足，无法计算回撤。">
           <LineChart series={drawdownSeries} stroke="#b3432f" suffix="%" />
@@ -1453,6 +1457,7 @@ function RadarMarketOverview({ radar, packets, onSelectIndustry }: { radar: Rada
           证据不足
         </span>
       </div>
+      <RadarVisualCharts packets={packets} onSelectIndustry={onSelectIndustry} />
       <div className="radar-market-layout">
         <RadarIndustryHeatmap packets={packets} onSelectIndustry={onSelectIndustry} />
         <RadarStageBuckets packets={packets} onSelectIndustry={onSelectIndustry} />
@@ -1563,12 +1568,77 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
   const [expanded, setExpanded] = useState(false);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "priority", desc: true }]);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const rows = useMemo(() => {
     return radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all" }).allRows;
   }, [packets, query, stage]);
   const defaultVisibleCount = 10;
   const hasActiveFilter = stage !== "all" || Boolean(query.trim());
   const visibleRows = radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }).visibleRows;
+  const columns = useMemo(
+    () => [
+      radarIndustryColumnHelper.accessor("industry", {
+        header: "细分产业",
+        cell: ({ row }) => (
+          <span>
+            <strong>{row.original.industry}</strong>
+            <small>{row.original.group}{row.original.themes?.length ? ` · ${row.original.themes.slice(0, 2).join("、")}` : ""}</small>
+          </span>
+        ),
+      }),
+      radarIndustryColumnHelper.accessor((row) => row.stage ?? "证据不足", {
+        id: "stage",
+        header: "阶段",
+        cell: ({ getValue }) => {
+          const value = getValue();
+          return <span className={`coverage-status ${radarStageClass(value)}`}>{value}</span>;
+        },
+      }),
+      radarIndustryColumnHelper.accessor((row) => Math.round(Math.max(radarPacketVisualScores(row).growth, radarPacketVisualScores(row).momentum)), {
+        id: "growth",
+        header: "增长",
+      }),
+      radarIndustryColumnHelper.accessor((row) => {
+        const scores = radarPacketVisualScores(row);
+        return Math.round(Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk));
+      }, {
+        id: "risk",
+        header: "风险",
+      }),
+      radarIndustryColumnHelper.accessor("sourceCount", {
+        id: "sourceCount",
+        header: "全量扫描证据",
+        cell: ({ getValue }) => `${getValue()} 条`,
+      }),
+      radarIndustryColumnHelper.accessor((row) => radarPacketGapExplanation(row).compact, {
+        id: "gap",
+        header: "缺口",
+      }),
+      radarIndustryColumnHelper.accessor((row) => radarPacketPriority(row), {
+        id: "priority",
+        header: "优先级",
+      }),
+    ],
+    [],
+  );
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table owns its own mutable table API; row rendering remains local to this component.
+  const table = useReactTable({
+    data: visibleRows,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    initialState: { columnVisibility: { priority: false } },
+  });
+  const tableRows = table.getRowModel().rows;
+  const rowVirtualizer = useVirtualizer({
+    count: tableRows.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => 76,
+    overscan: 6,
+  });
   const stages = ["all", "扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"];
   return (
     <section className="radar-section radar-industry-table-section" id="radar-all-industries">
@@ -1600,36 +1670,52 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
         ) : null}
       </div>
       <div className="radar-industry-table" role="table" aria-label="全行业扫描表">
-        <div role="row" className="radar-industry-row is-head">
-          <span>细分产业</span>
-          <span>阶段</span>
-          <span>增长</span>
-          <span>风险</span>
-          <span>全量扫描证据</span>
-          <span>缺口</span>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <div role="row" className="radar-industry-row is-head" key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <button
+                key={header.id}
+                type="button"
+                className={header.column.getCanSort() ? "sortable-table-head" : ""}
+                onClick={header.column.getToggleSortingHandler()}
+                role="columnheader"
+              >
+                {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                {header.column.getIsSorted() === "asc" ? " ↑" : header.column.getIsSorted() === "desc" ? " ↓" : ""}
+              </button>
+            ))}
+          </div>
+        ))}
+        <div ref={tableScrollRef} className="radar-industry-scroll">
+          <div className="radar-industry-virtual-space" style={{ height: rowVirtualizer.getTotalSize() }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = tableRows[virtualRow.index];
+              const packet = row.original;
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  role="row"
+                  className="radar-industry-row"
+                  onClick={() => onSelectIndustry(packet.industry)}
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <span key={cell.id} title={cell.column.id === "gap" ? `${radarPacketGapExplanation(packet).reason}${radarPacketGapExplanation(packet).nextEvidence}` : undefined}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </span>
+                  ))}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        {visibleRows.map((packet) => {
-          const scores = radarPacketVisualScores(packet);
-          const risk = Math.max(scores.bubbleRisk, scores.declineRisk, scores.valuationRisk);
-          const gapExplanation = radarPacketGapExplanation(packet);
-          return (
-            <button key={packet.industry} type="button" role="row" className="radar-industry-row" onClick={() => onSelectIndustry(packet.industry)}>
-              <span>
-                <strong>{packet.industry}</strong>
-                <small>{packet.group}{packet.themes?.length ? ` · ${packet.themes.slice(0, 2).join("、")}` : ""}</small>
-              </span>
-              <span className={`coverage-status ${radarStageClass(packet.stage)}`}>{packet.stage ?? "证据不足"}</span>
-              <span>{Math.round(Math.max(scores.growth, scores.momentum))}</span>
-              <span>{Math.round(risk)}</span>
-              <span>{packet.sourceCount} 条</span>
-              <span title={`${gapExplanation.reason}${gapExplanation.nextEvidence}`}>{gapExplanation.compact}</span>
-            </button>
-          );
-        })}
       </div>
     </section>
   );
 }
+
+const radarIndustryColumnHelper = createColumnHelper<RadarIndustryPacket>();
 
 function RadarIndustryDrawer({ packet, items, sourceMap, onClose }: { packet: RadarIndustryPacket; items: RadarItem[]; sourceMap: Map<string, RadarCitation>; onClose: () => void }) {
   const scores = radarPacketVisualScores(packet);
