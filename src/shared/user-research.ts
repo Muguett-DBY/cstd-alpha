@@ -23,10 +23,18 @@ export type ResearchTemplate = {
   focus: string;
   prompt: string;
   fullPrompt: string;
+  sectionRequirements?: TemplateSectionRequirement[];
   enabled?: boolean;
   sortOrder?: number;
   isSystem?: boolean;
   updatedAt?: string;
+};
+
+export type TemplateSectionRequirement = {
+  id: string;
+  title: string;
+  minChars: number;
+  requiredPoints: string[];
 };
 
 export type TemplateAnalysisStatus = "pending" | "running" | "completed" | "failed_retryable" | "failed";
@@ -71,6 +79,10 @@ export type TemplateAnalysisResult = {
 export const FULL_ANALYSIS_TEMPLATE_ID = "full";
 export const TEMPLATE_MARKDOWN_MIN_CHARS = 3500;
 export const FULL_ANALYSIS_MARKDOWN_MIN_CHARS = 5000;
+export const DEFAULT_TEMPLATE_SECTION_MIN_CHARS = 180;
+export const TEMPLATE_SECTION_MIN_CHARS_FLOOR = 80;
+export const TEMPLATE_SECTION_MIN_CHARS_CEILING = 800;
+export const DEFAULT_TEMPLATE_REQUIRED_POINTS = ["结论", "证据依据", "反证条件", "跟踪指标"] as const;
 
 export const RESEARCH_TEMPLATES: ResearchTemplate[] = [
   {
@@ -256,6 +268,63 @@ export function isRetryableTemplateStatus(status: TemplateAnalysisStatus) {
 
 export function minimumResearchMarkdownChars(templateId: string) {
   return templateId === FULL_ANALYSIS_TEMPLATE_ID ? FULL_ANALYSIS_MARKDOWN_MIN_CHARS : TEMPLATE_MARKDOWN_MIN_CHARS;
+}
+
+export function normalizeTemplateSectionRequirements(template: Pick<ResearchTemplate, "title" | "fullPrompt" | "sectionRequirements">): TemplateSectionRequirement[] {
+  const explicit = Array.isArray(template.sectionRequirements)
+    ? template.sectionRequirements.map((item, index) => normalizeTemplateSectionRequirement(item, index)).filter((item): item is TemplateSectionRequirement => Boolean(item))
+    : [];
+  if (explicit.length) return explicit.slice(0, 24);
+  return deriveTemplateSectionRequirements(template.fullPrompt || template.title || "模板分析");
+}
+
+function normalizeTemplateSectionRequirement(value: Partial<TemplateSectionRequirement> | undefined, index: number) {
+  const title = stringValue(value?.title) || `第 ${index + 1} 项`;
+  const id = normalizeTemplateRequirementId(value?.id) || `section-${index + 1}`;
+  const minChars = clampNumber(value?.minChars, TEMPLATE_SECTION_MIN_CHARS_FLOOR, TEMPLATE_SECTION_MIN_CHARS_CEILING, DEFAULT_TEMPLATE_SECTION_MIN_CHARS);
+  const requiredPoints = normalizeRequiredPoints(value?.requiredPoints);
+  return { id, title: title.slice(0, 80), minChars, requiredPoints };
+}
+
+function deriveTemplateSectionRequirements(fullPrompt: string) {
+  const lines = fullPrompt.split(/\r?\n/).map((line) => line.trim());
+  const titles: string[] = [];
+  const headingPattern = /^(?:#{1,4}\s*)?(?:(?:\d{1,2}|[一二三四五六七八九十]{1,3})[.、．:：]\s*|第[一二三四五六七八九十]{1,3}(?:部分|项|条|模板)?[.、．:：]?\s*)(.{3,80})$/;
+  for (const line of lines) {
+    const normalized = line.replace(/\*\*/g, "").trim();
+    const match = normalized.match(headingPattern);
+    if (!match) continue;
+    const title = match[1].replace(/[`#*_>-]/g, "").trim();
+    if (!title || /输出要求|分析任务|请按照|最终结论/.test(title)) continue;
+    if (!titles.includes(title)) titles.push(title);
+    if (titles.length >= 12) break;
+  }
+  const picked = titles.length ? titles : ["完整模板分析"];
+  return picked.map((title, index) => ({
+    id: `section-${index + 1}`,
+    title: title.slice(0, 80),
+    minChars: DEFAULT_TEMPLATE_SECTION_MIN_CHARS,
+    requiredPoints: [...DEFAULT_TEMPLATE_REQUIRED_POINTS],
+  }));
+}
+
+function normalizeRequiredPoints(value: unknown) {
+  const points = Array.isArray(value) ? value.map((item) => stringValue(item)).filter(Boolean) : [];
+  return [...DEFAULT_TEMPLATE_REQUIRED_POINTS, ...points].filter((point, index, all) => all.indexOf(point) === index).slice(0, 8);
+}
+
+function normalizeTemplateRequirementId(value: unknown) {
+  const raw = stringValue(value).toLowerCase();
+  return /^[a-z0-9][a-z0-9._-]{1,80}$/.test(raw) ? raw : "";
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const number = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function activeResearchTemplates(templates: ResearchTemplate[]) {

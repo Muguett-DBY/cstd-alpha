@@ -1,13 +1,13 @@
 import { jsonrepair } from "jsonrepair";
 import { json, requireUserSession } from "../_shared/user-research-db";
-import type { ResearchTemplate } from "../../src/shared/user-research";
+import { normalizeTemplateSectionRequirements, type ResearchTemplate } from "../../src/shared/user-research";
 
 type Env = {
   AUTH_SECRET: string;
   DEEPSEEK_API_KEY?: string;
 };
 
-type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt">;
+type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
 type TemplateCompletionRoute = { model: typeof PAID_MODEL; apiKey: string; isFree: false };
 
 const PAID_MODEL = "deepseek-v4-flash";
@@ -75,6 +75,8 @@ export function buildTemplateCompletionMessages(draft: TemplateCompletionDraft) 
           "fullPrompt 是优化后的完整 Markdown 模板正文，结构清晰、可执行、避免口语化重复，不能删除用户核心投资思想。",
           "fullPrompt 必须要求后续报告引用证据包中的证据编号或来源类型，区分事实、推理、反证和待复核项。",
           "fullPrompt 必须包含反幻觉约束：缺少财报、公告、价格、销量或现金流证据时，要明确写数据不足，不能用猜测补齐。",
+          "必须输出 sectionRequirements：把模板拆成 1-12 个可检查的模板项，每项包含 id、title、minChars、requiredPoints。",
+          "sectionRequirements 中每个模板项的 minChars 是该项最少实质内容长度，而不是整篇凑字；requiredPoints 至少包含结论、证据依据、反证条件、跟踪指标。",
           "不要编造公司名称、行情或财务数据。",
         ],
         expectedJsonShape: {
@@ -83,6 +85,14 @@ export function buildTemplateCompletionMessages(draft: TemplateCompletionDraft) 
           focus: "卡片说明",
           prompt: "模型提示词",
           fullPrompt: "完整模板正文",
+          sectionRequirements: [
+            {
+              id: "stable-lowercase-id",
+              title: "模板项标题",
+              minChars: 180,
+              requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"],
+            },
+          ],
         },
         rawDraft: draft,
       }),
@@ -115,6 +125,11 @@ export function normalizeTemplateCompletion(value: unknown): TemplateCompletionD
     focus: stringValue(record.focus),
     prompt: stringValue(record.prompt),
     fullPrompt: stringValue(record.fullPrompt),
+    sectionRequirements: normalizeTemplateSectionRequirements({
+      title: stringValue(record.title),
+      fullPrompt: stringValue(record.fullPrompt),
+      sectionRequirements: Array.isArray(record.sectionRequirements) ? record.sectionRequirements : undefined,
+    }),
   };
   const missing = Object.entries(completion)
     .filter(([, item]) => !item)
@@ -131,6 +146,11 @@ function normalizeDraftInput(value: Partial<TemplateCompletionDraft> | undefined
     focus: stringValue(record.focus),
     prompt: stringValue(record.prompt),
     fullPrompt: stringValue(record.fullPrompt),
+    sectionRequirements: normalizeTemplateSectionRequirements({
+      title: stringValue(record.title),
+      fullPrompt: stringValue(record.fullPrompt),
+      sectionRequirements: Array.isArray(record.sectionRequirements) ? record.sectionRequirements : undefined,
+    }),
   };
 }
 

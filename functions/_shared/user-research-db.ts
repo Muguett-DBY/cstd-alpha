@@ -1,6 +1,6 @@
 import { readSessionCookie } from "./auth";
 import type { CompanyCandidate } from "../../src/shared/report";
-import { RESEARCH_TEMPLATES, type ResearchTemplate, type TemplateAnalysisResult, type WatchlistItem } from "../../src/shared/user-research";
+import { RESEARCH_TEMPLATES, normalizeTemplateSectionRequirements, type ResearchTemplate, type TemplateAnalysisResult, type WatchlistItem } from "../../src/shared/user-research";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000;
 
@@ -76,6 +76,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
           focus TEXT NOT NULL,
           prompt TEXT NOT NULL,
           full_prompt TEXT NOT NULL,
+          section_requirements_json TEXT,
           enabled INTEGER NOT NULL DEFAULT 1,
           sort_order INTEGER NOT NULL DEFAULT 0,
           is_system INTEGER NOT NULL DEFAULT 0,
@@ -85,6 +86,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
           default_focus TEXT NOT NULL,
           default_prompt TEXT NOT NULL,
           default_full_prompt TEXT NOT NULL,
+          default_section_requirements_json TEXT,
           default_enabled INTEGER NOT NULL DEFAULT 1,
           default_sort_order INTEGER NOT NULL DEFAULT 0,
           default_is_system INTEGER NOT NULL DEFAULT 0,
@@ -107,6 +109,8 @@ export async function ensureUserResearchSchema(db: D1Database) {
     ensureColumn(db, "template_analysis", "template_hash", "TEXT"),
     ensureColumn(db, "template_analysis", "evidence_hash", "TEXT"),
     ensureColumn(db, "template_analysis", "template_snapshot_json", "TEXT"),
+    ensureColumn(db, "user_research_templates", "section_requirements_json", "TEXT"),
+    ensureColumn(db, "user_research_templates", "default_section_requirements_json", "TEXT"),
   ]);
 }
 
@@ -114,7 +118,7 @@ export async function readUserResearchTemplates(db: D1Database, userId: string, 
   await ensureDefaultResearchTemplates(db, userId);
   const result = await db
     .prepare(
-      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, enabled, sort_order, is_system, deleted_at, created_at, updated_at
+      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at, created_at, updated_at
        FROM user_research_templates
        WHERE user_key = ?1 ${includeDeleted ? "" : "AND deleted_at IS NULL"}
        ORDER BY sort_order ASC, title ASC`,
@@ -134,10 +138,10 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
     await db
       .prepare(
         `INSERT INTO user_research_templates (
-          id, user_id, user_key, title, short_title, focus, prompt, full_prompt, enabled, sort_order, is_system, deleted_at,
-          default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_enabled, default_sort_order, default_is_system, default_deleted_at,
+          id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
+          default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_section_requirements_json, default_enabled, default_sort_order, default_is_system, default_deleted_at,
           created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
         ON CONFLICT(user_key, id) DO UPDATE SET
           user_id = excluded.user_id,
           title = excluded.title,
@@ -145,6 +149,7 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
           focus = excluded.focus,
           prompt = excluded.prompt,
           full_prompt = excluded.full_prompt,
+          section_requirements_json = excluded.section_requirements_json,
           enabled = excluded.enabled,
           sort_order = excluded.sort_order,
           is_system = excluded.is_system,
@@ -160,6 +165,7 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
         template.focus,
         template.prompt,
         template.fullPrompt,
+        JSON.stringify(template.sectionRequirements ?? []),
         template.enabled === false ? 0 : 1,
         sortOrder,
         template.isSystem ? 1 : 0,
@@ -168,6 +174,7 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
         existing?.default_focus ?? template.focus,
         existing?.default_prompt ?? template.prompt,
         existing?.default_full_prompt ?? template.fullPrompt,
+        existing?.default_section_requirements_json ?? JSON.stringify(template.sectionRequirements ?? []),
         existing?.default_enabled ?? (template.enabled === false ? 0 : 1),
         existing?.default_sort_order ?? sortOrder,
         existing?.default_is_system ?? (template.isSystem ? 1 : 0),
@@ -198,6 +205,7 @@ export async function saveCurrentTemplatesAsDefault(db: D1Database, userId: stri
            default_focus = focus,
            default_prompt = prompt,
            default_full_prompt = full_prompt,
+           default_section_requirements_json = section_requirements_json,
            default_enabled = enabled,
            default_sort_order = sort_order,
            default_is_system = is_system,
@@ -221,6 +229,7 @@ export async function resetTemplatesToDefault(db: D1Database, userId: string) {
            focus = default_focus,
            prompt = default_prompt,
            full_prompt = default_full_prompt,
+           section_requirements_json = default_section_requirements_json,
            enabled = default_enabled,
            sort_order = default_sort_order,
            is_system = default_is_system,
@@ -377,6 +386,7 @@ export type ResearchTemplateRow = {
   focus: string;
   prompt: string;
   full_prompt: string;
+  section_requirements_json?: string | null;
   enabled: number;
   sort_order: number;
   is_system: number;
@@ -386,6 +396,7 @@ export type ResearchTemplateRow = {
   default_focus?: string | null;
   default_prompt?: string | null;
   default_full_prompt?: string | null;
+  default_section_requirements_json?: string | null;
   default_enabled?: number | null;
   default_sort_order?: number | null;
   default_is_system?: number | null;
@@ -404,10 +415,10 @@ async function ensureDefaultResearchTemplates(db: D1Database, userId: string) {
     await db
       .prepare(
         `INSERT INTO user_research_templates (
-          id, user_id, user_key, title, short_title, focus, prompt, full_prompt, enabled, sort_order, is_system, deleted_at,
-          default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_enabled, default_sort_order, default_is_system, default_deleted_at,
+          id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
+          default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_section_requirements_json, default_enabled, default_sort_order, default_is_system, default_deleted_at,
           created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, 1, NULL, ?10, ?11, ?12, ?13, ?14, 1, ?15, 1, NULL, ?16, ?17)`,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, 1, NULL, ?11, ?12, ?13, ?14, ?15, ?16, 1, ?17, 1, NULL, ?18, ?19)`,
       )
       .bind(
         template.id,
@@ -418,12 +429,14 @@ async function ensureDefaultResearchTemplates(db: D1Database, userId: string) {
         template.focus,
         template.prompt,
         template.fullPrompt,
+        JSON.stringify(normalizeTemplateSectionRequirements(template)),
         sortOrder,
         template.title,
         template.shortTitle,
         template.focus,
         template.prompt,
         template.fullPrompt,
+        JSON.stringify(normalizeTemplateSectionRequirements(template)),
         sortOrder,
         now,
         now,
@@ -435,8 +448,8 @@ async function ensureDefaultResearchTemplates(db: D1Database, userId: string) {
 async function readTemplateRow(db: D1Database, userId: string, id: string) {
   return db
     .prepare(
-      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, enabled, sort_order, is_system, deleted_at,
-              default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_enabled, default_sort_order, default_is_system, default_deleted_at,
+      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
+              default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_section_requirements_json, default_enabled, default_sort_order, default_is_system, default_deleted_at,
               created_at, updated_at
        FROM user_research_templates
        WHERE user_key = ?1 AND id = ?2`,
@@ -448,8 +461,8 @@ async function readTemplateRow(db: D1Database, userId: string, id: string) {
 async function readAllTemplateRows(db: D1Database, userId: string) {
   const result = await db
     .prepare(
-      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, enabled, sort_order, is_system, deleted_at,
-              default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_enabled, default_sort_order, default_is_system, default_deleted_at,
+      `SELECT id, user_id, user_key, title, short_title, focus, prompt, full_prompt, section_requirements_json, enabled, sort_order, is_system, deleted_at,
+              default_title, default_short_title, default_focus, default_prompt, default_full_prompt, default_section_requirements_json, default_enabled, default_sort_order, default_is_system, default_deleted_at,
               created_at, updated_at
        FROM user_research_templates
        WHERE user_key = ?1`,
@@ -467,6 +480,7 @@ function templateRowToTemplate(row: ResearchTemplateRow): ResearchTemplate {
     focus: row.focus,
     prompt: row.prompt,
     fullPrompt: row.full_prompt,
+    sectionRequirements: parseSectionRequirements(row.section_requirements_json),
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
     isSystem: row.is_system === 1,
@@ -486,6 +500,7 @@ function normalizeTemplateInput(template: ResearchTemplate, index: number): Rese
   const focus = stringValue(template.focus);
   const prompt = stringValue(template.prompt);
   const fullPrompt = stringValue(template.fullPrompt);
+  const sectionRequirements = normalizeTemplateSectionRequirements({ title, fullPrompt, sectionRequirements: template.sectionRequirements });
   if (!title || !shortTitle || !focus || !prompt || !fullPrompt) return null;
   return {
     id,
@@ -494,6 +509,7 @@ function normalizeTemplateInput(template: ResearchTemplate, index: number): Rese
     focus: focus.slice(0, 500),
     prompt: prompt.slice(0, 2000),
     fullPrompt: fullPrompt.slice(0, 60_000),
+    sectionRequirements,
     enabled: template.enabled !== false,
     sortOrder: Number.isFinite(template.sortOrder) ? Math.max(0, Math.floor(Number(template.sortOrder))) : index + 1,
     isSystem: template.isSystem === true || RESEARCH_TEMPLATES.some((item) => item.id === id),
@@ -529,6 +545,16 @@ function parseTemplateSnapshot(raw: string | null | undefined) {
   try {
     const parsed = JSON.parse(raw) as ResearchTemplate;
     return normalizeTemplateInput(parsed, parsed.sortOrder ?? 0) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseSectionRequirements(raw: string | null | undefined) {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as ResearchTemplate["sectionRequirements"];
+    return Array.isArray(parsed) ? normalizeTemplateSectionRequirements({ title: "", fullPrompt: "", sectionRequirements: parsed }) : undefined;
   } catch {
     return undefined;
   }

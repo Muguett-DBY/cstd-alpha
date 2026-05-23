@@ -7,6 +7,7 @@ import {
   RESEARCH_TEMPLATES,
   activeResearchTemplates,
   completedTemplateAnalysesForFull,
+  normalizeTemplateSectionRequirements,
   type ResearchTemplate,
   type TemplateAnalysisResult,
   type TemplateAnalysisStatus,
@@ -77,7 +78,6 @@ const HARD_TEMPLATE_RED_FLAG_PATTERNS = [
   /经营现金流为负|自由现金流为负|现金流恶化|现金流断裂/,
   /负债率高|高负债|债务压力|资不抵债|偿债风险/,
   /治理混乱|利益输送|关联交易严重|管理层失信|管理层变节/,
-  /明显高估|严重高估|估值泡沫|股价泡沫|透支未来/,
   /退市风险|暴雷风险|财务造假|审计意见异常|无法持续经营/,
   /无护城河|护城河(?:很弱|薄弱|坍塌)|商业模式弱|盈利能力差/,
 ];
@@ -457,7 +457,7 @@ function buildTemplateMessages(
   return [
     {
       role: "system" as const,
-      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。`,
+      content: `你是 CSTD Alpha 的长期股权深度研究员。只返回合法 JSON，不要 Markdown 包裹。报告正文必须是完整中文 Markdown。结论严格、保守、站在小股东视角；不得编造无证据数据，缺失处明确写需复核。\n\n${templateCacheAnchor(cacheMode)}\n\n## 固定输出要求\n- 必须严格按后续模板原文生成，不得只做摘要。\n- 必须输出合法 JSON 对象，且必须包含 title、score、verdict、summary、keyPoints、riskFlags、followUps、markdown 八个字段。\n- score 必须是 0-100 数字；keyPoints、riskFlags、followUps 各至少 5 条，不得留空。\n- markdown 字段内放完整中文 Markdown 正文，必须使用二级/三级标题组织，不得只输出列表或短摘要。\n- 正文必须包含：核心结论、证据链、推理链、反证条件、估值/仓位规则、待复核清单。\n- 必须逐项覆盖 user 消息中的 sectionRequirements；每项至少达到对应 minChars 的实质内容，并覆盖 requiredPoints。若证据不足，可以短于 minChars，但必须明确写“证据不足”及缺口。\n- 关键结论必须引用 publicEvidence.sources 中的证据编号（如 E1/E2）或明确来源类型；不得写“数据显示”但不给证据编号或来源。\n- 不得在正文或字段中展示 API 费用、计费或成本估算。\n- 必须优先保证 JSON 完整闭合；不要为了追求篇幅导致 markdown 或 JSON 被截断。`,
     },
     {
       role: "user" as const,
@@ -472,6 +472,7 @@ function buildTemplateMessages(
         task: markdownTask,
         evidenceRetrievedAt: evidence.retrievedAt,
         template: { id: template.id, title: template.title, focus: template.focus, fullPrompt: template.fullPrompt },
+        sectionRequirements: normalizeTemplateSectionRequirements(template),
         childTemplateReports: buildChildTemplateReportsForPrompt(childAnalyses),
         expectedOutputShape: {
           title: "报告标题",
@@ -1096,9 +1097,11 @@ function applyTemplateScoreDiscipline(analysis: NormalizedTemplateAnalysis): Nor
     caps.push({ score: roundTemplateScore(averageItemScore + 5), flag: ITEM_AVERAGE_TEMPLATE_SCORE_CAP_FLAG });
   }
 
-  if (!caps.length) return analysis;
   const cappedScore = Math.min(analysis.score, ...caps.map((cap) => cap.score));
   const addedFlags = caps.map((cap) => cap.flag).filter((flag, index, flags) => flags.indexOf(flag) === index);
+  if (!caps.length) {
+    return { ...analysis, verdict: disciplinedTemplateVerdict(analysis.verdict, cappedScore) };
+  }
   return {
     ...analysis,
     score: cappedScore,
@@ -1126,6 +1129,7 @@ function markdownItemScoreAverage(markdown: string) {
 }
 
 function disciplinedTemplateVerdict(verdict: string, score: number) {
+  if (score <= 35 && /买入|重配|加仓|持有|配置/.test(verdict)) return "回避/重新复核";
   if (score <= 49 && /买入|重配|加仓|持有|配置/.test(verdict)) return "回避/重新复核";
   if (score < 70 && /买入|重配|加仓/.test(verdict)) return "观察/等待";
   return verdict;

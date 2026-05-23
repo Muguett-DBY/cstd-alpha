@@ -3,12 +3,11 @@ import {
   FULL_ANALYSIS_MARKDOWN_MIN_CHARS,
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
-  TEMPLATE_MARKDOWN_MIN_CHARS,
   completedTemplateAnalysesForFull,
   isFullAnalysisReady,
   isRetryableTemplateStatus,
-  minimumResearchMarkdownChars,
   missingTemplateIdsForFull,
+  normalizeTemplateSectionRequirements,
   type TemplateAnalysisResult,
 } from "./user-research";
 
@@ -62,13 +61,35 @@ describe("user research templates", () => {
     expect(isFullAnalysisReady(completed.slice(0, 1), enabledTemplates)).toBe(false);
   });
 
-  test("keeps long-form minimum lengths explicit for model quality gates", () => {
+  test("derives per-section completion requirements instead of a global markdown length gate", () => {
     for (const template of RESEARCH_TEMPLATES) {
-      expect(minimumResearchMarkdownChars(template.id)).toBe(TEMPLATE_MARKDOWN_MIN_CHARS);
+      const requirements = normalizeTemplateSectionRequirements(template);
+      expect(requirements.length).toBeGreaterThan(0);
+      expect(requirements.every((item) => item.minChars >= 80)).toBe(true);
+      expect(requirements.every((item) => item.requiredPoints.includes("结论"))).toBe(true);
+      expect(requirements.every((item) => item.requiredPoints.includes("证据依据"))).toBe(true);
     }
-    expect(minimumResearchMarkdownChars(FULL_ANALYSIS_TEMPLATE_ID)).toBe(FULL_ANALYSIS_MARKDOWN_MIN_CHARS);
-    expect(TEMPLATE_MARKDOWN_MIN_CHARS).toBeGreaterThanOrEqual(3500);
     expect(FULL_ANALYSIS_MARKDOWN_MIN_CHARS).toBeGreaterThanOrEqual(5000);
+  });
+
+  test("normalizes custom template section requirements for newly added templates", () => {
+    const requirements = normalizeTemplateSectionRequirements({
+      id: "custom-operator",
+      title: "模板12：经营者视角",
+      shortTitle: "经营者",
+      focus: "按经营者视角分析。",
+      prompt: "分析公司。",
+      fullPrompt: "1. 商业模式\n2. 团队治理\n3. 估值纪律\n请按照以上模板分析（      ）公司。",
+      sectionRequirements: [
+        { id: "business", title: "商业模式", minChars: 40, requiredPoints: ["结论"] },
+        { id: "", title: "", minChars: 1000, requiredPoints: [] },
+      ],
+    });
+
+    expect(requirements).toEqual([
+      { id: "business", title: "商业模式", minChars: 80, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+      { id: "section-2", title: "第 2 项", minChars: 800, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+    ]);
   });
 });
 

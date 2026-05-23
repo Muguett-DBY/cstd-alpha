@@ -42,7 +42,7 @@ export type TemplateAnalysisProgress = {
   at?: string;
 };
 
-export type ResearchTemplateCompletion = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt">;
+export type ResearchTemplateCompletion = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
 
 export type ReportLibraryRecord = {
   entry: ReportLibraryEntry;

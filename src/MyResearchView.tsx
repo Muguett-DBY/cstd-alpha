@@ -498,6 +498,7 @@ function TemplateManager({
         focus: template.focus,
         prompt: template.prompt,
         fullPrompt: template.fullPrompt,
+        sectionRequirements: template.sectionRequirements,
       });
       updateTemplate(template.id, completion);
       setCompletionState({ templateId: "", messageTemplateId: template.id, error: "", notice: "AI 已补齐并优化当前模板，确认后请保存模板。" });
@@ -1285,6 +1286,7 @@ function normalizeTemplateDrafts(templates: ResearchTemplate[]) {
     focus: template.focus.trim(),
     prompt: template.prompt.trim(),
     fullPrompt: template.fullPrompt.trim(),
+    sectionRequirements: template.sectionRequirements,
     enabled: template.enabled !== false,
     sortOrder: index + 1,
   }));

@@ -367,6 +367,45 @@ describe("normalizeGeneratedAnalysis score discipline", () => {
     expect(analysis.riskFlags).toContain("后端保守评分约束：报告识别到重大经营、财务、治理、估值或产业红线，已限制模板总分。");
   });
 
+  test("does not force elite but expensive companies below 50 for valuation and policy risk alone", () => {
+    const analysis = normalizeGeneratedAnalysis(
+      {
+        title: "好公司但估值偏高",
+        score: 68,
+        verdict: "观察/等待价格",
+        summary: "公司护城河很强、现金流强劲，但明显高估、存在估值泡沫和出口管制风险，需要等待更好价格。",
+        keyPoints: ["护城河强", "现金流好", "资产负债表健康", "市场地位强", "长期需求仍在"],
+        riskFlags: ["明显高估", "估值泡沫", "出口管制风险", "竞争加剧", "AI资本开支波动"],
+        followUps: ["估值分位", "现金流", "订单", "政策", "竞争格局"],
+        markdown: "## 结论\n好公司但价格贵，适合观察等待，不应因估值风险直接打成垃圾股。",
+      },
+      customTemplate(),
+    );
+
+    expect(analysis.score).toBeGreaterThanOrEqual(60);
+    expect(analysis.verdict).toContain("观察");
+    expect(analysis.verdict).not.toContain("回避");
+  });
+
+  test("aligns weak numeric scores with weak verdicts", () => {
+    const analysis = normalizeGeneratedAnalysis(
+      {
+        title: "低分但原始结论偏乐观",
+        score: 30,
+        verdict: "持有（谨慎乐观）",
+        summary: "成熟期低速增长，AI变现不确定。",
+        keyPoints: ["现金流尚可"],
+        riskFlags: ["增长偏弱", "竞争加剧"],
+        followUps: ["利润增速"],
+        markdown: "## 结论\n得分较低但模型仍写持有。",
+      },
+      customTemplate(),
+    );
+
+    expect(analysis.score).toBe(30);
+    expect(analysis.verdict).toBe("回避/重新复核");
+  });
+
   test("caps top-level scores that are far above the markdown item-score average", () => {
     const analysis = normalizeGeneratedAnalysis(
       {

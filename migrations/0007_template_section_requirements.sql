@@ -1,0 +1,2 @@
+ALTER TABLE user_research_templates ADD COLUMN section_requirements_json TEXT;
+ALTER TABLE user_research_templates ADD COLUMN default_section_requirements_json TEXT;

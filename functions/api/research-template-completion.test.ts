@@ -23,6 +23,8 @@ describe("research template completion", () => {
     });
     expect(body.thinking).toBeUndefined();
     expect(JSON.stringify(body.messages)).toContain("实体经营者思维");
+    expect(JSON.stringify(body.messages)).toContain("sectionRequirements");
+    expect(JSON.stringify(body.messages)).toContain("每个模板项");
   });
 
   test("normalizes completion JSON into all editable template fields", () => {
@@ -33,6 +35,10 @@ describe("research template completion", () => {
         focus: "把投资视为低成本开公司，检查产业、商业模式、团队和估值。",
         prompt: "按实体经营者思维模板输出公司分析。",
         fullPrompt: "# 模板12：实体经营者思维公司分析\n\n请分析（      ）公司。",
+        sectionRequirements: [
+          { id: "business-model", title: "商业模式", minChars: 160, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+          { id: "capital-discipline", title: "资本配置纪律", minChars: 180, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+        ],
       }),
     ).toEqual({
       title: "模板12：实体经营者思维公司分析",
@@ -40,6 +46,10 @@ describe("research template completion", () => {
       focus: "把投资视为低成本开公司，检查产业、商业模式、团队和估值。",
       prompt: "按实体经营者思维模板输出公司分析。",
       fullPrompt: "# 模板12：实体经营者思维公司分析\n\n请分析（      ）公司。",
+      sectionRequirements: [
+        { id: "business-model", title: "商业模式", minChars: 160, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+        { id: "capital-discipline", title: "资本配置纪律", minChars: 180, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
+      ],
     });
   });
 });
