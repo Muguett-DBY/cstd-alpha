@@ -40,6 +40,43 @@ jobs:
       - name: Install Wrangler
         run: npm ci --ignore-scripts
 
+      - name: Start local SearXNG fallback
+        if: env.SEARXNG_ENDPOINTS == ''
+        run: |
+          mkdir -p .searxng
+          cat > .searxng/settings.yml <<'YAML'
+          use_default_settings: true
+
+          search:
+            formats:
+              - html
+              - json
+
+          server:
+            secret_key: "cstd-alpha-radar-evidence"
+            limiter: false
+            image_proxy: false
+
+          outgoing:
+            request_timeout: 8.0
+          YAML
+
+          docker run -d --name cstd-searxng \
+            -p 8080:8080 \
+            -v "${{ github.workspace }}/.searxng:/etc/searxng:ro" \
+            searxng/searxng:latest
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:8080/search?q=test&format=json" >/dev/null; then
+              echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs cstd-searxng
+          exit 1
+
       - name: Collect evidence snapshot
         run: |
           python scripts/collect_radar_evidence.py \
