@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { normalizeMarkdownForReading } from "./markdown-report";
+import { filterWatchlistItems, summarizeWatchlistAnalysis } from "./my-research-state";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
+import type { TemplateAnalysisResult, WatchlistItem } from "./shared/user-research";
 import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView, shouldScrollTemplateEditor } from "./template-manager-state";
 
 describe("template manager navigation", () => {
@@ -59,3 +61,82 @@ describe("markdown report normalization", () => {
     expect(normalized).not.toContain("\\n");
   });
 });
+
+describe("my research watchlist state", () => {
+  const watchlist: WatchlistItem[] = [
+    watchlistItem("1", { name: "贵州茅台", code: "600519", listingPlace: "沪A", exchange: "上海证券交易所", marketType: "A股" }),
+    watchlistItem("2", { name: "腾讯控股", code: "00700", listingPlace: "港股", exchange: "HKEX", marketType: "港股" }),
+    watchlistItem("3", { name: "NVIDIA", code: "NVDA", listingPlace: "美股", exchange: "NASDAQ", marketType: "美股" }),
+  ];
+
+  test("filters watchlist items by company name, ticker, market, and exchange", () => {
+    expect(filterWatchlistItems(watchlist, "茅台").map((item) => item.id)).toEqual(["1"]);
+    expect(filterWatchlistItems(watchlist, "00700").map((item) => item.id)).toEqual(["2"]);
+    expect(filterWatchlistItems(watchlist, "nasdaq").map((item) => item.id)).toEqual(["3"]);
+    expect(filterWatchlistItems(watchlist, "港股").map((item) => item.id)).toEqual(["2"]);
+  });
+
+  test("returns all watchlist items for empty search and no items for misses", () => {
+    expect(filterWatchlistItems(watchlist, "").map((item) => item.id)).toEqual(["1", "2", "3"]);
+    expect(filterWatchlistItems(watchlist, "不存在").map((item) => item.id)).toEqual([]);
+  });
+
+  test("summarizes completed and running template analyses for the selected company", () => {
+    const analyses = [
+      analysis("a1", "1", "completed"),
+      analysis("a2", "1", "completed"),
+      analysis("a3", "1", "running"),
+      analysis("a4", "2", "completed"),
+      analysis("a5", "1", "failed"),
+    ];
+
+    expect(summarizeWatchlistAnalysis(analyses, "1")).toEqual({
+      total: 4,
+      completed: 2,
+      running: 1,
+      failed: 1,
+    });
+  });
+});
+
+function watchlistItem(id: string, company: Partial<WatchlistItem["company"]>): WatchlistItem {
+  return {
+    id,
+    userId: "admin",
+    addedAt: "2026-05-24T00:00:00.000Z",
+    company: {
+      id,
+      name: company.name || "",
+      code: company.code || "",
+      market: company.marketType || "",
+      exchange: company.exchange || "",
+      listingPlace: company.listingPlace || "",
+      marketType: company.marketType || "",
+      source: "test",
+    },
+  };
+}
+
+function analysis(id: string, watchlistId: string, status: TemplateAnalysisResult["status"]): TemplateAnalysisResult {
+  return {
+    id,
+    userId: "admin",
+    watchlistId,
+    templateId: "template",
+    templateTitle: "模板",
+    companyName: "公司",
+    ticker: "000001",
+    market: "A股",
+    model: "deepseek-v4-flash",
+    status,
+    title: "报告",
+    verdict: "观察",
+    summary: "",
+    keyPoints: [],
+    riskFlags: [],
+    followUps: [],
+    sections: [],
+    createdAt: "2026-05-24T00:00:00.000Z",
+    updatedAt: "2026-05-24T00:00:00.000Z",
+  };
+}
