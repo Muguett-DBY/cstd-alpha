@@ -7,6 +7,7 @@ export type AssistantEnv = {
   DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
+  EXA_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
   REPORT_CACHE?: KVNamespace;
@@ -407,6 +408,7 @@ export function buildAssistantPromptMessages(input: {
   memories: AssistantMemory[];
   threadSummary: string;
   evidenceSummary: string;
+  externalEvidenceSummary?: string;
   recentMessages: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
   userMessage: string;
   mode?: AssistantMode;
@@ -421,10 +423,17 @@ export function buildAssistantPromptMessages(input: {
       "研究模式：标的研究或行业研究时，必须绝对理性，结论必须是支持、反对、观察、回避之一，禁止模棱两可和迎合用户。",
       "研究模式输出结构固定为：结论、证据等级、核心理由、反驳用户观点、我可能错在哪里、下一步跟踪。",
       "所有公司和行业判断优先使用站内证据；证据不足必须明说，不能编造财报、价格、订单、政策或来源。",
+      "只回答当前用户问题；除非用户明确要求延续旧话题，不要主动引入最近聊天里的无关公司、行业或技术细节。",
+      "来源约束：只有外部证据条目明确标记为 Exa 时，才可以说“通过 Exa 检索到”；Exa 是检索服务，不是原始信息发布方，不能写成“全部来自 Exa”。如果 Exa 未返回可用结果，必须说 Exa 没有可用结果，不能把 AnySearch/SearXNG 说成 Exa。",
+      "来源约束：AnySearch、SearXNG、Exa 都是外部搜索线索，不是财报库、交易所、统计局或公司公告；除非证据摘要里明确写出来源和数值，否则禁止补写出货量、订单量、内部记录、市场份额或官方统计。",
+      "来源约束：引用外部搜索时只能复述标题和摘要中明确出现的信息；不确定的数值必须写为“未在本轮证据中核实”，不能为了让回答更完整而推断。",
       "Memory 只用于理解用户长期偏好和表达方式，不能替代事实证据。",
       "如果问题涉及投资动作，必须保持审慎，区分事实、推断和不确定性。",
       "理性约束：禁止迎合用户预设结论；禁止用单一新闻、单家公司极端同比、短期股价涨跌直接推出投资结论。",
       "理性约束：每个强判断都必须说明证据等级、反证条件和仍需验证的数据；证据不足时优先降级为观察。",
+      "图表规则：如果用户明确要求画图、画表、对比表、趋势图或证据矩阵，必须先给结论，再给一张 Markdown 表格，表格列名清晰且数值列可解析；不要输出 ECharts JSON 或代码块。",
+      "图表规则：表格里的数值必须来自上下文证据或明确标注为打分/估计；无法给出数值时输出证据矩阵而不是编造趋势。",
+      "图表规则：不要说“无法画图”或“以表格替代图表”；系统会把合格 Markdown 表格自动渲染为图表。",
     ].join("\n"),
     "assistant-chat",
   );
@@ -437,7 +446,10 @@ export function buildAssistantPromptMessages(input: {
       threadSummary: input.threadSummary || "暂无长期摘要。",
       siteEvidenceSummary: input.evidenceSummary,
     },
-    volatile: { currentTurnPolicy: "最近聊天作为后续 messages append-only 追加，不写入稳定上下文。" },
+    volatile: {
+      currentTurnPolicy: "最近聊天作为后续 messages append-only 追加，不写入稳定上下文。",
+      externalSearchEvidence: input.externalEvidenceSummary || "本轮未触发外部搜索。",
+    },
   });
   return [
     { role: "system", content: system },

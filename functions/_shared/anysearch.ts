@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch" | "SearXNG";
+  source: "AnySearch" | "SearXNG" | "Exa";
   query: string;
   title: string;
   url: string;
@@ -60,6 +60,9 @@ export type AnySearchEvidence = {
   signalScores?: Record<string, number>;
   contentType?: string;
   cached?: boolean;
+  exaRequestId?: string;
+  exaSearchType?: string;
+  exaCostDollars?: number;
 };
 
 type FetchLike = typeof fetch;
@@ -95,7 +98,25 @@ type SearxngResponse = {
   }>;
 };
 
+type ExaSearchResponse = {
+  requestId?: string;
+  searchType?: string;
+  results?: Array<{
+    title?: string;
+    url?: string;
+    publishedDate?: string | null;
+    highlights?: string[];
+    highlightScores?: number[];
+    summary?: string;
+    text?: string;
+  }>;
+  costDollars?: {
+    total?: number;
+  };
+};
+
 const ANYSEARCH_URL = "https://api.anysearch.com/v1/search";
+export const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const MAX_SUMMARY_CHARS = 520;
 const MAX_CONTENT_CHARS = 1200;
 
@@ -111,6 +132,18 @@ export function buildAnySearchRequestBody(query: AnySearchQuery) {
   };
   if (query.tags?.length) body.tags = query.tags;
   return body;
+}
+
+export function buildExaSearchRequestBody(query: AnySearchQuery) {
+  return {
+    query: query.query,
+    type: "auto",
+    numResults: Math.min(Math.max(query.maxResults ?? 10, 1), 10),
+    contents: {
+      highlights: true,
+    },
+    category: query.contentTypes?.includes("news") ? "news" : undefined,
+  };
 }
 
 export async function fetchAnySearchEvidence({
@@ -185,6 +218,41 @@ export async function fetchSearxngEvidence({
   return dedupeAnySearchEvidence(evidence);
 }
 
+export async function fetchExaEvidence({
+  queries,
+  apiKey,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  apiKey?: string;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const normalizedApiKey = apiKey?.trim();
+  if (!normalizedApiKey) return [];
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(EXA_SEARCH_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": normalizedApiKey },
+        signal,
+        body: JSON.stringify(buildExaSearchRequestBody(query)),
+      });
+      if (!response.ok) {
+        await response.text().catch(() => "");
+        continue;
+      }
+      const payload = (await response.json().catch(() => null)) as ExaSearchResponse | null;
+      evidence.push(...normalizeExaResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
 export function normalizeAnySearchResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
   const envelope = isRecord(payload) ? payload : {};
   const record = isRecord(envelope.data) ? envelope.data : envelope;
@@ -221,6 +289,47 @@ export function normalizeAnySearchResults(payload: unknown, context: AnySearchQu
       signalScores: signalScoresValue(raw.signal_scores),
       contentType: cleanText(raw.source) || undefined,
       cached: typeof metadata.cached === "boolean" ? metadata.cached : false,
+    });
+  }
+  return items;
+}
+
+export function normalizeExaResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const requestId = cleanText(record.requestId);
+  const searchType = cleanText(record.searchType);
+  const costDollars = isRecord(record.costDollars) ? numberValue(record.costDollars.total) : undefined;
+  const results = Array.isArray(record.results) ? record.results : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of results) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const highlights = Array.isArray(raw.highlights) ? raw.highlights.map(cleanText).filter(Boolean) : [];
+    const summary = cleanText(raw.summary) || highlights.join(" ");
+    const sourceType = inferSupplementalSourceType(url);
+    items.push({
+      source: "Exa",
+      query: context.query,
+      title,
+      url,
+      summary: trimText(summary || cleanText(raw.text), MAX_SUMMARY_CHARS),
+      content: trimText([summary, cleanText(raw.text)].filter(Boolean).join(" "), MAX_CONTENT_CHARS) || undefined,
+      sourceType,
+      signalType: "external_search",
+      weight: sourceType === "official" ? 4 : 3,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: cleanText(raw.publishedDate) || undefined,
+      qualityScore: averageNumberArray(raw.highlightScores),
+      anysearchSource: "exa",
+      exaRequestId: requestId || undefined,
+      exaSearchType: searchType || undefined,
+      exaCostDollars: costDollars,
+      cached: false,
     });
   }
   return items;
@@ -284,6 +393,13 @@ function normalizeSearxngResults(payload: unknown, context: AnySearchQuery): Any
   return items;
 }
 
+function averageNumberArray(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  const numbers = value.filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+  if (!numbers.length) return undefined;
+  return numbers.reduce((sum, item) => sum + item, 0) / numbers.length;
+}
+
 function normalizeSearxngEndpoints(value: string | undefined) {
   return (value || "")
     .split(/[\n,]/)
@@ -326,7 +442,12 @@ function dedupeAnySearchEvidence(items: AnySearchEvidence[]) {
 
 function inferSupplementalSourceType(value: unknown): SupplementalSourceType {
   const source = cleanText(value).toLowerCase();
-  return source === "doc" || source === "data" || source === "academic" ? "official" : "news";
+  return source === "doc" ||
+    source === "data" ||
+    source === "academic" ||
+    /sec\.gov|hkexnews\.hk|sse\.com\.cn|szse\.cn|cninfo\.com\.cn|stats\.gov\.cn|pbc\.gov\.cn|ndrc\.gov\.cn/.test(source)
+    ? "official"
+    : "news";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

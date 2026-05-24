@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as echarts from "echarts";
 import {
   confirmAssistantMemoryCandidate,
   fetchAssistantThread,
@@ -7,7 +8,7 @@ import {
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { mergeAssistantDelta } from "./assistant-state";
-import type { AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
+import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
 
@@ -20,6 +21,7 @@ export function AssistantView() {
   const [mode, setMode] = useState<AssistantMode>("chat");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
+  const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastSentMessageRef = useRef("");
 
@@ -54,6 +56,7 @@ export function AssistantView() {
   async function sendMessage(message: string) {
     setInput("");
     setDraft("");
+    setDraftBlocks([]);
     setError("");
     setPhase("streaming");
     lastSentMessageRef.current = message;
@@ -81,6 +84,7 @@ export function AssistantView() {
       const final = await sendAssistantMessage(message, mode, handleStreamEvent);
       if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
+      setDraftBlocks([]);
       setPhase("ready");
       if (final) void reloadThread();
     } catch (err) {
@@ -103,6 +107,7 @@ export function AssistantView() {
 
   function handleStreamEvent(event: AssistantChatStreamEvent) {
     if (event.type === "delta") setDraft((current) => mergeAssistantDelta(current, event.text));
+    if (event.type === "block") setDraftBlocks((current) => [...current.filter((item) => item.id !== event.block.id), event.block]);
     if (event.type === "choice_request") {
       setDraft("");
       setPendingClarification({
@@ -142,13 +147,15 @@ export function AssistantView() {
             {visibleMessages.map((message) => (
               <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
                 <span>{message.role === "user" ? "你" : "助手"}</span>
-                <p>{message.content}</p>
+                <p>{message.metadata?.blocks?.length ? stripRenderedTables(message.content) : message.content}</p>
+                <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
               </article>
             ))}
             {draft ? (
               <article className="assistant-message assistant streaming">
                 <span>助手</span>
-                <p>{draft}</p>
+                <p>{draftBlocks.length ? stripRenderedTables(draft) : draft}</p>
+                <AssistantBlocks blocks={draftBlocks} />
               </article>
             ) : null}
             <div ref={messagesEndRef} />
@@ -196,6 +203,109 @@ export function AssistantView() {
       ) : null}
     </section>
   );
+}
+
+function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
+  if (!blocks.length) return null;
+  return (
+    <div className="assistant-blocks">
+      {blocks.map((block) => {
+        if (block.type === "table") {
+          return (
+            <div key={block.id} className="assistant-table-block">
+              {block.title ? <strong>{block.title}</strong> : null}
+              <div>
+                <table>
+                  <thead>
+                    <tr>{block.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={`${block.id}-${rowIndex}`}>
+                        {block.columns.map((column, columnIndex) => <td key={`${column}-${columnIndex}`}>{row[columnIndex] ?? ""}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+        if (block.type === "chart") return <AssistantChart key={block.id} block={block} />;
+        return (
+          <div key={block.id} className="assistant-text-block">
+            {block.title ? <strong>{block.title}</strong> : null}
+            <p>{block.text}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssistantChart({ block }: { block: AssistantChartBlock }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return undefined;
+    const chart = echarts.init(ref.current);
+    chart.setOption({
+      animation: false,
+      tooltip: { trigger: "axis" },
+      legend: { top: 0, textStyle: { fontWeight: 700 } },
+      grid: { left: 44, right: 16, top: 42, bottom: 42 },
+      xAxis: { type: "category", data: block.labels, axisLabel: { interval: 0, rotate: block.labels.length > 6 ? 24 : 0 } },
+      yAxis: { type: "value" },
+      series: block.series.map((series) => ({
+        name: series.name,
+        type: block.chartType === "scatter" ? "scatter" : block.chartType,
+        data: series.data,
+        smooth: block.chartType === "line",
+      })),
+    });
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chart.dispose();
+    };
+  }, [block]);
+
+  return (
+    <div className="assistant-chart-block">
+      {block.title ? <strong>{block.title}</strong> : null}
+      <div ref={ref} role="img" aria-label={block.title || "助手图表"} />
+    </div>
+  );
+}
+
+function stripRenderedTables(text: string) {
+  const lines = text.split(/\r?\n/);
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].includes("|") && isMarkdownSeparator(lines[index + 1] ?? "")) {
+      index += 2;
+      while (index < lines.length && lines[index].includes("|")) index += 1;
+      index -= 1;
+      continue;
+    }
+    kept.push(lines[index]);
+  }
+  return kept
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isMarkdownSeparator(line: string) {
+  const cells = line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim())
+    .filter(Boolean);
+  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
 }
 
 const assistantModes: Array<{ id: AssistantMode; label: string; description: string }> = [

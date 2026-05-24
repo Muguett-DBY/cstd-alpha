@@ -13,6 +13,7 @@ export type AssistantMessageMetadata = {
   evidenceRefs?: AssistantEvidenceRef[];
   usage?: AssistantUsage;
   toolRuns?: AssistantToolRun[];
+  blocks?: AssistantBlock[];
 };
 
 export type AssistantEvidenceRef = {
@@ -41,6 +42,32 @@ export type AssistantUsage = {
   promptCacheMissTokens?: number;
   elapsedMs?: number;
 };
+
+export type AssistantTextBlock = {
+  id: string;
+  type: "text";
+  title?: string;
+  text: string;
+};
+
+export type AssistantTableBlock = {
+  id: string;
+  type: "table";
+  title?: string;
+  columns: string[];
+  rows: string[][];
+};
+
+export type AssistantChartBlock = {
+  id: string;
+  type: "chart";
+  title?: string;
+  chartType: "bar" | "line" | "scatter";
+  labels: string[];
+  series: Array<{ name: string; data: number[] }>;
+};
+
+export type AssistantBlock = AssistantTextBlock | AssistantTableBlock | AssistantChartBlock;
 
 export type AssistantMemory = {
   id: string;
@@ -99,6 +126,7 @@ export type AssistantChatRequest = {
 export type AssistantChatStreamEvent =
   | { type: "start"; threadId: string; messageId: string }
   | { type: "delta"; text: string }
+  | { type: "block"; block: AssistantBlock }
   | { type: "choice_request"; request: AssistantChoiceRequest }
   | { type: "memory_candidate"; candidate: AssistantMemoryCandidate }
   | { type: "usage"; usage: AssistantUsage }

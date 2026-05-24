@@ -20,7 +20,8 @@ import {
   writeUsageEvent,
   type AssistantEnv,
 } from "../../_shared/assistant-db";
-import { fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence } from "../../_shared/anysearch";
+import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
+import { fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, type AnySearchEvidence } from "../../_shared/anysearch";
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
@@ -57,7 +58,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     : null;
 
   const memories = await readActiveMemories(env.REPORT_LIBRARY_DB, session.userId);
-  const recentMessages = (await readRecentMessages(env.REPORT_LIBRARY_DB, session.userId, thread.id, 24))
+  const recentMessages = (await readRecentMessages(env.REPORT_LIBRARY_DB, session.userId, thread.id, 12))
     .filter((message) => message.id !== userStoredMessage.id)
     .map((message): { role: "user" | "assistant"; content: string; createdAt: string } => ({
       role: message.role === "assistant" ? "assistant" : "user",
@@ -99,26 +100,33 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     }
   }
 
-  const [siteEvidenceSummary, modeEvidenceSummary, externalEvidence] = await Promise.all([
+  const [siteEvidenceSummary, modeEvidenceSummary] = await Promise.all([
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
     buildModeEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId, userMessage, mode),
-    maybeFetchExternalEvidence(env, userMessage, mode, request.signal),
   ]);
+  const externalEvidence = await maybeFetchExternalEvidence(env, userMessage, mode, request.signal, {
+    siteEvidenceSummary,
+    modeEvidenceSummary,
+  });
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: session.userId,
     threadId: thread.id,
     toolName: "站内证据/外部搜索",
     status: externalEvidence.triggered ? "completed" : "skipped",
-    summary: externalEvidence.triggered ? `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。` : "未触发外部搜索，仅使用站内证据和记忆。",
-    input: externalEvidence.query ? { query: externalEvidence.query } : undefined,
-    output: externalEvidence.items.slice(0, 5),
+    summary: externalEvidence.triggered
+      ? `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。${externalEvidence.exa.used ? ` Exa ${externalEvidence.exa.count} 条。` : externalEvidence.exa.reason ? ` Exa未用：${externalEvidence.exa.reason}。` : ""}`
+      : "未触发外部搜索，仅使用站内证据和记忆。",
+    input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa } : undefined,
+    output: externalEvidence.items.slice(0, 8),
     now,
   });
-  const evidenceSummary = [siteEvidenceSummary, modeEvidenceSummary, formatExternalEvidence(externalEvidence.items)].filter(Boolean).join("\n");
+  const evidenceSummary = [siteEvidenceSummary, modeEvidenceSummary].filter(Boolean).join("\n");
+  const externalEvidenceSummary = formatExternalEvidence(externalEvidence.items, externalEvidence.exa);
   const promptMessages = buildAssistantPromptMessages({
     memories,
     threadSummary: thread.summary,
     evidenceSummary,
+    externalEvidenceSummary,
     recentMessages,
     userMessage,
     mode,
@@ -135,19 +143,21 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       signal: request.signal,
     });
     if (!reviewed.text.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
+    const blocks = extractAssistantBlocks(reviewed.text, userMessage);
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
         if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
         enqueue(controller, { type: "delta", text: reviewed.text });
+        for (const block of blocks) enqueue(controller, { type: "block", block });
         const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
           id: assistantMessageId,
           userKey: session.userId,
           threadId: thread.id,
           role: "assistant",
           content: reviewed.text,
-          metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review },
+          metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review, blocks },
         });
         await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: reviewed.usage });
         enqueue(controller, { type: "usage", usage: reviewed.usage });
@@ -216,13 +226,15 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         }
         if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
+        const blocks = extractAssistantBlocks(assistantText, userMessage);
+        for (const block of blocks) enqueue(controller, { type: "block", block });
         const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
           id: assistantMessageId,
           userKey: session.userId,
           threadId: thread.id,
           role: "assistant",
           content: assistantText,
-          metadata: { usage: latestUsage, toolRuns: [toolRun] },
+          metadata: { usage: latestUsage, toolRuns: [toolRun], blocks },
         });
         await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: latestUsage });
         await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
@@ -264,9 +276,15 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   }
 };
 
-async function maybeFetchExternalEvidence(env: AssistantEnv, message: string, mode: AssistantMode, signal: AbortSignal): Promise<{ triggered: boolean; query?: string; items: AnySearchEvidence[] }> {
+async function maybeFetchExternalEvidence(
+  env: AssistantEnv,
+  message: string,
+  mode: AssistantMode,
+  signal: AbortSignal,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+): Promise<{ triggered: boolean; query?: string; items: AnySearchEvidence[]; exa: { used: boolean; count: number; reason?: string; dailyCount?: number } }> {
   const researchMode = mode !== "chat";
-  if (!researchMode && !/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时)/.test(message)) return { triggered: false, items: [] };
+  if (!researchMode && !/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return { triggered: false, items: [], exa: { used: false, count: 0 } };
   const suffix = mode === "target" ? "财报 公告 估值 现金流 竞争 风险" : mode === "industry" ? "行业 景气 价格 产能 库存 政策 风险" : "投资 财报 公告 风险";
   const query = `${message.slice(0, 120)} ${suffix}`;
   const queries = [{ query, topic: "assistant", sourceType: "news" as const, maxResults: 4, domains: ["finance" as const, "business" as const], contentTypes: ["news" as const, "web" as const], freshness: "month" as const }];
@@ -274,12 +292,70 @@ async function maybeFetchExternalEvidence(env: AssistantEnv, message: string, mo
     fetchAnySearchEvidence({ queries, apiKey: env.ANYSEARCH_API_KEY, signal }),
     fetchSearxngEvidence({ queries, endpoints: env.SEARXNG_ENDPOINTS, signal }),
   ]);
-  return { triggered: true, query, items: [...anysearch, ...searxng].slice(0, 8) };
+  const exaDecision = await maybeUseExa(env, message, mode, context, signal);
+  return { triggered: true, query, items: [...anysearch, ...searxng, ...exaDecision.items].slice(0, 12), exa: exaDecision.exa };
 }
 
-function formatExternalEvidence(items: AnySearchEvidence[]) {
-  if (!items.length) return "";
-  return `外部搜索证据：${items.map((item, index) => `E${index + 1} ${item.title}（${item.source}/${item.publishedAt || "unknown"}）：${item.summary}`).join("；")}`;
+function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
+  const exaStatus = exa.used && exa.count === 0 ? "Exa状态：本轮已尝试 Exa，但没有返回可用结果；禁止把其他搜索源说成 Exa。" : "";
+  if (!items.length) return exaStatus;
+  return [
+    exaStatus,
+    `外部搜索线索（仅用于发现和补充，不是财报/公告/价格/销量硬数据；检索服务不等于原始发布方）：${items
+      .map((item, index) => `E${index + 1} ${item.title}（检索=${item.source}，类型=${item.sourceType}，来源域名=${hostLabel(item.url)}，日期=${item.publishedAt || "unknown"}）：${item.summary}`)
+      .join("；")}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function hostLabel(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "unknown";
+  }
+}
+
+async function maybeUseExa(
+  env: AssistantEnv,
+  message: string,
+  mode: AssistantMode,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+  signal: AbortSignal,
+): Promise<{ items: AnySearchEvidence[]; exa: { used: boolean; count: number; reason?: string; dailyCount?: number } }> {
+  if (!env.EXA_API_KEY?.trim()) return { items: [], exa: { used: false, count: 0, reason: "未配置EXA_API_KEY" } };
+  if (!env.REPORT_CACHE) return { items: [], exa: { used: false, count: 0, reason: "缺少额度记录KV" } };
+  const decision = shouldUseExaForAssistant(message, mode, `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`);
+  if (!decision.use) return { items: [], exa: { used: false, count: 0, reason: decision.reason } };
+  const quota = await reserveExaQuota(env.REPORT_CACHE);
+  if (!quota.allowed) return { items: [], exa: { used: false, count: 0, reason: "达到今日Exa自动调用上限", dailyCount: quota.count } };
+  const query = `${message.slice(0, 160)} ${mode === "industry" ? "industry data official source financial risk" : "company financial report official source risk valuation"}`;
+  const items = await fetchExaEvidence({
+    apiKey: env.EXA_API_KEY,
+    signal,
+    queries: [{ query, topic: "assistant", sourceType: "news", maxResults: 10, contentTypes: ["news", "web"], freshness: "month" }],
+  });
+  return { items, exa: { used: true, count: items.length, dailyCount: quota.count } };
+}
+
+export function shouldUseExaForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
+  if (/Exa|exa|深搜|高质量来源|英文来源|全球来源/.test(message)) return { use: true, reason: "用户明确要求高质量外部检索" };
+  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外)/.test(message);
+  const evidenceWeak = /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary);
+  if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
+  return { use: false, reason: highValue ? "站内证据已覆盖，先不用Exa" : "不是Exa高价值触发场景" };
+}
+
+async function reserveExaQuota(cache: KVNamespace, now = new Date()) {
+  const key = `assistant:exa:auto:${now.toISOString().slice(0, 10)}`;
+  const current = Number((await cache.get(key).catch(() => null)) || "0");
+  if (current >= 25) return { allowed: false, count: current };
+  const next = current + 1;
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const expirationTtl = Math.max(3600, Math.floor((tomorrow.getTime() - now.getTime()) / 1000) + 3600);
+  await cache.put(key, String(next), { expirationTtl }).catch(() => undefined);
+  return { allowed: true, count: next };
 }
 
 async function buildModeEvidenceSummary(db: D1Database, userKey: string, message: string, mode: AssistantMode) {

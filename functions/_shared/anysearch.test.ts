@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAnySearchRequestBody, fetchAnySearchEvidence, fetchSearxngEvidence, normalizeAnySearchResults } from "./anysearch";
+import { buildAnySearchRequestBody, buildExaSearchRequestBody, fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, normalizeAnySearchResults, normalizeExaResults } from "./anysearch";
 
 describe("AnySearch helper", () => {
   test("builds finance-oriented requests with freshness and vertical filters", () => {
@@ -136,5 +136,68 @@ describe("AnySearch helper", () => {
         topic: "英伟达",
       }),
     ]);
+  });
+
+  test("builds Exa requests with highlights and capped result count", () => {
+    expect(buildExaSearchRequestBody({ query: "宁德时代 overseas risk", maxResults: 50, contentTypes: ["news", "web"] })).toEqual({
+      query: "宁德时代 overseas risk",
+      type: "auto",
+      numResults: 10,
+      contents: { highlights: true },
+      category: "news",
+    });
+  });
+
+  test("normalizes Exa highlights as supplemental evidence", () => {
+    const items = normalizeExaResults(
+      {
+        requestId: "exa_req_1",
+        searchType: "auto",
+        results: [
+          {
+            title: "Nvidia annual report",
+            url: "https://www.sec.gov/Archives/nvda",
+            publishedDate: "2026-05-01",
+            highlights: ["Revenue growth and data center risks."],
+            highlightScores: [0.91],
+          },
+        ],
+        costDollars: { total: 0.001 },
+      },
+      { query: "NVDA annual report risk", topic: "英伟达" },
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "Exa",
+        sourceType: "official",
+        signalType: "external_search",
+        exaRequestId: "exa_req_1",
+        exaSearchType: "auto",
+        exaCostDollars: 0.001,
+        topic: "英伟达",
+      }),
+    ]);
+    expect(items[0].summary).toContain("Revenue growth");
+  });
+
+  test("fetches Exa with x-api-key and fails closed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ requestId: "exa_req_2", results: [{ title: "白酒库存", url: "https://example.com/baijiu", highlights: ["批价和库存变化。"] }] }),
+    });
+
+    const items = await fetchExaEvidence({
+      apiKey: "exa-key",
+      queries: [{ query: "白酒 批价 库存", maxResults: 10 }],
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.exa.ai/search",
+      expect.objectContaining({ headers: expect.objectContaining({ "x-api-key": "exa-key" }) }),
+    );
+    expect(items[0]).toEqual(expect.objectContaining({ source: "Exa", title: "白酒库存" }));
+    await expect(fetchExaEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
   });
 });

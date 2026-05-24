@@ -1266,6 +1266,65 @@ button:not(:disabled):active,
   line-height: 1.65;
 }
 
+.assistant-blocks {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.assistant-table-block,
+.assistant-chart-block,
+.assistant-text-block {
+  display: grid;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfbf8;
+}
+
+.assistant-table-block strong,
+.assistant-chart-block strong,
+.assistant-text-block strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.assistant-table-block > div {
+  overflow-x: auto;
+}
+
+.assistant-table-block table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.assistant-table-block th,
+.assistant-table-block td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.assistant-table-block th {
+  background: #eef3f0;
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.assistant-table-block tr:last-child td {
+  border-bottom: 0;
+}
+
+.assistant-chart-block > div {
+  width: 100%;
+  min-height: 260px;
+}
+
 .assistant-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 118px;

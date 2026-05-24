@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { onRequestPost } from "./chat";
+import { onRequestPost, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -181,6 +181,88 @@ describe("assistant chat endpoint", () => {
     const reviewBody = JSON.parse(fetchMock.mock.calls[3][1].body);
     expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
   });
+
+  test("emits table and chart blocks when assistant returns a markdown table", async () => {
+    const answer = [
+      "结论：先观察。",
+      "| 指标 | 2025 | 2026 |",
+      "| --- | --- | --- |",
+      "| 营收同比 | 12% | 18% |",
+      "| 净利润同比 | -5% | 9% |",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代：请画图对比营收和净利润", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("\"type\":\"block\"");
+    expect(body).toContain("\"type\":\"table\"");
+    expect(body).toContain("\"type\":\"chart\"");
+  });
+
+  test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "CATL overseas risk", url: "https://example.com/catl", highlights: ["海外竞争和政策风险。"] }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：观察。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const kv = mockKv();
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代海外竞争和政策风险最新怎么看？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        EXA_API_KEY: "exa-key",
+        REPORT_CACHE: kv,
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("done");
+    expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.exa.ai/search")).toBe(true);
+    expect(kv.put).toHaveBeenCalled();
+  });
+
+  test("classifies Exa high-value trigger conservatively", () => {
+    expect(shouldUseExaForAssistant("宁德时代海外竞争和政策风险最新怎么看？", "target", "公司证据包：未命中")).toEqual(
+      expect.objectContaining({ use: true }),
+    );
+    expect(shouldUseExaForAssistant("简单总结一下", "chat", "站内证据充足")).toEqual(expect.objectContaining({ use: false }));
+  });
 });
 
 function mockDb({ role }: { role: string }) {
@@ -221,4 +303,11 @@ function mockDb({ role }: { role: string }) {
     return bytes.buffer;
   });
   return db as unknown as D1Database;
+}
+
+function mockKv() {
+  return {
+    get: vi.fn().mockResolvedValue(null),
+    put: vi.fn().mockResolvedValue(undefined),
+  } as unknown as KVNamespace;
 }
