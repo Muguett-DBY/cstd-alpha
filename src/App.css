@@ -1066,6 +1066,9 @@ button:not(:disabled):active,
 }
 
 .app-shell.view-assistant .workspace {
+  height: calc(100dvh - 74px);
+  overflow: hidden;
+  padding: 12px 18px;
   background:
     radial-gradient(circle at 8% 0%, rgba(21, 128, 115, 0.08), transparent 320px),
     linear-gradient(180deg, rgba(237, 242, 240, 0.72), transparent 300px),
@@ -1074,7 +1077,8 @@ button:not(:disabled):active,
 
 .assistant-workspace {
   display: grid;
-  gap: 18px;
+  height: 100%;
+  min-height: 0;
 }
 
 .assistant-hero {
@@ -1143,8 +1147,35 @@ button:not(:disabled):active,
 
 .assistant-chat-panel {
   display: grid;
-  grid-template-rows: minmax(420px, calc(100dvh - 360px)) auto;
-  min-height: 620px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.assistant-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+}
+
+.assistant-chat-header h2 {
+  margin: 2px 0 0;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.assistant-chat-header span {
+  border: 1px solid color-mix(in srgb, var(--teal) 32%, var(--line));
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--teal);
+  background: rgba(19, 127, 111, 0.07);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .assistant-messages {
@@ -1200,8 +1231,9 @@ button:not(:disabled):active,
 }
 
 .assistant-composer textarea {
-  min-height: 86px;
-  resize: vertical;
+  min-height: 58px;
+  max-height: 110px;
+  resize: none;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -4532,9 +4564,15 @@ button:not(:disabled):active,
     padding-top: 12px;
   }
 
+  .app-shell.view-assistant .workspace {
+    height: auto;
+    min-height: calc(100dvh - 96px);
+    overflow: visible;
+  }
+
   .assistant-chat-panel {
-    min-height: 560px;
-    grid-template-rows: minmax(360px, 56dvh) auto;
+    height: calc(100dvh - 150px);
+    min-height: 520px;
   }
 
   .assistant-composer {
