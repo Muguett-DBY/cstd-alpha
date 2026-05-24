@@ -3,6 +3,7 @@ import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
+import type { AssistantChatStreamEvent, AssistantMessage, AssistantThread } from "./shared/assistant";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -304,6 +305,53 @@ export async function completeResearchTemplateDraft(draft: ResearchTemplateCompl
   return data.completion;
 }
 
+export async function fetchAssistantThread(): Promise<AssistantThread> {
+  const response = await fetch("/api/assistant/thread", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "助手线程读取失败。");
+  const data = (await response.json()) as { thread?: AssistantThread };
+  if (!data.thread) throw new Error("助手线程读取失败。");
+  return data.thread;
+}
+
+export async function sendAssistantMessage(message: string, onEvent?: (event: AssistantChatStreamEvent) => void): Promise<AssistantMessage> {
+  const response = await fetch("/api/assistant/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "助手生成失败。");
+  let finalMessage: AssistantMessage | undefined;
+  for await (const event of readSse(response)) {
+    const typed = event as AssistantChatStreamEvent;
+    onEvent?.(typed);
+    if (typed.type === "error") throw new Error(typed.error);
+    if (typed.type === "done") finalMessage = typed.message;
+  }
+  if (!finalMessage) throw new Error("助手连接提前结束，请重试。");
+  return finalMessage;
+}
+
+export async function confirmAssistantMemoryCandidate(id: string): Promise<void> {
+  const response = await fetch(`/api/assistant/memory-candidates/${encodeURIComponent(id)}/confirm`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "记忆确认失败。");
+}
+
+export async function rejectAssistantMemoryCandidate(id: string): Promise<void> {
+  const response = await fetch(`/api/assistant/memory-candidates/${encodeURIComponent(id)}/reject`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "记忆忽略失败。");
+}
+
+export async function disableAssistantMemory(id: string): Promise<void> {
+  const response = await fetch(`/api/assistant/memories/${encodeURIComponent(id)}/disable`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "记忆停用失败。");
+}
+
+export async function deleteAssistantMemory(id: string): Promise<void> {
+  const response = await fetch(`/api/assistant/memories/${encodeURIComponent(id)}/delete`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "记忆删除失败。");
+}
+
 export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {
   const response = await fetch(`/api/template-analysis?analysisId=${encodeURIComponent(analysisId)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板报告读取失败。");
@@ -381,6 +429,35 @@ async function* readNdjson(response: Response): AsyncGenerator<Record<string, un
 
   buffer += decoder.decode();
   if (buffer.trim()) yield parseNdjsonLine(buffer.trim());
+}
+
+async function* readSse(response: Response): AsyncGenerator<Record<string, unknown>> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+    for (const event of events) {
+      for (const line of event.split(/\r?\n/)) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        yield JSON.parse(data) as Record<string, unknown>;
+      }
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    for (const line of buffer.split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      yield JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+    }
+  }
 }
 
 function reportConnectionError(cause?: unknown) {

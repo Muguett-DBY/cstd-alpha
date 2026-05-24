@@ -55,4 +55,17 @@ describe("D1 migrations", () => {
     const columns = tableColumns(db, "company_evidence_packages");
     for (const column of ["user_key", "watchlist_id", "evidence_hash", "material_hash", "stable_hash", "fresh_hash", "object_key", "status", "fetched_at"]) expect(columns).toContain(column);
   });
+
+  test("assistant migration stores chat, memory, tools, and usage history", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0008_assistant.sql"))).not.toThrow();
+
+    for (const table of ["assistant_threads", "assistant_messages", "assistant_memories", "assistant_memory_candidates", "assistant_tool_runs", "assistant_usage_events"]) {
+      expect(tableColumns(db, table).size).toBeGreaterThan(0);
+    }
+    const usageColumns = tableColumns(db, "assistant_usage_events");
+    expect(usageColumns).toContain("prompt_cache_hit_tokens");
+    expect(usageColumns).toContain("prompt_cache_miss_tokens");
+    expect(usageColumns).toContain("reasoning_effort");
+  });
 });

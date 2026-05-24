@@ -1,4 +1,4 @@
-export type DeepSeekMessage = { role: "system" | "user"; content: string };
+export type DeepSeekMessage = { role: "system" | "user" | "assistant"; content: string };
 
 export type DeepSeekRequestOptions = {
   model: string;
@@ -6,7 +6,7 @@ export type DeepSeekRequestOptions = {
   maxTokens: number;
   reasoningEffort?: "high" | "max";
   temperature?: number;
-  responseFormat?: { type: "json_object" };
+  responseFormat?: { type: "json_object" } | null;
   stream?: boolean;
   thinking?: { type: "enabled"; budget_tokens?: number };
 };
@@ -58,7 +58,7 @@ export function buildDeepSeekRequestBody({
     model,
     ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     ...(thinking ? { thinking } : {}),
-    response_format: responseFormat,
+    ...(responseFormat ? { response_format: responseFormat } : {}),
     stream,
     temperature,
     max_tokens: maxTokens,

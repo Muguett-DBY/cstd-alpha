@@ -17,7 +17,7 @@ import type { UserSession } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
-type AppView = "report" | "ranking" | "mine" | "radar";
+type AppView = "report" | "ranking" | "mine" | "radar" | "assistant";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -28,6 +28,7 @@ export const DEFAULT_APP_VIEW: AppView = "radar";
 const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
 const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
+const AssistantView = lazy(() => import("./AssistantView").then((module) => ({ default: module.AssistantView })));
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -520,6 +521,11 @@ function App() {
           <button type="button" className={`wide-tab ${activeView === "radar" ? "active" : ""}`} aria-current={activeView === "radar" ? "page" : undefined} onClick={() => setActiveView("radar")}>
             扫描
           </button>
+          {user?.role === "admin" ? (
+            <button type="button" className={`wide-tab ${activeView === "assistant" ? "active" : ""}`} aria-current={activeView === "assistant" ? "page" : undefined} onClick={() => setActiveView("assistant")}>
+              助手
+            </button>
+          ) : null}
         </nav>
 
         <form onSubmit={submitSearch} className="report-form">
@@ -602,6 +608,8 @@ function App() {
             <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
           ) : activeView === "radar" ? (
             <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
+          ) : activeView === "assistant" && user?.role === "admin" ? (
+            <AssistantView />
           ) : (
             <>
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (

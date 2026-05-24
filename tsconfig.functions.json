@@ -24,7 +24,15 @@
     "functions/api/research-templates.ts",
     "functions/api/research-template-completion.ts",
     "functions/api/radar-scan.ts",
+    "functions/api/assistant/chat.ts",
+    "functions/api/assistant/thread.ts",
+    "functions/api/assistant/threads.ts",
+    "functions/api/assistant/memory-candidates/[id]/confirm.ts",
+    "functions/api/assistant/memory-candidates/[id]/reject.ts",
+    "functions/api/assistant/memories/[id]/disable.ts",
+    "functions/api/assistant/memories/[id]/delete.ts",
     "functions/_shared/auth.ts",
+    "functions/_shared/assistant-db.ts",
     "functions/_shared/providers.ts",
     "functions/_shared/deepseek.ts",
     "functions/_shared/company-evidence.ts",
@@ -35,6 +43,7 @@
     "src/shared/chart.ts",
     "src/shared/news.ts",
     "src/shared/user-research.ts",
-    "src/shared/radar.ts"
+    "src/shared/radar.ts",
+    "src/shared/assistant.ts"
   ]
 }

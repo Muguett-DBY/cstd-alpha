@@ -12,6 +12,7 @@ import {
   saveResearchTemplatesAsDefault,
   searchCompanies,
   refreshRadarScan,
+  sendAssistantMessage,
 } from "./api";
 
 describe("API client", () => {
@@ -125,6 +126,35 @@ describe("API client", () => {
     );
 
     await expect(searchCompanies("万科A")).resolves.toMatchObject([{ name: "万科A", code: "000002", listingPlace: "深A" }]);
+  });
+
+  test("reads assistant SSE chat events", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text: "结论：" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text: "先观察" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "usage", usage: { model: "deepseek-v4-flash", reasoningEffort: "high", promptCacheHitTokens: 80 } })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", message: { id: "m1", threadId: "t1", role: "assistant", content: "结论：先观察", createdAt: "2026-05-24T00:00:00.000Z" } })}\n\n`));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream));
+    vi.stubGlobal("fetch", fetchMock);
+    const events: string[] = [];
+
+    const result = await sendAssistantMessage("宁德时代怎么看？", (event) => events.push(event.type));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/assistant/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ message: "宁德时代怎么看？" }),
+      }),
+    );
+    expect(events).toEqual(["start", "delta", "delta", "usage", "done"]);
+    expect(result.content).toBe("结论：先观察");
   });
 
   test("rejects login responses that omit the user payload", async () => {
