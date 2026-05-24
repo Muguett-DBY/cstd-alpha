@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { onRequestPost, shouldUseExaForAssistant } from "./chat";
+import { onRequestPost, resolveAssistantResearchContext, shouldAutoUseResearchEvidence, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -261,7 +261,61 @@ describe("assistant chat endpoint", () => {
     expect(shouldUseExaForAssistant("宁德时代海外竞争和政策风险最新怎么看？", "target", "公司证据包：未命中")).toEqual(
       expect.objectContaining({ use: true }),
     );
+    expect(shouldUseExaForAssistant("茅台今年净利润业绩预估？", "target", "公司证据包：未命中")).toEqual(expect.objectContaining({ use: true }));
     expect(shouldUseExaForAssistant("简单总结一下", "chat", "站内证据充足")).toEqual(expect.objectContaining({ use: false }));
+  });
+
+  test("auto-detects target research in normal chat for forecasts and technical questions", () => {
+    expect(shouldAutoUseResearchEvidence("茅台今年业绩预估？")).toBe(true);
+    expect(shouldAutoUseResearchEvidence("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(true);
+    expect(shouldAutoUseResearchEvidence("用一句话解释自由现金流")).toBe(false);
+  });
+
+  test("resolves follow-up questions to the previous user research subject", () => {
+    const resolved = resolveAssistantResearchContext("根据现有信息和数据进行预测", [
+      { role: "user", content: "茅台今年业绩预估？" },
+      { role: "assistant", content: "历史回答里的数字不能当事实证据。" },
+    ]);
+    expect(resolved.message).toContain("茅台今年业绩预估");
+    expect(resolved.promptMessage).toContain("对话承接");
+  });
+
+  test("triggers external evidence for high-value chat research even without explicit search wording", () => {
+    expect(shouldTriggerExternalEvidence("茅台今年业绩预估？", "target", "公司证据包：未命中")).toBe(true);
+    expect(shouldTriggerExternalEvidence("优必选人形机器人技术优势是什么？", "target", "站内证据不足")).toBe(true);
+    expect(shouldTriggerExternalEvidence("解释自由现金流", "chat", "站内证据充足")).toBe(false);
+  });
+
+  test("downgrades unaudited forecast wording in auto research answers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：2025年实际值为100亿元，2026年预测为105亿元。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台今年净利润业绩预估？" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("口径说明");
+    expect(body).toContain("2025年基数线索");
+    expect(body).not.toContain("2025年实际值");
   });
 });
 

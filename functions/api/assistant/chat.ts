@@ -65,14 +65,19 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       content: message.content,
       createdAt: message.createdAt,
     }));
-  const clarificationDecision = await askModelForClarification({
-    env,
-    userMessage,
-    memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
-    threadSummary: thread.summary,
-    recentMessages: recentMessages.slice(-8),
-    signal: request.signal,
-  });
+  const researchContext = resolveAssistantResearchContext(userMessage, recentMessages);
+  const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
+  const clarificationDecision =
+    researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message)
+      ? { request: null }
+      : await askModelForClarification({
+          env,
+          userMessage,
+          memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
+          threadSummary: thread.summary,
+          recentMessages: recentMessages.slice(-8),
+          signal: request.signal,
+        });
   if (clarificationDecision.request) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -102,9 +107,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 
   const [siteEvidenceSummary, modeEvidenceSummary] = await Promise.all([
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
-    buildModeEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId, userMessage, mode),
+    buildModeEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId, researchContext.message, evidenceMode, { strictTargetMatch: mode === "chat" }),
   ]);
-  const externalEvidence = await maybeFetchExternalEvidence(env, userMessage, mode, request.signal, {
+  const externalEvidence = await maybeFetchExternalEvidence(env, researchContext.message, evidenceMode, request.signal, {
     siteEvidenceSummary,
     modeEvidenceSummary,
   });
@@ -128,35 +133,36 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     evidenceSummary,
     externalEvidenceSummary,
     recentMessages,
-    userMessage,
-    mode,
+    userMessage: researchContext.promptMessage,
+    mode: evidenceMode,
   });
 
   const assistantMessageId = crypto.randomUUID();
   const startedAt = Date.now();
-  if (mode !== "chat") {
+  if (evidenceMode !== "chat") {
     const reviewed = await generateReviewedResearchAnswer({
       env,
       messages: promptMessages,
-      userMessage,
-      mode,
+      userMessage: researchContext.promptMessage,
+      mode: evidenceMode,
       signal: request.signal,
     });
-    if (!reviewed.text.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
-    const blocks = extractAssistantBlocks(reviewed.text, userMessage);
+    const guardedText = guardForecastLanguage(reviewed.text, researchContext.message);
+    if (!guardedText.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
+    const blocks = extractAssistantBlocks(guardedText, userMessage);
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
         if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
-        enqueue(controller, { type: "delta", text: reviewed.text });
+        enqueue(controller, { type: "delta", text: guardedText });
         for (const block of blocks) enqueue(controller, { type: "block", block });
         const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
           id: assistantMessageId,
           userKey: session.userId,
           threadId: thread.id,
           role: "assistant",
-          content: reviewed.text,
+          content: guardedText,
           metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review, blocks },
         });
         await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: reviewed.usage });
@@ -224,6 +230,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             }
           }
         }
+        assistantText = guardForecastLanguage(assistantText, researchContext.message);
         if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
@@ -284,7 +291,9 @@ async function maybeFetchExternalEvidence(
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
 ): Promise<{ triggered: boolean; query?: string; items: AnySearchEvidence[]; exa: { used: boolean; count: number; reason?: string; dailyCount?: number } }> {
   const researchMode = mode !== "chat";
-  if (!researchMode && !/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return { triggered: false, items: [], exa: { used: false, count: 0 } };
+  const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
+  const shouldSearch = shouldTriggerExternalEvidence(message, mode, evidenceText);
+  if (!researchMode && !shouldSearch) return { triggered: false, items: [], exa: { used: false, count: 0 } };
   const suffix = mode === "target" ? "财报 公告 估值 现金流 竞争 风险" : mode === "industry" ? "行业 景气 价格 产能 库存 政策 风险" : "投资 财报 公告 风险";
   const query = `${message.slice(0, 120)} ${suffix}`;
   const queries = [{ query, topic: "assistant", sourceType: "news" as const, maxResults: 4, domains: ["finance" as const, "business" as const], contentTypes: ["news" as const, "web" as const], freshness: "month" as const }];
@@ -294,6 +303,56 @@ async function maybeFetchExternalEvidence(
   ]);
   const exaDecision = await maybeUseExa(env, message, mode, context, signal);
   return { triggered: true, query, items: [...anysearch, ...searxng, ...exaDecision.items].slice(0, 12), exa: exaDecision.exa };
+}
+
+export function resolveAssistantResearchContext(
+  userMessage: string,
+  recentMessages: Array<{ role: "user" | "assistant"; content: string }>,
+) {
+  if (containsLikelyResearchSubject(userMessage)) return { message: userMessage, promptMessage: userMessage };
+  if (!isFollowUpResearchQuestion(userMessage)) return { message: userMessage, promptMessage: userMessage };
+  const lastUserSubject = [...recentMessages]
+    .reverse()
+    .find((message) => message.role === "user" && containsLikelyResearchSubject(message.content))?.content;
+  if (!lastUserSubject) return { message: userMessage, promptMessage: userMessage };
+  const message = `${lastUserSubject}\n${userMessage}`;
+  return {
+    message,
+    promptMessage: `${userMessage}\n\n[对话承接]\n本轮问题延续上一轮研究对象：${lastUserSubject}`,
+  };
+}
+
+export function shouldAutoUseResearchEvidence(message: string) {
+  return containsLikelyResearchSubject(message) && isHighValueResearchQuestion(message);
+}
+
+export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
+  if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return true;
+  if (mode !== "chat" && isHighValueResearchQuestion(message)) return true;
+  if (shouldAutoUseResearchEvidence(message)) return true;
+  return containsLikelyResearchSubject(message) && /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary) && isHighValueResearchQuestion(message);
+}
+
+function containsLikelyResearchSubject(message: string) {
+  return /[A-Z]{1,5}\b|\d{5,6}|茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|Nvidia|NVDA|苹果|Apple/i.test(message);
+}
+
+function isHighValueResearchQuestion(message: string) {
+  return /(今年|业绩|预估|预测|净利润|营收|利润|增长|估值|现金流|财报|公告|技术|优势|人形机器人|大脑|小脑|协调|竞争|风险|订单|库存|价格|批价|行业|公司|股票|能买吗|持有|买入|卖出)/.test(message);
+}
+
+function isFollowUpResearchQuestion(message: string) {
+  return /(根据现有|继续|那|这个|它|该公司|这家公司|上述|前面|进行预测|预测|预估|怎么看|如何|为什么|能否|是否|大脑|小脑|协调)/.test(message);
+}
+
+function guardForecastLanguage(text: string, message: string) {
+  if (!/(业绩|预估|预测|净利润|营收|利润)/.test(message) || !text.trim()) return text;
+  const guarded = text
+    .replace(/(\d{4}年)实际值/g, "$1基数线索")
+    .replace(/(\d{4}年)实际/g, "$1基数线索")
+    .replace(/(全年|归母净利润|营收)实际值/g, "$1基数线索");
+  if (/口径说明：/.test(guarded)) return guarded;
+  return `口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。\n\n${guarded}`;
 }
 
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
@@ -341,7 +400,7 @@ async function maybeUseExa(
 
 export function shouldUseExaForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
   if (/Exa|exa|深搜|高质量来源|英文来源|全球来源/.test(message)) return { use: true, reason: "用户明确要求高质量外部检索" };
-  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外)/.test(message);
+  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外|今年|业绩|预估|预测|净利润|营收|利润|技术|优势|人形机器人|大脑|小脑|协调)/.test(message);
   const evidenceWeak = /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary);
   if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
   return { use: false, reason: highValue ? "站内证据已覆盖，先不用Exa" : "不是Exa高价值触发场景" };
@@ -358,19 +417,22 @@ async function reserveExaQuota(cache: KVNamespace, now = new Date()) {
   return { allowed: true, count: next };
 }
 
-async function buildModeEvidenceSummary(db: D1Database, userKey: string, message: string, mode: AssistantMode) {
+async function buildModeEvidenceSummary(db: D1Database, userKey: string, message: string, mode: AssistantMode, options: { strictTargetMatch?: boolean } = {}) {
   if (mode === "chat") return "";
-  if (mode === "target") return buildTargetEvidenceSummary(db, userKey, message);
+  if (mode === "target") return buildTargetEvidenceSummary(db, userKey, message, options);
   return buildIndustryEvidenceSummary(db, message);
 }
 
-async function buildTargetEvidenceSummary(db: D1Database, userKey: string, message: string) {
+async function buildTargetEvidenceSummary(db: D1Database, userKey: string, message: string, options: { strictTargetMatch?: boolean } = {}) {
   const watchlist = await db
     .prepare(`SELECT id, company_name, ticker, market FROM user_watchlist WHERE user_key = ?1 ORDER BY added_at DESC LIMIT 80`)
     .bind(userKey)
     .all<{ id: string; company_name: string; ticker: string; market: string }>()
     .catch(() => ({ results: [] }));
-  const matched = (watchlist.results ?? []).filter((item) => message.includes(item.company_name) || message.toUpperCase().includes(item.ticker.toUpperCase())).slice(0, 3);
+  const matched = (watchlist.results ?? []).filter((item) => watchlistItemMatchesMessage(item, message)).slice(0, 3);
+  if (options.strictTargetMatch && !matched.length) {
+    return "标的研究证据：当前问题疑似公司研究，但站内自选股和公司证据包未命中明确主体；必须使用外部搜索补证据，且不能引用无关自选股。";
+  }
   const targets = matched.length ? matched : (watchlist.results ?? []).slice(0, 3);
   if (!targets.length) return "标的研究证据：自选股为空，站内标的证据不足；必须依赖用户输入和外部搜索，结论应保守。";
   const targetIds = new Set(targets.map((item) => item.id));
@@ -393,6 +455,23 @@ async function buildTargetEvidenceSummary(db: D1Database, userKey: string, messa
     .slice(0, 5)
     .map((item) => `${item.company_name}(${item.ticker}/${item.market}) 证据包${item.status}，fetched_at=${item.fetched_at}，materialHash=${item.material_hash || item.evidence_hash}`);
   return [`标的研究模式：候选标的=${targets.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`, templateLines.length ? `相关模板报告：${templateLines.join("；")}` : "相关模板报告：未命中，结论必须降级。", packageLines.length ? `公司证据包：${packageLines.join("；")}` : "公司证据包：未命中，必须补外部搜索或提示证据缺口。"].join("\n");
+}
+
+function watchlistItemMatchesMessage(item: { company_name: string; ticker: string; market: string }, message: string) {
+  const upper = message.toUpperCase();
+  if (upper.includes(item.ticker.toUpperCase())) return true;
+  if (message.includes(item.company_name)) return true;
+  return companyAliases(item.company_name).some((alias) => alias.length >= 2 && message.includes(alias));
+}
+
+function companyAliases(name: string) {
+  const cleaned = name
+    .replace(/股份有限公司|控股有限公司|集团股份|集团|股份|控股|科技|有限|公司|-W|Ｈ股|H股|A股/g, "")
+    .trim();
+  const aliases = new Set<string>([name, cleaned]);
+  if (cleaned.length >= 4) aliases.add(cleaned.slice(-2));
+  if (cleaned.length >= 5) aliases.add(cleaned.slice(-3));
+  return [...aliases].filter((alias) => !["时代", "科技", "集团", "股份", "公司"].includes(alias));
 }
 
 async function buildIndustryEvidenceSummary(db: D1Database, message: string) {
@@ -529,6 +608,9 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "如果不合格，输出 {\"passed\":false,\"issues\":[...],\"revisedAnswer\":\"修正后的完整中文回答\"}。",
       "修正后的回答必须保留结构：结论、证据等级、核心理由、反驳用户观点、我可能错在哪里、下一步跟踪。",
       "不要编造新事实；证据不足时降级为观察或回避。",
+      "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
+      "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
+      "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
     ].join("\n"),
     "assistant-rational-review",
   );
