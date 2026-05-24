@@ -495,6 +495,35 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("2025年基数线索");
     expect(body).not.toContain("2025年实际值");
   });
+
+  test("downgrades unaudited strong fact wording", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：上市25年首次业绩双降，风险明显。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "画一个表对比茅台、五粮液、泸州老窖的核心风险。", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("业绩承压待核验线索");
+    expect(body).not.toContain("上市25年首次业绩双降");
+  });
 });
 
 function mockDb({ role }: { role: string }) {

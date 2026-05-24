@@ -648,6 +648,7 @@ function isFollowUpResearchQuestion(message: string) {
 }
 
 function guardForecastLanguage(text: string, message: string) {
+  if (shouldTreatAsSimpleGeneralChat(message, "chat")) return text;
   if (!/(业绩|预估|预测|净利润|营收|利润)/.test(message) || !text.trim()) return text;
   const guarded = text
     .replace(/(\d{4}年)实际值/g, "$1基数线索")
@@ -658,7 +659,7 @@ function guardForecastLanguage(text: string, message: string) {
 }
 
 function guardAssistantOutputLanguage(text: string, message: string) {
-  return guardStaleHistoryLanguage(guardForecastLanguage(text, message));
+  return guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message)));
 }
 
 function guardStaleHistoryLanguage(text: string) {
@@ -667,6 +668,16 @@ function guardStaleHistoryLanguage(text: string) {
     .replace(/此前结论保持不变[——\-:：\s]*/g, "本轮判断：")
     .replace(/维持此前结论[——\-:：\s]*/g, "本轮判断：")
     .replace(/此前结论/g, "本轮判断");
+}
+
+function guardUnauditedStrongFactLanguage(text: string) {
+  return text
+    .replace(/上市\d+年首次业绩双降/g, "业绩承压待核验线索")
+    .replace(/上市以来首次业绩双降/g, "业绩承压待核验线索")
+    .replace(/首次业绩双降/g, "业绩承压待核验线索")
+    .replace(/业绩双降/g, "业绩承压待核验线索")
+    .replace(/营收利润双降/g, "营收和利润承压待核验线索")
+    .replace(/首次年度亏损/g, "年度亏损待核验线索");
 }
 
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
@@ -929,6 +940,7 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
       "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",
+      "重点检查事实口径：没有明确证据时，禁止写“首次业绩双降”“业绩双降”“上市25年首次业绩双降”等强事实；若只是搜索线索或推断，必须改成“业绩承压待核验线索”。",
     ].join("\n"),
     "assistant-rational-review",
   );
