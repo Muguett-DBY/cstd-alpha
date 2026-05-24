@@ -342,6 +342,39 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("AnySearch");
   });
 
+  test("falls back to search tools when router under-selects a clear research question", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "SMIC mature node value", url: "https://example.com/smic", highlights: ["成熟制程国产替代。"] }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：观察。\n证据等级：中。\n反证：若制裁加码则下修。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "中芯国际在先进制程受限下还有哪些投资价值？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        EXA_API_KEY: "exa-key",
+        REPORT_CACHE: mockKv(),
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.exa.ai/search")).toBe(true);
+    expect(body).toContain("模型调用工具");
+  });
+
   test("classifies Exa high-value trigger conservatively", () => {
     expect(shouldUseExaForAssistant("宁德时代海外竞争和政策风险最新怎么看？", "target", "公司证据包：未命中")).toEqual(
       expect.objectContaining({ use: true }),
@@ -354,6 +387,7 @@ describe("assistant chat endpoint", () => {
   test("auto-detects target research in normal chat for forecasts and technical questions", () => {
     expect(shouldAutoUseResearchEvidence("茅台今年业绩预估？")).toBe(true);
     expect(shouldAutoUseResearchEvidence("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(true);
+    expect(shouldAutoUseResearchEvidence("中芯国际在先进制程受限下还有哪些投资价值？")).toBe(true);
     expect(shouldAutoUseResearchEvidence("用一句话解释自由现金流")).toBe(false);
   });
 
@@ -390,6 +424,7 @@ describe("assistant chat endpoint", () => {
 
   test("does not route simple concept explanations through external tools", () => {
     expect(shouldTreatAsSimpleGeneralChat("用两句话解释自由现金流为什么比利润更适合看长期回报。", "chat")).toBe(true);
+    expect(shouldTreatAsSimpleGeneralChat("用两句话解释ROIC为什么比ROE更不容易被杠杆误导。", "chat")).toBe(true);
     expect(shouldTreatAsSimpleGeneralChat("茅台今年业绩预估？", "target")).toBe(false);
     expect(shouldTreatAsSimpleGeneralChat("请联网查一下自由现金流最新研究", "chat")).toBe(false);
   });
@@ -550,6 +585,53 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("营收和利润承压待核验线索");
     expect(body).not.toContain("上市25年首次业绩双降");
     expect(body).not.toContain("营收利润首次双降");
+  });
+
+  test("keeps a full research answer when rational review returns a short fragment", async () => {
+    const longAnswer = [
+      "结论：泡泡玛特长期风险不能只看IP生命周期，还要看海外渠道和估值消化。",
+      "证据等级：中。",
+      "核心理由：公司增长来自IP矩阵、渠道扩张和海外市场，但这些变量需要持续验证。",
+      "反驳用户观点：如果只把风险归因于单个IP老化，会低估海外扩张、渠道库存和估值下修的影响。",
+      "我可能错在哪里：如果公司持续孵化新IP并保持高复购，生命周期风险会被分散。",
+      "下一步跟踪：关注海外收入占比、门店坪效、库存周转、毛利率和新品复购率。",
+    ].join("\n").repeat(6);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: longAnswer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ passed: false, revisedAnswer: "结论：反对该观点。证据等级：高。外部证据显示核心挑战" }) } }],
+            usage: { total_tokens: 30 },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "泡泡玛特最大的长期风险是IP生命周期吗？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    const doneLine = body.split("\n").find((line) => line.startsWith("data: ") && line.includes('"type":"done"'));
+    const done = doneLine ? JSON.parse(doneLine.slice(6)) as { message?: { content?: string } } : {};
+    expect(body).toContain("海外渠道和估值消化");
+    expect(done.message?.content).not.toContain("外部证据显示核心挑战");
   });
 });
 

@@ -327,8 +327,12 @@ async function maybeFetchExternalEvidence(
     return { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需外部搜索" }, toolCalls: [] };
   }
   const routerDecision = await askModelForSearchToolCalls({ env, message, mode, context, signal });
-  const routerCalls = routerDecision.toolCalls;
-  if (!routerCalls.length) return { triggered: false, items: [], exa: { used: false, count: 0, reason: routerDecision.reason || "模型判断无需外部搜索" }, routerUsage: routerDecision.usage, toolCalls: [] };
+  let routerCalls = routerDecision.toolCalls;
+  if (!routerCalls.length) {
+    const fallback = fallbackSearchToolCalls(message, mode, context, routerDecision.reason || "模型判断无需外部搜索");
+    routerCalls = fallback.toolCalls;
+    if (!routerCalls.length) return { triggered: false, items: [], exa: { used: false, count: 0, reason: fallback.reason }, routerUsage: routerDecision.usage, toolCalls: [] };
+  }
   const executed = await executeAssistantSearchToolCalls(env, routerCalls, signal);
   return {
     triggered: true,
@@ -618,7 +622,7 @@ export function shouldAutoUseResearchEvidence(message: string) {
 export function shouldAnswerDirectlyWithoutClarification(message: string) {
   if (!containsLikelyResearchSubject(message)) return false;
   if (/(能买吗|买不买|该不该|怎么操作|怎么样\??$|如何操作)/.test(message)) return false;
-  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|平稳现金流|高股息)/.test(message);
+  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|平稳现金流|高股息|投资价值)/.test(message);
 }
 
 export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
@@ -636,11 +640,14 @@ export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantM
 }
 
 function containsLikelyResearchSubject(message: string) {
-  return /[A-Z]{1,5}\b|\d{5,6}|茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|Nvidia|NVDA|苹果|Apple|光伏|白酒|航运|银行|高股息|机器人|AI算力|算力|港股互联网|互联网平台|低空经济|消费电子|地产|半导体|电网|储能|锂电|创新药|CXO|煤炭|水泥|钢铁/i.test(message);
+  const hasTickerLikeToken = (message.match(/\b[A-Z]{1,5}\b/g) ?? []).some((token) => !COMMON_FINANCIAL_ACRONYMS.has(token.toUpperCase()));
+  return hasTickerLikeToken || /\d{5,6}|茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|Nvidia|NVDA|苹果|Apple|中芯国际|港交所|紫金矿业|药明康德|泡泡玛特|中远海能|海底捞|拼多多|中国移动|中国电信|中国联通|光伏|白酒|航运|银行|高股息|机器人|AI算力|算力|港股互联网|互联网平台|低空经济|消费电子|地产|半导体|电网|储能|锂电|创新药|CXO|煤炭|水泥|钢铁|铜矿|固态电池|核电/i.test(message);
 }
 
+const COMMON_FINANCIAL_ACRONYMS = new Set(["ROE", "ROIC", "FCF", "DCF", "EPS", "PE", "PB", "PS", "PEG", "EBIT", "EBITDA", "CAPEX", "OPEX", "WACC", "CAGR", "TAM", "GDP", "CPI", "PMI", "IPO", "ETF", "REIT"]);
+
 function isHighValueResearchQuestion(message: string) {
-  return /(今年|业绩|预估|预测|净利润|营收|利润|增长|估值|现金流|财报|公告|技术|优势|人形机器人|大脑|小脑|协调|竞争|风险|订单|库存|价格|批价|行业|公司|股票|能买吗|持有|买入|卖出|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|产业链|AI|硬件|换机|智能驾驶)/.test(message);
+  return /(今年|业绩|预估|预测|净利润|营收|利润|增长|估值|现金流|财报|公告|技术|优势|人形机器人|大脑|小脑|协调|竞争|风险|订单|库存|价格|批价|行业|公司|股票|能买吗|持有|买入|卖出|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|产业链|投资价值|AI|硬件|换机|智能驾驶)/.test(message);
 }
 
 function isFollowUpResearchQuestion(message: string) {
@@ -722,10 +729,11 @@ function hostLabel(url: string) {
 
 export function shouldUseExaForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
   if (/Exa|exa|深搜|高质量来源|英文来源|全球来源/.test(message)) return { use: true, reason: "用户明确要求高质量外部检索" };
-  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外|今年|业绩|预估|预测|净利润|营收|利润|技术|优势|人形机器人|大脑|小脑|协调|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|AI|硬件|换机|智能驾驶|消费电子|光伏|白酒|银行|航运|机器人|低空经济)/.test(message);
+  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外|今年|业绩|预估|预测|净利润|营收|利润|技术|优势|人形机器人|大脑|小脑|协调|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|投资价值|AI|硬件|换机|智能驾驶|消费电子|光伏|白酒|银行|航运|机器人|低空经济)/.test(message);
   const evidenceWeak = /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary);
   if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
-  return { use: false, reason: highValue ? "站内证据已覆盖，先不用Exa" : "不是Exa高价值触发场景" };
+  if (highValue) return { use: true, reason: "研究问题高价值，补充Exa外部线索交叉验证" };
+  return { use: false, reason: "不是Exa高价值触发场景" };
 }
 
 const ASSISTANT_EXA_DAILY_AUTO_LIMIT = 80;
@@ -876,7 +884,7 @@ async function generateReviewedResearchAnswer(input: {
   const answer = extractMessageContent(answerData);
   const answerUsage = parseDeepSeekUsage(answerData.usage);
   const review = await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal });
-  const text = review.revisedAnswer || (isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(input.userMessage, input.mode) : answer);
+  const text = selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode);
   return {
     text,
     review: review.raw,
@@ -892,6 +900,15 @@ async function generateReviewedResearchAnswer(input: {
       elapsedMs: Date.now() - startedAt,
     },
   };
+}
+
+function selectReviewedResearchText(answer: string, revisedAnswer: string | undefined, userMessage: string, mode: AssistantMode) {
+  if (!revisedAnswer) return isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(userMessage, mode) : answer;
+  const originalUnsatisfactory = isUnsatisfactoryEvidenceOnlyAnswer(answer);
+  if (!originalUnsatisfactory && answer.length >= 1000 && revisedAnswer.length < Math.min(700, answer.length * 0.45)) {
+    return answer;
+  }
+  return revisedAnswer;
 }
 
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
