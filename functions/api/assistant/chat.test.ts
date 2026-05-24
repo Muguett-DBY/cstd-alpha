@@ -252,6 +252,73 @@ describe("assistant chat endpoint", () => {
     expect(kv.put).toHaveBeenCalled();
   });
 
+  test("lets DeepSeek tool calls choose external search without explicit search wording", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_search_1",
+                      type: "function",
+                      function: {
+                        name: "search_anysearch",
+                        arguments: JSON.stringify({ query: "贵州茅台 2026 全年净利润 业绩预测 批价 渠道", freshness: "month", reason: "需要最新外部预测和批价线索" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { total_tokens: 55, prompt_cache_hit_tokens: 20, prompt_cache_miss_tokens: 35 },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            results: [{ title: "贵州茅台业绩预测和批价跟踪", url: "https://example.com/maotai", description: "券商预测增速低个位数，批价仍需跟踪。", score: 0.9 }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：低个位数增长更合理。\n证据等级：中低。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台今年业绩预估？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        ANYSEARCH_API_KEY: "any-key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    const routerBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(routerBody.tools?.[0]?.function?.name).toBe("search_anysearch");
+    expect(routerBody.tool_choice).toBe("auto");
+    expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.anysearch.com/v1/search")).toBe(true);
+    expect(body).toContain("模型调用工具");
+    expect(body).toContain("AnySearch");
+  });
+
   test("classifies Exa high-value trigger conservatively", () => {
     expect(shouldUseExaForAssistant("宁德时代海外竞争和政策风险最新怎么看？", "target", "公司证据包：未命中")).toEqual(
       expect.objectContaining({ use: true }),

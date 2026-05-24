@@ -26,6 +26,26 @@ import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, ty
 import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
+type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa";
+type AssistantSearchToolCall = {
+  id: string;
+  name: AssistantSearchToolName;
+  query: string;
+  reason?: string;
+  freshness?: "day" | "week" | "month" | "year";
+  maxResults?: number;
+};
+
+type ExternalEvidenceResult = {
+  triggered: boolean;
+  query?: string;
+  items: AnySearchEvidence[];
+  exa: { used: boolean; count: number; reason?: string; dailyCount?: number };
+  routerUsage?: AssistantUsage;
+  toolCalls?: AssistantSearchToolCall[];
+  toolSummary?: string;
+};
+
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
   if (response) return response;
@@ -121,9 +141,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     toolName: "站内证据/外部搜索",
     status: externalEvidence.triggered ? "completed" : "skipped",
     summary: externalEvidence.triggered
-      ? `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。${externalEvidence.exa.used ? ` Exa ${externalEvidence.exa.count} 条。` : externalEvidence.exa.reason ? ` Exa未用：${externalEvidence.exa.reason}。` : ""}`
-      : "未触发外部搜索，仅使用站内证据和记忆。",
-    input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa } : undefined,
+      ? `${externalEvidence.toolSummary || `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。`}${externalEvidence.exa.used ? ` Exa ${externalEvidence.exa.count} 条。` : externalEvidence.exa.reason ? ` Exa未用：${externalEvidence.exa.reason}。` : ""}`
+      : `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`,
+    input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa, toolCalls: externalEvidence.toolCalls } : externalEvidence.toolCalls ? { toolCalls: externalEvidence.toolCalls } : undefined,
     output: externalEvidence.items.slice(0, 8),
     now,
   });
@@ -291,19 +311,233 @@ async function maybeFetchExternalEvidence(
   mode: AssistantMode,
   signal: AbortSignal,
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
-): Promise<{ triggered: boolean; query?: string; items: AnySearchEvidence[]; exa: { used: boolean; count: number; reason?: string; dailyCount?: number } }> {
-  const researchMode = mode !== "chat";
+): Promise<ExternalEvidenceResult> {
+  if (!env.ANYSEARCH_API_KEY?.trim() && !env.SEARXNG_ENDPOINTS?.trim() && !env.EXA_API_KEY?.trim()) {
+    return { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置外部搜索源" }, toolCalls: [] };
+  }
+  const routerDecision = await askModelForSearchToolCalls({ env, message, mode, context, signal });
+  const routerCalls = routerDecision.toolCalls;
+  if (!routerCalls.length) return { triggered: false, items: [], exa: { used: false, count: 0, reason: routerDecision.reason || "模型判断无需外部搜索" }, routerUsage: routerDecision.usage, toolCalls: [] };
+  const executed = await executeAssistantSearchToolCalls(env, routerCalls, signal);
+  return {
+    triggered: true,
+    query: routerCalls.map((call) => `${call.name}:${call.query}`).join(" | ").slice(0, 500),
+    items: executed.items.slice(0, 12),
+    exa: executed.exa,
+    routerUsage: routerDecision.usage,
+    toolCalls: routerCalls,
+    toolSummary: executed.summary,
+  };
+}
+
+async function askModelForSearchToolCalls(input: {
+  env: AssistantEnv;
+  message: string;
+  mode: AssistantMode;
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string };
+  signal: AbortSignal;
+}): Promise<{ toolCalls: AssistantSearchToolCall[]; reason?: string; usage?: AssistantUsage }> {
+  const startedAt = Date.now();
+  const messages = buildSearchToolRouterMessages(input.message, input.mode, input.context);
+  try {
+    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+      signal: input.signal,
+      body: JSON.stringify({
+        ...buildDeepSeekRequestBody({
+          model: ASSISTANT_MODEL,
+          messages,
+          maxTokens: 900,
+          reasoningEffort: ASSISTANT_REASONING_EFFORT,
+          temperature: 0,
+          responseFormat: null,
+          stream: false,
+          thinking: { type: "enabled" },
+        }),
+        tools: assistantSearchTools(),
+        tool_choice: "auto",
+      }),
+    });
+    if (!response.ok) return fallbackSearchToolCalls(input.message, input.mode, input.context, "工具路由模型调用失败");
+    const data = (await response.json()) as Record<string, unknown>;
+    const usage: AssistantUsage = {
+      model: ASSISTANT_MODEL,
+      reasoningEffort: ASSISTANT_REASONING_EFFORT,
+      ...parseDeepSeekUsage(data.usage),
+      elapsedMs: Date.now() - startedAt,
+    };
+    const toolCalls = normalizeSearchToolCalls(data);
+    const reason = extractMessageContent(data).slice(0, 180);
+    if (toolCalls.length) return { toolCalls, reason, usage };
+    return { toolCalls: fallbackSearchToolCalls(input.message, input.mode, input.context, reason || "模型未调用外部搜索工具").toolCalls, reason: reason || "模型未调用外部搜索工具", usage };
+  } catch {
+    return fallbackSearchToolCalls(input.message, input.mode, input.context, "工具路由异常");
+  }
+}
+
+function buildSearchToolRouterMessages(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }): DeepSeekMessage[] {
+  const system = withCacheProtocol(
+    [
+      "你是 CSTD Alpha 助手的工具路由器。你只决定是否调用外部搜索工具，不输出最终答案。",
+      "可用工具：search_anysearch 用于中文财经/公告/行业线索；search_searxng 用于免费元搜索补召回；search_exa 用于高价值、全球、英文、技术、产业链和站内证据不足的深度线索。",
+      "不要要求用户必须提到 Exa、联网或搜索。只要问题需要最新公开信息、站内证据不足、涉及公司/行业预测/技术/风险/估值/订单/价格/库存/政策，就应主动调用合适工具。",
+      "如果用户只是解释通用概念，且站内证据不是必要条件，可以不调用工具。",
+      "如果调用工具，优先用 1-3 个高质量查询；高价值研究可同时调用 AnySearch、SearXNG、Exa。Exa 不必总用，但站内证据不足且问题有投资价值时应使用。",
+      "工具 query 必须具体，包含公司/行业、年份或最新、关键指标，不要只复制用户原句。",
+    ].join("\n"),
+    "assistant-tool-router",
+  );
+  const payload = cacheStableUserContent({
+    kind: "assistant-tool-router-context",
+    stable: {
+      mode,
+      routingRules: ["external_search_when_latest_or_weak_evidence", "exa_for_high_value_global_or_technical_research", "no_tool_for_simple_concepts"],
+    },
+    volatile: {
+      userMessage: message,
+      siteEvidenceSummary: context.siteEvidenceSummary || "暂无站内证据。",
+      modeEvidenceSummary: context.modeEvidenceSummary || "当前模式没有命中结构化证据。",
+    },
+  });
+  return [
+    { role: "system", content: system },
+    { role: "user", content: payload },
+  ];
+}
+
+function assistantSearchTools() {
+  const parameters = {
+    type: "object",
+    required: ["query"],
+    properties: {
+      query: { type: "string", description: "具体搜索查询，包含研究对象、年份/最新口径和关键指标。" },
+      reason: { type: "string", description: "为什么需要这个搜索。" },
+      freshness: { type: "string", enum: ["day", "week", "month", "year"], description: "证据新鲜度，默认 month。" },
+      maxResults: { type: "number", description: "返回结果上限，1-10。" },
+    },
+  };
+  return [
+    { type: "function", function: { name: "search_anysearch", description: "中文财经、公司公告、行业变化、政策风险的高质量搜索。", parameters } },
+    { type: "function", function: { name: "search_searxng", description: "免费元搜索补充召回，用于发现新闻、网页和遗漏来源。", parameters } },
+    { type: "function", function: { name: "search_exa", description: "高价值外部检索，适合全球/英文/技术/产业链/深度研究线索。", parameters } },
+  ];
+}
+
+function normalizeSearchToolCalls(data: Record<string, unknown>): AssistantSearchToolCall[] {
+  const choices = Array.isArray(data.choices) ? data.choices : [];
+  const first = choices[0] as Record<string, unknown> | undefined;
+  const message = first?.message as Record<string, unknown> | undefined;
+  const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  return toolCalls.map(normalizeSearchToolCall).filter((call): call is AssistantSearchToolCall => Boolean(call)).slice(0, 5);
+}
+
+function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null {
+  if (!isRecord(value)) return null;
+  const fn = isRecord(value.function) ? value.function : {};
+  const name = typeof fn.name === "string" ? fn.name : "";
+  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa") return null;
+  const args = parseToolArguments(fn.arguments);
+  const query = stringOrFallback(args.query, "").slice(0, 220);
+  if (!query) return null;
+  const freshness = args.freshness === "day" || args.freshness === "week" || args.freshness === "month" || args.freshness === "year" ? args.freshness : "month";
+  const maxResults = typeof args.maxResults === "number" && Number.isFinite(args.maxResults) ? Math.min(Math.max(Math.round(args.maxResults), 1), 10) : undefined;
+  return {
+    id: stringOrFallback(value.id, crypto.randomUUID()),
+    name,
+    query,
+    reason: stringOrFallback(args.reason, "").slice(0, 180) || undefined,
+    freshness,
+    maxResults,
+  };
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }, reason: string): { toolCalls: AssistantSearchToolCall[]; reason: string } {
   const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
-  const shouldSearch = shouldTriggerExternalEvidence(message, mode, evidenceText);
-  if (!researchMode && !shouldSearch) return { triggered: false, items: [], exa: { used: false, count: 0 } };
-  const query = message.slice(0, 160);
-  const queries = buildAssistantEvidenceQueries(message, mode);
-  const [anysearch, searxng] = await Promise.all([
-    env.ANYSEARCH_API_KEY?.trim() ? fetchAnySearchEvidence({ queries, apiKey: env.ANYSEARCH_API_KEY, signal }) : Promise.resolve([]),
-    env.SEARXNG_ENDPOINTS?.trim() ? fetchSearxngEvidence({ queries, endpoints: env.SEARXNG_ENDPOINTS, signal }) : Promise.resolve([]),
+  if (!shouldTriggerExternalEvidence(message, mode, evidenceText)) return { toolCalls: [], reason };
+  const queries = buildAssistantEvidenceQueries(message, mode).slice(0, 2);
+  const calls: AssistantSearchToolCall[] = queries.map((query, index) => ({
+    id: `fallback-${index}`,
+    name: "search_anysearch",
+    query: query.query,
+    freshness: query.freshness ?? "month",
+    maxResults: query.maxResults,
+    reason: "规则兜底：高价值投研问题或站内证据不足。",
+  }));
+  if (shouldUseExaForAssistant(message, mode, evidenceText).use) {
+    calls.push({
+      id: "fallback-exa",
+      name: "search_exa",
+      query: `${message.slice(0, 160)} company industry financial official source risk`,
+      freshness: "month",
+      maxResults: 10,
+      reason: "规则兜底：高价值研究且站内证据不足。",
+    });
+  }
+  return { toolCalls: calls.slice(0, 4), reason };
+}
+
+async function executeAssistantSearchToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal) {
+  const anysearchQueries = toolCalls.filter((call) => call.name === "search_anysearch").map(toolCallToAnySearchQuery);
+  const searxngQueries = toolCalls.filter((call) => call.name === "search_searxng").map(toolCallToAnySearchQuery);
+  const exaCalls = toolCalls.filter((call) => call.name === "search_exa");
+  const [anysearch, searxng, exaDecision] = await Promise.all([
+    anysearchQueries.length && env.ANYSEARCH_API_KEY?.trim() ? fetchAnySearchEvidence({ queries: anysearchQueries, apiKey: env.ANYSEARCH_API_KEY, signal }) : Promise.resolve([]),
+    searxngQueries.length && env.SEARXNG_ENDPOINTS?.trim() ? fetchSearxngEvidence({ queries: searxngQueries, endpoints: env.SEARXNG_ENDPOINTS, signal }) : Promise.resolve([]),
+    executeExaToolCalls(env, exaCalls, signal),
   ]);
-  const exaDecision = await maybeUseExa(env, message, mode, context, signal);
-  return { triggered: true, query, items: [...anysearch, ...searxng, ...exaDecision.items].slice(0, 12), exa: exaDecision.exa };
+  const items = [...anysearch, ...searxng, ...exaDecision.items];
+  const summary = `模型调用工具：${toolCalls.map((call) => call.name).join("、")}；AnySearch ${anysearch.length} 条，SearXNG ${searxng.length} 条，Exa ${exaDecision.exa.count} 条。`;
+  return { items: dedupeExternalEvidence(items), exa: exaDecision.exa, summary };
+}
+
+function toolCallToAnySearchQuery(call: AssistantSearchToolCall): AnySearchQuery {
+  return {
+    query: call.query,
+    topic: "assistant",
+    sourceType: "news",
+    maxResults: call.maxResults ?? 4,
+    domains: ["finance", "business"],
+    contentTypes: ["news", "web"],
+    freshness: call.freshness ?? "month",
+  };
+}
+
+async function executeExaToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal) {
+  if (!toolCalls.length) return { items: [], exa: { used: false, count: 0 } };
+  if (!env.EXA_API_KEY?.trim()) return { items: [], exa: { used: false, count: 0, reason: "未配置EXA_API_KEY" } };
+  if (!env.REPORT_CACHE) return { items: [], exa: { used: false, count: 0, reason: "缺少额度记录KV" } };
+  const quota = await reserveExaQuota(env.REPORT_CACHE);
+  if (!quota.allowed) return { items: [], exa: { used: false, count: 0, reason: "达到今日Exa自动调用上限", dailyCount: quota.count } };
+  const items = await fetchExaEvidence({
+    apiKey: env.EXA_API_KEY,
+    signal,
+    queries: toolCalls.map((call) => ({ ...toolCallToAnySearchQuery(call), maxResults: call.maxResults ?? 10 })),
+  });
+  return { items, exa: { used: true, count: items.length, dailyCount: quota.count } };
+}
+
+function dedupeExternalEvidence(items: AnySearchEvidence[]) {
+  const seen = new Set<string>();
+  const result: AnySearchEvidence[] = [];
+  for (const item of items) {
+    const key = item.url || `${item.source}:${item.title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
 }
 
 export function buildAssistantEvidenceQueries(message: string, mode: AssistantMode): AnySearchQuery[] {
@@ -414,28 +648,6 @@ function hostLabel(url: string) {
   } catch {
     return "unknown";
   }
-}
-
-async function maybeUseExa(
-  env: AssistantEnv,
-  message: string,
-  mode: AssistantMode,
-  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
-  signal: AbortSignal,
-): Promise<{ items: AnySearchEvidence[]; exa: { used: boolean; count: number; reason?: string; dailyCount?: number } }> {
-  if (!env.EXA_API_KEY?.trim()) return { items: [], exa: { used: false, count: 0, reason: "未配置EXA_API_KEY" } };
-  if (!env.REPORT_CACHE) return { items: [], exa: { used: false, count: 0, reason: "缺少额度记录KV" } };
-  const decision = shouldUseExaForAssistant(message, mode, `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`);
-  if (!decision.use) return { items: [], exa: { used: false, count: 0, reason: decision.reason } };
-  const quota = await reserveExaQuota(env.REPORT_CACHE);
-  if (!quota.allowed) return { items: [], exa: { used: false, count: 0, reason: "达到今日Exa自动调用上限", dailyCount: quota.count } };
-  const query = `${message.slice(0, 160)} ${mode === "industry" ? "industry data official source financial risk" : "company financial report official source risk valuation"}`;
-  const items = await fetchExaEvidence({
-    apiKey: env.EXA_API_KEY,
-    signal,
-    queries: [{ query, topic: "assistant", sourceType: "news", maxResults: 10, contentTypes: ["news", "web"], freshness: "month" }],
-  });
-  return { items, exa: { used: true, count: items.length, dailyCount: quota.count } };
 }
 
 export function shouldUseExaForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
