@@ -177,7 +177,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       mode: evidenceMode,
       signal: request.signal,
     });
-    const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message);
+    const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence);
     if (!guardedText.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
     const blocks = extractAssistantBlocks(guardedText, userMessage);
     const encoder = new TextEncoder();
@@ -260,7 +260,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             }
           }
         }
-        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message);
+        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence);
         if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
@@ -658,8 +658,11 @@ function guardForecastLanguage(text: string, message: string) {
   return `口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。\n\n${guarded}`;
 }
 
-function guardAssistantOutputLanguage(text: string, message: string) {
-  return guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message)));
+function guardAssistantOutputLanguage(text: string, message: string, externalEvidence?: ExternalEvidenceResult) {
+  return guardExternalEvidenceConsistency(
+    guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message))),
+    externalEvidence,
+  );
 }
 
 function guardStaleHistoryLanguage(text: string) {
@@ -676,8 +679,24 @@ function guardUnauditedStrongFactLanguage(text: string) {
     .replace(/上市以来首次业绩双降/g, "业绩承压待核验线索")
     .replace(/首次业绩双降/g, "业绩承压待核验线索")
     .replace(/业绩双降/g, "业绩承压待核验线索")
+    .replace(/营收[和与、及]?利润首次双降/g, "营收和利润承压待核验线索")
+    .replace(/营收[和与、及]?利润双降/g, "营收和利润承压待核验线索")
+    .replace(/收入[和与、及]?利润首次双降/g, "收入和利润承压待核验线索")
+    .replace(/收入[和与、及]?利润双降/g, "收入和利润承压待核验线索")
+    .replace(/利润[和与、及]?收入首次双降/g, "利润和收入承压待核验线索")
+    .replace(/利润[和与、及]?收入双降/g, "利润和收入承压待核验线索")
     .replace(/营收利润双降/g, "营收和利润承压待核验线索")
     .replace(/首次年度亏损/g, "年度亏损待核验线索");
+}
+
+function guardExternalEvidenceConsistency(text: string, externalEvidence?: ExternalEvidenceResult) {
+  if (!externalEvidence?.exa.used || externalEvidence.exa.count <= 0) return text;
+  return text
+    .replace(/Exa无可用结果/g, "Exa返回了外部线索，但硬证据强度有限")
+    .replace(/Exa未返回可用结果/g, "Exa返回了外部线索，但硬证据强度有限")
+    .replace(/本轮检索未返回任何([^。\n]*)条目/g, "本轮检索返回了外部线索，但$1条目的硬证据强度有限")
+    .replace(/本轮检索未返回任何([^。\n]*)相关条目/g, "本轮检索返回了相关外部线索，但硬证据强度有限")
+    .replace(/外部搜索（Exa）：本轮检索未返回任何([^。\n]*)/g, "外部搜索（Exa）：本轮返回了外部线索，但$1的硬证据强度有限");
 }
 
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {

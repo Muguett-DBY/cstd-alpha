@@ -221,8 +221,29 @@ describe("assistant chat endpoint", () => {
   test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_exa_1",
+                      type: "function",
+                      function: { name: "search_exa", arguments: JSON.stringify({ query: "CATL overseas policy risk", maxResults: 5 }) },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
       .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "CATL overseas risk", url: "https://example.com/catl", highlights: ["海外竞争和政策风险。"] }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：观察。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：Exa无可用结果，先观察。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const kv = mockKv();
@@ -248,6 +269,8 @@ describe("assistant chat endpoint", () => {
 
     const body = await response.text();
     expect(body).toContain("done");
+    expect(body).toContain("Exa返回了外部线索");
+    expect(body).not.toContain("Exa无可用结果");
     expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.exa.ai/search")).toBe(true);
     expect(kv.put).toHaveBeenCalled();
   });
@@ -501,7 +524,7 @@ describe("assistant chat endpoint", () => {
   test("downgrades unaudited strong fact wording", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：上市25年首次业绩双降，风险明显。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：上市25年首次业绩双降，且2025年营收利润首次双降，风险明显。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -524,7 +547,9 @@ describe("assistant chat endpoint", () => {
 
     const body = await response.text();
     expect(body).toContain("业绩承压待核验线索");
+    expect(body).toContain("营收和利润承压待核验线索");
     expect(body).not.toContain("上市25年首次业绩双降");
+    expect(body).not.toContain("营收利润首次双降");
   });
 });
 
