@@ -128,10 +128,45 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.response_format).toEqual({ type: "json_object" });
   });
 
+  test("forces a clarification choice for ambiguous buy/sell action questions even if the model under-asks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }],
+          usage: { prompt_cache_hit_tokens: 30, prompt_cache_miss_tokens: 10, total_tokens: 80 },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代能买吗？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body).toContain("choice_request");
+    expect(body).toContain("持有周期");
+    expect(body).not.toContain("delta");
+  });
+
   test("target research mode uses non-stream answer and rational review before returning", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：可以买，逻辑很强。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(
@@ -157,7 +192,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
-        body: JSON.stringify({ message: "宁德时代能买吗？", mode: "target" }),
+        body: JSON.stringify({ message: "宁德时代长期投资价值怎么判断？", mode: "target" }),
       }),
       env: {
         AUTH_SECRET: "secret",
@@ -171,13 +206,13 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(body).toContain("当前只能列为观察");
     expect(body).toContain("done");
-    const answerBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const answerBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(answerBody.stream).toBe(false);
     expect(JSON.stringify(answerBody.messages)).toContain("研究模式：标的研究");
-    const reviewBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    const reviewBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
   });
 

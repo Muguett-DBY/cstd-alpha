@@ -110,13 +110,15 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           recentMessages: promptRecentMessages,
           signal: request.signal,
         });
-  if (clarificationDecision.request) {
+  const forcedClarification = clarificationDecision.request ? null : buildForcedClarificationRequest(researchContext.message);
+  const choiceRequest = clarificationDecision.request ?? forcedClarification;
+  if (choiceRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         enqueue(controller, { type: "start", threadId: thread.id, messageId: userStoredMessage.id });
         if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
-        enqueue(controller, { type: "choice_request", request: clarificationDecision.request! });
+        enqueue(controller, { type: "choice_request", request: choiceRequest });
         if (clarificationDecision.usage) {
           await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: userStoredMessage.id, usage: clarificationDecision.usage });
           enqueue(controller, { type: "usage", usage: clarificationDecision.usage });
@@ -1217,6 +1219,23 @@ function parseClarificationDecision(content: string): AssistantChoiceRequest | n
   return normalizeChoiceRequest(data.request);
 }
 
+function buildForcedClarificationRequest(message: string): AssistantChoiceRequest | null {
+  if (!/(能买吗|买不买|该不该买|能不能买|可以买|要不要买|该不该卖|要不要卖|能不能卖|卖不卖)/.test(message)) return null;
+  if (/(长期|短期|三年|五年|十年|持有|仓位|左侧|右侧|风险偏好|低风险|高风险|分批|定投|交易|波段|估值区间|安全边际)/.test(message)) return null;
+  return {
+    id: `forced-action-${Math.abs(hashString(message)).toString(36)}`,
+    title: "先确认买卖口径",
+    question: "这个问题缺少持有周期和动作目标，你希望我按哪种口径判断？",
+    reason: "买卖动作如果不先确认时间维度、仓位状态和风险偏好，直接回答容易把长期配置、短线交易和已有持仓混在一起。",
+    customPlaceholder: "也可以自己补充：已有仓位、目标持有多久、能接受多大回撤、想加仓还是新买。",
+    options: [
+      { id: "new-buy-long", label: "新买长期", description: "按 3 年以上持有，先看质量、估值安全边际和反证。", recommended: true },
+      { id: "holding-review", label: "已有持仓", description: "按是否继续持有、是否减仓和跟踪风险来判断。" },
+      { id: "short-catalyst", label: "短线机会", description: "按财报、政策、资金和情绪催化判断交易性机会。" },
+    ],
+  };
+}
+
 function normalizeChoiceRequest(value: unknown): AssistantChoiceRequest | null {
   if (!isRecord(value)) return null;
   const options = Array.isArray(value.options) ? value.options.map(normalizeChoiceOption).filter(isChoiceOption).slice(0, 3) : [];
@@ -1234,6 +1253,15 @@ function normalizeChoiceRequest(value: unknown): AssistantChoiceRequest | null {
     customPlaceholder: stringOrFallback(value.customPlaceholder, "也可以写你的具体补充。").slice(0, 120),
     options: normalizedOptions,
   };
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return hash;
 }
 
 function normalizeChoiceOption(value: unknown): AssistantChoiceOption | null {
