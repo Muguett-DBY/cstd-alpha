@@ -1,6 +1,6 @@
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "./deepseek-cache";
 import { readSessionCookie, type UserSession } from "./auth";
-import type { AssistantMemory, AssistantMemoryCandidate, AssistantMessage, AssistantUsage } from "../../src/shared/assistant";
+import type { AssistantMemory, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantUsage } from "../../src/shared/assistant";
 
 export type AssistantEnv = {
   AUTH_SECRET: string;
@@ -409,12 +409,17 @@ export function buildAssistantPromptMessages(input: {
   evidenceSummary: string;
   recentMessages: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
   userMessage: string;
+  mode?: AssistantMode;
 }): DeepSeekMessage[] {
+  const mode = input.mode ?? "chat";
+  const modeLabel = mode === "target" ? "标的研究" : mode === "industry" ? "行业研究" : "普通聊天";
   const system = withCacheProtocol(
     [
       ASSISTANT_CACHE_ANCHOR_SENTENCE.repeat(ASSISTANT_CACHE_ANCHOR_REPEAT),
       "你是 CSTD Alpha 的私人投研助手，只服务 admin。",
       "你不是普通聊天机器人。回答投资问题时默认结构必须是：结论、证据、反证/我可能错在哪里、后续跟踪。",
+      "研究模式：标的研究或行业研究时，必须绝对理性，结论必须是支持、反对、观察、回避之一，禁止模棱两可和迎合用户。",
+      "研究模式输出结构固定为：结论、证据等级、核心理由、反驳用户观点、我可能错在哪里、下一步跟踪。",
       "所有公司和行业判断优先使用站内证据；证据不足必须明说，不能编造财报、价格、订单、政策或来源。",
       "Memory 只用于理解用户长期偏好和表达方式，不能替代事实证据。",
       "如果问题涉及投资动作，必须保持审慎，区分事实、推断和不确定性。",
@@ -427,6 +432,7 @@ export function buildAssistantPromptMessages(input: {
     kind: "assistant-chat-context",
     stable: {
       outputRules: ["先结论后证据", "必须给反证条件", "证据不足时明确标注", "不修改站内业务数据"],
+      assistantMode: modeLabel,
       confirmedMemories: input.memories.map((memory) => ({ category: memory.category, content: memory.content })),
       threadSummary: input.threadSummary || "暂无长期摘要。",
       siteEvidenceSummary: input.evidenceSummary,

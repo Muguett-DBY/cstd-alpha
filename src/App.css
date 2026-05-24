@@ -1166,6 +1166,41 @@ button:not(:disabled):active,
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 248, 0.92));
 }
 
+.assistant-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 72%, white);
+}
+
+.assistant-mode-switch button {
+  display: grid;
+  gap: 3px;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+  padding: 9px 10px;
+}
+
+.assistant-mode-switch button.active {
+  border-color: color-mix(in srgb, var(--teal) 55%, var(--line));
+  background: color-mix(in srgb, var(--teal) 10%, white);
+}
+
+.assistant-mode-switch span {
+  font-weight: 850;
+}
+
+.assistant-mode-switch small {
+  color: var(--muted);
+  line-height: 1.25;
+}
+
 .assistant-chat-header h2 {
   margin: 2px 0 0;
   font-size: 28px;
@@ -4683,6 +4718,10 @@ button:not(:disabled):active,
 
   .assistant-clarification-option {
     min-height: 0;
+  }
+
+  .assistant-mode-switch {
+    grid-template-columns: 1fr;
   }
 
   .assistant-composer {

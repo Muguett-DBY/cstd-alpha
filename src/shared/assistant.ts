@@ -88,9 +88,12 @@ export type AssistantThread = {
   latestUsage?: AssistantUsage;
 };
 
+export type AssistantMode = "chat" | "target" | "industry";
+
 export type AssistantChatRequest = {
   message: string;
   threadId?: string;
+  mode?: AssistantMode;
 };
 
 export type AssistantChatStreamEvent =

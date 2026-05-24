@@ -3,7 +3,7 @@ import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
-import type { AssistantChatStreamEvent, AssistantMessage, AssistantThread } from "./shared/assistant";
+import type { AssistantChatStreamEvent, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -313,12 +313,18 @@ export async function fetchAssistantThread(): Promise<AssistantThread> {
   return data.thread;
 }
 
-export async function sendAssistantMessage(message: string, onEvent?: (event: AssistantChatStreamEvent) => void): Promise<AssistantMessage | null> {
+export async function sendAssistantMessage(
+  message: string,
+  modeOrEvent?: AssistantMode | ((event: AssistantChatStreamEvent) => void),
+  onEventArg?: (event: AssistantChatStreamEvent) => void,
+): Promise<AssistantMessage | null> {
+  const mode = typeof modeOrEvent === "string" ? modeOrEvent : "chat";
+  const onEvent = typeof modeOrEvent === "function" ? modeOrEvent : onEventArg;
   const response = await fetch("/api/assistant/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, mode }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "助手生成失败。");
   let finalMessage: AssistantMessage | undefined;

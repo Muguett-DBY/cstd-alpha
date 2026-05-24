@@ -144,13 +144,13 @@ describe("API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     const events: string[] = [];
 
-    const result = await sendAssistantMessage("宁德时代怎么看？", (event) => events.push(event.type));
+    const result = await sendAssistantMessage("宁德时代怎么看？", "target", (event) => events.push(event.type));
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/assistant/chat",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ message: "宁德时代怎么看？" }),
+        body: JSON.stringify({ message: "宁德时代怎么看？", mode: "target" }),
       }),
     );
     expect(events).toEqual(["start", "delta", "delta", "usage", "done"]);

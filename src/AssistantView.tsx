@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   confirmAssistantMemoryCandidate,
   fetchAssistantThread,
+  rejectAssistantMemoryCandidate,
   sendAssistantMessage,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { mergeAssistantDelta } from "./assistant-state";
-import type { AssistantChatStreamEvent, AssistantMessage, AssistantThread } from "./shared/assistant";
+import type { AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
 
@@ -16,7 +17,9 @@ export function AssistantView() {
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<AssistantMode>("chat");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
+  const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastSentMessageRef = useRef("");
 
@@ -75,7 +78,7 @@ export function AssistantView() {
           },
     );
     try {
-      const final = await sendAssistantMessage(message, handleStreamEvent);
+      const final = await sendAssistantMessage(message, mode, handleStreamEvent);
       if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
       setPhase("ready");
@@ -110,7 +113,7 @@ export function AssistantView() {
       });
     }
     if (event.type === "memory_candidate") {
-      void confirmAssistantMemoryCandidate(event.candidate.id).catch(() => undefined);
+      setPendingMemory(event.candidate);
     }
   }
 
@@ -126,6 +129,14 @@ export function AssistantView() {
           </div>
           <span>DeepSeek Flash High</span>
         </header>
+          <div className="assistant-mode-switch" aria-label="助手模式">
+            {assistantModes.map((item) => (
+              <button key={item.id} type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)}>
+                <span>{item.label}</span>
+                <small>{item.description}</small>
+              </button>
+            ))}
+          </div>
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => (
@@ -146,7 +157,7 @@ export function AssistantView() {
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="问一个投资问题，或说“记住：以后分析白酒先看批价和库存”。"
+              placeholder={assistantModePlaceholder[mode]}
               rows={3}
               disabled={phase === "streaming"}
             />
@@ -168,9 +179,36 @@ export function AssistantView() {
           onSubmit={() => void submitClarification()}
         />
       ) : null}
+      {pendingMemory ? (
+        <MemoryCandidateDialog
+          candidate={pendingMemory}
+          onConfirm={() => {
+            const id = pendingMemory.id;
+            setPendingMemory(null);
+            void confirmAssistantMemoryCandidate(id).then(() => reloadThread()).catch((err) => setError(err instanceof Error ? err.message : "记忆写入失败。"));
+          }}
+          onReject={() => {
+            const id = pendingMemory.id;
+            setPendingMemory(null);
+            void rejectAssistantMemoryCandidate(id).catch(() => undefined);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
+
+const assistantModes: Array<{ id: AssistantMode; label: string; description: string }> = [
+  { id: "chat", label: "普通", description: "日常投研问答" },
+  { id: "target", label: "标的研究", description: "公司/代码 + 问题" },
+  { id: "industry", label: "行业研究", description: "行业/主题 + 问题" },
+];
+
+const assistantModePlaceholder: Record<AssistantMode, string> = {
+  chat: "问一个投资问题，或说“记住：以后分析白酒先看批价和库存”。",
+  target: "输入标的 + 问题，例如：宁德时代 长期还能不能持有？",
+  industry: "输入行业/主题 + 问题，例如：光伏现在是不是接近出清？",
+};
 
 function ClarificationDialog({
   request,
@@ -223,6 +261,25 @@ function ClarificationOptionButton({ option, selected, onSelect }: { option: Ass
       {option.recommended ? <em>推荐</em> : null}
       <small>{option.description}</small>
     </button>
+  );
+}
+
+function MemoryCandidateDialog({ candidate, onConfirm, onReject }: { candidate: AssistantMemoryCandidate; onConfirm: () => void; onReject: () => void }) {
+  return (
+    <div className="assistant-clarification-backdrop" role="presentation">
+      <section className="assistant-clarification-dialog assistant-memory-dialog" role="dialog" aria-modal="true" aria-labelledby="assistant-memory-title">
+        <div>
+          <p className="eyebrow">记忆候选</p>
+          <h3 id="assistant-memory-title">是否写入长期记忆？</h3>
+          <p>{candidate.content}</p>
+          <small>{candidate.reason}</small>
+        </div>
+        <footer>
+          <button type="button" className="ghost-button" onClick={onReject}>不写入</button>
+          <button type="button" onClick={onConfirm}>确认写入</button>
+        </footer>
+      </section>
+    </div>
   );
 }
 

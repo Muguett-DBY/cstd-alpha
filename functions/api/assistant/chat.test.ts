@@ -127,6 +127,60 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.stream).toBe(false);
     expect(requestBody.response_format).toEqual({ type: "json_object" });
   });
+
+  test("target research mode uses non-stream answer and rational review before returning", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：可以买，逻辑很强。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    passed: false,
+                    revisedAnswer: "结论：当前只能列为观察，不能直接说可以买。\n证据等级：弱。\n反驳用户观点：如果用户认为只因龙头地位就能买，这个逻辑不充分。\n我可能错在哪里：若后续财报和估值证据同时改善，可以上调判断。",
+                  }),
+                },
+              },
+            ],
+            usage: { total_tokens: 80 },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代能买吗？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(body).toContain("当前只能列为观察");
+    expect(body).toContain("done");
+    const answerBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(answerBody.stream).toBe(false);
+    expect(JSON.stringify(answerBody.messages)).toContain("研究模式：标的研究");
+    const reviewBody = JSON.parse(fetchMock.mock.calls[3][1].body);
+    expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
+  });
 });
 
 function mockDb({ role }: { role: string }) {
