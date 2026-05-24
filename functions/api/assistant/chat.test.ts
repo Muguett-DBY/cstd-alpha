@@ -721,6 +721,42 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("过度乐观");
   });
 
+  test("turns evidence-gap supply-chain realization questions into a concrete ranking", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ articles: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("<feed></feed>", { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "证据不足，无法判断。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "人形机器人产业链哪些环节最可能先兑现业绩？不要只讲概念。", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("兑现顺序");
+    expect(body).toContain("执行器");
+    expect(body).toContain("精密零部件");
+    expect(body).toContain("整机");
+    expect(body).not.toContain("不能只停在“资料不够”");
+  });
+
   test("falls back to search tools when router under-selects a clear research question", async () => {
     const fetchMock = vi
       .fn()
