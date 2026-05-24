@@ -97,7 +97,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const researchContext = resolveAssistantResearchContext(userMessage, recentMessages);
   const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
   const simpleGeneralChat = shouldTreatAsSimpleGeneralChat(researchContext.message, evidenceMode);
-  const promptRecentMessages = simpleGeneralChat ? [] : recentMessages;
+  const promptRecentMessages = simpleGeneralChat || !shouldIncludeRecentAssistantContext(researchContext.message) ? [] : recentMessages.slice(-8);
   const answerDirectly = shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
   const clarificationDecision =
     answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
@@ -107,7 +107,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           userMessage,
           memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
           threadSummary: thread.summary,
-          recentMessages: promptRecentMessages.slice(-8),
+          recentMessages: promptRecentMessages,
           signal: request.signal,
         });
   if (clarificationDecision.request) {
@@ -654,6 +654,11 @@ function isFollowUpResearchQuestion(message: string) {
   return /(根据现有|继续|那|这个|它|该公司|这家公司|上述|前面|进行预测|预测|预估|怎么看|大脑|小脑|协调)/.test(message);
 }
 
+export function shouldIncludeRecentAssistantContext(message: string) {
+  if (/(继续|接着|刚才|上次|之前|前面|上述|上面|这个|这些|它|该公司|这家公司|前一个|上一条|你刚才|你上面)/.test(message)) return true;
+  return !containsLikelyResearchSubject(message) && isFollowUpResearchQuestion(message);
+}
+
 function guardForecastLanguage(text: string, message: string) {
   if (shouldTreatAsSimpleGeneralChat(message, "chat")) return text;
   if (!/(业绩|预估|预测|净利润|营收|利润)/.test(message) || !text.trim()) return text;
@@ -686,8 +691,13 @@ function guardStaleHistoryLanguage(text: string) {
   return text
     .replace(/当前无新增证据[，,、\s]*/g, "")
     .replace(/本次无新增站内证据或外部检索信息修正此前判断[，,。；;\s]*/g, "")
+    .replace(/本轮无新增[^。\n]*(站内|外部|证据|检索)[^。\n]*[。；;]?\s*/g, "")
     .replace(/本次无新增站内证据[，,、\s]*/g, "")
     .replace(/维持此前测算口径[，,、\s]*/g, "本轮测算口径：")
+    .replace(/与上次(?:判断|回答)?完全一致[，,。；;\s]*/g, "")
+    .replace(/口径与上次完全一致[，,。；;\s]*/g, "")
+    .replace(/与前次口径完全相同/g, "本轮口径")
+    .replace(/与上次回答完全一致/g, "本轮判断")
     .replace(/此前结论保持不变[——\-:：\s]*/g, "本轮判断：")
     .replace(/维持此前结论[——\-:：\s]*/g, "本轮判断：")
     .replace(/此前结论/g, "本轮判断");

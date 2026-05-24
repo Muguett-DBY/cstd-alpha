@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -541,6 +541,13 @@ describe("assistant chat endpoint", () => {
     expect(shouldTriggerExternalEvidence("茅台今年业绩预估？", "target", "公司证据包：未命中")).toBe(true);
     expect(shouldTriggerExternalEvidence("优必选人形机器人技术优势是什么？", "target", "站内证据不足")).toBe(true);
     expect(shouldTriggerExternalEvidence("解释自由现金流", "chat", "站内证据充足")).toBe(false);
+  });
+
+  test("uses recent chat context only for explicit follow-up wording", () => {
+    expect(shouldIncludeRecentAssistantContext("根据现有信息和数据预测贵州茅台今年净利润区间。")).toBe(false);
+    expect(shouldIncludeRecentAssistantContext("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(false);
+    expect(shouldIncludeRecentAssistantContext("那它的反证条件是什么？")).toBe(true);
+    expect(shouldIncludeRecentAssistantContext("继续上面那个问题，给我表格。")).toBe(true);
   });
 
   test("does not route simple concept explanations through external tools", () => {
