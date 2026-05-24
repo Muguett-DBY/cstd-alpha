@@ -21,7 +21,8 @@ import {
   type AssistantEnv,
 } from "../../_shared/assistant-db";
 import { fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence } from "../../_shared/anysearch";
-import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantUsage } from "../../../src/shared/assistant";
+import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
+import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantUsage } from "../../../src/shared/assistant";
 
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
@@ -62,6 +63,41 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       content: message.content,
       createdAt: message.createdAt,
     }));
+  const clarificationDecision = await askModelForClarification({
+    env,
+    userMessage,
+    memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
+    threadSummary: thread.summary,
+    recentMessages: recentMessages.slice(-8),
+    signal: request.signal,
+  });
+  if (clarificationDecision.request) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        enqueue(controller, { type: "start", threadId: thread.id, messageId: userStoredMessage.id });
+        if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
+        enqueue(controller, { type: "choice_request", request: clarificationDecision.request! });
+        if (clarificationDecision.usage) {
+          await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: userStoredMessage.id, usage: clarificationDecision.usage });
+          enqueue(controller, { type: "usage", usage: clarificationDecision.usage });
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        "x-accel-buffering": "no",
+      },
+    });
+
+    function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: AssistantChatStreamEvent) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    }
+  }
+
   const [siteEvidenceSummary, externalEvidence] = await Promise.all([
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
     maybeFetchExternalEvidence(env, userMessage, request.signal),
@@ -217,4 +253,153 @@ function extractDeltaText(data: Record<string, unknown>) {
   const delta = first?.delta as Record<string, unknown> | undefined;
   const message = first?.message as Record<string, unknown> | undefined;
   return typeof delta?.content === "string" ? delta.content : typeof message?.content === "string" ? message.content : "";
+}
+
+async function askModelForClarification(input: {
+  env: AssistantEnv;
+  userMessage: string;
+  memories: Array<{ category: string; content: string }>;
+  threadSummary: string;
+  recentMessages: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
+  signal: AbortSignal;
+}): Promise<{ request: AssistantChoiceRequest | null; usage?: AssistantUsage }> {
+  const startedAt = Date.now();
+  const messages = buildClarificationDecisionMessages(input);
+  try {
+    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+      signal: input.signal,
+      body: JSON.stringify(
+        buildDeepSeekRequestBody({
+          model: ASSISTANT_MODEL,
+          messages,
+          maxTokens: 850,
+          reasoningEffort: ASSISTANT_REASONING_EFFORT,
+          temperature: 0,
+          responseFormat: { type: "json_object" },
+          stream: false,
+          thinking: { type: "enabled" },
+        }),
+      ),
+    });
+    if (!response.ok) return { request: null };
+    const data = (await response.json()) as Record<string, unknown>;
+    const content = extractMessageContent(data);
+    const parsed = parseClarificationDecision(content);
+    const usage: AssistantUsage = {
+      model: ASSISTANT_MODEL,
+      reasoningEffort: ASSISTANT_REASONING_EFFORT,
+      ...parseDeepSeekUsage(data.usage),
+      elapsedMs: Date.now() - startedAt,
+    };
+    return { request: parsed, usage };
+  } catch {
+    return { request: null };
+  }
+}
+
+function buildClarificationDecisionMessages(input: {
+  userMessage: string;
+  memories: Array<{ category: string; content: string }>;
+  threadSummary: string;
+  recentMessages: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
+}): DeepSeekMessage[] {
+  const system = withCacheProtocol(
+    [
+      "你是 CSTD Alpha 助手的澄清判定器，只输出 JSON。",
+      "目标：判断当前用户问题是否信息不足到不应直接回答。",
+      "如果问题已足够清楚，或用户是在明确教你长期规则/偏好，输出 {\"needClarification\":false}。",
+      "只有在直接回答会明显误导时才澄清：缺研究对象、缺时间维度、缺判断口径、多个分支冲突、风险偏好/动作目标缺失。",
+      "如果需要澄清，只问当前最重要的一个问题；若还有第二个不确定点，等用户回答后下一轮再问。",
+      "返回格式必须是 JSON：needClarification:boolean；需要澄清时包含 request，request 有 id/title/question/reason/customPlaceholder/options。",
+      "options 必须正好 3 个，每个有 id/label/description；必须且只能有一个 recommended=true；需要用户自定义补充时可设置 requiresCustom=true。",
+      "不要输出正式投资结论，不要解释 JSON 之外的内容。",
+    ].join("\n"),
+    "assistant-choice-request",
+  );
+  const context = cacheStableUserContent({
+    kind: "assistant-choice-request-context",
+    stable: {
+      outputSchema: {
+        needClarification: "boolean",
+        request: "optional choice request with exactly three options",
+      },
+      confirmedMemories: input.memories,
+      threadSummary: input.threadSummary || "暂无长期摘要。",
+    },
+    volatile: {
+      recentMessages: input.recentMessages,
+      currentUserMessage: input.userMessage,
+    },
+  });
+  return [
+    { role: "system", content: system },
+    { role: "user", content: context },
+  ];
+}
+
+function extractMessageContent(data: Record<string, unknown>) {
+  const choices = Array.isArray(data.choices) ? data.choices : [];
+  const first = choices[0] as Record<string, unknown> | undefined;
+  const message = first?.message as Record<string, unknown> | undefined;
+  return typeof message?.content === "string" ? message.content : "";
+}
+
+function parseClarificationDecision(content: string): AssistantChoiceRequest | null {
+  if (!content.trim()) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!isRecord(data) || data.needClarification !== true) return null;
+  return normalizeChoiceRequest(data.request);
+}
+
+function normalizeChoiceRequest(value: unknown): AssistantChoiceRequest | null {
+  if (!isRecord(value)) return null;
+  const options = Array.isArray(value.options) ? value.options.map(normalizeChoiceOption).filter(isChoiceOption).slice(0, 3) : [];
+  if (options.length !== 3) return null;
+  const recommendedCount = options.filter((option) => option.recommended).length;
+  const normalizedOptions = recommendedCount === 1 ? options : options.map((option, index) => ({ ...option, recommended: index === 0 }));
+  const title = stringOrFallback(value.title, "先确认一下");
+  const question = stringOrFallback(value.question, "你希望我优先按哪种口径继续？");
+  const reason = stringOrFallback(value.reason, "这个问题存在多个合理回答方向，先确认口径可以避免误判。");
+  return {
+    id: stringOrFallback(value.id, `choice-${Date.now()}`).slice(0, 80),
+    title: title.slice(0, 80),
+    question: question.slice(0, 180),
+    reason: reason.slice(0, 180),
+    customPlaceholder: stringOrFallback(value.customPlaceholder, "也可以写你的具体补充。").slice(0, 120),
+    options: normalizedOptions,
+  };
+}
+
+function normalizeChoiceOption(value: unknown): AssistantChoiceOption | null {
+  if (!isRecord(value)) return null;
+  const id = stringOrFallback(value.id, "");
+  const label = stringOrFallback(value.label, "");
+  const description = stringOrFallback(value.description, "");
+  if (!id || !label || !description) return null;
+  return {
+    id: id.slice(0, 64),
+    label: label.slice(0, 40),
+    description: description.slice(0, 140),
+    recommended: value.recommended === true,
+    requiresCustom: value.requiresCustom === true,
+  };
+}
+
+function isChoiceOption(value: AssistantChoiceOption | null): value is AssistantChoiceOption {
+  return value !== null;
+}
+
+function stringOrFallback(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

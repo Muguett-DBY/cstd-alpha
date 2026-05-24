@@ -157,6 +157,36 @@ describe("API client", () => {
     expect(result.content).toBe("结论：先观察");
   });
 
+  test("returns null when assistant stream asks for a clarification choice", async () => {
+    const request = {
+      id: "cr-1",
+      title: "先确认分析口径",
+      question: "你希望我优先按哪种口径分析？",
+      reason: "问题有多个合理方向，直接回答容易误导。",
+      customPlaceholder: "也可以写你的具体口径。",
+      options: [
+        { id: "long-term", label: "长期投资视角", description: "看商业质量、现金流和估值。", recommended: true },
+        { id: "risk", label: "先排雷", description: "先找财务和行业风险。" },
+        { id: "short-term", label: "短期催化", description: "看近期财报、订单和资金。" },
+      ],
+    };
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "choice_request", request })}\n\n`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream)));
+    const events: string[] = [];
+
+    const result = await sendAssistantMessage("宁德时代能买吗？", (event) => events.push(event.type));
+
+    expect(result).toBeNull();
+    expect(events).toEqual(["start", "choice_request"]);
+  });
+
   test("rejects login responses that omit the user payload", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }))));
 

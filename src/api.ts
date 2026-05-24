@@ -313,7 +313,7 @@ export async function fetchAssistantThread(): Promise<AssistantThread> {
   return data.thread;
 }
 
-export async function sendAssistantMessage(message: string, onEvent?: (event: AssistantChatStreamEvent) => void): Promise<AssistantMessage> {
+export async function sendAssistantMessage(message: string, onEvent?: (event: AssistantChatStreamEvent) => void): Promise<AssistantMessage | null> {
   const response = await fetch("/api/assistant/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -322,12 +322,15 @@ export async function sendAssistantMessage(message: string, onEvent?: (event: As
   });
   if (!response.ok) throw new Error((await readError(response)) || "助手生成失败。");
   let finalMessage: AssistantMessage | undefined;
+  let requestedClarification = false;
   for await (const event of readSse(response)) {
     const typed = event as AssistantChatStreamEvent;
     onEvent?.(typed);
     if (typed.type === "error") throw new Error(typed.error);
+    if (typed.type === "choice_request") requestedClarification = true;
     if (typed.type === "done") finalMessage = typed.message;
   }
+  if (requestedClarification) return null;
   if (!finalMessage) throw new Error("助手连接提前结束，请重试。");
   return finalMessage;
 }

@@ -35,7 +35,18 @@ describe("assistant chat endpoint", () => {
         controller.close();
       },
     });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(stream, { status: 200 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }],
+            usage: { prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 10, total_tokens: 60 },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(stream, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
@@ -59,11 +70,62 @@ describe("assistant chat endpoint", () => {
     const body = await response.text();
     expect(body).toContain("memory_candidate");
     expect(body).toContain("usage");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const requestBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(requestBody.model).toBe("deepseek-v4-flash");
     expect(requestBody.reasoning_effort).toBe("high");
     expect(requestBody.stream).toBe(true);
+  });
+
+  test("returns a model-generated choice request without starting the final answer call", async () => {
+    const choiceRequest = {
+      id: "cr-1",
+      title: "先确认研究口径",
+      question: "你希望我优先按哪种口径回答？",
+      reason: "这个问题缺少时间维度，直接回答容易混淆。",
+      customPlaceholder: "例如：按三年持有，先看现金流和估值。",
+      options: [
+        { id: "long-term", label: "长期投资视角", description: "看商业质量、现金流、估值和反证。", recommended: true },
+        { id: "risk", label: "先排雷", description: "先找财务、行业和治理风险。" },
+        { id: "catalyst", label: "短期催化", description: "看订单、财报和资金催化。" },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ needClarification: true, request: choiceRequest }) } }],
+          usage: { prompt_cache_hit_tokens: 30, prompt_cache_miss_tokens: 10, total_tokens: 80 },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代能买吗？" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body).toContain("choice_request");
+    expect(body).toContain("先确认研究口径");
+    expect(body).not.toContain("delta");
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.stream).toBe(false);
+    expect(requestBody.response_format).toEqual({ type: "json_object" });
   });
 });
 

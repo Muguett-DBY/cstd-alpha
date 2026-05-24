@@ -4,7 +4,7 @@ import {
   fetchAssistantThread,
   sendAssistantMessage,
 } from "./api";
-import { analyzeAssistantClarification, composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
+import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { mergeAssistantDelta } from "./assistant-state";
 import type { AssistantChatStreamEvent, AssistantMessage, AssistantThread } from "./shared/assistant";
 
@@ -18,6 +18,7 @@ export function AssistantView() {
   const [draft, setDraft] = useState("");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastSentMessageRef = useRef("");
 
   useEffect(() => {
     void reloadThread();
@@ -44,11 +45,6 @@ export function AssistantView() {
     event.preventDefault();
     const message = input.trim();
     if (!message || phase === "streaming") return;
-    const clarification = analyzeAssistantClarification(message);
-    if (clarification) {
-      setPendingClarification({ original: message, request: clarification, selectedId: clarification.options.find((option) => option.recommended)?.id ?? clarification.options[0].id, customAnswer: "" });
-      return;
-    }
     await sendMessage(message);
   }
 
@@ -57,6 +53,7 @@ export function AssistantView() {
     setDraft("");
     setError("");
     setPhase("streaming");
+    lastSentMessageRef.current = message;
     const optimisticUser: AssistantMessage = {
       id: `local:${Date.now()}`,
       threadId: thread?.id || "local",
@@ -79,10 +76,10 @@ export function AssistantView() {
     );
     try {
       const final = await sendAssistantMessage(message, handleStreamEvent);
-      setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
+      if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
       setPhase("ready");
-      void reloadThread();
+      if (final) void reloadThread();
     } catch (err) {
       setError(err instanceof Error ? err.message : "助手生成失败。");
       setPhase("error");
@@ -103,6 +100,15 @@ export function AssistantView() {
 
   function handleStreamEvent(event: AssistantChatStreamEvent) {
     if (event.type === "delta") setDraft((current) => mergeAssistantDelta(current, event.text));
+    if (event.type === "choice_request") {
+      setDraft("");
+      setPendingClarification({
+        original: lastSentMessageRef.current,
+        request: event.request,
+        selectedId: event.request.options.find((option) => option.recommended)?.id ?? event.request.options[0]?.id ?? "",
+        customAnswer: "",
+      });
+    }
     if (event.type === "memory_candidate") {
       void confirmAssistantMemoryCandidate(event.candidate.id).catch(() => undefined);
     }

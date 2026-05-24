@@ -60,6 +60,23 @@ export type AssistantMemoryCandidate = {
   createdAt: string;
 };
 
+export type AssistantChoiceOption = {
+  id: string;
+  label: string;
+  description: string;
+  recommended?: boolean;
+  requiresCustom?: boolean;
+};
+
+export type AssistantChoiceRequest = {
+  id: string;
+  title: string;
+  question: string;
+  reason: string;
+  customPlaceholder: string;
+  options: AssistantChoiceOption[];
+};
+
 export type AssistantThread = {
   id: string;
   title: string;
@@ -79,6 +96,7 @@ export type AssistantChatRequest = {
 export type AssistantChatStreamEvent =
   | { type: "start"; threadId: string; messageId: string }
   | { type: "delta"; text: string }
+  | { type: "choice_request"; request: AssistantChoiceRequest }
   | { type: "memory_candidate"; candidate: AssistantMemoryCandidate }
   | { type: "usage"; usage: AssistantUsage }
   | { type: "done"; message: AssistantMessage }
