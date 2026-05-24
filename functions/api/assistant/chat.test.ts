@@ -22,7 +22,7 @@ describe("assistant chat endpoint", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test("streams with DeepSeek Flash high and records cache usage", async () => {
+  test("streams with DeepSeek Flash max and records cache usage", async () => {
     const chunks = [
       `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：" } }] })}\n\n`,
       `data: ${JSON.stringify({ choices: [{ delta: { content: "先观察。" } }], usage: { prompt_cache_hit_tokens: 80, prompt_cache_miss_tokens: 20, total_tokens: 150 } })}\n\n`,
@@ -73,7 +73,7 @@ describe("assistant chat endpoint", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const requestBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(requestBody.model).toBe("deepseek-v4-flash");
-    expect(requestBody.reasoning_effort).toBe("high");
+    expect(requestBody.reasoning_effort).toBe("max");
     expect(requestBody.stream).toBe(true);
   });
 

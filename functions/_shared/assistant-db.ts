@@ -42,7 +42,7 @@ type MessageRow = {
 
 export const ASSISTANT_DEFAULT_THREAD_ID = "default-investment-thread";
 export const ASSISTANT_MODEL = "deepseek-v4-flash";
-export const ASSISTANT_REASONING_EFFORT = "high";
+export const ASSISTANT_REASONING_EFFORT = "max";
 export const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const ASSISTANT_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha assistant cache anchor: Chinese investment assistant, evidence first, conclusion evidence counter-evidence follow-up, conservative scoring, no hallucinated facts, admin private memory, read-only tools. ";

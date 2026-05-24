@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as echarts from "echarts";
 import {
   confirmAssistantMemoryCandidate,
@@ -129,48 +129,56 @@ export function AssistantView() {
       <section className="assistant-chat-panel" aria-label="助手聊天">
         <header className="assistant-chat-header">
           <div>
-            <p className="eyebrow">Admin Only</p>
-            <h2 id="assistant-title">投研助手</h2>
+            <h2 id="assistant-title">AI 助手</h2>
           </div>
-          <span>DeepSeek Flash High</span>
         </header>
-          <div className="assistant-mode-switch" aria-label="助手模式">
-            {assistantModes.map((item) => (
-              <button key={item.id} type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)}>
-                <span>{item.label}</span>
-                <small>{item.description}</small>
-              </button>
-            ))}
-          </div>
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => (
               <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
                 <span>{message.role === "user" ? "你" : "助手"}</span>
-                <p>{message.metadata?.blocks?.length ? stripRenderedTables(message.content) : message.content}</p>
+                <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(message.content) : message.content} />
                 <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
               </article>
             ))}
             {draft ? (
               <article className="assistant-message assistant streaming">
                 <span>助手</span>
-                <p>{draftBlocks.length ? stripRenderedTables(draft) : draft}</p>
+                <AssistantText text={draftBlocks.length ? stripRenderedTables(draft) : draft} />
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
             ) : null}
             <div ref={messagesEndRef} />
           </div>
           <form className="assistant-composer" onSubmit={(event) => void submitMessage(event)}>
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={assistantModePlaceholder[mode]}
-              rows={3}
-              disabled={phase === "streaming"}
-            />
-            <button type="submit" disabled={!input.trim() || phase === "streaming"}>
-              {phase === "streaming" ? "生成中..." : "发送"}
-            </button>
+            <div className="assistant-composer-tools">
+              <span>{mode === "chat" ? "普通问答" : assistantModes.find((item) => item.id === mode)?.label}</span>
+              <div className="assistant-mode-switch" aria-label="助手模式">
+                {assistantModes.filter((item) => item.id !== "chat").map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={mode === item.id ? "active" : ""}
+                    aria-pressed={mode === item.id}
+                    onClick={() => setMode(mode === item.id ? "chat" : item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="assistant-input-row">
+              <textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder={assistantModePlaceholder[mode]}
+                rows={2}
+                disabled={phase === "streaming"}
+              />
+              <button type="submit" disabled={!input.trim() || phase === "streaming"}>
+                {phase === "streaming" ? "生成中..." : "发送"}
+              </button>
+            </div>
           </form>
           {error ? <p className="error-text">{error}</p> : null}
       </section>
@@ -203,6 +211,58 @@ export function AssistantView() {
       ) : null}
     </section>
   );
+}
+
+function AssistantText({ text }: { text: string }) {
+  const blocks: ReactNode[] = [];
+  let paragraph: string[] = [];
+  let list: string[] = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    const value = paragraph.join("\n").trim();
+    if (value) blocks.push(<p key={`p-${blocks.length}`}>{renderInlineMarkdown(value)}</p>);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(
+      <ul key={`ul-${blocks.length}`}>
+        {list.map((item, index) => <li key={`${index}-${item}`}>{renderInlineMarkdown(item)}</li>)}
+      </ul>,
+    );
+    list = [];
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (bullet || numbered) {
+      flushParagraph();
+      list.push((bullet?.[1] ?? numbered?.[1] ?? "").trim());
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushParagraph();
+  flushList();
+
+  return <div className="assistant-rich-text">{blocks.length ? blocks : <p>{text}</p>}</div>;
+}
+
+function renderInlineMarkdown(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
 }
 
 function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
