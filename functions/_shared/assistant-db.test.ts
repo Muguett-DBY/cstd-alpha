@@ -83,6 +83,7 @@ describe("assistant prompt and memory helpers", () => {
     const system = messages[0].content;
 
     expect(system).toContain("不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就写“证据等级：高”");
+    expect(system).toContain("最高只能写“中”");
     expect(system).toContain("高股息策略可能合理，但“稳赚/无风险/必然赚钱”必须明确反驳");
     expect(system).toContain("禁止输出空标题或空章节");
   });

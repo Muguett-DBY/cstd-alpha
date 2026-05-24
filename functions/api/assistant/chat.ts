@@ -715,9 +715,15 @@ function guardExternalEvidenceConsistency(text: string, externalEvidence?: Exter
 function guardExternalEvidenceLevel(text: string, message: string, externalEvidence?: ExternalEvidenceResult) {
   if (!externalEvidence || !/(Exa|AnySearch|SearXNG|外部搜索|海外|全球|GCC|印度|美国|季度报告|市场新闻|S&P)/i.test(text)) return text;
   const likelyChinaOrAh = /(A股|港股|中国|银行股|高股息|四大行|国有大行|茅台|宁德时代|腾讯|优必选|比亚迪|万科|招商银行|工商银行|建设银行|农业银行|中国银行)/i.test(message + text);
-  const hasDirectHardEvidence = /(公司公告|年报|半年报|季报|财报|监管文件|交易所公告|央行|金融监管总局|银保监|证监会|官方统计|资本充足率|不良率|净息差)/.test(text);
-  if (!likelyChinaOrAh || hasDirectHardEvidence) return text;
+  const evidenceGradeDependsOnSearch =
+    /证据等级[：:][^\n。]*(Exa|AnySearch|SearXNG|外部搜索|海外|全球|GCC|印度|美国|S&P|券商研报|行业新闻|市场新闻|多地区)/i.test(text) ||
+    /(Exa|AnySearch|SearXNG|外部搜索)[^。]*(证据等级[：:]\s*(高|较高|中高|中至高|强))/i.test(text);
+  const hasDirectChinaHardSource = /(央行|金融监管总局|交易所公告|公司公告|上市银行年报|上市银行季报|官方统计|监管文件)/.test(text);
+  if (!likelyChinaOrAh && !evidenceGradeDependsOnSearch) return text;
+  if (hasDirectChinaHardSource && !evidenceGradeDependsOnSearch) return text;
   return text
+    .replace(/证据等级[：:]\s*中至高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*中高/g, "证据等级：中")
     .replace(/证据等级[：:]\s*高/g, "证据等级：中")
     .replace(/证据等级[：:]\s*较高/g, "证据等级：中")
     .replace(/证据等级[：:]\s*强/g, "证据等级：中");
@@ -726,6 +732,8 @@ function guardExternalEvidenceLevel(text: string, message: string, externalEvide
 function cleanAssistantFormatting(text: string) {
   return removeEmptyMarkdownSections(text)
     .replace(/^结构化表格\s*\d*\s*$/gim, "")
+    .replace(/反证条件（支持“?稳赚”?）/g, "削弱反驳的条件")
+    .replace(/反证条件\(支持“?稳赚”?\)/g, "削弱反驳的条件")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -1045,8 +1053,10 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
       "重点检查证据等级：不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就给高证据等级；若缺少直接相关财报、公告、监管或官方统计，必须降为中或低。",
+      "重点检查证据等级：证据等级段落如果写明来自 Exa 检索、多地区新闻、券商研报、S&P 报告、海外案例、GCC、印度或美国，最高只能是中，不能是高/中高/较高/中至高。",
       "重点检查跨市场类比：海外银行、海外公司或海外行业案例只能作为风险机制类比，不能直接证明中国/A股/港股标的；需要在回答中写明适用边界。",
       "重点检查反驳类问题：必须拆分“用户观点中合理的部分”和“错误的绝对化部分”；例如高股息可以是策略，但“稳赚”必须被明确反驳。",
+      "重点检查反驳表格：不要把反证条件写成“支持稳赚”；应写为“削弱反驳的条件”或“我可能错在哪里”。",
       "重点检查格式：禁止空标题、空章节和只有横线的章节；Markdown 表格必须有具体标题，不能写“结构化表格1/2/3”。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
       "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",

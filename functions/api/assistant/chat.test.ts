@@ -267,6 +267,43 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("下一步跟踪");
   });
 
+  test("caps high evidence grade when answer relies on Exa and overseas analogies", async () => {
+    const answer = [
+      "结论：反对银行股稳赚高股息。",
+      "证据等级：高（以下证据来自 Exa 检索的多地区银行季报、S&P 报告及行业新闻，覆盖美国、GCC、印度等市场。）",
+      "核心理由：海外银行案例说明股息可能因资本压力被削减。",
+      "| 维度 | 证据 | 含义 |",
+      "| --- | --- | --- |",
+      "| 股息 | GCC银行可能削减股息 | 高股息不是无风险 |",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "如果我认为银行股是稳赚高股息，你反驳我。", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("证据等级：中");
+    expect(body).not.toContain("证据等级：高");
+  });
+
   test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
     const fetchMock = vi
       .fn()
