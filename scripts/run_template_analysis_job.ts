@@ -23,6 +23,7 @@ if (!token) throw new Error("TEMPLATE_ANALYSIS_WORKER_TOKEN is required.");
 if (!jobId) throw new Error("TEMPLATE_ANALYSIS_JOB_ID or --job-id is required.");
 
 const payload = await readJob(jobId);
+if (!payload) process.exit(0);
 try {
   const childResults: Array<{ templateId: string; generated: GeneratedResult; markdown: string; evidenceHash?: string }> = [];
   let children = Array.isArray(payload.childAnalyses) ? payload.childAnalyses : [];
@@ -70,10 +71,30 @@ try {
   throw error;
 }
 
-async function readJob(id: string): Promise<JobPayload> {
+async function readJob(id: string): Promise<JobPayload | null> {
   const response = await fetch(`${endpoint}?jobId=${encodeURIComponent(id)}`, {
     headers: { authorization: `Bearer ${token}` },
   });
+  if (response.status === 410) {
+    console.log(`Template job ${id} was cancelled because the template is no longer active.`);
+    return null;
+  }
+  if (response.status === 404) {
+    const text = (await response.text()).slice(0, 500);
+    if (/模板不存在|未启用|模板任务不存在/.test(text)) {
+      console.log(`Template job ${id} is stale and will be skipped: ${text}`);
+      return null;
+    }
+    throw new Error(`Template job read failed: ${response.status} ${text}`);
+  }
+  if (response.status === 409) {
+    const text = (await response.text()).slice(0, 500);
+    if (/不是运行中状态|not running/i.test(text)) {
+      console.log(`Template job ${id} is no longer running and will be skipped: ${text}`);
+      return null;
+    }
+    throw new Error(`Template job read failed: ${response.status} ${text}`);
+  }
   if (!response.ok) throw new Error(`Template job read failed: ${response.status} ${(await response.text()).slice(0, 500)}`);
   return (await response.json()) as JobPayload;
 }

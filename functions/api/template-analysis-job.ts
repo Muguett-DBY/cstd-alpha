@@ -50,11 +50,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
   const templates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, row.user_key);
   const activeTemplates = templates.filter((template) => template.enabled !== false);
-  const template =
-    row.template_id === "__full_analysis__"
-      ? fullAnalysisTemplate(activeTemplates)
-      : templates.find((item) => item.id === row.template_id && item.enabled !== false);
-  if (!template) return json({ error: "模板不存在或未启用。" }, 404);
+  const resolved = resolveTemplateForJob(row, activeTemplates, analysis.templateSnapshot);
+  if (!resolved.template) return json({ error: "模板不存在或未启用。" }, 404);
+  if (resolved.stale) {
+    const failed = await writeAnalysisFailure(
+      env.REPORT_LIBRARY_DB,
+      row.user_key,
+      watchlist,
+      resolved.template,
+      "模板已删除或未启用，后台任务已取消。",
+      "failed",
+      row.started_at || row.updated_at,
+      row.evidence_hash || undefined,
+    );
+    return json({ cancelled: true, error: "模板已删除或未启用，后台任务已取消。", analysis: failed }, 410);
+  }
+  const template = resolved.template;
 
   const evidencePackage = await fetchTemplateEvidence(env, row.user_key, watchlist, request.signal);
   const evidenceHash = templateEvidenceCacheHash(evidencePackage);
@@ -91,11 +102,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
   const templates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, row.user_key);
   const activeTemplates = templates.filter((template) => template.enabled !== false);
-  const template =
-    row.template_id === "__full_analysis__"
-      ? fullAnalysisTemplate(activeTemplates)
-      : templates.find((item) => item.id === row.template_id && item.enabled !== false);
-  if (!template) return json({ error: "模板不存在或未启用。" }, 404);
+  const resolved = resolveTemplateForJob(row, activeTemplates, analysisRowToResult(row).templateSnapshot);
+  if (!resolved.template) return json({ error: "模板不存在或未启用。" }, 404);
+  const template = resolved.template;
 
   const evidenceHash = body?.evidenceHash || row.evidence_hash || undefined;
   const startedAt = row.started_at || row.updated_at || new Date().toISOString();
@@ -109,6 +118,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (body?.error) {
     const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, body.error, "failed_retryable", startedAt, evidenceHash);
     return json({ analysis: failed });
+  }
+  if (resolved.stale) {
+    const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, "模板已删除或未启用，后台任务已取消。", "failed", startedAt, evidenceHash);
+    return json({ cancelled: true, analysis: failed });
   }
   if (!body?.generated) return json({ error: "缺少模板生成结果。" }, 400);
   const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, body.generated, body.markdown || body.generated.markdown, startedAt, evidenceHash);
@@ -133,6 +146,27 @@ async function persistGenerated(
     customMetadata: { templateId: template.id, templateHash, ticker: watchlist.ticker },
   });
   return writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, { ...generated, markdown }, objectKey, startedAt, completedAt, evidenceHash);
+}
+
+function resolveTemplateForJob(row: AnalysisRow, activeTemplates: ResearchTemplate[], snapshot?: ResearchTemplate) {
+  if (row.template_id === "__full_analysis__") return { template: fullAnalysisTemplate(activeTemplates), stale: false };
+  const active = activeTemplates.find((item) => item.id === row.template_id && item.enabled !== false);
+  if (active) return { template: active, stale: false };
+  if (snapshot?.id === row.template_id) return { template: snapshot, stale: true };
+  return { template: fallbackTemplateFromRow(row), stale: true };
+}
+
+function fallbackTemplateFromRow(row: AnalysisRow): ResearchTemplate {
+  const title = row.template_title || "已删除模板";
+  return {
+    id: row.template_id,
+    title,
+    shortTitle: title,
+    focus: "该模板已删除或未启用，后台任务只用于取消状态落库。",
+    prompt: "",
+    fullPrompt: "",
+    enabled: false,
+  };
 }
 
 async function readCompletedChildren(env: Env, userId: string, watchlistId: string, templates: ResearchTemplate[], evidenceHash: string) {
