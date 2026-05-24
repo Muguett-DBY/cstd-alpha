@@ -535,6 +535,119 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("AnySearch");
   });
 
+  test("lets the model call keyless GDELT and caps evidence grade from global news search", async () => {
+    const answer = [
+      "结论：全球新闻线索显示海外政策风险值得跟踪。",
+      "证据等级：高（来自 GDELT 全球新闻搜索和市场新闻，多地区覆盖。）",
+      "核心理由：政策限制和海外供应链新闻频繁出现。",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_gdelt_1",
+                      type: "function",
+                      function: {
+                        name: "search_gdelt",
+                        arguments: JSON.stringify({ query: "CATL overseas policy risk global news", freshness: "week", reason: "需要免费全球新闻补召回" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { total_tokens: 55 },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ articles: [{ title: "Battery policy risk", url: "https://example.com/battery-risk", seendate: "20260524T100000Z", domain: "example.com" }] }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代海外政策风险最新怎么看？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    const routerBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const toolNames = routerBody.tools.map((item: { function: { name: string } }) => item.function.name);
+    expect(toolNames).toContain("search_gdelt");
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith("https://api.gdeltproject.org/api/v2/doc/doc?"))).toBe(true);
+    expect(body).toContain("GDELT");
+    expect(body).toContain("证据等级：中");
+    expect(body).not.toContain("证据等级：高");
+  });
+
+  test("falls back to free academic search for technical investment questions", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://api.deepseek.com/chat/completions") {
+        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://api.deepseek.com/chat/completions").length;
+        if (callIndex === 1) return new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 });
+        if (callIndex === 2) return new Response(JSON.stringify({ choices: [{ message: { content: "结论：优必选大脑小脑协同仍需看实时控制和规划系统闭环。\n证据等级：中。\n核心理由：学术线索只能证明技术路线，不证明公司已经领先。" } }], usage: { total_tokens: 120 } }), { status: 200 });
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 });
+      }
+      if (url.startsWith("https://export.arxiv.org/api/query?")) {
+        return new Response("<feed><entry><id>http://arxiv.org/abs/2605.12345v1</id><title>Humanoid robot planning and control</title><summary>Coordinating high-level planning with low-level control.</summary><published>2026-05-20T00:00:00Z</published></entry></feed>", { status: 200 });
+      }
+      if (url.startsWith("https://api.semanticscholar.org/graph/v1/paper/search?")) {
+        return new Response(JSON.stringify({ data: [{ title: "Whole-body control for humanoids", url: "https://www.semanticscholar.org/paper/1", abstract: "Control and planning coordination.", year: 2026 }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ articles: [] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "优必选人形机器人，大脑与小脑之间的协调性如何？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith("https://export.arxiv.org/api/query?"))).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith("https://api.semanticscholar.org/graph/v1/paper/search?"))).toBe(true);
+    expect(body).toContain("学术线索");
+    expect(body).toContain("证据等级：中");
+  });
+
   test("falls back to search tools when router under-selects a clear research question", async () => {
     const fetchMock = vi
       .fn()
@@ -691,6 +804,10 @@ describe("assistant chat endpoint", () => {
   test("removes stale-history wording from clear technical research answers", async () => {
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ articles: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("<feed><entry><id>http://arxiv.org/abs/2605.1</id><title>Humanoid planning control</title><summary>Planning and control coordination.</summary><published>2026-05-20T00:00:00Z</published></entry></feed>", { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ title: "Humanoid robot coordination", url: "https://www.semanticscholar.org/paper/1", abstract: "Brain and controller coordination.", year: 2026 }] }), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({

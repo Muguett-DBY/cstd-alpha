@@ -1,5 +1,22 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAnySearchRequestBody, buildExaSearchRequestBody, fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, normalizeAnySearchResults, normalizeExaResults } from "./anysearch";
+import {
+  buildAnySearchRequestBody,
+  buildArxivSearchUrl,
+  buildExaSearchRequestBody,
+  buildGdeltSearchUrl,
+  buildSemanticScholarSearchUrl,
+  fetchAnySearchEvidence,
+  fetchArxivEvidence,
+  fetchExaEvidence,
+  fetchGdeltEvidence,
+  fetchSearxngEvidence,
+  fetchSemanticScholarEvidence,
+  normalizeAnySearchResults,
+  normalizeArxivResults,
+  normalizeExaResults,
+  normalizeGdeltResults,
+  normalizeSemanticScholarResults,
+} from "./anysearch";
 
 describe("AnySearch helper", () => {
   test("builds finance-oriented requests with freshness and vertical filters", () => {
@@ -199,5 +216,119 @@ describe("AnySearch helper", () => {
     );
     expect(items[0]).toEqual(expect.objectContaining({ source: "Exa", title: "白酒库存" }));
     await expect(fetchExaEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
+  });
+
+  test("builds GDELT requests as keyless global news search with capped records", () => {
+    const url = new URL(buildGdeltSearchUrl({ query: "CATL overseas policy risk", maxResults: 50, freshness: "week" }));
+    expect(`${url.origin}${url.pathname}`).toBe("https://api.gdeltproject.org/api/v2/doc/doc");
+    expect(url.searchParams.get("query")).toBe("CATL overseas policy risk");
+    expect(url.searchParams.get("mode")).toBe("artlist");
+    expect(url.searchParams.get("format")).toBe("json");
+    expect(url.searchParams.get("maxrecords")).toBe("10");
+    expect(url.searchParams.get("timespan")).toBe("1week");
+  });
+
+  test("normalizes GDELT article lists as low-weight search evidence", async () => {
+    const items = normalizeGdeltResults(
+      {
+        articles: [
+          {
+            title: "Global EV battery policy risk",
+            url: "https://example.com/catl-risk",
+            seendate: "20260524T120000Z",
+            domain: "example.com",
+            sourceCountry: "US",
+            language: "English",
+          },
+        ],
+      },
+      { query: "CATL overseas policy risk", topic: "宁德时代", sourceType: "official" },
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "GDELT",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 1,
+        topic: "宁德时代",
+        anysearchSource: "example.com",
+      }),
+    ]);
+    expect(items[0].summary).toContain("Global news mention");
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, text: async () => "bad gateway" });
+    await expect(fetchGdeltEvidence({ queries: [{ query: "fail closed" }], fetchImpl: fetchMock })).resolves.toEqual([]);
+  });
+
+  test("builds and normalizes arXiv academic search without promoting it to hard data", async () => {
+    const url = new URL(buildArxivSearchUrl({ query: "humanoid robot whole-body control", maxResults: 9 }));
+    expect(`${url.origin}${url.pathname}`).toBe("https://export.arxiv.org/api/query");
+    expect(url.searchParams.get("search_query")).toContain("all:humanoid");
+    expect(url.searchParams.get("max_results")).toBe("5");
+    expect(url.searchParams.get("sortBy")).toBe("submittedDate");
+
+    const xml = [
+      "<feed>",
+      "<entry>",
+      "<id>http://arxiv.org/abs/2605.12345v1</id>",
+      "<title>Whole-body control for humanoid robots</title>",
+      "<summary>We study coordinated locomotion and manipulation control.</summary>",
+      "<published>2026-05-20T00:00:00Z</published>",
+      "<link href=\"http://arxiv.org/abs/2605.12345v1\" rel=\"alternate\" />",
+      "</entry>",
+      "</feed>",
+    ].join("");
+    const items = normalizeArxivResults(xml, { query: "humanoid robot whole-body control", topic: "优必选" });
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "ArXiv",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 2,
+        contentType: "academic",
+      }),
+    ]);
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => xml });
+    await expect(fetchArxivEvidence({ queries: [{ query: "humanoid robot", topic: "机器人" }], fetchImpl: fetchMock })).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: "ArXiv" })]),
+    );
+  });
+
+  test("normalizes Semantic Scholar paper search as academic search evidence", async () => {
+    const url = new URL(buildSemanticScholarSearchUrl({ query: "AI server HBM memory", maxResults: 50 }));
+    expect(`${url.origin}${url.pathname}`).toBe("https://api.semanticscholar.org/graph/v1/paper/search");
+    expect(url.searchParams.get("query")).toBe("AI server HBM memory");
+    expect(url.searchParams.get("limit")).toBe("5");
+    expect(url.searchParams.get("fields")).toContain("title");
+
+    const items = normalizeSemanticScholarResults(
+      {
+        data: [
+          {
+            title: "High bandwidth memory for AI accelerators",
+            url: "https://www.semanticscholar.org/paper/abc",
+            abstract: "HBM improves accelerator memory bandwidth.",
+            year: 2026,
+            venue: "Conference",
+          },
+        ],
+      },
+      { query: "AI server HBM memory", topic: "存储芯片" },
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "SemanticScholar",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 2,
+        contentType: "academic",
+      }),
+    ]);
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    await expect(fetchSemanticScholarEvidence({ queries: [{ query: "empty" }], fetchImpl: fetchMock })).resolves.toEqual([]);
   });
 });

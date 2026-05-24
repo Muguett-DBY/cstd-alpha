@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch" | "SearXNG" | "Exa";
+  source: "AnySearch" | "SearXNG" | "Exa" | "GDELT" | "ArXiv" | "SemanticScholar";
   query: string;
   title: string;
   url: string;
@@ -115,8 +115,34 @@ type ExaSearchResponse = {
   };
 };
 
+type GdeltResponse = {
+  articles?: Array<{
+    title?: string;
+    url?: string;
+    seendate?: string;
+    domain?: string;
+    sourceCountry?: string;
+    language?: string;
+  }>;
+};
+
+type SemanticScholarResponse = {
+  data?: Array<{
+    title?: string;
+    url?: string;
+    abstract?: string;
+    year?: number;
+    venue?: string;
+    publicationDate?: string;
+    citationCount?: number;
+  }>;
+};
+
 const ANYSEARCH_URL = "https://api.anysearch.com/v1/search";
 export const EXA_SEARCH_URL = "https://api.exa.ai/search";
+const GDELT_SEARCH_URL = "https://api.gdeltproject.org/api/v2/doc/doc";
+const ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query";
+const SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search";
 const MAX_SUMMARY_CHARS = 520;
 const MAX_CONTENT_CHARS = 1200;
 
@@ -144,6 +170,35 @@ export function buildExaSearchRequestBody(query: AnySearchQuery) {
     },
     category: query.contentTypes?.includes("news") ? "news" : undefined,
   };
+}
+
+export function buildGdeltSearchUrl(query: AnySearchQuery) {
+  const url = new URL(GDELT_SEARCH_URL);
+  url.searchParams.set("query", query.query);
+  url.searchParams.set("mode", "artlist");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("sort", "hybridrel");
+  url.searchParams.set("maxrecords", String(Math.min(Math.max(query.maxResults ?? 8, 1), 10)));
+  url.searchParams.set("timespan", gdeltTimespan(query.freshness));
+  return url.toString();
+}
+
+export function buildArxivSearchUrl(query: AnySearchQuery) {
+  const url = new URL(ARXIV_SEARCH_URL);
+  url.searchParams.set("search_query", buildArxivSearchQuery(query.query));
+  url.searchParams.set("start", "0");
+  url.searchParams.set("max_results", String(Math.min(Math.max(query.maxResults ?? 5, 1), 5)));
+  url.searchParams.set("sortBy", "submittedDate");
+  url.searchParams.set("sortOrder", "descending");
+  return url.toString();
+}
+
+export function buildSemanticScholarSearchUrl(query: AnySearchQuery) {
+  const url = new URL(SEMANTIC_SCHOLAR_SEARCH_URL);
+  url.searchParams.set("query", query.query);
+  url.searchParams.set("limit", String(Math.min(Math.max(query.maxResults ?? 5, 1), 5)));
+  url.searchParams.set("fields", "title,url,abstract,year,venue,publicationDate,citationCount");
+  return url.toString();
 }
 
 export async function fetchAnySearchEvidence({
@@ -253,6 +308,87 @@ export async function fetchExaEvidence({
   return dedupeAnySearchEvidence(evidence);
 }
 
+export async function fetchGdeltEvidence({
+  queries,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(buildGdeltSearchUrl(query), {
+        headers: { accept: "application/json", "user-agent": "CSTD Alpha/1.0" },
+        signal,
+      });
+      if (!response.ok) {
+        await response.text().catch(() => "");
+        continue;
+      }
+      const payload = (await response.json().catch(() => null)) as GdeltResponse | null;
+      evidence.push(...normalizeGdeltResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
+export async function fetchArxivEvidence({
+  queries,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(buildArxivSearchUrl(query), {
+        headers: { accept: "application/atom+xml, application/xml, text/xml", "user-agent": "CSTD Alpha/1.0" },
+        signal,
+      });
+      if (!response.ok) continue;
+      const payload = await response.text().catch(() => "");
+      evidence.push(...normalizeArxivResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
+export async function fetchSemanticScholarEvidence({
+  queries,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(buildSemanticScholarSearchUrl(query), {
+        headers: { accept: "application/json", "user-agent": "CSTD Alpha/1.0" },
+        signal,
+      });
+      if (!response.ok) continue;
+      const payload = (await response.json().catch(() => null)) as SemanticScholarResponse | null;
+      evidence.push(...normalizeSemanticScholarResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
 export function normalizeAnySearchResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
   const envelope = isRecord(payload) ? payload : {};
   const record = isRecord(envelope.data) ? envelope.data : envelope;
@@ -335,6 +471,111 @@ export function normalizeExaResults(payload: unknown, context: AnySearchQuery): 
   return items;
 }
 
+export function normalizeGdeltResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const articles = Array.isArray(record.articles) ? record.articles : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of articles) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const domain = cleanText(raw.domain) || hostFromUrl(url);
+    const country = cleanText(raw.sourceCountry);
+    const language = cleanText(raw.language);
+    const seenDate = cleanText(raw.seendate);
+    items.push({
+      source: "GDELT",
+      query: context.query,
+      title,
+      url,
+      summary: trimText([`Global news mention from ${domain || "unknown domain"}.`, country ? `Source country: ${country}.` : "", language ? `Language: ${language}.` : ""].filter(Boolean).join(" "), MAX_SUMMARY_CHARS),
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 1,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: normalizeGdeltDate(seenDate),
+      anysearchSource: domain || undefined,
+      contentType: "news",
+      cached: false,
+    });
+  }
+  return items;
+}
+
+export function normalizeArxivResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const xml = typeof payload === "string" ? payload : "";
+  const entries = [...xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)].map((match) => match[0]);
+  const items: AnySearchEvidence[] = [];
+  for (const entry of entries) {
+    const title = xmlText(entry, "title");
+    const id = xmlText(entry, "id");
+    const summary = xmlText(entry, "summary");
+    const published = xmlText(entry, "published") || xmlText(entry, "updated");
+    const link = xmlLinkHref(entry) || id;
+    if (!title || !link) continue;
+    items.push({
+      source: "ArXiv",
+      query: context.query,
+      title,
+      url: link,
+      summary: trimText(summary, MAX_SUMMARY_CHARS),
+      content: trimText(summary, MAX_CONTENT_CHARS) || undefined,
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 2,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: published || undefined,
+      anysearchSource: "arxiv",
+      contentType: "academic",
+      cached: false,
+    });
+  }
+  return items;
+}
+
+export function normalizeSemanticScholarResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const results = Array.isArray(record.data) ? record.data : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of results) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const abstract = cleanText(raw.abstract);
+    const venue = cleanText(raw.venue);
+    const year = numberValue(raw.year);
+    const citationCount = numberValue(raw.citationCount);
+    items.push({
+      source: "SemanticScholar",
+      query: context.query,
+      title,
+      url,
+      summary: trimText([abstract, venue ? `Venue: ${venue}.` : "", year ? `Year: ${year}.` : "", typeof citationCount === "number" ? `Citations: ${citationCount}.` : ""].filter(Boolean).join(" "), MAX_SUMMARY_CHARS),
+      content: trimText(abstract, MAX_CONTENT_CHARS) || undefined,
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 2,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: cleanText(raw.publicationDate) || (year ? `${year}-01-01` : undefined),
+      anysearchSource: "semanticscholar",
+      contentType: "academic",
+      cached: false,
+    });
+  }
+  return items;
+}
+
 export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], retrievedAt = new Date().toISOString()): EvidenceItem[] {
   return items.map((item) => ({
     title: `${item.source} 外部搜索：${item.title}`,
@@ -351,6 +592,8 @@ export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], re
       typeof item.qualityScore === "number" ? `quality_score=${item.qualityScore}` : "",
       item.anysearchRequestId ? `request_id=${item.anysearchRequestId}` : "",
       item.source === "SearXNG" ? "SearXNG 为低权重补召回来源。" : "",
+      item.source === "GDELT" ? "GDELT 为免费全球新闻补召回来源。" : "",
+      item.source === "ArXiv" || item.source === "SemanticScholar" ? "学术检索只证明技术/论文线索，不能证明公司财务或商业化领先。" : "",
       "仅作为外部搜索线索，不能替代财报、公告、价格或销量硬数据。",
     ]
       .filter(Boolean)
@@ -438,6 +681,61 @@ function dedupeAnySearchEvidence(items: AnySearchEvidence[]) {
     result.push(item);
   }
   return result;
+}
+
+function gdeltTimespan(freshness: AnySearchFreshness | undefined) {
+  if (freshness === "day") return "1day";
+  if (freshness === "week") return "1week";
+  if (freshness === "year") return "3months";
+  return "1month";
+}
+
+function buildArxivSearchQuery(query: string) {
+  const tokens = cleanText(query)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^\p{L}\p{N}_-]+/gu, ""))
+    .filter(Boolean)
+    .slice(0, 8);
+  return tokens.length ? tokens.map((token) => `all:${token}`).join("+AND+") : "all:investment";
+}
+
+function normalizeGdeltDate(value: string) {
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?(\d{2})?Z?$/);
+  if (!match) return value || undefined;
+  const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
+}
+
+function xmlText(entry: string, tag: string) {
+  const match = entry.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return xmlUnescape(match?.[1] || "");
+}
+
+function xmlLinkHref(entry: string) {
+  const alternate = entry.match(/<link\b(?=[^>]*rel=["']alternate["'])(?=[^>]*href=["']([^"']+)["'])[^>]*>/i);
+  if (alternate?.[1]) return xmlUnescape(alternate[1]);
+  const first = entry.match(/<link\b(?=[^>]*href=["']([^"']+)["'])[^>]*>/i);
+  return first?.[1] ? xmlUnescape(first[1]) : "";
+}
+
+function xmlUnescape(value: string) {
+  return cleanText(
+    value
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'"),
+  );
+}
+
+function hostFromUrl(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 function inferSupplementalSourceType(value: unknown): SupplementalSourceType {

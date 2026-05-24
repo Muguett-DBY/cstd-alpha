@@ -21,12 +21,21 @@ import {
   type AssistantEnv,
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
-import { fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../../_shared/anysearch";
+import {
+  fetchAnySearchEvidence,
+  fetchArxivEvidence,
+  fetchExaEvidence,
+  fetchGdeltEvidence,
+  fetchSearxngEvidence,
+  fetchSemanticScholarEvidence,
+  type AnySearchEvidence,
+  type AnySearchQuery,
+} from "../../_shared/anysearch";
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
 import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
-type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa";
+type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
 type AssistantSearchToolCall = {
   id: string;
   name: AssistantSearchToolName;
@@ -330,11 +339,12 @@ async function maybeFetchExternalEvidence(
   signal: AbortSignal,
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
 ): Promise<ExternalEvidenceResult> {
-  if (!env.ANYSEARCH_API_KEY?.trim() && !env.SEARXNG_ENDPOINTS?.trim() && !env.EXA_API_KEY?.trim()) {
-    return { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置外部搜索源" }, toolCalls: [] };
-  }
   if (shouldTreatAsSimpleGeneralChat(message, mode)) {
     return { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需外部搜索" }, toolCalls: [] };
+  }
+  const hasConfiguredSearch = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim());
+  if (!hasConfiguredSearch && !shouldUseKeylessFreeSearch(message)) {
+    return { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置付费/自建搜索源，且问题不适合仅用免费开放源补证据" }, toolCalls: [] };
   }
   const routerDecision = await askModelForSearchToolCalls({ env, message, mode, context, signal });
   let routerCalls = routerDecision.toolCalls;
@@ -408,29 +418,59 @@ function augmentSearchToolCalls(
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
 ) {
   const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
+  const augmented = [...toolCalls];
+  if (shouldUseFreeGlobalSearch(message, mode, evidenceText) && !augmented.some((call) => call.name === "search_gdelt" || call.name === "search_exa")) {
+    augmented.push({
+      id: "model-router-gdelt-augment",
+      name: "search_gdelt" as const,
+      query: `${message.slice(0, 160)} latest market news financial risk policy`,
+      freshness: "month" as const,
+      maxResults: 8,
+      reason: "免费全球新闻补召回，用于发现外部风险和变化线索。",
+    });
+  }
+  if (shouldUseAcademicSearch(message) && !augmented.some((call) => call.name === "search_arxiv")) {
+    augmented.push({
+      id: "model-router-arxiv-augment",
+      name: "search_arxiv" as const,
+      query: `${message.slice(0, 160)} robotics AI semiconductor control model technology`,
+      freshness: "year" as const,
+      maxResults: 5,
+      reason: "技术类问题补充开放学术论文线索。",
+    });
+  }
+  if (shouldUseAcademicSearch(message) && !augmented.some((call) => call.name === "search_semantic_scholar")) {
+    augmented.push({
+      id: "model-router-semantic-scholar-augment",
+      name: "search_semantic_scholar" as const,
+      query: `${message.slice(0, 160)} robotics AI semiconductor control model technology`,
+      freshness: "year" as const,
+      maxResults: 5,
+      reason: "技术类问题补充 Semantic Scholar 学术线索。",
+    });
+  }
   const needsExa = shouldUseExaForAssistant(message, mode, evidenceText).use;
-  if (!needsExa || toolCalls.some((call) => call.name === "search_exa")) return toolCalls;
-  return [
-    ...toolCalls,
-    {
+  if (needsExa && !augmented.some((call) => call.name === "search_exa")) {
+    augmented.push({
       id: "model-router-exa-augment",
       name: "search_exa" as const,
       query: `${message.slice(0, 160)} 最新 财报 预测 风险 官方 source financial forecast risk`,
       freshness: "month" as const,
       maxResults: 10,
       reason: "高价值投研问题且站内证据不足，补充 Exa 高质量外部线索。",
-    },
-  ].slice(0, 5);
+    });
+  }
+  return augmented.slice(0, 5);
 }
 
 function buildSearchToolRouterMessages(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }): DeepSeekMessage[] {
   const system = withCacheProtocol(
     [
       "你是 CSTD Alpha 助手的工具路由器。你只决定是否调用外部搜索工具，不输出最终答案。",
-      "可用工具：search_anysearch 用于中文财经/公告/行业线索；search_searxng 用于免费元搜索补召回；search_exa 用于高价值、全球、英文、技术、产业链和站内证据不足的深度线索。",
+      "可用工具：search_anysearch 用于中文财经/公告/行业线索；search_searxng 用于免费元搜索补召回；search_gdelt 用于免费全球新闻召回；search_arxiv/search_semantic_scholar 用于机器人、AI、半导体、医药等技术/学术线索；search_exa 用于高价值、全球、英文、技术、产业链和站内证据不足的深度线索。",
       "不要要求用户必须提到 Exa、联网或搜索。只要问题需要最新公开信息、站内证据不足、涉及公司/行业预测/技术/风险/估值/订单/价格/库存/政策，就应主动调用合适工具。",
       "如果用户只是解释通用概念，且站内证据不是必要条件，可以不调用工具。",
-      "如果调用工具，优先用 1-3 个高质量查询；高价值研究可同时调用 AnySearch、SearXNG、Exa。Exa 不必总用，但站内证据不足且问题有投资价值时应使用。",
+      "如果调用工具，优先用 1-3 个高质量查询；高价值研究可同时调用 AnySearch、SearXNG、GDELT、Exa；技术类问题可加 arXiv/Semantic Scholar。Exa 不必总用，但站内证据不足且问题有投资价值时应使用。",
       "工具 query 必须具体，包含公司/行业、年份或最新、关键指标，不要只复制用户原句。",
     ].join("\n"),
     "assistant-tool-router",
@@ -439,7 +479,7 @@ function buildSearchToolRouterMessages(message: string, mode: AssistantMode, con
     kind: "assistant-tool-router-context",
     stable: {
       mode,
-      routingRules: ["external_search_when_latest_or_weak_evidence", "exa_for_high_value_global_or_technical_research", "no_tool_for_simple_concepts"],
+      routingRules: ["external_search_when_latest_or_weak_evidence", "free_global_news_for_coverage", "academic_search_for_technical_questions", "exa_for_high_value_global_or_technical_research", "no_tool_for_simple_concepts"],
     },
     volatile: {
       userMessage: message,
@@ -467,6 +507,9 @@ function assistantSearchTools() {
   return [
     { type: "function", function: { name: "search_anysearch", description: "中文财经、公司公告、行业变化、政策风险的高质量搜索。", parameters } },
     { type: "function", function: { name: "search_searxng", description: "免费元搜索补充召回，用于发现新闻、网页和遗漏来源。", parameters } },
+    { type: "function", function: { name: "search_gdelt", description: "免费 GDELT 全球新闻搜索，用于补充海外、政策、风险、产业链新闻线索。", parameters } },
+    { type: "function", function: { name: "search_arxiv", description: "免费 arXiv 学术论文搜索，用于技术路线、机器人、AI、半导体、控制算法等学术线索。", parameters } },
+    { type: "function", function: { name: "search_semantic_scholar", description: "免费 Semantic Scholar 学术搜索，用于技术/论文/专利前沿的补充线索。", parameters } },
     { type: "function", function: { name: "search_exa", description: "高价值外部检索，适合全球/英文/技术/产业链/深度研究线索。", parameters } },
   ];
 }
@@ -483,7 +526,7 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
   if (!isRecord(value)) return null;
   const fn = isRecord(value.function) ? value.function : {};
   const name = typeof fn.name === "string" ? fn.name : "";
-  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa") return null;
+  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa" && name !== "search_gdelt" && name !== "search_arxiv" && name !== "search_semantic_scholar") return null;
   const args = parseToolArguments(fn.arguments);
   const query = stringOrFallback(args.query, "").slice(0, 220);
   if (!query) return null;
@@ -522,6 +565,36 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
     maxResults: query.maxResults,
     reason: "规则兜底：高价值投研问题或站内证据不足。",
   }));
+  if (shouldUseFreeGlobalSearch(message, mode, evidenceText)) {
+    calls.push({
+      id: "fallback-gdelt",
+      name: "search_gdelt",
+      query: `${message.slice(0, 160)} latest market news financial risk policy`,
+      freshness: "month",
+      maxResults: 8,
+      reason: "规则兜底：免费全球新闻补召回。",
+    });
+  }
+  if (shouldUseAcademicSearch(message)) {
+    calls.push(
+      {
+        id: "fallback-arxiv",
+        name: "search_arxiv",
+        query: `${message.slice(0, 160)} robotics AI semiconductor control model technology`,
+        freshness: "year",
+        maxResults: 5,
+        reason: "规则兜底：技术类问题补充开放学术搜索。",
+      },
+      {
+        id: "fallback-semantic-scholar",
+        name: "search_semantic_scholar",
+        query: `${message.slice(0, 160)} robotics AI semiconductor control model technology`,
+        freshness: "year",
+        maxResults: 5,
+        reason: "规则兜底：技术类问题补充 Semantic Scholar。",
+      },
+    );
+  }
   if (shouldUseExaForAssistant(message, mode, evidenceText).use) {
     calls.push({
       id: "fallback-exa",
@@ -532,20 +605,26 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
       reason: "规则兜底：高价值研究且站内证据不足。",
     });
   }
-  return { toolCalls: calls.slice(0, 4), reason };
+  return { toolCalls: calls.slice(0, 5), reason };
 }
 
 async function executeAssistantSearchToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal) {
   const anysearchQueries = toolCalls.filter((call) => call.name === "search_anysearch").map(toolCallToAnySearchQuery);
   const searxngQueries = toolCalls.filter((call) => call.name === "search_searxng").map(toolCallToAnySearchQuery);
+  const gdeltQueries = toolCalls.filter((call) => call.name === "search_gdelt").map(toolCallToAnySearchQuery);
+  const arxivQueries = toolCalls.filter((call) => call.name === "search_arxiv").map(toolCallToAnySearchQuery);
+  const semanticScholarQueries = toolCalls.filter((call) => call.name === "search_semantic_scholar").map(toolCallToAnySearchQuery);
   const exaCalls = toolCalls.filter((call) => call.name === "search_exa");
-  const [anysearch, searxng, exaDecision] = await Promise.all([
+  const [anysearch, searxng, gdelt, arxiv, semanticScholar, exaDecision] = await Promise.all([
     anysearchQueries.length && env.ANYSEARCH_API_KEY?.trim() ? fetchAnySearchEvidence({ queries: anysearchQueries, apiKey: env.ANYSEARCH_API_KEY, signal }) : Promise.resolve([]),
     searxngQueries.length && env.SEARXNG_ENDPOINTS?.trim() ? fetchSearxngEvidence({ queries: searxngQueries, endpoints: env.SEARXNG_ENDPOINTS, signal }) : Promise.resolve([]),
+    gdeltQueries.length ? fetchGdeltEvidence({ queries: gdeltQueries, signal }) : Promise.resolve([]),
+    arxivQueries.length ? fetchArxivEvidence({ queries: arxivQueries, signal }) : Promise.resolve([]),
+    semanticScholarQueries.length ? fetchSemanticScholarEvidence({ queries: semanticScholarQueries, signal }) : Promise.resolve([]),
     executeExaToolCalls(env, exaCalls, signal),
   ]);
-  const items = [...anysearch, ...searxng, ...exaDecision.items];
-  const summary = `模型调用工具：${toolCalls.map((call) => call.name).join("、")}；AnySearch ${anysearch.length} 条，SearXNG ${searxng.length} 条，Exa ${exaDecision.exa.count} 条。`;
+  const items = [...anysearch, ...searxng, ...gdelt, ...arxiv, ...semanticScholar, ...exaDecision.items];
+  const summary = `模型调用工具：${toolCalls.map((call) => call.name).join("、")}；AnySearch ${anysearch.length} 条，SearXNG ${searxng.length} 条，GDELT ${gdelt.length} 条，ArXiv ${arxiv.length} 条，Semantic Scholar ${semanticScholar.length} 条，Exa ${exaDecision.exa.count} 条。`;
   return { items: dedupeExternalEvidence(items), exa: exaDecision.exa, summary };
 }
 
@@ -740,11 +819,11 @@ function guardExternalEvidenceConsistency(text: string, externalEvidence?: Exter
 }
 
 function guardExternalEvidenceLevel(text: string, message: string, externalEvidence?: ExternalEvidenceResult) {
-  if (!externalEvidence || !/(Exa|AnySearch|SearXNG|外部搜索|海外|全球|GCC|印度|美国|季度报告|市场新闻|S&P)/i.test(text)) return text;
+  if (!externalEvidence || !/(Exa|AnySearch|SearXNG|GDELT|ArXiv|SemanticScholar|Semantic Scholar|外部搜索|海外|全球|学术|论文|GCC|印度|美国|季度报告|市场新闻|S&P)/i.test(text)) return text;
   const likelyChinaOrAh = /(A股|港股|中国|银行股|高股息|四大行|国有大行|茅台|宁德时代|腾讯|优必选|比亚迪|万科|招商银行|工商银行|建设银行|农业银行|中国银行)/i.test(message + text);
   const evidenceGradeDependsOnSearch =
-    /证据等级[：:][^\n。]*(Exa|AnySearch|SearXNG|外部搜索|海外|全球|GCC|印度|美国|S&P|券商研报|行业新闻|市场新闻|多地区)/i.test(text) ||
-    /(Exa|AnySearch|SearXNG|外部搜索)[^。]*(证据等级[：:]\s*(高|较高|中高|中至高|强))/i.test(text);
+    /证据等级[：:][^\n。]*(Exa|AnySearch|SearXNG|GDELT|ArXiv|SemanticScholar|Semantic Scholar|外部搜索|海外|全球|学术|论文|GCC|印度|美国|S&P|券商研报|行业新闻|市场新闻|多地区)/i.test(text) ||
+    /(Exa|AnySearch|SearXNG|GDELT|ArXiv|SemanticScholar|Semantic Scholar|外部搜索|学术|论文)[^。]*(证据等级[：:]\s*(高|较高|中高|中至高|强))/i.test(text);
   const hasDirectChinaHardSource = /(央行|金融监管总局|交易所公告|公司公告|上市银行年报|上市银行季报|官方统计|监管文件)/.test(text);
   if (!likelyChinaOrAh && !evidenceGradeDependsOnSearch) return text;
   if (hasDirectChinaHardSource && !evidenceGradeDependsOnSearch) return text;
@@ -837,6 +916,19 @@ export function shouldUseExaForAssistant(message: string, mode: AssistantMode, e
   if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
   if (highValue) return { use: true, reason: "研究问题高价值，补充Exa外部线索交叉验证" };
   return { use: false, reason: "不是Exa高价值触发场景" };
+}
+
+function shouldUseFreeGlobalSearch(message: string, mode: AssistantMode, evidenceSummary: string) {
+  if (mode === "chat" && !/(最新|今年|预测|预估|全球|海外|政策|监管|风险|业绩|财报|行业|公司|技术|竞争|联网|搜索|查一下)/.test(message)) return false;
+  return shouldTriggerExternalEvidence(message, mode, evidenceSummary) || /(最新|今年|预测|预估|全球|海外|政策|监管|风险|业绩|财报|行业|公司|技术|竞争|联网|搜索|查一下)/.test(message);
+}
+
+function shouldUseAcademicSearch(message: string) {
+  return /(技术|优势|人形机器人|机器人|大脑|小脑|协调|算法|控制|模型|AI|人工智能|芯片|半导体|存储|HBM|光模块|创新药|靶点|临床|专利|论文|学术|材料|固态电池|低空|商业航天)/i.test(message);
+}
+
+function shouldUseKeylessFreeSearch(message: string) {
+  return shouldUseAcademicSearch(message) || /(最新|全球|海外|英文|新闻|今天|刚刚|实时|政策|监管|供应链|出口|制裁|关税|地缘|GDELT|arXiv|论文|学术)/i.test(message);
 }
 
 const ASSISTANT_EXA_DAILY_AUTO_LIMIT = 80;
@@ -1079,8 +1171,8 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "如果草稿只是在说无法预测、无法判断、证据不足，必须改写为有用回答：列出可用证据、低置信情景/区间、关键假设、反证条件、下一步跟踪。",
       "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
-      "重点检查证据等级：不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就给高证据等级；若缺少直接相关财报、公告、监管或官方统计，必须降为中或低。",
-      "重点检查证据等级：证据等级段落如果写明来自 Exa 检索、多地区新闻、券商研报、S&P 报告、海外案例、GCC、印度或美国，最高只能是中，不能是高/中高/较高/中至高。",
+      "重点检查证据等级：不能因为 Exa/AnySearch/SearXNG/GDELT/arXiv/Semantic Scholar 返回多条新闻、论文或海外案例就给高证据等级；若缺少直接相关财报、公告、监管或官方统计，必须降为中或低。",
+      "重点检查证据等级：证据等级段落如果写明来自 Exa/GDELT/arXiv/Semantic Scholar 检索、多地区新闻、学术论文、券商研报、S&P 报告、海外案例、GCC、印度或美国，最高只能是中，不能是高/中高/较高/中至高。",
       "重点检查跨市场类比：海外银行、海外公司或海外行业案例只能作为风险机制类比，不能直接证明中国/A股/港股标的；需要在回答中写明适用边界。",
       "重点检查反驳类问题：必须拆分“用户观点中合理的部分”和“错误的绝对化部分”；例如高股息可以是策略，但“稳赚”必须被明确反驳。",
       "重点检查反驳表格：不要把反证条件写成“支持稳赚”；应写为“削弱反驳的条件”或“我可能错在哪里”。",
