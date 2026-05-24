@@ -21,8 +21,9 @@ import {
   type AssistantEnv,
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
-import { fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, type AnySearchEvidence } from "../../_shared/anysearch";
+import { fetchAnySearchEvidence, fetchExaEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../../_shared/anysearch";
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
+import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
@@ -67,8 +68,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     }));
   const researchContext = resolveAssistantResearchContext(userMessage, recentMessages);
   const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
+  const answerDirectly = shouldAnswerDirectlyWithoutClarification(researchContext.message);
   const clarificationDecision =
-    researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message)
+    answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
       ? { request: null }
       : await askModelForClarification({
           env,
@@ -147,7 +149,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       mode: evidenceMode,
       signal: request.signal,
     });
-    const guardedText = guardForecastLanguage(reviewed.text, researchContext.message);
+    const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message);
     if (!guardedText.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
     const blocks = extractAssistantBlocks(guardedText, userMessage);
     const encoder = new TextEncoder();
@@ -230,7 +232,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             }
           }
         }
-        assistantText = guardForecastLanguage(assistantText, researchContext.message);
+        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message);
         if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
@@ -294,15 +296,35 @@ async function maybeFetchExternalEvidence(
   const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
   const shouldSearch = shouldTriggerExternalEvidence(message, mode, evidenceText);
   if (!researchMode && !shouldSearch) return { triggered: false, items: [], exa: { used: false, count: 0 } };
-  const suffix = mode === "target" ? "财报 公告 估值 现金流 竞争 风险" : mode === "industry" ? "行业 景气 价格 产能 库存 政策 风险" : "投资 财报 公告 风险";
-  const query = `${message.slice(0, 120)} ${suffix}`;
-  const queries = [{ query, topic: "assistant", sourceType: "news" as const, maxResults: 4, domains: ["finance" as const, "business" as const], contentTypes: ["news" as const, "web" as const], freshness: "month" as const }];
+  const query = message.slice(0, 160);
+  const queries = buildAssistantEvidenceQueries(message, mode);
   const [anysearch, searxng] = await Promise.all([
-    fetchAnySearchEvidence({ queries, apiKey: env.ANYSEARCH_API_KEY, signal }),
-    fetchSearxngEvidence({ queries, endpoints: env.SEARXNG_ENDPOINTS, signal }),
+    env.ANYSEARCH_API_KEY?.trim() ? fetchAnySearchEvidence({ queries, apiKey: env.ANYSEARCH_API_KEY, signal }) : Promise.resolve([]),
+    env.SEARXNG_ENDPOINTS?.trim() ? fetchSearxngEvidence({ queries, endpoints: env.SEARXNG_ENDPOINTS, signal }) : Promise.resolve([]),
   ]);
   const exaDecision = await maybeUseExa(env, message, mode, context, signal);
   return { triggered: true, query, items: [...anysearch, ...searxng, ...exaDecision.items].slice(0, 12), exa: exaDecision.exa };
+}
+
+export function buildAssistantEvidenceQueries(message: string, mode: AssistantMode): AnySearchQuery[] {
+  const subject = message.slice(0, 120);
+  const common = { topic: "assistant", sourceType: "news" as const, maxResults: 4, domains: ["finance" as const, "business" as const], contentTypes: ["news" as const, "web" as const], freshness: "month" as const };
+  if (mode === "industry") {
+    return [
+      { ...common, query: `${subject} 行业硬数据 价格 库存 产能 销量 开工率 景气` },
+      { ...common, query: `${subject} 政策 监管 文件 出口管制 集采 补贴` },
+      { ...common, query: `${subject} 风险 亏损 过剩 需求下滑 价格下跌 泡沫` },
+    ];
+  }
+  const targetQueries = [
+    { ...common, query: `${subject} 财报 业绩预告 业绩快报 经营现金流 毛利率 净利润` },
+    { ...common, query: `${subject} 行业 价格 销量 库存 订单 批价 竞争格局` },
+    { ...common, query: `${subject} 风险 监管 政策 负面事件 估值 下调` },
+  ];
+  if (/(技术|优势|人形机器人|大脑|小脑|协调|产品|专利|算法|控制|模型)/.test(message)) {
+    targetQueries.push({ ...common, query: `${subject} 技术 产品 专利 运动控制 大模型 协调性 商业化` });
+  }
+  return targetQueries;
 }
 
 export function resolveAssistantResearchContext(
@@ -324,6 +346,12 @@ export function resolveAssistantResearchContext(
 
 export function shouldAutoUseResearchEvidence(message: string) {
   return containsLikelyResearchSubject(message) && isHighValueResearchQuestion(message);
+}
+
+export function shouldAnswerDirectlyWithoutClarification(message: string) {
+  if (!containsLikelyResearchSubject(message)) return false;
+  if (/(能买吗|买不买|该不该|怎么操作|怎么样\??$|如何操作)/.test(message)) return false;
+  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业)/.test(message);
 }
 
 export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
@@ -353,6 +381,18 @@ function guardForecastLanguage(text: string, message: string) {
     .replace(/(全年|归母净利润|营收)实际值/g, "$1基数线索");
   if (/口径说明：/.test(guarded)) return guarded;
   return `口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。\n\n${guarded}`;
+}
+
+function guardAssistantOutputLanguage(text: string, message: string) {
+  return guardStaleHistoryLanguage(guardForecastLanguage(text, message));
+}
+
+function guardStaleHistoryLanguage(text: string) {
+  return text
+    .replace(/当前无新增证据[，,、\s]*/g, "")
+    .replace(/此前结论保持不变[——\-:：\s]*/g, "本轮判断：")
+    .replace(/维持此前结论[——\-:：\s]*/g, "本轮判断：")
+    .replace(/此前结论/g, "本轮判断");
 }
 
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
@@ -552,7 +592,7 @@ async function generateReviewedResearchAnswer(input: {
   const answer = extractMessageContent(answerData);
   const answerUsage = parseDeepSeekUsage(answerData.usage);
   const review = await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal });
-  const text = review.revisedAnswer || answer;
+  const text = review.revisedAnswer || (isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(input.userMessage, input.mode) : answer);
   return {
     text,
     review: review.raw,
@@ -568,6 +608,30 @@ async function generateReviewedResearchAnswer(input: {
       elapsedMs: Date.now() - startedAt,
     },
   };
+}
+
+function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
+  const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
+  const modeLabel = mode === "industry" ? "行业" : "标的";
+  if (/(业绩|预估|预测|净利润|营收|利润)/.test(userMessage)) {
+    return [
+      `结论：${subject} 不能只停在“资料不够”，当前应给低置信情景测算。`,
+      "证据等级：低。请把下面结果视为可更新的估算框架，而不是确定预测。",
+      "核心理由：先用已披露季度增速、历史全年基数、价格/销量/渠道线索和行业景气做交叉；若缺少其中任一项，就给保守、中性、乐观三档，而不是单点预测。",
+      "情景测算：保守情景为增长明显低于最近季度趋势；中性情景为全年增速接近最近季度或一致预期；乐观情景需要价格、销量、结构或成本端至少两个变量改善。",
+      "反驳用户观点：如果只因为品牌、龙头地位或上一轮高增长就推出全年高增，这是不充分的；需要看到利润率、现金流和终端价格同时验证。",
+      `我可能错在哪里：${modeLabel} 的最新公告、券商一致预期或价格数据如果已经变化，本轮低置信区间需要立刻重算。`,
+      "下一步跟踪：最近一期财报、管理层指引、核心产品价格、销量/订单、库存、现金流和估值分位。",
+    ].join("\n");
+  }
+  return [
+    `结论：${subject} 当前应输出低置信判断，而不是停止回答。`,
+    "证据等级：低。可用证据只够形成方向性判断，不能形成高置信投资结论。",
+    "核心理由：先列出已知事实，再给最可能解释、反证条件和需要补齐的数据。",
+    "反驳用户观点：如果用户把单一新闻、单家公司样本或概念叙事当作充分证据，这个逻辑不成立。",
+    "我可能错在哪里：若最新公告、官方统计或公司级硬数据已经更新，本轮判断可能被推翻。",
+    "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化。",
+  ].join("\n");
 }
 
 async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: string; mode: AssistantMode; answer: string; signal: AbortSignal }): Promise<{ revisedAnswer?: string; usage: ReturnType<typeof parseDeepSeekUsage>; raw?: unknown }> {
@@ -607,7 +671,8 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "如果回答合格，输出 {\"passed\":true}。",
       "如果不合格，输出 {\"passed\":false,\"issues\":[...],\"revisedAnswer\":\"修正后的完整中文回答\"}。",
       "修正后的回答必须保留结构：结论、证据等级、核心理由、反驳用户观点、我可能错在哪里、下一步跟踪。",
-      "不要编造新事实；证据不足时降级为观察或回避。",
+      "不要编造新事实；证据薄时降级为低置信情景测算或观察，但禁止只写“证据不足、无法回答”。",
+      "如果草稿只是在说无法预测、无法判断、证据不足，必须改写为有用回答：列出可用证据、低置信情景/区间、关键假设、反证条件、下一步跟踪。",
       "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",

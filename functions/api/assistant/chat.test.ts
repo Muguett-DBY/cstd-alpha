@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { onRequestPost, resolveAssistantResearchContext, shouldAutoUseResearchEvidence, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -132,7 +132,6 @@ describe("assistant chat endpoint", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：可以买，逻辑很强。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(
@@ -172,13 +171,13 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(body).toContain("当前只能列为观察");
     expect(body).toContain("done");
-    const answerBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    const answerBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(answerBody.stream).toBe(false);
     expect(JSON.stringify(answerBody.messages)).toContain("研究模式：标的研究");
-    const reviewBody = JSON.parse(fetchMock.mock.calls[3][1].body);
+    const reviewBody = JSON.parse(fetchMock.mock.calls[2][1].body);
     expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
   });
 
@@ -192,8 +191,6 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -224,8 +221,6 @@ describe("assistant chat endpoint", () => {
   test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "CATL overseas risk", url: "https://example.com/catl", highlights: ["海外竞争和政策风险。"] }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：观察。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
@@ -271,6 +266,12 @@ describe("assistant chat endpoint", () => {
     expect(shouldAutoUseResearchEvidence("用一句话解释自由现金流")).toBe(false);
   });
 
+  test("answers clear research questions directly without a clarification round", () => {
+    expect(shouldAnswerDirectlyWithoutClarification("茅台今年业绩预估？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("宁德时代能买吗？")).toBe(false);
+  });
+
   test("resolves follow-up questions to the previous user research subject", () => {
     const resolved = resolveAssistantResearchContext("根据现有信息和数据进行预测", [
       { role: "user", content: "茅台今年业绩预估？" },
@@ -286,11 +287,106 @@ describe("assistant chat endpoint", () => {
     expect(shouldTriggerExternalEvidence("解释自由现金流", "chat", "站内证据充足")).toBe(false);
   });
 
+  test("builds layered evidence queries instead of one mixed search query", () => {
+    const forecastQueries = buildAssistantEvidenceQueries("茅台今年业绩预估？", "target");
+    expect(forecastQueries.length).toBeGreaterThanOrEqual(3);
+    expect(forecastQueries.map((item) => item.query).join("\n")).toContain("业绩预告");
+    expect(forecastQueries.map((item) => item.query).join("\n")).toContain("批价");
+    expect(forecastQueries.every((item) => item.maxResults && item.maxResults <= 4)).toBe(true);
+
+    const technicalQueries = buildAssistantEvidenceQueries("优必选人形机器人，大脑与小脑之间的协调性如何？", "target");
+    expect(technicalQueries.map((item) => item.query).join("\n")).toContain("技术");
+    expect(technicalQueries.map((item) => item.query).join("\n")).toContain("产品");
+  });
+
+  test("rational review rewrites evidence-only refusal into a useful scenario answer", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：证据不足，无法给出净利润预测。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    passed: false,
+                    revisedAnswer:
+                      "结论：只能做低置信情景测算，不应停在无法预测。\n证据等级：低。\n核心理由：基于现有季度增速和批价压力，给保守、中性、乐观三个净利润增速区间。\n反驳用户观点：单看品牌力不足以推出高增长。\n我可能错在哪里：若批价和直营占比改善，区间需上修。\n下一步跟踪：半年报、批价、库存和渠道反馈。",
+                  }),
+                },
+              },
+            ],
+            usage: { total_tokens: 80 },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台今年业绩预估？" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("低置信情景测算");
+    expect(body).not.toContain("无法给出净利润预测");
+  });
+
+  test("removes stale-history wording from clear technical research answers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "结论：当前无新增证据，此前结论保持不变——优必选大脑和小脑已贯通，但仍需第三方验证。" } }],
+            usage: { total_tokens: 120 },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "优必选人形机器人，大脑与小脑之间的协调性如何？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("本轮判断");
+    expect(body).not.toContain("此前结论保持不变");
+    expect(body).not.toContain("当前无新增证据");
+  });
+
   test("downgrades unaudited forecast wording in auto research answers", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：2025年实际值为100亿元，2026年预测为105亿元。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
