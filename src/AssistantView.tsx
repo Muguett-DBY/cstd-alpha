@@ -114,6 +114,11 @@ export function AssistantView() {
 
   const cacheRate = assistantCacheHitRate(usage);
   const visibleMessages = useMemo(() => thread?.messages ?? [], [thread]);
+  const latestAssistantMessage = useMemo(
+    () => [...visibleMessages].reverse().find((message) => message.role === "assistant"),
+    [visibleMessages],
+  );
+  const latestToolRuns = latestAssistantMessage?.metadata?.toolRuns ?? [];
 
   return (
     <section className="assistant-workspace" aria-labelledby="assistant-title">
@@ -198,6 +203,23 @@ export function AssistantView() {
               ))
             ) : (
               <p className="muted">确认候选后，助手会在后续聊天中使用。</p>
+            )}
+          </section>
+
+          <section>
+            <h3>证据与工具过程</h3>
+            {latestToolRuns.length ? (
+              <div className="assistant-tool-list">
+                {latestToolRuns.map((toolRun) => (
+                  <div key={toolRun.id} className={`assistant-tool-card ${toolRun.status}`}>
+                    <strong>{toolRun.toolName}</strong>
+                    <span>{toolRun.status}</span>
+                    <p>{toolRun.summary}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">生成后会显示站内证据读取和外部搜索过程。</p>
             )}
           </section>
 

@@ -13,6 +13,7 @@ import {
   readActiveMemories,
   readRecentMessages,
   requireAdminSession,
+  updateThreadSummaryIfLarge,
   writeAssistantMessage,
   writeMemoryCandidate,
   writeToolRun,
@@ -143,6 +144,14 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           metadata: { usage: latestUsage, toolRuns: [toolRun] },
         });
         await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: latestUsage });
+        await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
+          userKey: session.userId,
+          threadId: thread.id,
+          previousSummary: thread.summary,
+          recentMessages,
+          latestUserMessage: userMessage,
+          latestAssistantMessage: assistantText,
+        });
         if (env.REPORT_LIBRARY_BUCKET) {
           await env.REPORT_LIBRARY_BUCKET.put(
             `assistant/v1/${encodeURIComponent(session.userId)}/${encodeURIComponent(thread.id)}/${assistantMessageId}.json`,

@@ -15,6 +15,8 @@ describe("assistant prompt and memory helpers", () => {
     expect(messages[0].content).toContain("结论");
     expect(messages[1].content).toContain("已确认长期记忆");
     expect(messages[1].content).toContain("偏好：先看现金流");
+    expect(messages[1].content).not.toContain("上轮结论");
+    expect(messages[2]).toMatchObject({ role: "assistant", content: "上轮结论" });
     expect(messages.at(-1)).toMatchObject({ role: "user", content: "宁德时代现在怎么看？" });
   });
 

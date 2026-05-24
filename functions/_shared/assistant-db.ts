@@ -249,6 +249,35 @@ export async function writeAssistantMessage(db: D1Database, input: { id?: string
   return { id, threadId: input.threadId, role: input.role, content: input.content, createdAt: now, metadata: input.metadata } as AssistantMessage;
 }
 
+export async function updateThreadSummaryIfLarge(
+  db: D1Database,
+  input: {
+    userKey: string;
+    threadId: string;
+    previousSummary: string;
+    recentMessages: Array<{ role: "user" | "assistant"; content: string }>;
+    latestUserMessage: string;
+    latestAssistantMessage: string;
+    now?: string;
+    thresholdChars?: number;
+  },
+) {
+  const combined = [
+    input.previousSummary,
+    ...input.recentMessages.map((message) => `${message.role}: ${message.content}`),
+    `user: ${input.latestUserMessage}`,
+    `assistant: ${input.latestAssistantMessage}`,
+  ].join("\n");
+  if (combined.length < (input.thresholdChars ?? 180_000)) return null;
+  const now = input.now ?? new Date().toISOString();
+  const summary = buildDeterministicThreadSummary(combined);
+  await db
+    .prepare(`UPDATE assistant_threads SET summary = ?1, updated_at = ?2 WHERE id = ?3 AND user_key = ?4`)
+    .bind(summary, now, input.threadId, input.userKey)
+    .run();
+  return summary;
+}
+
 export function detectMemoryCandidate(message: string): Omit<AssistantMemoryCandidate, "id" | "createdAt"> | null {
   const normalized = message.trim();
   if (!/(记住|以后|我的偏好|我的规则|投资框架|不要再|别再|纠正一下|这条规则)/.test(normalized)) return null;
@@ -400,9 +429,7 @@ export function buildAssistantPromptMessages(input: {
       threadSummary: input.threadSummary || "暂无长期摘要。",
       siteEvidenceSummary: input.evidenceSummary,
     },
-    volatile: {
-      recentMessages: input.recentMessages,
-    },
+    volatile: { currentTurnPolicy: "最近聊天作为后续 messages append-only 追加，不写入稳定上下文。" },
   });
   return [
     { role: "system", content: system },
@@ -475,6 +502,21 @@ function candidateRowToCandidate(row: MemoryCandidateRow): AssistantMemoryCandid
     status: row.status === "confirmed" || row.status === "rejected" ? row.status : "pending",
     createdAt: row.created_at,
   };
+}
+
+function buildDeterministicThreadSummary(content: string) {
+  const compact = content
+    .replace(/\s+/g, " ")
+    .replace(/api[_-]?key|authorization|password|secret/gi, "[redacted]")
+    .trim();
+  const head = compact.slice(0, 1800);
+  const tail = compact.slice(-3200);
+  return [
+    "自动压缩摘要（非模型生成）：长期线程已超过上下文安全阈值。",
+    "保留原则：用户长期规则、明确纠错、投资框架、待跟踪事项优先；事实结论仍需回到证据包复核。",
+    `早期上下文摘录：${head}`,
+    `近期上下文摘录：${tail}`,
+  ].join("\n");
 }
 
 function messageRowToMessage(row: MessageRow): AssistantMessage {
