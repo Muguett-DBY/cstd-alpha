@@ -1109,6 +1109,8 @@ function selectReviewedResearchText(answer: string, revisedAnswer: string | unde
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
+  if (/(画表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
+  if (/(来自|靠|驱动).*(利润修复|回购|估值修复)|利润修复.*回购.*估值修复/.test(userMessage)) return buildDriverComparisonGapAnswer(userMessage);
   if (/(业绩|预估|预测|净利润|营收|利润)/.test(userMessage)) {
     return [
       `结论：${subject} 不能只停在“资料不够”，当前应给低置信情景测算。`,
@@ -1128,6 +1130,59 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "我可能错在哪里：若最新公告、官方统计或公司级硬数据已经更新，本轮判断可能被推翻。",
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化。",
   ].join("\n");
+}
+
+function buildComparisonTableGapAnswer(userMessage: string) {
+  const items = extractComparisonItems(userMessage);
+  const rows = items.map((item) => {
+    const name = item.trim();
+    if (/光模块/.test(name)) return "| 光模块 | 偏强观察 | 中 | AI资本开支、800G/1.6T需求 | 估值透支、客户集中、价格下行 | 龙头订单、毛利率、库存、CAPEX指引 |";
+    if (/PCB/.test(name)) return "| PCB | 中性偏强观察 | 中低 | AI服务器高层数板和高频高速材料升级 | 良率、扩产、价格竞争 | 服务器PCB收入占比、订单、毛利率 |";
+    if (/液冷/.test(name)) return "| 液冷 | 早期强观察 | 低至中 | 高功耗机柜推动渗透率提升 | 项目制波动、标准不统一、价格战 | 中标金额、交付节奏、客户复购 |";
+    if (/存储|HBM/.test(name)) return "| 存储/HBM | 偏强但高周期 | 中 | HBM和DRAM涨价、AI服务器拉动 | 周期反转、扩产、终端需求下修 | 现货价格、合约价、库存、A/H链条业绩 |";
+    return `| ${name} | 观察 | 低 | 需要拆需求、价格、订单和利润率 | 概念化叙事、估值透支 | 财报、订单、价格、库存、客户验证 |`;
+  });
+  return [
+    "结论：可以先做低置信横向比较，但不能把概念热度直接当成投资结论。当前排序应优先看“订单和利润率已兑现”的环节，而不是只看题材热度。",
+    "证据等级：低至中。以下表格是研究框架和初步判断，必须用公司公告、财报、订单、价格和库存继续验证。",
+    "",
+    "| 环节 | 景气度初判 | 证据强度 | 主要驱动 | 主要风险 | 下一步必须验证 |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...rows,
+    "",
+    "反驳用户观点：如果只因为AI服务器需求强就把所有环节都判为高景气，这是错误的。产业链利润会在不同环节迁移，订单、毛利率和库存比概念新闻更重要。",
+    "我可能错在哪里：若最新财报显示某环节收入和毛利率已经连续兑现，或大客户CAPEX突然下修，上述排序需要立刻调整。",
+    "下一步跟踪：逐家公司核对AI相关收入占比、订单/中标、毛利率、库存、产能扩张和估值分位。",
+  ].join("\n");
+}
+
+function buildDriverComparisonGapAnswer(userMessage: string) {
+  const subject = userMessage.includes("港股互联网") ? "港股互联网" : userMessage.split(/[？?。]/)[0].slice(0, 40) || "当前行业";
+  return [
+    `结论：${subject} 的投资吸引力不能简单归因于单一因素。当前更合理的主导驱动排序是：利润修复第一，回购第二，估值修复第三；但三者都需要最新财报和公告继续验证。`,
+    "证据等级：低至中。若只依赖外部新闻或历史估值，不能给高置信结论；必须用公司财报、回购公告、用户/广告/电商数据和监管变化交叉验证。",
+    "",
+    "| 驱动 | 当前作用 | 为什么重要 | 反证信号 |",
+    "| --- | --- | --- | --- |",
+    "| 利润修复 | 主导驱动 | 成本纪律、广告/电商/本地生活利润率改善能直接推升自由现金流，是最能解释长期价值的变量 | 收入低增且费用重新扩张，利润率回落 |",
+    "| 回购 | 次要但重要 | 低估值下回购能提高每股价值，也能稳定市场预期 | 回购减少、股价上涨后回购收益率下降，或现金流转弱 |",
+    "| 估值修复 | 结果变量 | 估值上修通常来自利润确定性和监管风险下降，不应单独作为买入理由 | 盈利兑现不足、政策不确定性上升，估值会再次压缩 |",
+    "",
+    "反驳过度乐观观点：港股互联网不是“便宜就一定涨”。如果利润修复停滞，回购只是托底，估值修复也可能只是短期情绪反弹。",
+    "我可能错在哪里：如果最新季度显示收入重新加速、利润率继续扩张且回购明显放大，估值修复的权重会提高。",
+    "下一步跟踪：腾讯、阿里、美团、快手等公司的利润率、自由现金流、回购金额、监管事件、广告/电商/本地生活增速和估值分位。",
+  ].join("\n");
+}
+
+function extractComparisonItems(message: string) {
+  const match = message.match(/(?:里|：|:)([^。？?]+?)(?:这[几四五六七八九十\d]*个|的景气|进行|$)/);
+  const segment = match?.[1] || message;
+  const items = segment
+    .split(/[、,，/和与]/)
+    .map((item) => item.replace(/(画表|比较|对比|矩阵|产业链|环节|景气度|证据强度|风险|里)/g, "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 12)
+    .slice(0, 8);
+  return items.length ? items : ["核心环节", "上游", "中游", "下游"];
 }
 
 async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: string; mode: AssistantMode; answer: string; signal: AbortSignal }): Promise<{ revisedAnswer?: string; usage: ReturnType<typeof parseDeepSeekUsage>; raw?: unknown }> {

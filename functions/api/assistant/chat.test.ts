@@ -648,6 +648,79 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("证据等级：中");
   });
 
+  test("turns evidence-gap table requests into a usable comparison table", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://api.deepseek.com/chat/completions") {
+        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://api.deepseek.com/chat/completions").length;
+        if (callIndex === 1) return new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 });
+        if (callIndex === 2) return new Response(JSON.stringify({ choices: [{ message: { content: "证据不足，无法回答。" } }], usage: { total_tokens: 120 } }), { status: 200 });
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 });
+      }
+      if (url.startsWith("https://api.gdeltproject.org/api/v2/doc/doc?")) return new Response(JSON.stringify({ articles: [] }), { status: 200 });
+      if (url.startsWith("https://export.arxiv.org/api/query?")) return new Response("<feed></feed>", { status: 200 });
+      if (url.startsWith("https://api.semanticscholar.org/graph/v1/paper/search?")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "画表比较AI服务器产业链里光模块、PCB、液冷、存储这四个环节的景气度、证据强度和风险。", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("| 环节 |");
+    expect(body).toContain("光模块");
+    expect(body).toContain("PCB");
+    expect(body).toContain("液冷");
+    expect(body).toContain("\"type\":\"block\"");
+  });
+
+  test("turns evidence-gap driver questions into a concrete driver comparison", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "证据不足，无法判断。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "港股互联网现在投资吸引力来自利润修复、回购还是估值修复？反驳过度乐观观点。", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("主导驱动");
+    expect(body).toContain("利润修复");
+    expect(body).toContain("回购");
+    expect(body).toContain("估值修复");
+    expect(body).toContain("过度乐观");
+  });
+
   test("falls back to search tools when router under-selects a clear research question", async () => {
     const fetchMock = vi
       .fn()

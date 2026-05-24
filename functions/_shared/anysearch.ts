@@ -174,7 +174,7 @@ export function buildExaSearchRequestBody(query: AnySearchQuery) {
 
 export function buildGdeltSearchUrl(query: AnySearchQuery) {
   const url = new URL(GDELT_SEARCH_URL);
-  url.searchParams.set("query", query.query);
+  url.searchParams.set("query", addEnglishSearchAliases(query.query));
   url.searchParams.set("mode", "artlist");
   url.searchParams.set("format", "json");
   url.searchParams.set("sort", "hybridrel");
@@ -691,12 +691,32 @@ function gdeltTimespan(freshness: AnySearchFreshness | undefined) {
 }
 
 function buildArxivSearchQuery(query: string) {
-  const tokens = cleanText(query)
+  const tokens = cleanText(addEnglishSearchAliases(query))
     .split(/\s+/)
     .map((token) => token.replace(/[^\p{L}\p{N}_-]+/gu, ""))
     .filter(Boolean)
     .slice(0, 8);
   return tokens.length ? tokens.map((token) => `all:${token}`).join("+AND+") : "all:investment";
+}
+
+function addEnglishSearchAliases(value: string) {
+  let query = cleanText(value);
+  const aliases: Array<[RegExp, string]> = [
+    [/宁德时代/g, "CATL Contemporary Amperex Technology overseas policy risk"],
+    [/贵州茅台|茅台/g, "Kweichow Moutai baijiu wholesale price earnings"],
+    [/优必选/g, "UBTECH humanoid robot Walker brain cerebellum control"],
+    [/港股互联网/g, "Hong Kong internet stocks Tencent Alibaba Meituan buyback profit valuation"],
+    [/人形机器人/g, "humanoid robot supply chain actuator reducer sensor"],
+    [/光伏/g, "China solar photovoltaic polysilicon module inventory"],
+    [/AI服务器|AI 服务器/g, "AI server optical module PCB liquid cooling HBM memory"],
+    [/半导体/g, "semiconductor chip equipment materials HBM"],
+    [/白酒/g, "Chinese baijiu wholesale price inventory demand"],
+    [/银行股|银行/g, "bank stocks dividend net interest margin credit risk"],
+  ];
+  for (const [pattern, alias] of aliases) {
+    if (pattern.test(query) && !query.toLowerCase().includes(alias.toLowerCase().split(/\s+/)[0])) query = `${query} ${alias}`;
+  }
+  return query;
 }
 
 function normalizeGdeltDate(value: string) {

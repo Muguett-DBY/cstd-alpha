@@ -228,6 +228,12 @@ describe("AnySearch helper", () => {
     expect(url.searchParams.get("timespan")).toBe("1week");
   });
 
+  test("adds English aliases for Chinese GDELT queries", () => {
+    const url = new URL(buildGdeltSearchUrl({ query: "宁德时代 海外政策风险", maxResults: 5 }));
+    expect(url.searchParams.get("query")).toContain("CATL");
+    expect(url.searchParams.get("query")).toContain("overseas policy risk");
+  });
+
   test("normalizes GDELT article lists as low-weight search evidence", async () => {
     const items = normalizeGdeltResults(
       {
