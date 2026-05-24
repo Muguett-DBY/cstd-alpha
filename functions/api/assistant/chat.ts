@@ -46,6 +46,14 @@ type ExternalEvidenceResult = {
   toolSummary?: string;
 };
 
+function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
+  if (!externalEvidence.triggered) return `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`;
+  const base = externalEvidence.toolSummary || `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。`;
+  if (externalEvidence.exa.used) return base;
+  if (externalEvidence.exa.reason) return `${base} Exa未用：${externalEvidence.exa.reason}。`;
+  return base;
+}
+
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
   if (response) return response;
@@ -88,7 +96,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     }));
   const researchContext = resolveAssistantResearchContext(userMessage, recentMessages);
   const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
-  const answerDirectly = shouldAnswerDirectlyWithoutClarification(researchContext.message);
+  const simpleGeneralChat = shouldTreatAsSimpleGeneralChat(researchContext.message, evidenceMode);
+  const promptRecentMessages = simpleGeneralChat ? [] : recentMessages;
+  const answerDirectly = shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
   const clarificationDecision =
     answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
       ? { request: null }
@@ -97,7 +107,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           userMessage,
           memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
           threadSummary: thread.summary,
-          recentMessages: recentMessages.slice(-8),
+          recentMessages: promptRecentMessages.slice(-8),
           signal: request.signal,
         });
   if (clarificationDecision.request) {
@@ -140,9 +150,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     threadId: thread.id,
     toolName: "站内证据/外部搜索",
     status: externalEvidence.triggered ? "completed" : "skipped",
-    summary: externalEvidence.triggered
-      ? `${externalEvidence.toolSummary || `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。`}${externalEvidence.exa.used ? ` Exa ${externalEvidence.exa.count} 条。` : externalEvidence.exa.reason ? ` Exa未用：${externalEvidence.exa.reason}。` : ""}`
-      : `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`,
+    summary: assistantToolRunSummary(externalEvidence),
     input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa, toolCalls: externalEvidence.toolCalls } : externalEvidence.toolCalls ? { toolCalls: externalEvidence.toolCalls } : undefined,
     output: externalEvidence.items.slice(0, 8),
     now,
@@ -154,7 +162,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     threadSummary: thread.summary,
     evidenceSummary,
     externalEvidenceSummary,
-    recentMessages,
+    recentMessages: promptRecentMessages,
     userMessage: researchContext.promptMessage,
     mode: evidenceMode,
   });
@@ -314,6 +322,9 @@ async function maybeFetchExternalEvidence(
 ): Promise<ExternalEvidenceResult> {
   if (!env.ANYSEARCH_API_KEY?.trim() && !env.SEARXNG_ENDPOINTS?.trim() && !env.EXA_API_KEY?.trim()) {
     return { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置外部搜索源" }, toolCalls: [] };
+  }
+  if (shouldTreatAsSimpleGeneralChat(message, mode)) {
+    return { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需外部搜索" }, toolCalls: [] };
   }
   const routerDecision = await askModelForSearchToolCalls({ env, message, mode, context, signal });
   const routerCalls = routerDecision.toolCalls;
@@ -593,6 +604,13 @@ export function shouldTriggerExternalEvidence(message: string, mode: AssistantMo
   if (mode !== "chat" && isHighValueResearchQuestion(message)) return true;
   if (shouldAutoUseResearchEvidence(message)) return true;
   return containsLikelyResearchSubject(message) && /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary) && isHighValueResearchQuestion(message);
+}
+
+export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantMode) {
+  if (mode !== "chat") return false;
+  if (containsLikelyResearchSubject(message)) return false;
+  if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
+  return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message);
 }
 
 function containsLikelyResearchSubject(message: string) {

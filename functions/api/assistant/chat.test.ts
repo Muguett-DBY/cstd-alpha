@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -352,6 +352,12 @@ describe("assistant chat endpoint", () => {
     expect(shouldTriggerExternalEvidence("茅台今年业绩预估？", "target", "公司证据包：未命中")).toBe(true);
     expect(shouldTriggerExternalEvidence("优必选人形机器人技术优势是什么？", "target", "站内证据不足")).toBe(true);
     expect(shouldTriggerExternalEvidence("解释自由现金流", "chat", "站内证据充足")).toBe(false);
+  });
+
+  test("does not route simple concept explanations through external tools", () => {
+    expect(shouldTreatAsSimpleGeneralChat("用两句话解释自由现金流为什么比利润更适合看长期回报。", "chat")).toBe(true);
+    expect(shouldTreatAsSimpleGeneralChat("茅台今年业绩预估？", "target")).toBe(false);
+    expect(shouldTreatAsSimpleGeneralChat("请联网查一下自由现金流最新研究", "chat")).toBe(false);
   });
 
   test("builds layered evidence queries instead of one mixed search query", () => {
