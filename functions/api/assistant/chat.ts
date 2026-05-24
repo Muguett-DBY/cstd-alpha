@@ -378,13 +378,35 @@ async function askModelForSearchToolCalls(input: {
       ...parseDeepSeekUsage(data.usage),
       elapsedMs: Date.now() - startedAt,
     };
-    const toolCalls = normalizeSearchToolCalls(data);
+    const toolCalls = augmentSearchToolCalls(normalizeSearchToolCalls(data), input.message, input.mode, input.context);
     const reason = extractMessageContent(data).slice(0, 180);
     if (toolCalls.length) return { toolCalls, reason, usage };
     return { toolCalls: fallbackSearchToolCalls(input.message, input.mode, input.context, reason || "模型未调用外部搜索工具").toolCalls, reason: reason || "模型未调用外部搜索工具", usage };
   } catch {
     return fallbackSearchToolCalls(input.message, input.mode, input.context, "工具路由异常");
   }
+}
+
+function augmentSearchToolCalls(
+  toolCalls: AssistantSearchToolCall[],
+  message: string,
+  mode: AssistantMode,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+) {
+  const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
+  const needsExa = shouldUseExaForAssistant(message, mode, evidenceText).use;
+  if (!needsExa || toolCalls.some((call) => call.name === "search_exa")) return toolCalls;
+  return [
+    ...toolCalls,
+    {
+      id: "model-router-exa-augment",
+      name: "search_exa" as const,
+      query: `${message.slice(0, 160)} 最新 财报 预测 风险 官方 source financial forecast risk`,
+      freshness: "month" as const,
+      maxResults: 10,
+      reason: "高价值投研问题且站内证据不足，补充 Exa 高质量外部线索。",
+    },
+  ].slice(0, 5);
 }
 
 function buildSearchToolRouterMessages(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }): DeepSeekMessage[] {
@@ -622,7 +644,7 @@ function isHighValueResearchQuestion(message: string) {
 }
 
 function isFollowUpResearchQuestion(message: string) {
-  return /(根据现有|继续|那|这个|它|该公司|这家公司|上述|前面|进行预测|预测|预估|怎么看|如何|为什么|能否|是否|大脑|小脑|协调)/.test(message);
+  return /(根据现有|继续|那|这个|它|该公司|这家公司|上述|前面|进行预测|预测|预估|怎么看|大脑|小脑|协调)/.test(message);
 }
 
 function guardForecastLanguage(text: string, message: string) {
@@ -906,6 +928,7 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
+      "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",
     ].join("\n"),
     "assistant-rational-review",
   );

@@ -348,6 +348,15 @@ describe("assistant chat endpoint", () => {
     expect(resolved.promptMessage).toContain("对话承接");
   });
 
+  test("does not treat standalone concept explanations as follow-up research", () => {
+    const resolved = resolveAssistantResearchContext("用两句话解释自由现金流为什么比利润更适合看长期回报。", [
+      { role: "user", content: "万科现在是不是困境反转？" },
+      { role: "assistant", content: "结论：观察。" },
+    ]);
+    expect(resolved.message).toBe("用两句话解释自由现金流为什么比利润更适合看长期回报。");
+    expect(resolved.promptMessage).not.toContain("对话承接");
+  });
+
   test("triggers external evidence for high-value chat research even without explicit search wording", () => {
     expect(shouldTriggerExternalEvidence("茅台今年业绩预估？", "target", "公司证据包：未命中")).toBe(true);
     expect(shouldTriggerExternalEvidence("优必选人形机器人技术优势是什么？", "target", "站内证据不足")).toBe(true);
