@@ -757,6 +757,36 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("不能只停在“资料不够”");
   });
 
+  test("removes customer-service preambles from research answers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "好的，收到您的指令。作为 CSTD Alpha 的私人投研助手，我将严格分析。\n\n结论：港股互联网需要看利润修复、回购和估值修复。\n证据等级：中。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "港股互联网现在投资吸引力来自利润修复、回购还是估值修复？", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).not.toContain("好的，收到");
+    expect(body).not.toContain("私人投研助手");
+    expect(body).toContain("结论：港股互联网");
+  });
+
   test("falls back to search tools when router under-selects a clear research question", async () => {
     const fetchMock = vi
       .fn()
