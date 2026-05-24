@@ -16,6 +16,28 @@ export type WatchlistItem = {
   addedAt: string;
 };
 
+export type WatchlistRankingStatus = "pending" | "running" | "completed" | "failed_retryable" | "failed";
+
+export type WatchlistRankingEntry = {
+  id?: string;
+  watchlistId: string;
+  companyName: string;
+  ticker: string;
+  market: string;
+  listingPlace?: string;
+  status: WatchlistRankingStatus;
+  companyQualityScore?: number;
+  investmentAttractivenessScore?: number;
+  overallScore?: number;
+  verdict?: string;
+  summary?: string;
+  keyPoints: string[];
+  riskFlags: string[];
+  evidenceHash?: string;
+  updatedAt?: string;
+  errorMessage?: string;
+};
+
 export type ResearchTemplate = {
   id: string;
   title: string;

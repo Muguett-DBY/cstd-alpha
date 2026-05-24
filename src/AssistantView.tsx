@@ -7,10 +7,32 @@ import {
   sendAssistantMessage,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
+import { assistantKeyIntent, mergeSpeechTranscript } from "./assistant-input";
 import { mergeAssistantDelta } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
+type SpeechPhase = "idle" | "listening" | "unsupported" | "error";
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal?: boolean; 0?: { transcript?: string } }>;
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export function AssistantView() {
   const [thread, setThread] = useState<AssistantThread | null>(null);
@@ -22,8 +44,20 @@ export function AssistantView() {
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
+  const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
+  const [speechNotice, setSpeechNotice] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastSentMessageRef = useRef("");
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(
+    () => () => {
+      recognitionRef.current?.abort?.();
+      recognitionRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     void reloadThread();
@@ -50,7 +84,81 @@ export function AssistantView() {
     event.preventDefault();
     const message = input.trim();
     if (!message || phase === "streaming") return;
+    stopSpeechRecognition();
     await sendMessage(message);
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const intent = assistantKeyIntent({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      ctrlKey: event.ctrlKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      isComposing: event.nativeEvent.isComposing,
+    });
+    if (intent !== "submit") return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
+  function toggleSpeechRecognition() {
+    if (phase === "streaming") return;
+    if (speechPhase === "listening") {
+      stopSpeechRecognition();
+      return;
+    }
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      setSpeechPhase("unsupported");
+      setSpeechNotice("当前浏览器不支持语音输入。");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = "zh-CN";
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.onstart = () => {
+      setSpeechPhase("listening");
+      setSpeechNotice("正在识别，可以直接说出你的问题。");
+    };
+    recognition.onend = () => {
+      setSpeechPhase((current) => (current === "listening" ? "idle" : current));
+      setSpeechNotice((current) => (current === "正在识别，可以直接说出你的问题。" ? "" : current));
+    };
+    recognition.onerror = (event) => {
+      setSpeechPhase("error");
+      setSpeechNotice(speechErrorMessage(event.error));
+    };
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result?.[0]?.transcript ?? "";
+        if (result?.isFinal) finalText += transcript;
+        else interimText += transcript;
+      }
+      if (finalText.trim()) {
+        setInput((current) => mergeSpeechTranscript(current, finalText));
+        queueMicrotask(() => inputRef.current?.focus());
+      }
+      if (interimText.trim()) setSpeechNotice(`正在识别：${interimText.trim()}`);
+    };
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setSpeechPhase("error");
+      setSpeechNotice("语音识别启动失败，请检查浏览器麦克风权限。");
+    }
+  }
+
+  function stopSpeechRecognition() {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setSpeechPhase("idle");
+    setSpeechNotice("");
   }
 
   async function sendMessage(message: string) {
@@ -169,16 +277,30 @@ export function AssistantView() {
             </div>
             <div className="assistant-input-row">
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder={assistantModePlaceholder[mode]}
                 rows={2}
                 disabled={phase === "streaming"}
               />
+              <button
+                type="button"
+                className={`assistant-voice-button ${speechPhase === "listening" ? "active" : ""}`}
+                onClick={toggleSpeechRecognition}
+                disabled={phase === "streaming"}
+                aria-pressed={speechPhase === "listening"}
+                aria-label={speechPhase === "listening" ? "停止语音输入" : "开始语音输入"}
+                title={speechPhase === "listening" ? "停止语音输入" : "语音输入"}
+              >
+                <span aria-hidden="true">{speechPhase === "listening" ? "■" : "♪"}</span>
+              </button>
               <button type="submit" disabled={!input.trim() || phase === "streaming"}>
                 {phase === "streaming" ? "生成中..." : "发送"}
               </button>
             </div>
+            {speechNotice ? <p className={`assistant-speech-status ${speechPhase === "error" || speechPhase === "unsupported" ? "is-error" : ""}`}>{speechNotice}</p> : null}
           </form>
           {error ? <p className="error-text">{error}</p> : null}
       </section>
@@ -451,6 +573,19 @@ function MemoryCandidateDialog({ candidate, onConfirm, onReject }: { candidate: 
       </section>
     </div>
   );
+}
+
+function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
+  const win = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+  return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
+}
+
+function speechErrorMessage(error?: string) {
+  if (error === "not-allowed" || error === "service-not-allowed") return "麦克风权限被拒绝，请允许浏览器使用麦克风。";
+  if (error === "no-speech") return "没有识别到语音，请再试一次。";
+  if (error === "audio-capture") return "没有检测到可用麦克风。";
+  if (error === "network") return "语音识别服务暂时不可用。";
+  return "语音识别失败，请稍后重试。";
 }
 
 export default AssistantView;

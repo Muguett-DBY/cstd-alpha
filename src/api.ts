@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem } from "./shared/user-research";
+import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -238,6 +238,25 @@ export async function addWatchlistItem(input: { company: CompanyCandidate; repor
 export async function removeWatchlistItem(id: string) {
   const response = await fetch(`/api/watchlist?id=${encodeURIComponent(id)}`, { method: "DELETE", credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "移除自选失败。");
+}
+
+export async function fetchWatchlistRanking(): Promise<{ entries: WatchlistRankingEntry[]; watchlist: WatchlistItem[] }> {
+  const response = await fetch("/api/watchlist-ranking", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "自选股排行读取失败。");
+  const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; watchlist?: WatchlistItem[] };
+  return { entries: data.entries ?? [], watchlist: data.watchlist ?? [] };
+}
+
+export async function refreshWatchlistRanking(input: { watchlistId?: string; forceRefresh?: boolean; limit?: number } = {}): Promise<{ entries: WatchlistRankingEntry[]; queued: string[]; reused: string[] }> {
+  const response = await fetch("/api/watchlist-ranking", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok && response.status !== 202) throw new Error((await readError(response)) || "自选股排行刷新失败。");
+  const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; queued?: string[]; reused?: string[] };
+  return { entries: data.entries ?? [], queued: data.queued ?? [], reused: data.reused ?? [] };
 }
 
 export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ analyses: TemplateAnalysisResult[]; templates: ResearchTemplate[] }> {

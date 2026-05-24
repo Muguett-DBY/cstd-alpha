@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { normalizeMarkdownForReading } from "./markdown-report";
 import { RESEARCH_TEMPLATES, type TemplateAnalysisResult, type WatchlistItem } from "./shared/user-research";
 import { buildFullAnalysisTemplateCardState, resolveTemplateManagerView, shouldScrollTemplateEditor } from "./template-manager-state";
-import { filterWatchlistItems, summarizeWatchlistAnalysis } from "./my-research-state";
+import { filterWatchlistItems, findWatchlistItemForCompany, summarizeWatchlistAnalysis } from "./my-research-state";
 
 describe("template manager navigation", () => {
   test("keeps a valid template edit screen selected", () => {
@@ -80,6 +80,25 @@ describe("my research watchlist state", () => {
 
     expect(filterWatchlistItems(items, "")).toHaveLength(1);
     expect(filterWatchlistItems(items, "不存在")).toHaveLength(0);
+  });
+
+  test("finds the watchlist item that matches a ranking company handoff", () => {
+    const items = [
+      watchlistItem("1", "腾讯控股", "00700", "港股", "HKEX"),
+      watchlistItem("2", "贵州茅台", "600519", "A股", "SSE"),
+    ];
+
+    expect(
+      findWatchlistItemForCompany(items, {
+        id: "600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "SSE",
+        currency: "CNY",
+        listingPlace: "A股",
+        marketType: "A股",
+      })?.id,
+    ).toBe("2");
   });
 
   test("summarizes completed and running template analyses for the selected company", () => {

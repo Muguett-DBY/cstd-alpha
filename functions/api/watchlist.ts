@@ -11,12 +11,21 @@ import {
   watchlistRowToItem,
   type WatchlistRow,
 } from "../_shared/user-research-db";
+import { writeWatchlistRankingFailure, writeWatchlistRankingRunning } from "../_shared/watchlist-ranking";
 
 type Env = {
   AUTH_SECRET: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
+  GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN?: string;
+  GITHUB_TEMPLATE_DISPATCH_TOKEN?: string;
+  GITHUB_RADAR_DISPATCH_TOKEN?: string;
+  GITHUB_WATCHLIST_RANKING_REPOSITORY?: string;
+  GITHUB_WATCHLIST_RANKING_WORKFLOW?: string;
 };
+
+const DEFAULT_REPOSITORY = "Muguett-DBY/cstd-alpha";
+const DEFAULT_WORKFLOW = "watchlist-ranking.yml";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -35,7 +44,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ items: (result.results ?? []).map(watchlistRowToItem), user: { userId: session.userId, username: session.username, displayName: session.displayName, role: session.role } });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const { request, env } = context;
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
@@ -65,12 +75,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const row = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, id);
   if (row && env.REPORT_LIBRARY_BUCKET) {
-    await fetchAndStoreCompanyEvidence({
-      env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
-      userId: session.userId,
-      watchlist: row,
-      signal: request.signal,
-    }).catch((error) => writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB!, session.userId, row, error));
+    context.waitUntil(
+      fetchAndStoreCompanyEvidence({
+        env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
+        userId: session.userId,
+        watchlist: row,
+        signal: request.signal,
+      })
+        .then(async (pkg) => {
+          const jobId = await writeWatchlistRankingRunning(env.REPORT_LIBRARY_DB!, session.userId, row, pkg.materialHash || pkg.evidenceHash);
+          await dispatchWatchlistRankingWorkflow(env, jobId);
+        })
+        .catch(async (error) => {
+          await writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB!, session.userId, row, error);
+          await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB!, session.userId, row.id, error);
+        }),
+    );
   }
   return json({ item: row ? watchlistRowToItem(row) : null });
 };
@@ -95,4 +115,23 @@ async function readWatchlistRow(db: D1Database, userKey: string, id: string) {
     )
     .bind(userKey, id)
     .first<WatchlistRow>();
+}
+
+async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
+  const token = env.GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN?.trim() || env.GITHUB_TEMPLATE_DISPATCH_TOKEN?.trim() || env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
+  if (!token) throw new Error("missing GitHub watchlist ranking dispatch token");
+  const repository = env.GITHUB_WATCHLIST_RANKING_REPOSITORY?.trim() || DEFAULT_REPOSITORY;
+  const workflow = env.GITHUB_WATCHLIST_RANKING_WORKFLOW?.trim() || DEFAULT_WORKFLOW;
+  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "CSTDAlphaWatchlist/1.0",
+      "x-github-api-version": "2022-11-28",
+    },
+    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
+  });
+  if (!response.ok) throw new Error(`GitHub watchlist ranking dispatch failed: ${response.status}`);
 }

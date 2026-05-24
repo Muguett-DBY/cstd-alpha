@@ -13,11 +13,11 @@ import { extractFinancialChartSeries, extractModuleScoreSeries, type ChartBundle
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
-import type { UserSession } from "./shared/user-research";
+import type { UserSession, WatchlistRankingEntry } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
 type ChartPhase = "idle" | "loading" | "ready" | "error";
-type AppView = "report" | "ranking" | "mine" | "radar" | "assistant";
+type AppView = "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -27,6 +27,7 @@ type BeforeInstallPromptEvent = Event & {
 export const DEFAULT_APP_VIEW: AppView = "radar";
 const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
 const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
+const WatchlistRankingView = lazy(() => import("./WatchlistRankingView").then((module) => ({ default: module.WatchlistRankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
 const AssistantView = lazy(() => import("./AssistantView").then((module) => ({ default: module.AssistantView })));
 
@@ -428,6 +429,29 @@ function App() {
     setCacheNotice("已从我的自选股打开公司，可生成或查看完整评分报告。");
   }
 
+  function openWatchlistRankingEntry(entry: WatchlistRankingEntry) {
+    const company: CompanyCandidate = {
+      id: `watchlist-ranking:${entry.market}:${entry.ticker}`,
+      name: entry.companyName,
+      code: entry.ticker,
+      exchange: entry.market,
+      listingPlace: entry.listingPlace || entry.market,
+      marketType: "Library",
+      source: entry.market.includes("美") || /^[A-Z.]+$/.test(entry.ticker) ? "yahoo" : "eastmoney",
+    };
+    setSelectedCompany(company);
+    setQuery(company.name);
+    setChartBundle(null);
+    setChartError("");
+    setReport(null);
+    setReportMetrics(null);
+    setProgress([]);
+    setEvidenceCount(0);
+    setPhase("idle");
+    setActiveView("mine");
+    setCacheNotice("已从自选股排行打开公司，可在“我的”里查看模板或重新评分。");
+  }
+
   if (checking) return <div className="loading-screen">CSTD Alpha</div>;
 
   if (!authenticated) {
@@ -514,6 +538,9 @@ function App() {
             }}
           >
             港股排行
+          </button>
+          <button type="button" className={`wide-tab ${activeView === "watchlist-ranking" ? "active" : ""}`} aria-current={activeView === "watchlist-ranking" ? "page" : undefined} onClick={() => setActiveView("watchlist-ranking")}>
+            自选排行
           </button>
           <button type="button" className={`wide-tab ${activeView === "mine" ? "active" : ""}`} aria-current={activeView === "mine" ? "page" : undefined} onClick={() => setActiveView("mine")}>
             我的
@@ -604,6 +631,8 @@ function App() {
         <Suspense fallback={<section className="empty-state"><h2>正在加载视图</h2><p>只加载当前需要的功能模块。</p></section>}>
           {activeView === "ranking" ? (
             <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
+          ) : activeView === "watchlist-ranking" ? (
+            <WatchlistRankingView onOpenEntry={openWatchlistRankingEntry} />
           ) : activeView === "mine" ? (
             <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
           ) : activeView === "radar" ? (

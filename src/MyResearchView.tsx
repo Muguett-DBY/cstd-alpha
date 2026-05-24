@@ -33,7 +33,7 @@ import {
   type TemplateGenerationPhase,
   type TemplateManagerView,
 } from "./template-manager-state";
-import { filterWatchlistItems, summarizeWatchlistAnalysis } from "./my-research-state";
+import { filterWatchlistItems, findWatchlistItemForCompany, summarizeWatchlistAnalysis } from "./my-research-state";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -74,7 +74,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
         setItems(watchlist.items);
         setAnalyses(analysisData.analyses);
         setTemplates(templateData.length ? templateData : analysisData.templates);
-        setSelectedWatchlistId((current) => current || watchlist.items[0]?.id || "");
+        setSelectedWatchlistId((current) => current || findWatchlistItemForCompany(watchlist.items, selectedCompany)?.id || watchlist.items[0]?.id || "");
         setPhase("ready");
       })
       .catch((err) => {
@@ -85,7 +85,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedCompany]);
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
   const filteredItems = useMemo(() => filterWatchlistItems(items, watchlistQuery), [items, watchlistQuery]);

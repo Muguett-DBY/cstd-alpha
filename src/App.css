@@ -1086,6 +1086,20 @@ button:not(:disabled):active,
     var(--bg);
 }
 
+.watchlist-ranking-tools {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  position: static;
+}
+
+.watchlist-ranking-row {
+  grid-template-columns: 64px minmax(220px, 1.3fr) 86px 96px 110px 90px minmax(180px, 1fr) minmax(140px, 0.7fr);
+  min-width: 1040px;
+}
+
+.ranking-empty-note {
+  padding: 18px;
+}
+
 .app-shell.view-assistant .workspace {
   height: calc(100dvh - 58px);
   overflow: hidden;
@@ -1374,7 +1388,7 @@ button:not(:disabled):active,
 
 .assistant-input-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px;
+  grid-template-columns: minmax(0, 1fr) 44px 96px;
   gap: 10px;
   align-items: stretch;
 }
@@ -1389,6 +1403,47 @@ button:not(:disabled):active,
   font: inherit;
   font-size: 14px;
   background: #fbfbf8;
+}
+
+.assistant-voice-button {
+  min-width: 44px;
+  border-color: var(--line);
+  background: white;
+  color: var(--muted);
+}
+
+.assistant-voice-button.active {
+  border-color: color-mix(in srgb, var(--teal) 55%, var(--line));
+  background: color-mix(in srgb, var(--teal) 10%, white);
+  color: var(--teal);
+  box-shadow: 0 0 0 4px rgb(15 118 110 / 0.08);
+}
+
+.assistant-voice-button.active span {
+  animation: voicePulse 0.9s ease-in-out infinite;
+}
+
+.assistant-speech-status {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.assistant-speech-status.is-error {
+  color: var(--red);
+}
+
+@keyframes voicePulse {
+  0%,
+  100% {
+    transform: scale(0.88);
+    opacity: 0.62;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .assistant-clarification-backdrop {
@@ -4833,8 +4888,7 @@ button:not(:disabled):active,
     padding-inline: 10px;
   }
 
-  .assistant-composer-tools,
-  .assistant-input-row {
+  .assistant-composer-tools {
     grid-template-columns: 1fr;
   }
 
@@ -4845,6 +4899,8 @@ button:not(:disabled):active,
 
   .assistant-input-row {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) 42px 76px;
+    gap: 8px;
   }
 
   .assistant-message {

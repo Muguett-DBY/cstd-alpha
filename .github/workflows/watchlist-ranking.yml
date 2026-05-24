@@ -1,0 +1,39 @@
+name: Score Watchlist Ranking
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Watchlist ranking job id created by the website
+        required: true
+        type: string
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      WATCHLIST_RANKING_WORKER_URL: ${{ secrets.WATCHLIST_RANKING_WORKER_URL }}
+      WATCHLIST_RANKING_WORKER_TOKEN: ${{ secrets.WATCHLIST_RANKING_WORKER_TOKEN || secrets.TEMPLATE_ANALYSIS_WORKER_TOKEN }}
+      WATCHLIST_RANKING_JOB_ID: ${{ inputs.job_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate job id
+        run: |
+          node -e "const id=process.env.WATCHLIST_RANKING_JOB_ID||''; if(!/^[a-f0-9]{64}$/i.test(id)){throw new Error('Invalid watchlist ranking job id')}"
+
+      - name: Run DeepSeek watchlist ranking score
+        run: npx tsx scripts/run_watchlist_ranking_job.ts

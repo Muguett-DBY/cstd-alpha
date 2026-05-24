@@ -1,6 +1,14 @@
 import { readSessionCookie } from "./auth";
 import type { CompanyCandidate } from "../../src/shared/report";
-import { RESEARCH_TEMPLATES, normalizeTemplateSectionRequirements, type ResearchTemplate, type TemplateAnalysisResult, type WatchlistItem } from "../../src/shared/user-research";
+import {
+  RESEARCH_TEMPLATES,
+  normalizeTemplateSectionRequirements,
+  type ResearchTemplate,
+  type TemplateAnalysisResult,
+  type WatchlistItem,
+  type WatchlistRankingEntry,
+  type WatchlistRankingStatus,
+} from "../../src/shared/user-research";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000;
 
@@ -97,6 +105,33 @@ export async function ensureUserResearchSchema(db: D1Database) {
         )`,
       ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_user_research_templates_user ON user_research_templates (user_key, sort_order ASC)`),
+    db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS watchlist_ranking_score (
+          id TEXT PRIMARY KEY,
+          user_key TEXT NOT NULL,
+          watchlist_id TEXT NOT NULL,
+          company_name TEXT NOT NULL,
+          ticker TEXT NOT NULL,
+          market TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'running',
+          model TEXT,
+          company_quality_score REAL,
+          investment_attractiveness_score REAL,
+          overall_score REAL,
+          verdict TEXT,
+          summary TEXT,
+          content_json TEXT,
+          evidence_hash TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          error_message TEXT,
+          UNIQUE(user_key, watchlist_id)
+        )`,
+      ),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_watchlist_ranking_user ON watchlist_ranking_score (user_key, overall_score DESC, updated_at DESC)`),
   ]);
   await Promise.all([
     ensureColumn(db, "user_watchlist", "user_id", "TEXT"),
@@ -111,6 +146,15 @@ export async function ensureUserResearchSchema(db: D1Database) {
     ensureColumn(db, "template_analysis", "template_snapshot_json", "TEXT"),
     ensureColumn(db, "user_research_templates", "section_requirements_json", "TEXT"),
     ensureColumn(db, "user_research_templates", "default_section_requirements_json", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "model", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "company_quality_score", "REAL"),
+    ensureColumn(db, "watchlist_ranking_score", "investment_attractiveness_score", "REAL"),
+    ensureColumn(db, "watchlist_ranking_score", "overall_score", "REAL"),
+    ensureColumn(db, "watchlist_ranking_score", "content_json", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "evidence_hash", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "started_at", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "completed_at", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "error_message", "TEXT"),
   ]);
 }
 
@@ -380,6 +424,52 @@ export type AnalysisRow = {
   template_snapshot_json?: string | null;
 };
 
+export type WatchlistRankingRow = {
+  id: string;
+  user_key: string;
+  watchlist_id: string;
+  company_name: string;
+  ticker: string;
+  market: string;
+  status: string;
+  model: string | null;
+  company_quality_score: number | null;
+  investment_attractiveness_score: number | null;
+  overall_score: number | null;
+  verdict: string | null;
+  summary: string | null;
+  content_json: string | null;
+  evidence_hash: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+};
+
+export function rankingRowToEntry(row: WatchlistRankingRow, watchlist?: WatchlistRow | null): WatchlistRankingEntry {
+  const content = parseRankingContent(row.content_json);
+  return {
+    id: row.id,
+    watchlistId: row.watchlist_id,
+    companyName: row.company_name,
+    ticker: row.ticker,
+    market: row.market,
+    listingPlace: watchlist?.listing_place || watchlist?.market || row.market,
+    status: rankingStatus(row.status),
+    companyQualityScore: row.company_quality_score ?? undefined,
+    investmentAttractivenessScore: row.investment_attractiveness_score ?? undefined,
+    overallScore: row.overall_score ?? undefined,
+    verdict: row.verdict || undefined,
+    summary: row.summary || undefined,
+    keyPoints: content.keyPoints,
+    riskFlags: content.riskFlags,
+    evidenceHash: row.evidence_hash || undefined,
+    updatedAt: row.updated_at,
+    errorMessage: row.error_message || undefined,
+  };
+}
+
 export type ResearchTemplateRow = {
   id: string;
   user_id?: string | null;
@@ -530,6 +620,16 @@ function parseAnalysisContent(raw: string) {
   }
 }
 
+function parseRankingContent(raw: string | null | undefined) {
+  if (!raw) return { keyPoints: [], riskFlags: [] };
+  try {
+    const parsed = JSON.parse(raw) as { keyPoints?: unknown; riskFlags?: unknown };
+    return { keyPoints: stringArray(parsed.keyPoints), riskFlags: stringArray(parsed.riskFlags) };
+  } catch {
+    return { keyPoints: [], riskFlags: [] };
+  }
+}
+
 function parseTemplateSnapshot(raw: string | null | undefined) {
   if (!raw) return undefined;
   try {
@@ -564,6 +664,10 @@ function candidateSource(value: unknown): CompanyCandidate["source"] {
 
 function templateStatus(value: unknown) {
   return value === "pending" || value === "running" || value === "completed" || value === "failed_retryable" || value === "failed" ? value : "completed";
+}
+
+function rankingStatus(value: unknown): WatchlistRankingStatus {
+  return value === "pending" || value === "running" || value === "completed" || value === "failed_retryable" || value === "failed" ? value : "pending";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
