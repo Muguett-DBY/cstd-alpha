@@ -324,6 +324,7 @@ describe("assistant chat endpoint", () => {
       expect.objectContaining({ use: true }),
     );
     expect(shouldUseExaForAssistant("茅台今年净利润业绩预估？", "target", "公司证据包：未命中")).toEqual(expect.objectContaining({ use: true }));
+    expect(shouldUseExaForAssistant("苹果AI硬件周期对A股消费电子有什么影响？", "industry", "行业证据包：证据不足")).toEqual(expect.objectContaining({ use: true }));
     expect(shouldUseExaForAssistant("简单总结一下", "chat", "站内证据充足")).toEqual(expect.objectContaining({ use: false }));
   });
 
@@ -336,6 +337,7 @@ describe("assistant chat endpoint", () => {
   test("answers clear research questions directly without a clarification round", () => {
     expect(shouldAnswerDirectlyWithoutClarification("茅台今年业绩预估？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("如果我认为光伏已经到底了，你反驳我。")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("宁德时代能买吗？")).toBe(false);
   });
 
