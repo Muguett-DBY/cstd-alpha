@@ -69,4 +69,21 @@ describe("assistant prompt and memory helpers", () => {
     expect(messages[0].content.length).toBeGreaterThan(10_000);
     expect(messages[0].content.indexOf("CSTD Alpha assistant cache anchor")).toBeLessThan(messages[0].content.indexOf("你是 CSTD Alpha"));
   });
+
+  test("hardens rebuttal answers against overclaiming search evidence", () => {
+    const messages = buildAssistantPromptMessages({
+      memories: [],
+      threadSummary: "",
+      evidenceSummary: "站内证据：银行股证据薄。",
+      externalEvidenceSummary: "外部搜索线索：E1 海外银行股息削减案例。",
+      recentMessages: [],
+      userMessage: "如果我认为银行股是稳赚高股息，你反驳我。",
+      mode: "industry",
+    });
+    const system = messages[0].content;
+
+    expect(system).toContain("不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就写“证据等级：高”");
+    expect(system).toContain("高股息策略可能合理，但“稳赚/无风险/必然赚钱”必须明确反驳");
+    expect(system).toContain("禁止输出空标题或空章节");
+  });
 });

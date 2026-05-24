@@ -666,9 +666,15 @@ function guardForecastLanguage(text: string, message: string) {
 }
 
 function guardAssistantOutputLanguage(text: string, message: string, externalEvidence?: ExternalEvidenceResult) {
-  return guardExternalEvidenceConsistency(
-    guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message))),
-    externalEvidence,
+  return cleanAssistantFormatting(
+    guardExternalEvidenceConsistency(
+      guardExternalEvidenceLevel(
+        guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message))),
+        message,
+        externalEvidence,
+      ),
+      externalEvidence,
+    ),
   );
 }
 
@@ -704,6 +710,68 @@ function guardExternalEvidenceConsistency(text: string, externalEvidence?: Exter
     .replace(/本轮检索未返回任何([^。\n]*)条目/g, "本轮检索返回了外部线索，但$1条目的硬证据强度有限")
     .replace(/本轮检索未返回任何([^。\n]*)相关条目/g, "本轮检索返回了相关外部线索，但硬证据强度有限")
     .replace(/外部搜索（Exa）：本轮检索未返回任何([^。\n]*)/g, "外部搜索（Exa）：本轮返回了外部线索，但$1的硬证据强度有限");
+}
+
+function guardExternalEvidenceLevel(text: string, message: string, externalEvidence?: ExternalEvidenceResult) {
+  if (!externalEvidence || !/(Exa|AnySearch|SearXNG|外部搜索|海外|全球|GCC|印度|美国|季度报告|市场新闻|S&P)/i.test(text)) return text;
+  const likelyChinaOrAh = /(A股|港股|中国|银行股|高股息|四大行|国有大行|茅台|宁德时代|腾讯|优必选|比亚迪|万科|招商银行|工商银行|建设银行|农业银行|中国银行)/i.test(message + text);
+  const hasDirectHardEvidence = /(公司公告|年报|半年报|季报|财报|监管文件|交易所公告|央行|金融监管总局|银保监|证监会|官方统计|资本充足率|不良率|净息差)/.test(text);
+  if (!likelyChinaOrAh || hasDirectHardEvidence) return text;
+  return text
+    .replace(/证据等级[：:]\s*高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*较高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*强/g, "证据等级：中");
+}
+
+function cleanAssistantFormatting(text: string) {
+  return removeEmptyMarkdownSections(text)
+    .replace(/^结构化表格\s*\d*\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function removeEmptyMarkdownSections(text: string) {
+  const lines = text.split(/\r?\n/);
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isPotentialEmptyHeading(line)) {
+      kept.push(line);
+      continue;
+    }
+    let firstNonBlank = index + 1;
+    while (firstNonBlank < lines.length && !lines[firstNonBlank].trim()) firstNonBlank += 1;
+    if (/^[-—_]{3,}$/.test(lines[firstNonBlank]?.trim() ?? "")) {
+      let afterRule = firstNonBlank + 1;
+      while (afterRule < lines.length && (!lines[afterRule].trim() || /^[-—_]{3,}$/.test(lines[afterRule].trim()))) afterRule += 1;
+      index = afterRule - 1;
+      continue;
+    }
+    let cursor = index + 1;
+    let hasContent = false;
+    while (cursor < lines.length && !isAnyMarkdownHeading(lines[cursor])) {
+      const current = lines[cursor].trim();
+      if (current && !/^[-—_]{3,}$/.test(current)) {
+        hasContent = true;
+        break;
+      }
+      cursor += 1;
+    }
+    if (hasContent) {
+      kept.push(line);
+    } else {
+      index = cursor - 1;
+    }
+  }
+  return kept.join("\n");
+}
+
+function isPotentialEmptyHeading(line: string) {
+  return /^#{1,6}\s*(核心理由|证据|证据等级|反驳用户(?:典型)?观点|我可能错在哪里(?:（[^）]*）)?|下一步跟踪|后续跟踪|反证条件|正向确认信号)\s*[：:]?\s*$/.test(line.trim());
+}
+
+function isAnyMarkdownHeading(line: string) {
+  return /^#{1,6}\s+\S+/.test(line.trim());
 }
 
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
@@ -976,6 +1044,10 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "如果草稿只是在说无法预测、无法判断、证据不足，必须改写为有用回答：列出可用证据、低置信情景/区间、关键假设、反证条件、下一步跟踪。",
       "重点检查数字一致性：同比增速、基数、区间、季度外推之间不能互相矛盾；若无法校验基数，必须把区间和证据等级下调。",
       "重点检查来源口径：外部搜索线索不能被写成公司公告、官方统计、内部记录或硬数据；检索服务不等于原始发布方。",
+      "重点检查证据等级：不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就给高证据等级；若缺少直接相关财报、公告、监管或官方统计，必须降为中或低。",
+      "重点检查跨市场类比：海外银行、海外公司或海外行业案例只能作为风险机制类比，不能直接证明中国/A股/港股标的；需要在回答中写明适用边界。",
+      "重点检查反驳类问题：必须拆分“用户观点中合理的部分”和“错误的绝对化部分”；例如高股息可以是策略，但“稳赚”必须被明确反驳。",
+      "重点检查格式：禁止空标题、空章节和只有横线的章节；Markdown 表格必须有具体标题，不能写“结构化表格1/2/3”。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
       "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",
       "重点检查事实口径：没有明确证据时，禁止写“首次业绩双降”“业绩双降”“上市25年首次业绩双降”等强事实；若只是搜索线索或推断，必须改成“业绩承压待核验线索”。",

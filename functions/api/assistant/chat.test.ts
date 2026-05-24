@@ -218,6 +218,55 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("\"type\":\"chart\"");
   });
 
+  test("removes empty research headings from assistant output", async () => {
+    const answer = [
+      "结论：高股息可以是策略，但不是稳赚。",
+      "",
+      "### 反驳用户典型观点",
+      "",
+      "---",
+      "",
+      "### 我可能错在哪里（反证条件）",
+      "",
+      "---",
+      "",
+      "### 下一步跟踪",
+      "",
+      "---",
+      "",
+      "最终重申：股息收益需要和本金波动一起看。",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "如果我认为银行股是稳赚高股息，你反驳我。", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("高股息可以是策略");
+    expect(body).toContain("最终重申");
+    expect(body).not.toContain("反驳用户典型观点");
+    expect(body).not.toContain("我可能错在哪里（反证条件）");
+    expect(body).not.toContain("下一步跟踪");
+  });
+
   test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
     const fetchMock = vi
       .fn()

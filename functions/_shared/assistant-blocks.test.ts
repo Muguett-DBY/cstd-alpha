@@ -25,6 +25,23 @@ describe("assistant structured blocks", () => {
     expect(extractAssistantBlocks(text, "简单总结一下").map((block) => block.type)).toEqual(["table"]);
   });
 
+  test("infers specific table titles instead of generic structured labels", () => {
+    const text = [
+      "| 反驳点 | 关键证据 | 含义 |",
+      "| --- | --- | --- |",
+      "| 股息可能下降 | 外部线索 | 高股息不等于稳赚 |",
+      "",
+      "| 跟踪项 | 频率 | 来源 |",
+      "| --- | --- | --- |",
+      "| 净息差 | 季度 | 银行季报 |",
+    ].join("\n");
+
+    expect(extractAssistantBlocks(text, "如果我认为银行股稳赚高股息，你反驳我。")).toEqual([
+      expect.objectContaining({ type: "table", title: "反驳要点表" }),
+      expect.objectContaining({ type: "table", title: "跟踪指标表 2" }),
+    ]);
+  });
+
   test("strips rendered markdown tables from chat text", () => {
     const text = "前文\n| 项目 | 分数 |\n| --- | --- |\n| 证据 | 70 |\n后文";
     expect(stripRenderedMarkdownTables(text)).toBe("前文\n后文");

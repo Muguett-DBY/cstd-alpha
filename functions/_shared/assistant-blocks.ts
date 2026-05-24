@@ -6,7 +6,7 @@ export function extractAssistantBlocks(text: string, userMessage = ""): Assistan
   const tables = extractMarkdownTables(text);
   const blocks: AssistantBlock[] = [];
   tables.forEach((table, index) => {
-    blocks.push({ ...table, id: `table-${index + 1}`, title: table.title || inferTableTitle(userMessage, index) });
+    blocks.push({ ...table, id: `table-${index + 1}`, title: table.title || inferTableTitle(userMessage, table.columns, index) });
   });
   if (CHART_REQUEST_RE.test(userMessage)) {
     const chartBlocks = tables.map((table, index) => tableToChartBlock(table, index)).filter((block): block is AssistantChartBlock => Boolean(block));
@@ -104,8 +104,14 @@ function parseNumber(value: string | undefined) {
   return Number(normalized[0]);
 }
 
-function inferTableTitle(userMessage: string, index: number) {
+function inferTableTitle(userMessage: string, columns: string[], index: number) {
+  const joinedColumns = columns.join(" ");
+  if (/反驳点|含义|关键证据|反驳/.test(joinedColumns)) return index === 0 ? "反驳要点表" : `反驳要点表 ${index + 1}`;
+  if (/用户观点|用户说法/.test(joinedColumns)) return index === 0 ? "用户观点拆解" : `用户观点拆解 ${index + 1}`;
+  if (/条件|触发信号|修正方向|反证|确认/.test(joinedColumns)) return index === 0 ? "反证与确认条件" : `反证与确认条件 ${index + 1}`;
+  if (/跟踪项|频率|来源|意义|指标/.test(joinedColumns)) return index === 0 ? "跟踪指标表" : `跟踪指标表 ${index + 1}`;
+  if (/公司|标的|股票|评分|估值/.test(joinedColumns)) return index === 0 ? "标的对比表" : `标的对比表 ${index + 1}`;
   if (/证据/.test(userMessage)) return index === 0 ? "证据矩阵" : `证据表 ${index + 1}`;
   if (/对比/.test(userMessage)) return index === 0 ? "对比表" : `对比表 ${index + 1}`;
-  return index === 0 ? "结构化表格" : `结构化表格 ${index + 1}`;
+  return index === 0 ? "分析表" : `分析表 ${index + 1}`;
 }
