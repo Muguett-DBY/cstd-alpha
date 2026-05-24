@@ -1150,7 +1150,7 @@ button:not(:disabled):active,
 
 .assistant-chat-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
   box-shadow: 0 20px 60px rgb(18 20 23 / 0.1);
