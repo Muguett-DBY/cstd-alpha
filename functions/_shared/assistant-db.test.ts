@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { buildAssistantDeepSeekBody, buildAssistantPromptMessages, detectMemoryCandidate, parseDeepSeekUsage } from "./assistant-db";
+import {
+  ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT,
+  buildAssistantDeepSeekBody,
+  buildAssistantPromptMessages,
+  detectMemoryCandidate,
+  estimateAssistantContextTokens,
+  parseDeepSeekUsage,
+  shouldCompactAssistantContext,
+} from "./assistant-db";
 
 describe("assistant prompt and memory helpers", () => {
   test("keeps stable rules and memory before volatile user message", () => {
@@ -68,6 +76,16 @@ describe("assistant prompt and memory helpers", () => {
 
     expect(messages[0].content.length).toBeGreaterThan(10_000);
     expect(messages[0].content.indexOf("CSTD Alpha assistant cache anchor")).toBeLessThan(messages[0].content.indexOf("你是 CSTD Alpha"));
+  });
+
+  test("uses token-oriented context compaction thresholds instead of raw character count", () => {
+    const chineseText = "茅台批价库存现金流反证条件".repeat(100);
+    const englishText = "free cash flow margin inventory valuation risk ".repeat(100);
+
+    expect(estimateAssistantContextTokens(chineseText)).toBeGreaterThan(400);
+    expect(estimateAssistantContextTokens(englishText)).toBeGreaterThan(400);
+    expect(shouldCompactAssistantContext("短对话", ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT)).toBe(false);
+    expect(shouldCompactAssistantContext("长期投研上下文".repeat(110_000), ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT)).toBe(true);
   });
 
   test("hardens rebuttal answers against overclaiming search evidence", () => {

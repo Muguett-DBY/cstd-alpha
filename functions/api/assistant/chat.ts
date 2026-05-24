@@ -196,6 +196,14 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review, blocks },
         });
         await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: reviewed.usage });
+        await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
+          userKey: session.userId,
+          threadId: thread.id,
+          previousSummary: thread.summary,
+          recentMessages,
+          latestUserMessage: userMessage,
+          latestAssistantMessage: guardedText,
+        });
         enqueue(controller, { type: "usage", usage: reviewed.usage });
         enqueue(controller, { type: "done", message });
         controller.close();

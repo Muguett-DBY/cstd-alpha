@@ -181,6 +181,43 @@ describe("assistant chat endpoint", () => {
     expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
   });
 
+  test("compacts long target research threads after non-stream answers", async () => {
+    const longAnswer = [
+      "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
+      "证据等级：中。",
+      `核心理由：${"现金流、估值、行业周期、反证条件。".repeat(110_000)}`,
+      "反驳用户观点：不能只因龙头地位给高分。",
+      "我可能错在哪里：若证据更新，结论要重算。",
+      "下一步跟踪：财报、价格、库存、订单。",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: longAnswer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const db = mockDb({ role: "admin" });
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代长期投资价值怎么判断？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: db,
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    await response.text();
+    expect((db as unknown as { __state: { sql: string[] } }).__state.sql.some((sql) => sql.includes("UPDATE assistant_threads SET summary"))).toBe(true);
+  });
+
   test("emits table and chart blocks when assistant returns a markdown table", async () => {
     const answer = [
       "结论：先观察。",
@@ -795,6 +832,7 @@ function mockDb({ role }: { role: string }) {
       };
     },
     batch: async () => [],
+    __state: state,
   };
   vi.spyOn(crypto.subtle, "digest").mockImplementation(async () => {
     const bytes = new Uint8Array([133, 88, 111, 15, 85, 105, 5, 137, 213, 229, 170, 234, 171, 226, 183, 182, 152, 30, 220, 174, 31, 5, 10, 137, 54, 189, 109, 201, 3, 167, 167, 119]);

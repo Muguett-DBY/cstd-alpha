@@ -44,6 +44,7 @@ export const ASSISTANT_DEFAULT_THREAD_ID = "default-investment-thread";
 export const ASSISTANT_MODEL = "deepseek-v4-flash";
 export const ASSISTANT_REASONING_EFFORT = "max";
 export const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+export const ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT = 100_000;
 const ASSISTANT_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha assistant cache anchor: Chinese investment assistant, evidence first, conclusion evidence counter-evidence follow-up, conservative scoring, no hallucinated facts, admin private memory, read-only tools. ";
 const ASSISTANT_CACHE_ANCHOR_REPEAT = 180;
@@ -261,6 +262,7 @@ export async function updateThreadSummaryIfLarge(
     latestAssistantMessage: string;
     now?: string;
     thresholdChars?: number;
+    thresholdTokens?: number;
   },
 ) {
   const combined = [
@@ -269,7 +271,9 @@ export async function updateThreadSummaryIfLarge(
     `user: ${input.latestUserMessage}`,
     `assistant: ${input.latestAssistantMessage}`,
   ].join("\n");
-  if (combined.length < (input.thresholdChars ?? 180_000)) return null;
+  const compactByTokens = shouldCompactAssistantContext(combined, input.thresholdTokens ?? ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT);
+  const compactByLegacyChars = typeof input.thresholdChars === "number" && combined.length >= input.thresholdChars;
+  if (!compactByTokens && !compactByLegacyChars) return null;
   const now = input.now ?? new Date().toISOString();
   const summary = buildDeterministicThreadSummary(combined);
   await db
@@ -277,6 +281,19 @@ export async function updateThreadSummaryIfLarge(
     .bind(summary, now, input.threadId, input.userKey)
     .run();
   return summary;
+}
+
+export function shouldCompactAssistantContext(content: string, thresholdTokens = ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT) {
+  return estimateAssistantContextTokens(content) >= thresholdTokens;
+}
+
+export function estimateAssistantContextTokens(content: string) {
+  if (!content.trim()) return 0;
+  const cjkChars = content.match(/[\u3400-\u9fff\uf900-\ufaff]/g)?.length ?? 0;
+  const asciiWords = content.match(/[A-Za-z0-9_.$%+-]+/g)?.length ?? 0;
+  const otherNonWhitespace = content.replace(/[\u3400-\u9fff\uf900-\ufaffA-Za-z0-9_.$%+\-\s]/g, "").length;
+  const whitespaceAdjustedChars = Math.max(0, content.replace(/\s+/g, "").length - cjkChars - otherNonWhitespace);
+  return Math.ceil(cjkChars + asciiWords * 1.15 + otherNonWhitespace * 0.5 + whitespaceAdjustedChars / 4);
 }
 
 export function detectMemoryCandidate(message: string): Omit<AssistantMemoryCandidate, "id" | "createdAt"> | null {
