@@ -4,6 +4,7 @@ import {
   fetchAssistantThread,
   sendAssistantMessage,
 } from "./api";
+import { analyzeAssistantClarification, composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { mergeAssistantDelta } from "./assistant-state";
 import type { AssistantChatStreamEvent, AssistantMessage, AssistantThread } from "./shared/assistant";
 
@@ -15,6 +16,7 @@ export function AssistantView() {
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
+  const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -42,6 +44,15 @@ export function AssistantView() {
     event.preventDefault();
     const message = input.trim();
     if (!message || phase === "streaming") return;
+    const clarification = analyzeAssistantClarification(message);
+    if (clarification) {
+      setPendingClarification({ original: message, request: clarification, selectedId: clarification.options.find((option) => option.recommended)?.id ?? clarification.options[0].id, customAnswer: "" });
+      return;
+    }
+    await sendMessage(message);
+  }
+
+  async function sendMessage(message: string) {
     setInput("");
     setDraft("");
     setError("");
@@ -76,6 +87,18 @@ export function AssistantView() {
       setError(err instanceof Error ? err.message : "助手生成失败。");
       setPhase("error");
     }
+  }
+
+  async function submitClarification() {
+    if (!pendingClarification || phase === "streaming") return;
+    const option = pendingClarification.request.options.find((item) => item.id === pendingClarification.selectedId) ?? pendingClarification.request.options[0];
+    if (option.requiresCustom && !pendingClarification.customAnswer.trim()) {
+      setPendingClarification((current) => (current ? { ...current, error: "请先补充公司、行业或主题。" } : current));
+      return;
+    }
+    const message = composeClarifiedAssistantMessage(pendingClarification.original, option, pendingClarification.customAnswer);
+    setPendingClarification(null);
+    await sendMessage(message);
   }
 
   function handleStreamEvent(event: AssistantChatStreamEvent) {
@@ -127,7 +150,73 @@ export function AssistantView() {
           </form>
           {error ? <p className="error-text">{error}</p> : null}
       </section>
+      {pendingClarification ? (
+        <ClarificationDialog
+          request={pendingClarification.request}
+          selectedId={pendingClarification.selectedId}
+          customAnswer={pendingClarification.customAnswer}
+          error={pendingClarification.error}
+          onSelect={(selectedId) => setPendingClarification((current) => (current ? { ...current, selectedId, error: undefined } : current))}
+          onCustomAnswer={(customAnswer) => setPendingClarification((current) => (current ? { ...current, customAnswer, error: undefined } : current))}
+          onCancel={() => setPendingClarification(null)}
+          onSubmit={() => void submitClarification()}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ClarificationDialog({
+  request,
+  selectedId,
+  customAnswer,
+  error,
+  onSelect,
+  onCustomAnswer,
+  onCancel,
+  onSubmit,
+}: {
+  request: AssistantClarificationRequest;
+  selectedId: string;
+  customAnswer: string;
+  error?: string;
+  onSelect: (id: string) => void;
+  onCustomAnswer: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="assistant-clarification-backdrop" role="presentation">
+      <section className="assistant-clarification-dialog" role="dialog" aria-modal="true" aria-labelledby="assistant-clarification-title">
+        <div>
+          <p className="eyebrow">先确认一下</p>
+          <h3 id="assistant-clarification-title">{request.title}</h3>
+          <p>{request.question}</p>
+          <small>{request.reason}</small>
+        </div>
+        <div className="assistant-clarification-options" role="radiogroup" aria-label="澄清选项">
+          {request.options.map((option) => (
+            <ClarificationOptionButton key={option.id} option={option} selected={selectedId === option.id} onSelect={() => onSelect(option.id)} />
+          ))}
+        </div>
+        <textarea value={customAnswer} onChange={(event) => onCustomAnswer(event.target.value)} placeholder={request.customPlaceholder} rows={3} />
+        {error ? <p className="error-text">{error}</p> : null}
+        <footer>
+          <button type="button" className="ghost-button" onClick={onCancel}>取消</button>
+          <button type="button" onClick={onSubmit}>按这个继续</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ClarificationOptionButton({ option, selected, onSelect }: { option: AssistantClarificationOption; selected: boolean; onSelect: () => void }) {
+  return (
+    <button type="button" className={`assistant-clarification-option ${selected ? "selected" : ""}`} onClick={onSelect} aria-pressed={selected}>
+      <span>{option.label}</span>
+      {option.recommended ? <em>推荐</em> : null}
+      <small>{option.description}</small>
+    </button>
   );
 }
 
