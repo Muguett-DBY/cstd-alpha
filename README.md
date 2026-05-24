@@ -69,6 +69,9 @@ GitHub 仓库 secrets：
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `DEEPSEEK_API_KEY`
+- `ANYSEARCH_API_KEY`（外部搜索增强，可选但建议配置）
+- `SEARXNG_ENDPOINTS`（逗号或换行分隔的 SearXNG base URL；需实例启用 JSON 输出）
+- `EXA_API_KEY`（助手高价值外部检索增强，可选）
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`
 - `TEMPLATE_ANALYSIS_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/template-analysis-job`）
 
@@ -80,6 +83,9 @@ Cloudflare Pages secrets：
 - `GITHUB_RADAR_DISPATCH_TOKEN`（fine-grained token，允许触发本仓库 Actions workflow）
 - `GITHUB_TEMPLATE_DISPATCH_TOKEN`（可选；缺省复用 `GITHUB_RADAR_DISPATCH_TOKEN`）
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`（和 GitHub secret 保持一致，仅供后台模板 Action 读写任务）
+- `ANYSEARCH_API_KEY`（模板分析和助手的外部搜索增强）
+- `SEARXNG_ENDPOINTS`（助手、模板分析的免费元搜索增强；SearXNG API 使用 `/search?q=...&format=json`）
+- `EXA_API_KEY`（助手在高价值、最新或全球/英文证据场景的增强搜索）
 
 项目：
 
