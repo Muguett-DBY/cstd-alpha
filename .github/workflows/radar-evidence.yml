@@ -40,8 +40,7 @@ jobs:
       - name: Install Wrangler
         run: npm ci --ignore-scripts
 
-      - name: Start local SearXNG fallback
-        if: env.SEARXNG_ENDPOINTS == ''
+      - name: Start local SearXNG
         run: |
           mkdir -p .searxng
           cat > .searxng/settings.yml <<'YAML'
@@ -68,7 +67,11 @@ jobs:
 
           for attempt in $(seq 1 30); do
             if curl -fsS "http://127.0.0.1:8080/search?q=test&format=json" >/dev/null; then
-              echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+              if [ -n "$SEARXNG_ENDPOINTS" ]; then
+                echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080,$SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
+              else
+                echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+              fi
               exit 0
             fi
             sleep 2
