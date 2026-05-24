@@ -304,6 +304,41 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("证据等级：高");
   });
 
+  test("caps forecast confidence and removes stale history phrasing", async () => {
+    const answer = [
+      "结论：维持此前测算口径，2026年全年归母净利润区间为800-870亿元。本次无新增站内证据或外部检索信息修正此前判断。",
+      "证据等级：中至高（Q1财报为硬事实，券商预测为外部推断。）",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "根据现有信息和数据预测贵州茅台今年净利润区间。", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("证据等级：中");
+    expect(body).not.toContain("中至高");
+    expect(body).not.toContain("维持此前测算口径");
+    expect(body).not.toContain("本次无新增站内证据");
+  });
+
   test("uses Exa only for high-value weak-evidence research and respects quota storage", async () => {
     const fetchMock = vi
       .fn()

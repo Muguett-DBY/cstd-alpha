@@ -660,7 +660,11 @@ function guardForecastLanguage(text: string, message: string) {
   const guarded = text
     .replace(/(\d{4}年)实际值/g, "$1基数线索")
     .replace(/(\d{4}年)实际/g, "$1基数线索")
-    .replace(/(全年|归母净利润|营收)实际值/g, "$1基数线索");
+    .replace(/(全年|归母净利润|营收)实际值/g, "$1基数线索")
+    .replace(/证据等级[：:]\s*中至高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*中高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*高/g, "证据等级：中")
+    .replace(/证据等级[：:]\s*较高/g, "证据等级：中");
   if (/口径说明：/.test(guarded)) return guarded;
   return `口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。\n\n${guarded}`;
 }
@@ -681,6 +685,9 @@ function guardAssistantOutputLanguage(text: string, message: string, externalEvi
 function guardStaleHistoryLanguage(text: string) {
   return text
     .replace(/当前无新增证据[，,、\s]*/g, "")
+    .replace(/本次无新增站内证据或外部检索信息修正此前判断[，,。；;\s]*/g, "")
+    .replace(/本次无新增站内证据[，,、\s]*/g, "")
+    .replace(/维持此前测算口径[，,、\s]*/g, "本轮测算口径：")
     .replace(/此前结论保持不变[——\-:：\s]*/g, "本轮判断：")
     .replace(/维持此前结论[——\-:：\s]*/g, "本轮判断：")
     .replace(/此前结论/g, "本轮判断");
