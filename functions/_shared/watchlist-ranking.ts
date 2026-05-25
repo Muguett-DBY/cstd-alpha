@@ -134,6 +134,8 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
             "If you write valuation is high/expensive/safety margin limited/market expectation is already full, investmentAttractivenessScore must be <=70.",
             "If evidence lacks segment data, forward guidance, valuation or current hard financial facts, cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
             "Ignore placeholder sources that say unavailable, no data, fallback returned no data, or symbol search only.",
+            "The JSON object MUST include top-level numeric fields: companyQualityScore, investmentAttractivenessScore, overallScore. Do not nest scores under scores/result/output.",
+            "If you cannot decide exactly, still return conservative numeric scores instead of omitting fields.",
             "Return only valid JSON.",
           ].join(" "),
       },
@@ -143,6 +145,7 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
           kind: "watchlist-ranking-score",
           scoringScale: "0-100",
           outputSchema: {
+            required: ["companyQualityScore", "investmentAttractivenessScore", "overallScore", "verdict", "summary", "keyPoints", "riskFlags"],
             companyQualityScore: "0-100 number: business quality, moat, financial quality, governance, durability",
             investmentAttractivenessScore: "0-100 number: current price attractiveness, forward return/risk, catalysts, valuation discipline",
             overallScore: "0-100 number, weighted quality 55% and attractiveness 45% with risk caps",
