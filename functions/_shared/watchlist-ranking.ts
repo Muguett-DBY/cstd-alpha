@@ -208,7 +208,7 @@ function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatc
   let companyQualityScore = ranking.companyQualityScore;
   let investmentAttractivenessScore = ranking.investmentAttractivenessScore;
   let overallCap = 100;
-  const weakCashFlowOrLoss = /自由现金流[^，。；\n]*(为负|转负|负值)|经营现金流[^，。；\n]*(为负|转负|负值)|现金流[^，。；\n]*恶化|持续亏损|连续[^，。；\n]*亏损|巨额亏损|盈利未现|净亏损/.test(text);
+  const weakCashFlowOrLoss = /自由现金流[^，。；\n]*(为负|转负|负值)|经营现金流[^，。；\n]*(为负|转负|负值)|现金流[^，。；\n]*恶化|持续亏损|持续巨亏|连续[^，。；\n]*亏损|巨额亏损|盈利未现|净亏损/.test(text);
   const explicitAvoid = /严重|危机|建议回避|回避|不宜投资|不宜买入|暂不宜投资|退市|资不抵债|债务展期|价值陷阱|质量极差/.test(text);
   const severeNegative = explicitAvoid || weakCashFlowOrLoss;
   const strongFinancialQuality = /财务.*(极为)?强劲|盈利能力.*(强|优秀|极强)|自由现金流.*(极高|充裕|强劲|健康)|经营现金流.*(强劲|充裕|健康)|净利率.*(高达|超过|接近)|资产负债率.*(低|下降)|低杠杆|现金流质量高/.test(text);
@@ -223,6 +223,7 @@ function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatc
   if (weakCashFlowOrLoss) {
     companyQualityScore = Math.min(companyQualityScore, 60);
     investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 45);
+    overallCap = Math.min(overallCap, 49);
   }
   if (explicitAvoid) {
     investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 45);
