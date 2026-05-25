@@ -3,6 +3,7 @@ import {
   ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT,
   buildAssistantDeepSeekBody,
   buildAssistantPromptMessages,
+  buildSiteEvidenceSummary,
   detectMemoryCandidate,
   estimateAssistantContextTokens,
   parseDeepSeekUsage,
@@ -63,6 +64,57 @@ describe("assistant prompt and memory helpers", () => {
       stream: true,
       stream_options: { include_usage: true },
     });
+  });
+
+  test("adds watchlist ranking scores to site evidence summary", async () => {
+    const fakeDb = {
+      prepare(sql: string) {
+        return {
+          bind() {
+            return {
+              async all() {
+                if (sql.includes("FROM user_watchlist")) {
+                  return { results: [{ company_name: "万科A", ticker: "000002", market: "深A" }] };
+                }
+                if (sql.includes("FROM watchlist_ranking_score")) {
+                  return {
+                    results: [
+                      {
+                        company_name: "宁德时代",
+                        ticker: "300750",
+                        market: "深A",
+                        company_quality_score: 88,
+                        investment_attractiveness_score: 82,
+                        overall_score: 85,
+                        verdict: "龙头质量高但估值需审慎",
+                        summary: "证据包评分摘要",
+                      },
+                      {
+                        company_name: "万科A",
+                        ticker: "000002",
+                        market: "深A",
+                        company_quality_score: 18,
+                        investment_attractiveness_score: 12,
+                        overall_score: 15,
+                        verdict: "严重危机，建议回避",
+                        summary: "证据包评分摘要",
+                      },
+                    ],
+                  };
+                }
+                return { results: [] };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const summary = await buildSiteEvidenceSummary(fakeDb, "admin");
+
+    expect(summary).toContain("自选股排行");
+    expect(summary).toContain("宁德时代(300750/深A) 综合85");
+    expect(summary).toContain("低分/优先排雷=万科A(000002/深A) 综合15");
   });
 
   test("includes a long stable cache anchor before volatile chat data", () => {

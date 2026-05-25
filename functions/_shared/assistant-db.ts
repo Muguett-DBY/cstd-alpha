@@ -406,6 +406,44 @@ export async function buildSiteEvidenceSummary(db: D1Database, userKey: string) 
     .catch(() => ({ results: [] }));
   if (watchlist.results?.length) lines.push(`自选股：${watchlist.results.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`);
 
+  const ranking = await db
+    .prepare(
+      `SELECT company_name, ticker, market, company_quality_score, investment_attractiveness_score, overall_score, verdict, summary
+       FROM watchlist_ranking_score
+       WHERE user_key = ?1 AND status = 'completed'
+       ORDER BY overall_score DESC, company_quality_score DESC, updated_at DESC
+       LIMIT 24`,
+    )
+    .bind(userKey)
+    .all<{
+      company_name: string;
+      ticker: string;
+      market: string;
+      company_quality_score: number | null;
+      investment_attractiveness_score: number | null;
+      overall_score: number | null;
+      verdict: string;
+      summary: string;
+    }>()
+    .catch(() => ({ results: [] }));
+  if (ranking.results?.length) {
+    const rows = ranking.results;
+    const high = rows
+      .slice(0, 8)
+      .map(
+        (item) =>
+          `${item.company_name}(${item.ticker}/${item.market}) 综合${item.overall_score ?? "NA"} 质量${item.company_quality_score ?? "NA"} 吸引力${item.investment_attractiveness_score ?? "NA"}：${item.verdict}`,
+      );
+    const low = [...rows]
+      .sort((a, b) => (a.overall_score ?? 0) - (b.overall_score ?? 0))
+      .slice(0, 6)
+      .map(
+        (item) =>
+          `${item.company_name}(${item.ticker}/${item.market}) 综合${item.overall_score ?? "NA"} 质量${item.company_quality_score ?? "NA"} 吸引力${item.investment_attractiveness_score ?? "NA"}：${item.verdict}`,
+      );
+    lines.push(`自选股排行（DeepSeek基于公司证据包重评分，不等同模板评分）：高分=${high.join("；")}；低分/优先排雷=${low.join("；")}`);
+  }
+
   const analyses = await db
     .prepare(`SELECT company_name, template_title, score, verdict, summary FROM template_analysis WHERE user_key = ?1 AND status = 'completed' ORDER BY updated_at DESC LIMIT 8`)
     .bind(userKey)
