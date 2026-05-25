@@ -55,11 +55,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const reused: string[] = [];
   const failed: Array<{ watchlistId: string; error: string }> = [];
 
+  const canRefreshEvidenceInline = body?.forceRefresh === true && rows.length === 1;
   for (const row of rows) {
     try {
       const evidenceEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
       const evidencePackage =
-        body?.forceRefresh === true
+        canRefreshEvidenceInline
           ? await fetchAndStoreCompanyEvidence({ env: evidenceEnv, userId: session.userId, watchlist: row, signal: request.signal })
           : await getOrCreateCompanyEvidencePackage(evidenceEnv, session.userId, row, request.signal);
       const existing = await readRankingRow(env.REPORT_LIBRARY_DB, session.userId, row.id);
