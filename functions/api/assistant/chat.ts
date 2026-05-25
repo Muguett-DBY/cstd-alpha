@@ -883,7 +883,7 @@ function removeEmptyMarkdownSections(text: string) {
 }
 
 function isPotentialEmptyHeading(line: string) {
-  return /^#{1,6}\s*(核心理由|证据|证据等级|反驳用户(?:典型)?观点|我可能错在哪里(?:（[^）]*）)?|下一步跟踪|后续跟踪|反证条件|正向确认信号)\s*[：:]?\s*$/.test(line.trim());
+  return /^#{1,6}\s*(核心理由|证据|证据等级|反驳用户(?:典型)?观点(?:（[^）]*）)?|我可能错在哪里(?:（[^）]*）)?|下一步跟踪|后续跟踪|反证条件(?:（[^）]*）)?|正向确认信号(?:（[^）]*）)?)\s*[：:]?\s*$/.test(line.trim());
 }
 
 function isAnyMarkdownHeading(line: string) {

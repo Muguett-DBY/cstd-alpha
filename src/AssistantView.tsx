@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import {
   confirmAssistantMemoryCandidate,
@@ -8,6 +8,7 @@ import {
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { assistantKeyIntent, mergeSpeechTranscript } from "./assistant-input";
+import { parseAssistantMarkdown } from "./assistant-markdown";
 import { mergeAssistantDelta } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
@@ -336,47 +337,46 @@ export function AssistantView() {
 }
 
 function AssistantText({ text }: { text: string }) {
-  const blocks: ReactNode[] = [];
-  let paragraph: string[] = [];
-  let list: string[] = [];
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    const value = paragraph.join("\n").trim();
-    if (value) blocks.push(<p key={`p-${blocks.length}`}>{renderInlineMarkdown(value)}</p>);
-    paragraph = [];
-  };
-  const flushList = () => {
-    if (!list.length) return;
-    blocks.push(
-      <ul key={`ul-${blocks.length}`}>
-        {list.map((item, index) => <li key={`${index}-${item}`}>{renderInlineMarkdown(item)}</li>)}
-      </ul>,
-    );
-    list = [];
-  };
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-    if (bullet || numbered) {
-      flushParagraph();
-      list.push((bullet?.[1] ?? numbered?.[1] ?? "").trim());
-      continue;
-    }
-    flushList();
-    paragraph.push(line);
-  }
-  flushParagraph();
-  flushList();
-
-  return <div className="assistant-rich-text">{blocks.length ? blocks : <p>{text}</p>}</div>;
+  const blocks = parseAssistantMarkdown(text);
+  return (
+    <div className="assistant-rich-text">
+      {blocks.length
+        ? blocks.map((block, index) => {
+            if (block.type === "heading") {
+              const Heading = block.level <= 2 ? "h3" : "h4";
+              return <Heading key={`h-${index}`}>{renderInlineMarkdown(block.text)}</Heading>;
+            }
+            if (block.type === "hr") return <hr key={`hr-${index}`} />;
+            if (block.type === "list") {
+              return (
+                <ul key={`ul-${index}`}>
+                  {block.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{renderInlineMarkdown(item)}</li>)}
+                </ul>
+              );
+            }
+            if (block.type === "table") {
+              return (
+                <div key={`table-${index}`} className="assistant-inline-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>{block.headers.map((cell, cellIndex) => <th key={`${cell}-${cellIndex}`}>{renderInlineMarkdown(cell)}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {block.rows.map((row, rowIndex) => (
+                        <tr key={`${rowIndex}-${row.join("|")}`}>
+                          {row.map((cell, cellIndex) => <td key={`${cellIndex}-${cell}`}>{renderInlineMarkdown(cell)}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+            return <p key={`p-${index}`}>{renderInlineMarkdown(block.text)}</p>;
+          })
+        : <p>{text}</p>}
+    </div>
+  );
 }
 
 function renderInlineMarkdown(text: string) {

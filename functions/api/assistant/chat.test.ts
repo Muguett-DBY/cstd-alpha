@@ -294,7 +294,7 @@ describe("assistant chat endpoint", () => {
     const answer = [
       "结论：高股息可以是策略，但不是稳赚。",
       "",
-      "### 反驳用户典型观点",
+      "### 反驳用户观点（过度乐观部分）",
       "",
       "---",
       "",
@@ -334,7 +334,7 @@ describe("assistant chat endpoint", () => {
     const body = await response.text();
     expect(body).toContain("高股息可以是策略");
     expect(body).toContain("最终重申");
-    expect(body).not.toContain("反驳用户典型观点");
+    expect(body).not.toContain("反驳用户观点");
     expect(body).not.toContain("我可能错在哪里（反证条件）");
     expect(body).not.toContain("下一步跟踪");
   });

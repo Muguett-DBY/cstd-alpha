@@ -1287,13 +1287,37 @@ button:not(:disabled):active,
 
 .assistant-rich-text {
   display: grid;
-  gap: 8px;
+  gap: 9px;
 }
 
 .assistant-rich-text p,
 .assistant-rich-text ul {
   margin: 0;
   line-height: 1.58;
+}
+
+.assistant-rich-text h3,
+.assistant-rich-text h4 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.assistant-rich-text h3 {
+  font-size: 16px;
+}
+
+.assistant-rich-text h4 {
+  font-size: 15px;
+}
+
+.assistant-rich-text hr {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: var(--line);
+  margin: 2px 0;
 }
 
 .assistant-rich-text ul {
@@ -1304,6 +1328,39 @@ button:not(:disabled):active,
 
 .assistant-rich-text strong {
   font-weight: 850;
+}
+
+.assistant-inline-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+}
+
+.assistant-inline-table-wrap table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.assistant-inline-table-wrap th,
+.assistant-inline-table-wrap td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.assistant-inline-table-wrap th {
+  background: #eef3f0;
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.assistant-inline-table-wrap tr:last-child td {
+  border-bottom: 0;
 }
 
 .assistant-blocks {
