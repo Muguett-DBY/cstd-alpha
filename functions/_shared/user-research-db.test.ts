@@ -22,7 +22,75 @@ describe("user research row mapping", () => {
     expect(watchlistRowToItem(row)).toMatchObject({
       id: "watch-1",
       userId: "user-a",
-      company: { name: "贵州茅台", code: "600519" },
+      company: {
+        name: "贵州茅台",
+        code: "600519",
+        marketType: "AStock",
+        quoteId: "1.600519",
+        secid: "1.600519",
+        yahooSymbol: "600519.SS",
+      },
+    });
+  });
+
+  test("repairs legacy watchlist market metadata for A/H candidates", () => {
+    const base = {
+      user_id: "user-a",
+      user_key: "legacy-a",
+      exchange_name: null,
+      market_type: null,
+      source: "eastmoney",
+      report_library_id: null,
+      added_at: "2026-05-15T00:00:00.000Z",
+    };
+
+    expect(
+      watchlistRowToItem({
+        ...base,
+        id: "watch-sh",
+        company_name: "贵州茅台",
+        ticker: "600519",
+        market: "SH-A",
+        listing_place: "SH-A",
+      }).company,
+    ).toMatchObject({
+      marketType: "AStock",
+      quoteId: "1.600519",
+      yahooSymbol: "600519.SS",
+      exchange: "上海证券交易所",
+    });
+
+    expect(
+      watchlistRowToItem({
+        ...base,
+        id: "watch-sz",
+        company_name: "宁德时代",
+        ticker: "300750",
+        market: "深A",
+        listing_place: "深A",
+      }).company,
+    ).toMatchObject({
+      marketType: "AStock",
+      quoteId: "0.300750",
+      yahooSymbol: "300750.SZ",
+      exchange: "深圳证券交易所",
+    });
+
+    expect(
+      watchlistRowToItem({
+        ...base,
+        id: "watch-hk",
+        company_name: "腾讯控股",
+        ticker: "00700",
+        market: "HK",
+        listing_place: "港股",
+        market_type: "HK",
+      }).company,
+    ).toMatchObject({
+      marketType: "HK",
+      quoteId: "116.00700",
+      yahooSymbol: "0700.HK",
+      exchange: "香港交易所",
     });
   });
 

@@ -290,20 +290,33 @@ export async function resetTemplatesToDefault(db: D1Database, userId: string) {
 }
 
 export function watchlistRowToItem(row: WatchlistRow): WatchlistItem {
+  const company = normalizeWatchlistCompany(row);
   return {
     id: row.id,
     userId: row.user_id || row.user_key,
-    company: {
-      id: `watchlist:${row.market}:${row.ticker}`,
-      name: row.company_name,
-      code: row.ticker,
-      exchange: row.exchange_name || row.market,
-      listingPlace: row.listing_place || row.market,
-      marketType: row.market_type || "Library",
-      source: row.source === "yahoo" ? "yahoo" : "eastmoney",
-    },
+    company,
     reportLibraryId: row.report_library_id || undefined,
     addedAt: row.added_at,
+  };
+}
+
+function normalizeWatchlistCompany(row: WatchlistRow): CompanyCandidate {
+  const code = row.ticker.trim();
+  const listingPlace = row.listing_place || row.market;
+  const marketType = normalizeWatchlistMarketType(code, listingPlace, row.market_type, row.source);
+  const quoteId = deriveWatchlistQuoteId(code, listingPlace, marketType, row.source);
+  const yahooSymbol = deriveWatchlistYahooSymbol(code, listingPlace, marketType, row.source);
+  return {
+    id: `watchlist:${row.market}:${code}`,
+    name: row.company_name,
+    code,
+    exchange: row.exchange_name || deriveWatchlistExchange(listingPlace, quoteId),
+    listingPlace,
+    marketType,
+    quoteId,
+    secid: quoteId,
+    yahooSymbol,
+    source: row.source === "yahoo" ? "yahoo" : "eastmoney",
   };
 }
 
@@ -660,6 +673,47 @@ function stringValue(value: unknown) {
 
 function candidateSource(value: unknown): CompanyCandidate["source"] {
   return value === "yahoo" ? "yahoo" : "eastmoney";
+}
+
+function normalizeWatchlistMarketType(code: string, listingPlace: string, marketType: string | null, source: string | null) {
+  const raw = `${listingPlace} ${marketType || ""} ${source || ""}`.toLowerCase();
+  if (raw.includes("港") || raw.includes("hk")) return "HK";
+  if (raw.includes("美") || raw.includes("nasdaq") || raw.includes("nyse") || source === "yahoo") return marketType || "EQUITY";
+  if (raw.includes("沪") || raw.includes("深") || raw.includes("sh-a") || raw.includes("sz-a") || /^[0369]\d{5}$/.test(code)) return "AStock";
+  return marketType || "Library";
+}
+
+function deriveWatchlistQuoteId(code: string, listingPlace: string, marketType: string, source: string | null) {
+  if (source === "yahoo") return undefined;
+  if (marketType === "HK" || listingPlace.includes("港") || listingPlace.toUpperCase().includes("HK")) return `116.${code}`;
+  if (marketType === "AStock" || listingPlace.includes("沪") || listingPlace.includes("深") || listingPlace.includes("A")) {
+    return `${isShanghaiWatchlistCode(code, listingPlace) ? "1" : "0"}.${code}`;
+  }
+  return undefined;
+}
+
+function deriveWatchlistYahooSymbol(code: string, listingPlace: string, marketType: string, source: string | null) {
+  if (source === "yahoo") return code;
+  if (marketType === "HK" || listingPlace.includes("港") || listingPlace.toUpperCase().includes("HK")) return `${normalizeHongKongWatchlistCode(code)}.HK`;
+  if (marketType === "AStock" || /^[0369]\d{5}$/.test(code)) return `${code}.${isShanghaiWatchlistCode(code, listingPlace) ? "SS" : "SZ"}`;
+  return undefined;
+}
+
+function deriveWatchlistExchange(listingPlace: string, quoteId?: string) {
+  if (quoteId?.startsWith("1.") || listingPlace.includes("沪") || listingPlace.toUpperCase().startsWith("SH")) return "上海证券交易所";
+  if (quoteId?.startsWith("0.") || listingPlace.includes("深") || listingPlace.toUpperCase().startsWith("SZ")) return "深圳证券交易所";
+  if (quoteId?.startsWith("116.") || listingPlace.includes("港") || listingPlace.toUpperCase().includes("HK")) return "香港交易所";
+  if (listingPlace.includes("美") || listingPlace.toUpperCase().includes("NASDAQ") || listingPlace.toUpperCase().includes("NYSE")) return "美国市场";
+  return listingPlace;
+}
+
+function isShanghaiWatchlistCode(code: string, listingPlace: string) {
+  return code.startsWith("6") || code.startsWith("9") || listingPlace.includes("沪") || listingPlace.toUpperCase().startsWith("SH");
+}
+
+function normalizeHongKongWatchlistCode(code: string) {
+  const trimmed = code.trim();
+  return /^\d+$/.test(trimmed) ? trimmed.slice(-4).padStart(4, "0") : trimmed;
 }
 
 function templateStatus(value: unknown) {

@@ -34,6 +34,8 @@ import {
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
 import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import { guardAssistantOutputLanguage } from "../../_shared/assistant-output-guards";
+import { readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_shared/company-evidence";
+import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
@@ -151,7 +153,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 
   const [siteEvidenceSummary, modeEvidenceSummary] = await Promise.all([
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
-    buildModeEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId, researchContext.message, evidenceMode, { strictTargetMatch: mode === "chat" }),
+    buildModeEvidenceSummary(env, session.userId, researchContext.message, evidenceMode, { strictTargetMatch: mode === "chat" }),
   ]);
   const externalEvidence = await maybeFetchExternalEvidence(env, researchContext.message, evidenceMode, request.signal, {
     siteEvidenceSummary,
@@ -809,17 +811,21 @@ async function reserveExaQuota(cache: KVNamespace, now = new Date()) {
   return { allowed: true, count: next };
 }
 
-async function buildModeEvidenceSummary(db: D1Database, userKey: string, message: string, mode: AssistantMode, options: { strictTargetMatch?: boolean } = {}) {
+async function buildModeEvidenceSummary(env: AssistantEnv, userKey: string, message: string, mode: AssistantMode, options: { strictTargetMatch?: boolean } = {}) {
+  const db = env.REPORT_LIBRARY_DB;
+  if (!db) return "";
   if (mode === "chat") return "";
-  if (mode === "target") return buildTargetEvidenceSummary(db, userKey, message, options);
+  if (mode === "target") return buildTargetEvidenceSummary(env, userKey, message, options);
   return buildIndustryEvidenceSummary(db, message);
 }
 
-async function buildTargetEvidenceSummary(db: D1Database, userKey: string, message: string, options: { strictTargetMatch?: boolean } = {}) {
+async function buildTargetEvidenceSummary(env: AssistantEnv, userKey: string, message: string, options: { strictTargetMatch?: boolean } = {}) {
+  const db = env.REPORT_LIBRARY_DB;
+  if (!db) return "";
   const watchlist = await db
-    .prepare(`SELECT id, company_name, ticker, market FROM user_watchlist WHERE user_key = ?1 ORDER BY added_at DESC LIMIT 80`)
+    .prepare(`SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at FROM user_watchlist WHERE user_key = ?1 ORDER BY added_at DESC LIMIT 80`)
     .bind(userKey)
-    .all<{ id: string; company_name: string; ticker: string; market: string }>()
+    .all<WatchlistRow>()
     .catch(() => ({ results: [] }));
   const matched = (watchlist.results ?? []).filter((item) => watchlistItemMatchesMessage(item, message)).slice(0, 3);
   if (options.strictTargetMatch && !matched.length) {
@@ -838,6 +844,11 @@ async function buildTargetEvidenceSummary(db: D1Database, userKey: string, messa
     .bind(userKey)
     .all<{ watchlist_id: string; company_name: string; ticker: string; market: string; material_hash: string; evidence_hash: string; status: string; fetched_at: string }>()
     .catch(() => ({ results: [] }));
+  const deepPackageLines = (
+    await Promise.all(
+      targets.slice(0, 2).map(async (target) => summarizeCompanyEvidencePackage(env, userKey, target).catch(() => "")),
+    )
+  ).filter(Boolean);
   const templateLines = (analyses.results ?? [])
     .filter((item) => targetIds.has(item.watchlist_id))
     .slice(0, 8)
@@ -846,7 +857,42 @@ async function buildTargetEvidenceSummary(db: D1Database, userKey: string, messa
     .filter((item) => targetIds.has(item.watchlist_id))
     .slice(0, 5)
     .map((item) => `${item.company_name}(${item.ticker}/${item.market}) 证据包${item.status}，fetched_at=${item.fetched_at}，materialHash=${item.material_hash || item.evidence_hash}`);
-  return [`标的研究模式：候选标的=${targets.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`, templateLines.length ? `相关模板报告：${templateLines.join("；")}` : "相关模板报告：未命中，结论必须降级。", packageLines.length ? `公司证据包：${packageLines.join("；")}` : "公司证据包：未命中，必须补外部搜索或提示证据缺口。"].join("\n");
+  return [
+    `标的研究模式：候选标的=${targets.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`,
+    templateLines.length ? `相关模板报告：${templateLines.join("；")}` : "相关模板报告：未命中，不能引用不存在的模板结论。",
+    packageLines.length ? `公司证据包状态：${packageLines.join("；")}` : "公司证据包状态：未命中，必须补外部搜索或明确证据缺口。",
+    deepPackageLines.length ? `公司证据包核心事实：\n${deepPackageLines.join("\n")}` : "公司证据包核心事实：未能读取R2事实包；如需定量回答必须依赖外部搜索补强。",
+  ].join("\n");
+}
+
+async function summarizeCompanyEvidencePackage(env: AssistantEnv, userKey: string, watchlist: WatchlistRow) {
+  if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return "";
+  const pkg = await readCompanyEvidencePackage({ REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET }, userKey, watchlist);
+  if (!pkg) return "";
+  return formatCompanyEvidencePackageForAssistant(pkg);
+}
+
+function formatCompanyEvidencePackageForAssistant(pkg: CompanyEvidencePackage) {
+  const facts = isRecord(pkg.evidence.facts) ? pkg.evidence.facts : {};
+  const quote = isRecord(facts.quote) ? facts.quote : undefined;
+  const eastmoney = isRecord(facts.eastmoney) ? facts.eastmoney : undefined;
+  const incomeRows = Array.isArray(eastmoney?.incomeRows) ? eastmoney.incomeRows.filter(isRecord).slice(0, 2) : [];
+  const cashflowRows = Array.isArray(eastmoney?.cashflowRows) ? eastmoney.cashflowRows.filter(isRecord).slice(0, 1) : [];
+  const tenYear = isRecord(facts.financialTenYear) ? facts.financialTenYear : undefined;
+  const tenYearRows = Array.isArray(tenYear?.rows) ? tenYear.rows.filter(isRecord).slice(0, 5) : [];
+  const evidenceLines = pkg.evidence.evidence
+    .slice(0, 6)
+    .map((item) => `${item.id || "E?"}:${item.title} / ${item.source} / ${item.freshness || "unknown"} / ${item.notes || ""}`.slice(0, 260));
+  return [
+    `${pkg.evidence.company.name}(${pkg.evidence.company.ticker}/${pkg.evidence.company.market}) fetched_at=${pkg.fetchedAt} materialHash=${pkg.materialHash}`,
+    quote ? `行情：价格=${formatPkgValue(quote.regularMarketPrice)}，市值=${formatPkgValue(quote.marketCap)}，PE=${formatPkgValue(quote.trailingPE)}，PB=${formatPkgValue(quote.priceToBook)}，来源=${formatPkgValue(quote.quoteSourceName)}` : "行情：证据包未含可用行情。",
+    incomeRows.length ? `最新利润表：${incomeRows.map(formatEastmoneyIncomeRow).join("；")}` : "",
+    cashflowRows.length ? `最新现金流：${cashflowRows.map(formatEastmoneyCashflowRow).join("；")}` : "",
+    tenYearRows.length ? `十年财务摘要：${tenYearRows.map(formatTenYearMetricRow).join("；")}` : "",
+    evidenceLines.length ? `证据ID：${evidenceLines.join("；")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function watchlistItemMatchesMessage(item: { company_name: string; ticker: string; market: string }, message: string) {
@@ -1319,6 +1365,49 @@ function isChoiceOption(value: AssistantChoiceOption | null): value is Assistant
 
 function stringOrFallback(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function formatEastmoneyIncomeRow(row: Record<string, unknown>) {
+  return [
+    stringOrFallback(row.REPORT_DATE_NAME, stringOrFallback(row.REPORT_TYPE, "最新期")),
+    `营收=${formatPkgNumber(row.TOTAL_OPERATE_INCOME)}`,
+    `营收同比=${formatPkgPercent(row.TOTAL_OPERATE_INCOME_YOY)}`,
+    `归母净利=${formatPkgNumber(row.PARENT_NETPROFIT)}`,
+    `归母净利同比=${formatPkgPercent(row.PARENT_NETPROFIT_YOY)}`,
+    `扣非净利=${formatPkgNumber(row.DEDUCT_PARENT_NETPROFIT)}`,
+  ].join("/");
+}
+
+function formatEastmoneyCashflowRow(row: Record<string, unknown>) {
+  return [
+    stringOrFallback(row.REPORT_DATE_NAME, stringOrFallback(row.REPORT_TYPE, "最新期")),
+    `经营现金流入=${formatPkgNumber(row.TOTAL_OPERATE_INFLOW)}`,
+    `销售收现=${formatPkgNumber(row.SALES_SERVICES)}`,
+    `现金净增=${formatPkgNumber(row.CCE_ADD)}`,
+  ].join("/");
+}
+
+function formatTenYearMetricRow(row: Record<string, unknown>) {
+  const metric = stringOrFallback(row.metric, "指标");
+  const values = isRecord(row.values) ? Object.entries(row.values).slice(-3).map(([year, value]) => `${year}:${String(value)}`) : [];
+  return `${metric}(${values.join(",")})`;
+}
+
+function formatPkgNumber(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "NA";
+  const abs = Math.abs(value);
+  if (abs >= 100_000_000) return `${(value / 100_000_000).toFixed(2)}亿`;
+  if (abs >= 10_000) return `${(value / 10_000).toFixed(2)}万`;
+  return value.toFixed(2);
+}
+
+function formatPkgPercent(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : "NA";
+}
+
+function formatPkgValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  return typeof value === "string" && value.trim() ? value.trim() : "NA";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
