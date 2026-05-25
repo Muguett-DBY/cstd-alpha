@@ -1096,7 +1096,7 @@ function isLikelyTruncatedResearchAnswer(answer: string) {
 }
 
 function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
-  if (!/(预测|预估|净利润|营收|利润|亏损|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|反证|技术|优势|协调|画表|表格|对比|怎么判断|怎么看)/.test(userMessage)) return answer;
+  if (!shouldEnsureResearchStructure(userMessage)) return answer;
   const parts = [answer.trim()];
   if (/(画表|表格|对比)/.test(userMessage) && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(answer)) {
     parts.push(buildMinimumComparisonTable(userMessage));
@@ -1112,6 +1112,14 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
     parts.push(`下一步跟踪：优先跟踪${subject}；若关键变量连续两个报告期恶化，不应维持原结论。`);
   }
   return parts.join("\n\n");
+}
+
+function shouldEnsureResearchStructure(userMessage: string) {
+  return (
+    isHighValueResearchQuestion(userMessage) ||
+    containsLikelyResearchSubject(userMessage) ||
+    /(预测|预估|净利润|营收|利润|亏损|现金流|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|反证|技术|优势|协调|画表|表格|对比|数据|缺口|模板|雷达|自选股|怎么判断|怎么看)/.test(userMessage)
+  );
 }
 
 function buildMinimumComparisonTable(userMessage: string) {

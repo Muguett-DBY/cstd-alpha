@@ -143,7 +143,7 @@ async function runPromptOnce(prompt: AssistantQualityPrompt, attempt: number): P
 }
 
 function shouldRetryPromptResult(result: RunResult) {
-  return result.issues.some((issue) => issue.startsWith("http 503") || issue.includes("timeout") || issue.includes("network") || issue.includes("fetch failed"));
+  return result.issues.some((issue) => /^http (500|502|503|504|520|522|524)/.test(issue) || issue.includes("timeout") || issue.includes("network") || issue.includes("fetch failed"));
 }
 
 function parseAssistantSse(raw: string) {
