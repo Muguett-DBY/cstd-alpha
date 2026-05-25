@@ -108,7 +108,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
   const simpleGeneralChat = shouldTreatAsSimpleGeneralChat(researchContext.message, evidenceMode);
   const promptRecentMessages = simpleGeneralChat || !shouldIncludeRecentAssistantContext(researchContext.message) ? [] : recentMessages.slice(-8);
-  const answerDirectly = shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
+  const answerDirectly = evidenceMode !== "chat" || shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
   const clarificationDecision =
     answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
       ? { request: null }
@@ -1254,6 +1254,7 @@ function parseClarificationDecision(content: string): AssistantChoiceRequest | n
 
 function buildForcedClarificationRequest(message: string): AssistantChoiceRequest | null {
   if (!/(能买吗|买不买|该不该买|能不能买|可以买|要不要买|该不该卖|要不要卖|能不能卖|卖不卖)/.test(message)) return null;
+  if (containsLikelyResearchSubject(message) && /(现在|当前|目前|此时|长期|短期|三年|五年|十年|持有|仓位|左侧|右侧|风险偏好|低风险|高风险|分批|定投|交易|波段|估值区间|安全边际)/.test(message)) return null;
   if (/(长期|短期|三年|五年|十年|持有|仓位|左侧|右侧|风险偏好|低风险|高风险|分批|定投|交易|波段|估值区间|安全边际)/.test(message)) return null;
   return {
     id: `forced-action-${Math.abs(hashString(message)).toString(36)}`,

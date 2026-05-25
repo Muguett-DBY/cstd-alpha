@@ -1,4 +1,4 @@
-import { getOrCreateCompanyEvidencePackage } from "../_shared/company-evidence";
+import { fetchAndStoreCompanyEvidence, getOrCreateCompanyEvidencePackage } from "../_shared/company-evidence";
 import {
   ensureUserResearchSchema,
   json,
@@ -57,12 +57,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   for (const row of rows) {
     try {
-      const evidencePackage = await getOrCreateCompanyEvidencePackage(
-        { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
-        session.userId,
-        row,
-        request.signal,
-      );
+      const evidenceEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
+      const evidencePackage =
+        body?.forceRefresh === true
+          ? await fetchAndStoreCompanyEvidence({ env: evidenceEnv, userId: session.userId, watchlist: row, signal: request.signal })
+          : await getOrCreateCompanyEvidencePackage(evidenceEnv, session.userId, row, request.signal);
       const existing = await readRankingRow(env.REPORT_LIBRARY_DB, session.userId, row.id);
       if (rankingCacheReusable(existing, evidencePackage.materialHash || evidencePackage.evidenceHash, body?.forceRefresh === true)) {
         reused.push(row.id);

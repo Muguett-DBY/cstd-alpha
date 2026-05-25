@@ -671,8 +671,8 @@ function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
 }
 
 function eastmoneySecucode(candidate: CompanyCandidate) {
-  if (candidate.marketType === "AStock" || candidate.listingPlace.includes("A")) {
-    const suffix = candidate.quoteId?.startsWith("1.") || candidate.listingPlace.includes("沪") ? "SH" : "SZ";
+  if (isAStockListedCompany(candidate)) {
+    const suffix = isShanghaiAStock(candidate) ? "SH" : "SZ";
     return `${candidate.code}.${suffix}`;
   }
   if (candidate.marketType === "HK" || candidate.listingPlace.includes("港")) return `${candidate.code}.HK`;
@@ -709,8 +709,8 @@ function eastmoneyQuoteIds(candidate: CompanyCandidate) {
 }
 
 function derivedEastmoneyQuoteId(candidate: CompanyCandidate) {
-  if (candidate.marketType === "AStock" || candidate.listingPlace.includes("A")) {
-    const prefix = candidate.code.startsWith("6") || candidate.code.startsWith("9") || candidate.listingPlace.includes("沪") ? "1" : "0";
+  if (isAStockListedCompany(candidate)) {
+    const prefix = isShanghaiAStock(candidate) ? "1" : "0";
     return `${prefix}.${candidate.code}`;
   }
   if (candidate.marketType === "HK" || candidate.listingPlace.includes("港")) return `116.${candidate.code}`;
@@ -857,6 +857,7 @@ function eastmoneyYahooSymbol(code: string, listingPlace: string) {
 
 function companyYahooSymbol(candidate: CompanyCandidate) {
   if (isHongKongListedCompany(candidate)) return `${normalizeHongKongYahooCode(candidate.code)}.HK`;
+  if (isAStockListedCompany(candidate)) return candidate.yahooSymbol || `${candidate.code}.${isShanghaiAStock(candidate) ? "SS" : "SZ"}`;
   return candidate.yahooSymbol || candidate.code;
 }
 
@@ -886,6 +887,18 @@ function isAStockListedCompany(candidate: CompanyCandidate) {
         candidate.listingPlace.includes("沪") ||
         candidate.listingPlace.includes("深") ||
         /^[0369]\d{5}$/.test(candidate.code))
+  );
+}
+
+function isShanghaiAStock(candidate: CompanyCandidate) {
+  return Boolean(
+    candidate.quoteId?.startsWith("1.") ||
+      candidate.secid?.startsWith("1.") ||
+      candidate.listingPlace.includes("沪") ||
+      candidate.listingPlace.toUpperCase().startsWith("SH") ||
+      candidate.exchange.toLowerCase().includes("shanghai") ||
+      candidate.code.startsWith("6") ||
+      candidate.code.startsWith("9"),
   );
 }
 

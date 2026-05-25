@@ -105,7 +105,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
-        body: JSON.stringify({ message: "宁德时代能买吗？" }),
+        body: JSON.stringify({ message: "这个能买吗？" }),
       }),
       env: {
         AUTH_SECRET: "secret",
@@ -144,7 +144,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
-        body: JSON.stringify({ message: "宁德时代能买吗？", mode: "chat" }),
+        body: JSON.stringify({ message: "这个能买吗？", mode: "chat" }),
       }),
       env: {
         AUTH_SECRET: "secret",
@@ -840,6 +840,7 @@ describe("assistant chat endpoint", () => {
     expect(shouldAnswerDirectlyWithoutClarification("茅台今年业绩预估？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("优必选人形机器人，大脑与小脑之间的协调性如何？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("如果我认为光伏已经到底了，你反驳我。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("宁德时代现在能买吗？")).toBe(false);
     expect(shouldAnswerDirectlyWithoutClarification("宁德时代能买吗？")).toBe(false);
   });
 

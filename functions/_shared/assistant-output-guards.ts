@@ -100,6 +100,7 @@ function guardExternalEvidenceLevel(text: string, message: string, externalEvide
 
 function cleanAssistantFormatting(text: string) {
   return removeEmptyMarkdownSections(text)
+    .replace(/^#{1,6}\s+/gm, "")
     .replace(/(?:^|\n)\s*(好的[，,]\s*)?收到(?:您的)?(?:指令|问题|需求)?[。！!，,]?\s*作为\s*CSTD Alpha\s*的?[^。\n]{0,40}(?:助手|投研助手)[^。\n]*[。！!]?\s*/g, "\n")
     .replace(/(?:^|\n)\s*好的[，,]\s*收到(?:您的)?(?:指令|问题|需求)?[。！!]?\s*/g, "\n")
     .replace(/^结构化表格\s*\d*\s*$/gim, "")

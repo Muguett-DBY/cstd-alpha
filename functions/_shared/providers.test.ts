@@ -260,6 +260,56 @@ describe("public data providers", () => {
     expect(result.evidence).not.toEqual(expect.arrayContaining([expect.objectContaining({ source: "Yahoo Finance public quote endpoint" })]));
   });
 
+  test("derives Shanghai secucode for legacy SH-A watchlist rows", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+      }
+      if (url.includes("push2his.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: {
+              code: "600519",
+              name: "贵州茅台",
+              klines: ["2026-05-22,1500.00,1510.00,1520.00,1490.00,10000,1510000000.00,2.00,0.67,10.00,0.1"],
+            },
+          }),
+        });
+      }
+      if (url.includes("datacenter.eastmoney.com") && url.includes("600519.SH")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            result: {
+              data: [{ REPORT_DATE: "2025-12-31 00:00:00", TOTAL_OPERATE_INCOME: 180000000000, PARENT_NETPROFIT: 82000000000 }],
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "贵州茅台",
+      company: {
+        id: "watchlist:SH-A:600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "SH-A",
+        listingPlace: "SH-A",
+        marketType: "Library",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("600519.SH"), expect.any(Object));
+    expect(result.evidence.find((item) => item.title.includes("Eastmoney financial statements"))).toMatchObject({
+      freshness: "latest-public",
+    });
+  });
+
   test("falls back to Tencent A-share quote when Eastmoney quote and kline are unavailable", async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.includes("push2.eastmoney.com") || url.includes("push2his.eastmoney.com")) {
