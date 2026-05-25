@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { normalizeGeneratedRanking, rankingCacheReusable } from "./watchlist-ranking";
+import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable } from "./watchlist-ranking";
+import type { EvidenceBundle } from "./providers";
 
 describe("watchlist ranking score helpers", () => {
   test("normalizes independent model scores and derives overall score when omitted", () => {
@@ -73,5 +74,59 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.companyQualityScore).toBe(82);
     expect(ranking.investmentAttractivenessScore).toBe(72);
     expect(ranking.overallScore).toBe(77.5);
+  });
+
+  test("ignores placeholder evidence and caps sparse company packages", () => {
+    const evidence = {
+      retrievedAt: "2026-05-25T00:00:00.000Z",
+      company: { name: "样本公司", ticker: "000001", market: "深A" },
+      facts: {},
+      evidence: [
+        {
+          title: "000001 Eastmoney financial statements",
+          source: "Eastmoney public financial statement endpoints",
+          freshness: "latest-public",
+          notes: "Normalized 10 named financial metrics from Eastmoney statements.",
+        },
+        {
+          title: "000001 quote snapshot",
+          source: "Eastmoney public quote endpoint",
+          freshness: "latest-public",
+          notes: "Latest public market price, volume, market cap and valuation snapshot.",
+        },
+        {
+          title: "000001 symbol search",
+          source: "Eastmoney public suggest endpoint",
+          freshness: "latest-public",
+          notes: "Public company identity, exchange, sector and industry match.",
+        },
+        {
+          title: "000001 Stooq quote fallback",
+          source: "Stooq public quote CSV endpoint",
+          freshness: "latest-public",
+          notes: "Stooq quote fallback returned no data.",
+        },
+      ],
+    } satisfies EvidenceBundle;
+
+    const coverage = evidenceCoverageSummary(evidence);
+    const capped = applyEvidenceCoverageCaps(
+      {
+        companyQualityScore: 90,
+        investmentAttractivenessScore: 82,
+        overallScore: 86,
+        verdict: "优秀公司",
+        summary: "财务表现强劲。",
+        keyPoints: ["E1 财务"],
+        riskFlags: [],
+      },
+      coverage,
+    );
+
+    expect(coverage.usableEvidenceCount).toBe(2);
+    expect(coverage.ignoredPlaceholderCount).toBe(2);
+    expect(capped.companyQualityScore).toBe(78);
+    expect(capped.investmentAttractivenessScore).toBe(65);
+    expect(capped.overallScore).toBe(72.2);
   });
 });

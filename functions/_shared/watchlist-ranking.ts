@@ -113,6 +113,7 @@ export async function writeCompletedWatchlistRanking(db: D1Database, userId: str
 export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, watchlist: WatchlistRow, evidence: EvidenceBundle): Promise<GeneratedWatchlistRanking> {
   const apiKey = env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured.");
+  const coverage = evidenceCoverageSummary(evidence);
   const body = {
     model: "deepseek-v4-flash",
     reasoning_effort: "max",
@@ -130,6 +131,7 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
             "InvestmentAttractivenessScore >=80 is rare: it requires attractive valuation, clear catalysts, downside protection, and no major evidence gap.",
             "If you write valuation is high/expensive/safety margin limited/market expectation is already full, investmentAttractivenessScore must be <=70.",
             "If evidence lacks segment data, forward guidance, valuation or current hard financial facts, cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
+            "Ignore placeholder sources that say unavailable, no data, fallback returned no data, or symbol search only.",
             "Return only valid JSON.",
           ].join(" "),
       },
@@ -152,6 +154,7 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
             "If evidence lacks cash-flow, debt, valuation or current financial facts, cap companyQualityScore at 72 and investmentAttractivenessScore at 65.",
             "If the company is high quality but valuation is high or safety margin is limited, keep companyQualityScore high but cap investmentAttractivenessScore at 70.",
             "If the evidence package itself has obvious gaps, do not compensate with brand fame; cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
+            "If usableEvidenceCount < 4 or usableHardEvidenceCount < 2, companyQualityScore must be <=82 and investmentAttractivenessScore must be <=70.",
             "If major red flags exist, cap overallScore at 49.",
             "If valuation is expensive and growth evidence is not strong, investmentAttractivenessScore must be lower than companyQualityScore.",
             "Every score must be explained by evidence ids or source types in keyPoints/riskFlags.",
@@ -162,6 +165,7 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
             market: watchlist.market,
           },
           evidence: compactEvidence(evidence),
+          evidenceCoverage: coverage,
         }),
       },
     ],
@@ -176,7 +180,7 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
   const payload = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
   const content = payload.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error("DeepSeek 未返回自选排行评分。");
-  return normalizeGeneratedRanking(JSON.parse(jsonrepair(content)));
+  return applyEvidenceCoverageCaps(normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), coverage);
 }
 
 export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRanking {
@@ -232,10 +236,11 @@ export function rankingCacheReusable(row: Pick<WatchlistRankingRow, "status" | "
 }
 
 function compactEvidence(evidence: EvidenceBundle) {
+  const usableSources = evidence.evidence.filter(isUsableEvidenceItem);
   return {
     retrievedAt: evidence.retrievedAt,
     facts: evidence.facts,
-    sources: evidence.evidence.slice(0, 40).map((item, index) => ({
+    sources: usableSources.slice(0, 40).map((item, index) => ({
       id: `E${index + 1}`,
       title: item.title,
       source: item.source,
@@ -243,6 +248,66 @@ function compactEvidence(evidence: EvidenceBundle) {
       notes: item.notes,
     })),
   };
+}
+
+export function evidenceCoverageSummary(evidence: EvidenceBundle) {
+  const usableItems = evidence.evidence.filter(isUsableEvidenceItem);
+  const hardItems = usableItems.filter(isHardEvidenceItem);
+  const sourceFamilies = Array.from(new Set(usableItems.map((item) => sourceFamily(item.source || item.title || "unknown")))).sort();
+  const hardSourceFamilies = Array.from(new Set(hardItems.map((item) => sourceFamily(item.source || item.title || "unknown")))).sort();
+  return {
+    totalEvidenceCount: evidence.evidence.length,
+    usableEvidenceCount: usableItems.length,
+    usableHardEvidenceCount: hardItems.length,
+    sourceFamilies,
+    hardSourceFamilies,
+    ignoredPlaceholderCount: evidence.evidence.length - usableItems.length,
+  };
+}
+
+export function applyEvidenceCoverageCaps(ranking: GeneratedWatchlistRanking, coverage: ReturnType<typeof evidenceCoverageSummary>): GeneratedWatchlistRanking {
+  let companyQualityScore = ranking.companyQualityScore;
+  let investmentAttractivenessScore = ranking.investmentAttractivenessScore;
+
+  if (coverage.usableEvidenceCount < 4 || coverage.usableHardEvidenceCount < 2 || coverage.sourceFamilies.length < 2) {
+    companyQualityScore = Math.min(companyQualityScore, 82);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 70);
+  }
+  if (coverage.usableEvidenceCount <= 2 || coverage.usableHardEvidenceCount <= 1) {
+    companyQualityScore = Math.min(companyQualityScore, 78);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 65);
+  }
+
+  const overallScore = clampScore(Math.min(ranking.overallScore, companyQualityScore * 0.55 + investmentAttractivenessScore * 0.45));
+  return {
+    ...ranking,
+    companyQualityScore: clampScore(companyQualityScore),
+    investmentAttractivenessScore: clampScore(investmentAttractivenessScore),
+    overallScore,
+  };
+}
+
+function isUsableEvidenceItem(item: { title?: string; source?: string; notes?: string }) {
+  const text = `${item.title || ""} ${item.source || ""} ${item.notes || ""}`.toLowerCase();
+  if (/symbol search|public company identity|suggest endpoint/.test(text)) return false;
+  if (/unavailable|no usable|returned no data|no data|does not expose|fallback was unavailable/.test(text)) return false;
+  return true;
+}
+
+function isHardEvidenceItem(item: { title?: string; source?: string; notes?: string }) {
+  const text = `${item.title || ""} ${item.source || ""} ${item.notes || ""}`.toLowerCase();
+  return /financial|finance|财务|财报|cashflow|income|balance|sec edgar|quote|price|行情|报价|估值|market|fundamentals|companyfacts/.test(text);
+}
+
+function sourceFamily(source: string) {
+  const normalized = source.toLowerCase();
+  if (normalized.includes("eastmoney")) return "eastmoney";
+  if (normalized.includes("yahoo")) return "yahoo";
+  if (normalized.includes("sec")) return "sec";
+  if (normalized.includes("stooq")) return "stooq";
+  if (normalized.includes("anysearch")) return "anysearch";
+  if (normalized.includes("searx")) return "searxng";
+  return source.slice(0, 48).toLowerCase();
 }
 
 function clampScore(value: number) {
