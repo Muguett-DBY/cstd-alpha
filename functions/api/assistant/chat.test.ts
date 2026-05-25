@@ -1183,6 +1183,42 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("海外渠道和估值消化");
     expect(done.message?.content).not.toContain("外部证据显示核心挑战");
   });
+
+  test("does not spend a second model call reviewing a complete research answer", async () => {
+    const completeAnswer = [
+      "结论：宁德时代当前更适合观察，核心变量是海外订单、储能毛利率和资本开支纪律。",
+      "证据等级：中。站内证据能证明公司基本面仍强，但估值和现金流仍需继续核验。",
+      "核心理由：动力电池龙头地位仍在，储能需求提供第二增长曲线；但价格竞争和资本开支会压制自由现金流。",
+      "反驳用户观点：如果只因为公司是龙头就认为可以买，忽略了估值、行业价格战和现金流压力。",
+      "我可能错在哪里：如果新一季财报显示毛利率和经营现金流同时改善，投资吸引力应上调。",
+      "下一步跟踪：毛利率、经营现金流、储能出货、海外订单、资本开支和估值分位。",
+    ].join("\n");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: completeAnswer } }], usage: { prompt_cache_hit_tokens: 9000, prompt_cache_miss_tokens: 600, total_tokens: 10000 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "宁德时代现在能买吗？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("更适合观察");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 function mockDb({ role }: { role: string }) {

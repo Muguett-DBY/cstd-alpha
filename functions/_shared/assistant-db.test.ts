@@ -131,6 +131,27 @@ describe("assistant prompt and memory helpers", () => {
     expect(messages[0].content.indexOf("CSTD Alpha assistant cache anchor")).toBeLessThan(messages[0].content.indexOf("你是 CSTD Alpha"));
   });
 
+  test("keeps changing evidence and memory inside volatile assistant context", () => {
+    const messages = buildAssistantPromptMessages({
+      memories: [{ id: "m1", userKey: "admin", category: "preference", content: "先看现金流", status: "active", createdAt: "2026-05-25T00:00:00.000Z", updatedAt: "2026-05-25T00:00:00.000Z" }],
+      threadSummary: "长期摘要会变",
+      evidenceSummary: "站内证据会变",
+      externalEvidenceSummary: "外部证据会变",
+      recentMessages: [],
+      userMessage: "测试",
+      mode: "target",
+    });
+
+    const payload = JSON.parse(messages[1].content.replace(/^已确认长期记忆、线程摘要和站内证据如下：\n/, ""));
+    expect(payload.outputRules).toBeDefined();
+    expect(payload.siteEvidenceSummary).toBeUndefined();
+    expect(payload.confirmedMemories).toBeUndefined();
+    expect(payload.threadSummary).toBeUndefined();
+    expect(payload.volatileContext.siteEvidenceSummary).toBe("站内证据会变");
+    expect(payload.volatileContext.confirmedMemories).toEqual([{ category: "preference", content: "先看现金流" }]);
+    expect(payload.volatileContext.threadSummary).toBe("长期摘要会变");
+  });
+
   test("uses token-oriented context compaction thresholds instead of raw character count", () => {
     const chineseText = "茅台批价库存现金流反证条件".repeat(100);
     const englishText = "free cash flow margin inventory valuation risk ".repeat(100);

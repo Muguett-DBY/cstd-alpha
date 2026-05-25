@@ -58,6 +58,8 @@ type ExternalEvidenceResult = {
   toolSummary?: string;
 };
 
+const ASSISTANT_AUXILIARY_REASONING_EFFORT = "high" as const;
+
 function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
   if (!externalEvidence.triggered) return `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`;
   const base = externalEvidence.toolSummary || `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。`;
@@ -435,7 +437,7 @@ async function askModelForSearchToolCalls(input: {
           model: ASSISTANT_MODEL,
           messages,
           maxTokens: 900,
-          reasoningEffort: ASSISTANT_REASONING_EFFORT,
+          reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
           temperature: 0,
           responseFormat: null,
           stream: false,
@@ -449,7 +451,7 @@ async function askModelForSearchToolCalls(input: {
     const data = (await response.json()) as Record<string, unknown>;
     const usage: AssistantUsage = {
       model: ASSISTANT_MODEL,
-      reasoningEffort: ASSISTANT_REASONING_EFFORT,
+      reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
       ...parseDeepSeekUsage(data.usage),
       elapsedMs: Date.now() - startedAt,
     };
@@ -1034,7 +1036,9 @@ async function generateReviewedResearchAnswer(input: {
   const answerData = (await answerResponse.json()) as Record<string, unknown>;
   const answer = extractMessageContent(answerData);
   const answerUsage = parseDeepSeekUsage(answerData.usage);
-  const review = await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal });
+  const review = shouldRunModelRationalReview(answer, input.userMessage)
+    ? await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal })
+    : { usage: {} };
   const text = selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode);
   return {
     text,
@@ -1051,6 +1055,24 @@ async function generateReviewedResearchAnswer(input: {
       elapsedMs: Date.now() - startedAt,
     },
   };
+}
+
+function shouldRunModelRationalReview(answer: string, userMessage: string) {
+  const normalized = answer.trim();
+  if (!normalized) return false;
+  if (isUnsatisfactoryEvidenceOnlyAnswer(normalized)) return true;
+  if (/^结构化表格\s*\d*$/im.test(normalized)) return true;
+  if (/^#{1,6}\s*(核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级)\s*$/im.test(normalized)) return true;
+  if (/证据等级[：:]\s*(高|中高|较高|中至高)/.test(normalized) && /(Exa|AnySearch|SearXNG|GDELT|arXiv|Semantic Scholar|海外案例|GCC|印度|美国|券商研报|S&P)/i.test(normalized)) return true;
+  if (/(上市\d+年首次业绩双降|首次业绩双降|营收利润首次双降|2025年实际值)/.test(normalized)) return true;
+  if (/(无法|不能|不宜)(给出|判断|预测|回答|下结论)/.test(normalized.replace(/\s+/g, "")) && !/(情景|区间|假设|测算|框架|反证|跟踪)/.test(normalized)) return true;
+  if (/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|怎么判断|怎么看)/.test(userMessage)) {
+    const hasCounter = /(反证|我可能错|风险|削弱|反驳)/.test(normalized);
+    const hasFollowUp = /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(normalized);
+    const hasEvidenceLevel = /证据等级/.test(normalized);
+    if (!hasCounter || !hasFollowUp || !hasEvidenceLevel) return true;
+  }
+  return false;
 }
 
 function selectReviewedResearchText(answer: string, revisedAnswer: string | undefined, userMessage: string, mode: AssistantMode) {
@@ -1223,7 +1245,7 @@ async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: str
           model: ASSISTANT_MODEL,
           messages: buildRationalReviewMessages(input),
           maxTokens: 1200,
-          reasoningEffort: ASSISTANT_REASONING_EFFORT,
+          reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
           temperature: 0,
           responseFormat: { type: "json_object" },
           stream: false,
@@ -1311,7 +1333,7 @@ async function askModelForClarification(input: {
           model: ASSISTANT_MODEL,
           messages,
           maxTokens: 850,
-          reasoningEffort: ASSISTANT_REASONING_EFFORT,
+          reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
           temperature: 0,
           responseFormat: { type: "json_object" },
           stream: false,
@@ -1325,7 +1347,7 @@ async function askModelForClarification(input: {
     const parsed = parseClarificationDecision(content);
     const usage: AssistantUsage = {
       model: ASSISTANT_MODEL,
-      reasoningEffort: ASSISTANT_REASONING_EFFORT,
+      reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
       ...parseDeepSeekUsage(data.usage),
       elapsedMs: Date.now() - startedAt,
     };

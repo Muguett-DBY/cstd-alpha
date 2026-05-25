@@ -513,15 +513,18 @@ export function buildAssistantPromptMessages(input: {
   const stableContext = cacheStableUserContent({
     kind: "assistant-chat-context",
     stable: {
+      schemaVersion: 2,
       outputRules: ["先结论后证据", "必须给反证条件", "证据不足时明确标注", "不修改站内业务数据"],
-      assistantMode: modeLabel,
-      confirmedMemories: input.memories.map((memory) => ({ category: memory.category, content: memory.content })),
-      threadSummary: input.threadSummary || "暂无长期摘要。",
-      siteEvidenceSummary: input.evidenceSummary,
     },
     volatile: {
-      currentTurnPolicy: "最近聊天作为后续 messages append-only 追加，不写入稳定上下文。",
-      externalSearchEvidence: input.externalEvidenceSummary || "本轮未触发外部搜索。",
+      volatileContext: {
+        assistantMode: modeLabel,
+        confirmedMemories: input.memories.map((memory) => ({ category: memory.category, content: memory.content })),
+        threadSummary: input.threadSummary || "暂无长期摘要。",
+        siteEvidenceSummary: input.evidenceSummary,
+        currentTurnPolicy: "最近聊天作为后续 messages append-only 追加，不写入稳定上下文。",
+        externalSearchEvidence: input.externalEvidenceSummary || "本轮未触发外部搜索。",
+      },
     },
   });
   return [
