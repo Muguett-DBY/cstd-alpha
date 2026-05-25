@@ -35,25 +35,14 @@ describe("assistant chat endpoint", () => {
         controller.close();
       },
     });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }],
-            usage: { prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 10, total_tokens: 60 },
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(new Response(stream, { status: 200 }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
-        body: JSON.stringify({ message: "记住：以后先看现金流。" }),
+        body: JSON.stringify({ message: "自由现金流为什么比利润更适合看长期回报？" }),
       }),
       env: {
         AUTH_SECRET: "secret",
@@ -68,13 +57,41 @@ describe("assistant chat endpoint", () => {
 
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     const body = await response.text();
-    expect(body).toContain("memory_candidate");
     expect(body).toContain("usage");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const requestBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(requestBody.model).toBe("deepseek-v4-flash");
     expect(requestBody.reasoning_effort).toBe("max");
     expect(requestBody.stream).toBe(true);
+  });
+
+  test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "记住：以后分析白酒先看批价和库存。", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(body).toContain("memory_candidate");
+    expect(body).toContain("待确认记忆");
+    expect(body).toContain("不会影响正式投研结论");
+    expect(body).toContain("done");
   });
 
   test("returns a model-generated choice request without starting the final answer call", async () => {

@@ -66,6 +66,11 @@ function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
   return base;
 }
 
+function isExplicitMemoryOnlyMessage(message: string) {
+  const normalized = message.trim();
+  return /^(记住|请记住|帮我记住|以后|纠正一下|我的投资框架|我的偏好|不要忘了)[:：]/.test(normalized) || /^(记住|请记住|帮我记住)/.test(normalized);
+}
+
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
   if (response) return response;
@@ -97,6 +102,39 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         now,
       })
     : null;
+  if (storedCandidate && isExplicitMemoryOnlyMessage(userMessage)) {
+    const assistantMessageId = crypto.randomUUID();
+    const reply = `已识别为一条待确认记忆：${storedCandidate.content}\n\n请在记忆候选里确认后生效。确认前它不会影响正式投研结论。`;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
+        enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
+        enqueue(controller, { type: "delta", text: reply });
+        const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
+          id: assistantMessageId,
+          userKey: session.userId,
+          threadId: thread.id,
+          role: "assistant",
+          content: reply,
+          metadata: { memoryCandidateId: storedCandidate.id, noModelCall: true },
+        });
+        enqueue(controller, { type: "done", message });
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        "x-accel-buffering": "no",
+      },
+    });
+
+    function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: AssistantChatStreamEvent) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    }
+  }
 
   const memories = await readActiveMemories(env.REPORT_LIBRARY_DB, session.userId);
   const recentMessages = (await readRecentMessages(env.REPORT_LIBRARY_DB, session.userId, thread.id, 12))
