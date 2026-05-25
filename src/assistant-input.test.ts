@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { assistantKeyIntent, mergeSpeechTranscript } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, speechErrorMessage } from "./assistant-input";
 
 describe("assistant input helpers", () => {
   test("submits on plain Enter and keeps Shift+Enter as newline", () => {
@@ -17,5 +17,12 @@ describe("assistant input helpers", () => {
     expect(mergeSpeechTranscript("", "  茅台今年业绩  ")).toBe("茅台今年业绩");
     expect(mergeSpeechTranscript("分析宁德时代", "现金流")).toBe("分析宁德时代 现金流");
     expect(mergeSpeechTranscript("分析宁德时代，", "现金流")).toBe("分析宁德时代，现金流");
+  });
+
+  test("keeps speech error handling actionable", () => {
+    expect(speechErrorMessage("network")).toContain("浏览器内置语音服务暂时不可用");
+    expect(speechErrorMessage("not-allowed")).toContain("麦克风权限被拒绝");
+    expect(canRestartSpeechAfterError("no-speech")).toBe(true);
+    expect(canRestartSpeechAfterError("network")).toBe(false);
   });
 });

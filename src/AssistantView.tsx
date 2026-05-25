@@ -7,13 +7,13 @@ import {
   sendAssistantMessage,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
-import { assistantKeyIntent, mergeSpeechTranscript } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { mergeAssistantDelta } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
-type SpeechPhase = "idle" | "listening" | "unsupported" | "error";
+type SpeechPhase = "idle" | "starting" | "listening" | "unsupported" | "error";
 
 type SpeechRecognitionEventLike = {
   resultIndex: number;
@@ -24,6 +24,7 @@ type SpeechRecognitionLike = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
+  maxAlternatives?: number;
   onstart: (() => void) | null;
   onend: (() => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
@@ -103,9 +104,9 @@ export function AssistantView() {
     event.currentTarget.form?.requestSubmit();
   }
 
-  function toggleSpeechRecognition() {
+  async function toggleSpeechRecognition() {
     if (phase === "streaming") return;
-    if (speechPhase === "listening") {
+    if (speechPhase === "listening" || speechPhase === "starting") {
       stopSpeechRecognition();
       return;
     }
@@ -115,21 +116,38 @@ export function AssistantView() {
       setSpeechNotice("当前浏览器不支持语音输入。");
       return;
     }
+    setSpeechPhase("starting");
+    setSpeechNotice("正在请求麦克风权限…");
+    const microphoneReady = await ensureMicrophoneReady();
+    if (!microphoneReady.ok) {
+      setSpeechPhase("error");
+      setSpeechNotice(microphoneReady.message);
+      return;
+    }
     const recognition = new Recognition();
     recognition.lang = "zh-CN";
     recognition.interimResults = true;
-    recognition.continuous = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       setSpeechPhase("listening");
       setSpeechNotice("正在识别，可以直接说出你的问题。");
     };
     recognition.onend = () => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
       setSpeechPhase((current) => (current === "listening" ? "idle" : current));
       setSpeechNotice((current) => (current === "正在识别，可以直接说出你的问题。" ? "" : current));
     };
     recognition.onerror = (event) => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
       setSpeechPhase("error");
       setSpeechNotice(speechErrorMessage(event.error));
+      if (canRestartSpeechAfterError(event.error)) {
+        window.setTimeout(() => {
+          if (recognitionRef.current) return;
+          setSpeechPhase("idle");
+        }, 900);
+      }
     };
     recognition.onresult = (event) => {
       let finalText = "";
@@ -150,6 +168,7 @@ export function AssistantView() {
     try {
       recognition.start();
     } catch {
+      recognitionRef.current = null;
       setSpeechPhase("error");
       setSpeechNotice("语音识别启动失败，请检查浏览器麦克风权限。");
     }
@@ -575,17 +594,23 @@ function MemoryCandidateDialog({ candidate, onConfirm, onReject }: { candidate: 
   );
 }
 
+async function ensureMicrophoneReady(): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!navigator.mediaDevices?.getUserMedia) return { ok: true };
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    for (const track of stream.getTracks()) track.stop();
+    return { ok: true };
+  } catch (error) {
+    const name = error instanceof DOMException ? error.name : "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") return { ok: false, message: "麦克风权限被拒绝，请允许浏览器使用麦克风。" };
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") return { ok: false, message: "没有检测到可用麦克风。" };
+    return { ok: false, message: "麦克风启动失败，请检查浏览器权限和系统输入设备。" };
+  }
+}
+
 function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
   const win = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
   return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
-}
-
-function speechErrorMessage(error?: string) {
-  if (error === "not-allowed" || error === "service-not-allowed") return "麦克风权限被拒绝，请允许浏览器使用麦克风。";
-  if (error === "no-speech") return "没有识别到语音，请再试一次。";
-  if (error === "audio-capture") return "没有检测到可用麦克风。";
-  if (error === "network") return "语音识别服务暂时不可用。";
-  return "语音识别失败，请稍后重试。";
 }
 
 export default AssistantView;

@@ -42,4 +42,36 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.verdict).toBe("周期资源，观察");
     expect(ranking.keyPoints).toHaveLength(2);
   });
+
+  test("caps investment attractiveness when the model admits high valuation or limited margin of safety", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 88,
+      investmentAttractivenessScore: 82,
+      overallScore: 85,
+      verdict: "高质量龙头",
+      summary: "公司增长强劲，但当前估值较高，市场预期已较充分，安全边际有限。",
+      keyPoints: ["财务质量强"],
+      riskFlags: ["估值较高，安全边际有限"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(88);
+    expect(ranking.investmentAttractivenessScore).toBe(70);
+    expect(ranking.overallScore).toBe(79.9);
+  });
+
+  test("caps scores when the generated rationale says the evidence package is incomplete", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 90,
+      investmentAttractivenessScore: 80,
+      overallScore: 86,
+      verdict: "优秀公司",
+      summary: "证据未包含业务分项数据，无法评估各板块竞争力。",
+      keyPoints: ["自由现金流强"],
+      riskFlags: ["证据缺乏管理层展望和竞争格局"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(82);
+    expect(ranking.investmentAttractivenessScore).toBe(72);
+    expect(ranking.overallScore).toBe(77.5);
+  });
 });

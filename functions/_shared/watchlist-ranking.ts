@@ -122,7 +122,16 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
       {
         role: "system",
         content:
-          "CSTD Alpha watchlist ranking cache anchor. You are a strict A/H/US stock ranking analyst. Score only from the supplied public evidence package. Never reuse old report-library scores. Penalize weak evidence, leverage, cash-flow weakness, governance risk, valuation bubble, cyclicality and business deterioration. Return only valid JSON.",
+          [
+            "CSTD Alpha watchlist ranking cache anchor. You are a strict A/H/US stock ranking analyst.",
+            "Score only from the supplied public evidence package. Never reuse old report-library scores.",
+            "Separate company quality from investment attractiveness. Great companies can be poor buys when valuation already prices in growth.",
+            "Penalize weak evidence, leverage, cash-flow weakness, governance risk, valuation bubble, cyclicality and business deterioration.",
+            "InvestmentAttractivenessScore >=80 is rare: it requires attractive valuation, clear catalysts, downside protection, and no major evidence gap.",
+            "If you write valuation is high/expensive/safety margin limited/market expectation is already full, investmentAttractivenessScore must be <=70.",
+            "If evidence lacks segment data, forward guidance, valuation or current hard financial facts, cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
+            "Return only valid JSON.",
+          ].join(" "),
       },
       {
         role: "user",
@@ -141,6 +150,8 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
           hardRules: [
             "Do not give high scores for famous companies without evidence.",
             "If evidence lacks cash-flow, debt, valuation or current financial facts, cap companyQualityScore at 72 and investmentAttractivenessScore at 65.",
+            "If the company is high quality but valuation is high or safety margin is limited, keep companyQualityScore high but cap investmentAttractivenessScore at 70.",
+            "If the evidence package itself has obvious gaps, do not compensate with brand fame; cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
             "If major red flags exist, cap overallScore at 49.",
             "If valuation is expensive and growth evidence is not strong, investmentAttractivenessScore must be lower than companyQualityScore.",
             "Every score must be explained by evidence ids or source types in keyPoints/riskFlags.",
@@ -175,7 +186,7 @@ export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRan
   const rawOverall = firstNumberValue(record, ["overallScore", "overall_score", "totalScore", "score", "综合分", "综合评分", "总分"]);
   const cqs = clampScore(cqsRaw);
   const ias = clampScore(iasRaw);
-  return {
+  return applyRankingRiskCaps({
     companyQualityScore: cqs,
     investmentAttractivenessScore: ias,
     overallScore: clampScore(Number.isFinite(rawOverall) ? rawOverall : cqs * 0.55 + ias * 0.45),
@@ -183,6 +194,36 @@ export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRan
     summary: firstStringValue(record, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。",
     keyPoints: firstStringArray(record, ["keyPoints", "positives", "主要得分点", "得分点", "优势"]).slice(0, 8),
     riskFlags: firstStringArray(record, ["riskFlags", "risks", "风险与反证", "风险点", "风险"]).slice(0, 8),
+  });
+}
+
+function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatchlistRanking {
+  const text = `${ranking.verdict}\n${ranking.summary}\n${ranking.keyPoints.join("\n")}\n${ranking.riskFlags.join("\n")}`;
+  let companyQualityScore = ranking.companyQualityScore;
+  let investmentAttractivenessScore = ranking.investmentAttractivenessScore;
+  let overallCap = 100;
+
+  if (/估值(偏高|较高|不低|高|中高|泡沫|已充分|较充分)|安全边际有限|预期已(较)?充分|市盈率.*(高|不低)|PE.*(高|不低)|自由现金流收益率.*低/.test(text)) {
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 70);
+  }
+  if (/证据(未包含|不足|缺|缺乏|缺少)|无法评估|未提供|待核实|需谨慎|证据包未/.test(text)) {
+    companyQualityScore = Math.min(companyQualityScore, 82);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 72);
+  }
+  if (/自由现金流.*负|现金流.*恶化|持续亏损|盈利未现|净亏损/.test(text)) {
+    companyQualityScore = Math.min(companyQualityScore, 60);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 45);
+  }
+  if (/严重|危机|建议回避|回避|退市|资不抵债|债务展期/.test(text)) {
+    overallCap = Math.min(overallCap, 49);
+  }
+
+  const recalculatedOverall = clampScore(companyQualityScore * 0.55 + investmentAttractivenessScore * 0.45);
+  return {
+    ...ranking,
+    companyQualityScore: clampScore(companyQualityScore),
+    investmentAttractivenessScore: clampScore(investmentAttractivenessScore),
+    overallScore: clampScore(Math.min(overallCap, recalculatedOverall, ranking.overallScore || recalculatedOverall)),
   };
 }
 
