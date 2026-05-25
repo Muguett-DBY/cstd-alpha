@@ -776,6 +776,7 @@ export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantM
   if (mode !== "chat") return false;
   if (containsLikelyResearchSubject(message)) return false;
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
+  if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(message.trim())) return true;
   return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message);
 }
 
@@ -1111,7 +1112,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
 
 function shouldSkipIncompleteAnswerRepair(userMessage: string) {
   const text = userMessage.trim();
-  if (/^(你好|您好|哈喽|hello|hi|你是|你是谁|你能做什么|介绍一下|谢谢|辛苦了)[？?！!。.\s]*$/i.test(text)) return true;
+  if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(text)) return true;
+  if (/^(你是|你是谁|你能做什么|介绍一下|谢谢|辛苦了)[？?！!。.\s]*$/i.test(text)) return true;
   return shouldTreatAsSimpleGeneralChat(text, "chat");
 }
 
