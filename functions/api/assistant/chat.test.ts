@@ -257,6 +257,35 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("delta");
   });
 
+  test("forces clarification for short subject-only industry prompts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }], usage: { total_tokens: 80 } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "半导体呢？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body).toContain("choice_request");
+    expect(body).toContain("机会与风险");
+  });
+
   test("target research mode uses non-stream answer and rational review before returning", async () => {
     const fetchMock = vi
       .fn()

@@ -165,7 +165,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           recentMessages: promptRecentMessages,
           signal: request.signal,
         });
-  const forcedClarification = clarificationDecision.request ? null : buildForcedClarificationRequest(researchContext.message);
+  const forcedClarification = clarificationDecision.request ? null : buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildForcedClarificationRequest(researchContext.message);
   const choiceRequest = clarificationDecision.request ?? forcedClarification;
   if (choiceRequest) {
     const encoder = new TextEncoder();
@@ -1071,8 +1071,8 @@ function shouldRunModelRationalReview(answer: string, userMessage: string) {
   if (/(上市\d+年首次业绩双降|首次业绩双降|营收利润首次双降|2025年实际值)/.test(normalized)) return true;
   if (/(无法|不能|不宜)(给出|判断|预测|回答|下结论)/.test(normalized.replace(/\s+/g, "")) && !/(情景|区间|假设|测算|框架|反证|跟踪)/.test(normalized)) return true;
   if (/(E\d*[:：]?$|\*\*?$|[,，、]$)/.test(normalized)) return true;
-  if (/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|怎么判断|怎么看)/.test(userMessage)) {
-    const hasCounter = /(反证|我可能错|风险|削弱|反驳)/.test(normalized);
+  if (/(预测|预估|净利润|营收|利润|亏损|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|技术|优势|协调|怎么判断|怎么看)/.test(userMessage)) {
+    const hasCounter = /(反证|我可能错|风险|削弱)/.test(normalized);
     const hasFollowUp = /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(normalized);
     const hasEvidenceLevel = /证据等级/.test(normalized);
     if (!hasCounter || !hasFollowUp || !hasEvidenceLevel) return true;
@@ -1096,12 +1096,15 @@ function isLikelyTruncatedResearchAnswer(answer: string) {
 }
 
 function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
-  if (!/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|反证|怎么判断|怎么看)/.test(userMessage)) return answer;
+  if (!/(预测|预估|净利润|营收|利润|亏损|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|反证|技术|优势|协调|画表|表格|对比|怎么判断|怎么看)/.test(userMessage)) return answer;
   const parts = [answer.trim()];
+  if (/(画表|表格|对比)/.test(userMessage) && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(answer)) {
+    parts.push(buildMinimumComparisonTable(userMessage));
+  }
   if (!/证据等级/.test(answer)) {
     parts.push("证据等级：中低。以上判断依赖当前证据包和已触发的外部线索，仍需用最新公告、财务数据和行业硬指标复核。");
   }
-  if (!/(反证|我可能错|削弱|反驳)/.test(answer)) {
+  if (!/(反证|我可能错|风险|削弱)/.test(answer)) {
     parts.push("我可能错在哪里：如果后续财报、订单、价格、现金流或竞争格局出现与当前判断相反的硬证据，应立即下修或重算结论。");
   }
   if (!/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer)) {
@@ -1111,9 +1114,28 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
   return parts.join("\n\n");
 }
 
+function buildMinimumComparisonTable(userMessage: string) {
+  if (/银行/.test(userMessage) && /电力/.test(userMessage) && /煤炭/.test(userMessage) && /电信/.test(userMessage)) {
+    return [
+      "| 行业 | 股息吸引力 | 主要风险 | 跟踪指标 |",
+      "|---|---:|---|---|",
+      "| 电信 | 较高 | 增长慢、资本开支周期 | 自由现金流、派息率、5G/云业务资本开支 |",
+      "| 电力 | 中高 | 煤价、水电来水、电价政策 | 燃料成本、利用小时、现金流 |",
+      "| 银行 | 中 | 净息差收窄、资产质量、监管资本 | NIM、不良率、拨备覆盖率、核心一级资本 |",
+      "| 煤炭 | 中 | 煤价周期下行、需求波动 | 煤价、产量、长协占比、资本开支 |",
+    ].join("\n");
+  }
+  return [
+    "| 项目 | 判断 | 主要依据 | 风险/反证 |",
+    "|---|---|---|---|",
+    "| 结论强度 | 中低 | 当前证据可形成框架但不足以高置信排序 | 最新财报或行业数据可能推翻 |",
+    "| 下一步 | 继续验证 | 补价格、销量、现金流和估值数据 | 单一新闻或搜索线索不能作为硬结论 |",
+  ].join("\n");
+}
+
 function hasRequiredInvestmentSections(answer: string, userMessage: string) {
-  if (!/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|怎么判断|怎么看)/.test(userMessage)) return true;
-  return /证据等级/.test(answer) && /(反证|我可能错|风险|削弱|反驳)/.test(answer) && /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer);
+  if (!/(预测|预估|净利润|营收|利润|亏损|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|技术|优势|协调|怎么判断|怎么看)/.test(userMessage)) return true;
+  return /证据等级/.test(answer) && /(反证|我可能错|风险|削弱)/.test(answer) && /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer);
 }
 
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
@@ -1463,6 +1485,24 @@ function buildForcedClarificationRequest(message: string): AssistantChoiceReques
       { id: "new-buy-long", label: "新买长期", description: "按 3 年以上持有，先看质量、估值安全边际和反证。", recommended: true },
       { id: "holding-review", label: "已有持仓", description: "按是否继续持有、是否减仓和跟踪风险来判断。" },
       { id: "short-catalyst", label: "短线机会", description: "按财报、政策、资金和情绪催化判断交易性机会。" },
+    ],
+  };
+}
+
+function buildSubjectOnlyClarificationRequest(message: string): AssistantChoiceRequest | null {
+  const normalized = message.trim().replace(/[？?。.!！\s]/g, "");
+  if (normalized.length > 8) return null;
+  if (!/(半导体|光伏|白酒|银行|地产|煤炭|电力|航运|机器人|创新药|CXO|AI|算力|储能|锂电|水泥|钢铁|铜|猪周期|港股互联网)/i.test(normalized)) return null;
+  return {
+    id: "research_scope",
+    title: "先确认研究口径",
+    question: "你想按哪种口径看这个方向？",
+    reason: "这个问题只有方向，没有说明你想看机会、风险、估值还是具体标的。先选一个口径，回答会更准。",
+    customPlaceholder: "也可以写：只看A股设备链、只看港股、只看未来一年等。",
+    options: [
+      { id: "risk_opportunity", label: "机会与风险", description: `${normalized}的主要机会、风险和反证。`, recommended: true },
+      { id: "valuation", label: "估值与位置", description: `${normalized}当前是否便宜，是否有泡沫。` },
+      { id: "stocks", label: "代表公司", description: `${normalized}里哪些A/H标的更值得跟踪。` },
     ],
   };
 }
