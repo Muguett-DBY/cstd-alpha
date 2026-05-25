@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable } from "./watchlist-ranking";
+import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable, sanitizeRankingNarrative } from "./watchlist-ranking";
 import type { EvidenceBundle } from "./providers";
 
 describe("watchlist ranking score helpers", () => {
@@ -149,6 +149,11 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.companyQualityScore).toBe(60);
     expect(ranking.investmentAttractivenessScore).toBe(45);
     expect(ranking.overallScore).toBe(49);
+  });
+
+  test("removes model self-reported score text from ranking narratives", () => {
+    expect(sanitizeRankingNarrative("基本面强劲。综合评定公司质量82分，投资吸引力70分，整体评分77。估值需要复核。")).toBe("基本面强劲。估值需要复核。");
+    expect(sanitizeRankingNarrative("质量优秀但缺乏催化剂，估值合理。")).toBe("质量优秀但缺乏催化剂，估值合理。");
   });
 
   test("ignores placeholder evidence and caps sparse company packages", () => {

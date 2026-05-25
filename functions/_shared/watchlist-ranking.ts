@@ -196,11 +196,19 @@ export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRan
     companyQualityScore: cqs,
     investmentAttractivenessScore: ias,
     overallScore: clampScore(Number.isFinite(rawOverall) ? rawOverall : cqs * 0.55 + ias * 0.45),
-    verdict: firstStringValue(record, ["verdict", "conclusion", "结论", "评级"]) || "观察",
-    summary: firstStringValue(record, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。",
+    verdict: sanitizeRankingNarrative(firstStringValue(record, ["verdict", "conclusion", "结论", "评级"]) || "观察"),
+    summary: sanitizeRankingNarrative(firstStringValue(record, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。"),
     keyPoints: firstStringArray(record, ["keyPoints", "positives", "主要得分点", "得分点", "优势"]).slice(0, 8),
     riskFlags: firstStringArray(record, ["riskFlags", "risks", "风险与反证", "风险点", "风险"]).slice(0, 8),
   });
+}
+
+export function sanitizeRankingNarrative(text: string) {
+  return text
+    .replace(/[^。；;\n]*(?:公司质量|质量|投资吸引力|吸引力|整体|综合)[^。；;\n]{0,24}(?:评分|得分|分数|[0-9]{1,3}分)[^。；;\n]*(?:。|；|;)?/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[，。,；;\s]+/, "")
+    .trim();
 }
 
 function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatchlistRanking {
