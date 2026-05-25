@@ -89,6 +89,27 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.overallScore).toBe(45.5);
   });
 
+  test("parses nested score objects and short score field names", () => {
+    const ranking = normalizeGeneratedRanking({
+      scores: {
+        quality: 81,
+        attractiveness: 67,
+        overall: 75,
+      },
+      result: {
+        verdict: "观察",
+        summary: "业务质量较高，估值一般。",
+        keyPoints: ["现金流健康"],
+        riskFlags: ["缺少前瞻指引"],
+      },
+    });
+
+    expect(ranking.companyQualityScore).toBe(81);
+    expect(ranking.investmentAttractivenessScore).toBe(67);
+    expect(ranking.overallScore).toBe(74.7);
+    expect(ranking.summary).toBe("业务质量较高，估值一般。");
+  });
+
   test("keeps strong financial quality separate from high valuation risk", () => {
     const ranking = normalizeGeneratedRanking({
       companyQualityScore: 60,

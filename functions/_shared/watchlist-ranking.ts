@@ -187,19 +187,34 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
 
 export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRanking {
   const record = isRecord(value) ? value : {};
-  const cqsRaw = firstNumberValue(record, ["companyQualityScore", "company_quality_score", "qualityScore", "quality_score", "公司质量分", "公司质量评分", "质量分"]);
-  const iasRaw = firstNumberValue(record, ["investmentAttractivenessScore", "investment_attractiveness_score", "attractivenessScore", "investmentScore", "投资吸引力分", "投资吸引力评分", "吸引力分"]);
-  const rawOverall = firstNumberValue(record, ["overallScore", "overall_score", "totalScore", "score", "综合分", "综合评分", "总分"]);
+  const records = candidateRankingRecords(record);
+  const cqsRaw = firstNumberValue(records, ["companyQualityScore", "company_quality_score", "qualityScore", "quality_score", "quality", "公司质量分", "公司质量评分", "公司质量", "质量分", "质量评分", "质量"]);
+  const iasRaw = firstNumberValue(records, [
+    "investmentAttractivenessScore",
+    "investment_attractiveness_score",
+    "attractivenessScore",
+    "attractiveness_score",
+    "investmentScore",
+    "investment_score",
+    "attractiveness",
+    "投资吸引力分",
+    "投资吸引力评分",
+    "投资吸引力",
+    "吸引力分",
+    "吸引力评分",
+    "吸引力",
+  ]);
+  const rawOverall = firstNumberValue(records, ["overallScore", "overall_score", "totalScore", "total_score", "overall", "score", "综合分", "综合评分", "综合", "总分", "总评分"]);
   const cqs = clampScore(Number.isFinite(cqsRaw) ? cqsRaw : 50);
   const ias = clampScore(Number.isFinite(iasRaw) ? iasRaw : 40);
   return applyRankingRiskCaps({
     companyQualityScore: cqs,
     investmentAttractivenessScore: ias,
     overallScore: clampScore(Number.isFinite(rawOverall) ? rawOverall : cqs * 0.55 + ias * 0.45),
-    verdict: sanitizeRankingNarrative(firstStringValue(record, ["verdict", "conclusion", "结论", "评级"]) || "观察"),
-    summary: sanitizeRankingNarrative(firstStringValue(record, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。"),
-    keyPoints: firstStringArray(record, ["keyPoints", "positives", "主要得分点", "得分点", "优势"]).slice(0, 8),
-    riskFlags: firstStringArray(record, ["riskFlags", "risks", "风险与反证", "风险点", "风险"]).slice(0, 8),
+    verdict: sanitizeRankingNarrative(firstStringValue(records, ["verdict", "conclusion", "结论", "评级"]) || "观察"),
+    summary: sanitizeRankingNarrative(firstStringValue(records, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。"),
+    keyPoints: firstStringArray(records, ["keyPoints", "positives", "主要得分点", "得分点", "优势"]).slice(0, 8),
+    riskFlags: firstStringArray(records, ["riskFlags", "risks", "风险与反证", "风险点", "风险"]).slice(0, 8),
   });
 }
 
@@ -346,33 +361,41 @@ function numberValue(value: unknown) {
   return Number.NaN;
 }
 
-function firstNumberValue(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = numberValue(record[key]);
-    if (Number.isFinite(value)) return value;
+function candidateRankingRecords(record: Record<string, unknown>) {
+  const candidates = [record];
+  for (const key of ["scores", "score", "ranking", "result", "output", "data"]) {
+    const value = record[key];
+    if (isRecord(value)) candidates.push(value);
   }
-  const scores = isRecord(record.scores) ? record.scores : undefined;
-  if (scores) {
+  return candidates;
+}
+
+function firstNumberValue(records: Record<string, unknown>[], keys: string[]) {
+  for (const record of records) {
     for (const key of keys) {
-      const value = numberValue(scores[key]);
+      const value = numberValue(record[key]);
       if (Number.isFinite(value)) return value;
     }
   }
   return Number.NaN;
 }
 
-function firstStringValue(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = stringValue(record[key]);
-    if (value) return value;
+function firstStringValue(records: Record<string, unknown>[], keys: string[]) {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = stringValue(record[key]);
+      if (value) return value;
+    }
   }
   return "";
 }
 
-function firstStringArray(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = stringArray(record[key]);
-    if (value.length) return value;
+function firstStringArray(records: Record<string, unknown>[], keys: string[]) {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = stringArray(record[key]);
+      if (value.length) return value;
+    }
   }
   return [];
 }
