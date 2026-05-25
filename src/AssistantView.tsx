@@ -262,13 +262,17 @@ export function AssistantView() {
         </header>
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
-            {visibleMessages.map((message) => (
-              <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
-                <span>{message.role === "user" ? "你" : "助手"}</span>
-                <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(stripInternalAssistantCompletion(message.content)) : stripInternalAssistantCompletion(message.content)} />
-                <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
-              </article>
-            ))}
+            {visibleMessages.map((message) => {
+              const cleanContent = stripInternalAssistantCompletion(message.content);
+              if (message.role === "assistant" && !cleanContent.trim()) return null;
+              return (
+                <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
+                  <span>{message.role === "user" ? "你" : "助手"}</span>
+                  <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(cleanContent) : cleanContent} />
+                  <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
+                </article>
+              );
+            })}
             {draft ? (
               <article className="assistant-message assistant streaming">
                 <span>助手</span>

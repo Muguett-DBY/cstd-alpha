@@ -24,4 +24,11 @@ describe("assistant view state", () => {
 
     expect(stripInternalAssistantCompletion(text)).toBe("你好，我是 CSTD Alpha 的私人投研助手。");
   });
+
+  test("hides standalone legacy internal fallback answers", () => {
+    const text =
+      "结论：把贵州茅台的上行空间和下行风险做成表。 当前应输出低置信判断，而不是停止回答。 证据等级：低。可用证据只够形成方向性判断，不能形成高置信投资结论。 核心理由：先列出已知事实，再给最可能解释、反证条件和需要补齐的数据。 反驳用户观点：如果用户把单一新闻、单家公司样本或概念叙事当作充分证据，这个逻辑不成立。 我可能错在哪里：若最新公告、官方统计或公司级硬数据已经更新，本轮判断可能被推翻。 下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化。";
+
+    expect(stripInternalAssistantCompletion(text)).toBe("");
+  });
 });

@@ -16,10 +16,18 @@ export function assistantCacheHitRate(usage: AssistantUsage | undefined | null) 
 export function stripInternalAssistantCompletion(text: string) {
   const marker = "系统补全：";
   const markerIndex = text.indexOf(marker);
-  if (markerIndex < 0) return text;
-  const beforeMarker = text.slice(0, markerIndex);
-  return beforeMarker
+  const withoutAppendix = markerIndex >= 0 ? text.slice(0, markerIndex) : text;
+  if (isLegacyInternalFallbackOnly(withoutAppendix)) return "";
+  return withoutAppendix
     .replace(/\n-{3,}\s*$/m, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function isLegacyInternalFallbackOnly(text: string) {
+  return (
+    /当前应输出低置信判断/.test(text) &&
+    /可用证据只够形成方向性判断/.test(text) &&
+    /补公司公告、财务指标、行业价格\/销量\/库存\/订单/.test(text)
+  );
 }
