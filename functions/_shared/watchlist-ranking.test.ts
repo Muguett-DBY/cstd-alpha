@@ -76,6 +76,35 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.overallScore).toBe(77.5);
   });
 
+  test("does not turn missing numeric fields into zero scores", () => {
+    const ranking = normalizeGeneratedRanking({
+      verdict: "观察",
+      summary: "模型返回缺少数值字段，需要保守复核。",
+      keyPoints: [],
+      riskFlags: [],
+    });
+
+    expect(ranking.companyQualityScore).toBe(50);
+    expect(ranking.investmentAttractivenessScore).toBe(40);
+    expect(ranking.overallScore).toBe(45.5);
+  });
+
+  test("keeps strong financial quality separate from high valuation risk", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 60,
+      investmentAttractivenessScore: 45,
+      overallScore: 53.3,
+      verdict: "优秀但偏贵",
+      summary: "财务数据极为强劲，自由现金流极高，资产负债率低，但当前估值偏高，安全边际有限。",
+      keyPoints: ["自由现金流极高", "资产负债率低"],
+      riskFlags: ["PE较高，安全边际有限"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(78);
+    expect(ranking.investmentAttractivenessScore).toBe(55);
+    expect(ranking.overallScore).toBe(67.7);
+  });
+
   test("ignores placeholder evidence and caps sparse company packages", () => {
     const evidence = {
       retrievedAt: "2026-05-25T00:00:00.000Z",
