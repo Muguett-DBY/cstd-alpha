@@ -135,6 +135,22 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.overallScore).toBe(49);
   });
 
+  test("caps unprofitable growth companies even when balance sheet is acceptable", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 78,
+      investmentAttractivenessScore: 55,
+      overallScore: 67.7,
+      verdict: "概念成长股",
+      summary: "公司收入增长但尚未盈利，当前亏损7亿，估值已反映高增长预期。",
+      keyPoints: ["资产负债率稳健"],
+      riskFlags: ["尚未盈利", "亏损7亿"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(60);
+    expect(ranking.investmentAttractivenessScore).toBe(45);
+    expect(ranking.overallScore).toBe(49);
+  });
+
   test("ignores placeholder evidence and caps sparse company packages", () => {
     const evidence = {
       retrievedAt: "2026-05-25T00:00:00.000Z",
