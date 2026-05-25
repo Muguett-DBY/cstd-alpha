@@ -1043,7 +1043,7 @@ async function generateReviewedResearchAnswer(input: {
   const review = shouldRunModelRationalReview(answer, input.userMessage)
     ? await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal })
     : { usage: {} };
-  const text = selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode);
+  const text = ensureMinimumResearchSections(selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode), input.userMessage, input.mode);
   return {
     text,
     review: review.raw,
@@ -1083,11 +1083,32 @@ function shouldRunModelRationalReview(answer: string, userMessage: string) {
 function selectReviewedResearchText(answer: string, revisedAnswer: string | undefined, userMessage: string, mode: AssistantMode) {
   if (!revisedAnswer) return isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(userMessage, mode) : answer;
   const originalUnsatisfactory = isUnsatisfactoryEvidenceOnlyAnswer(answer);
+  if (isLikelyTruncatedResearchAnswer(answer) && revisedAnswer.trim().length >= 120) return revisedAnswer;
   if (!hasRequiredInvestmentSections(answer, userMessage) && hasRequiredInvestmentSections(revisedAnswer, userMessage)) return revisedAnswer;
   if (!originalUnsatisfactory && answer.length >= 1000 && revisedAnswer.length < Math.min(700, answer.length * 0.45)) {
     return answer;
   }
   return revisedAnswer;
+}
+
+function isLikelyTruncatedResearchAnswer(answer: string) {
+  return /(E\d*[:：]?$|\*\*?$|[,，、]$)/.test(answer.trim());
+}
+
+function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
+  if (!/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|反证|怎么判断|怎么看)/.test(userMessage)) return answer;
+  const parts = [answer.trim()];
+  if (!/证据等级/.test(answer)) {
+    parts.push("证据等级：中低。以上判断依赖当前证据包和已触发的外部线索，仍需用最新公告、财务数据和行业硬指标复核。");
+  }
+  if (!/(反证|我可能错|削弱|反驳)/.test(answer)) {
+    parts.push("我可能错在哪里：如果后续财报、订单、价格、现金流或竞争格局出现与当前判断相反的硬证据，应立即下修或重算结论。");
+  }
+  if (!/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer)) {
+    const subject = mode === "industry" ? "行业价格、销量、库存、产能、政策和龙头公司财报" : "最新财报、现金流、估值、核心业务增速、竞争变化和重大公告";
+    parts.push(`下一步跟踪：优先跟踪${subject}；若关键变量连续两个报告期恶化，不应维持原结论。`);
+  }
+  return parts.join("\n\n");
 }
 
 function hasRequiredInvestmentSections(answer: string, userMessage: string) {

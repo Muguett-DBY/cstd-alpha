@@ -365,6 +365,34 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("下一步跟踪");
   });
 
+  test("adds minimum research sections when reviewed answer is still truncated", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：关键反证是大客户自研芯片侵蚀GPU份额。\n证据等级：中。外部证据 E8" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true, revisedAnswer: "结论：关键反证是大客户自研芯片侵蚀GPU份额。\n证据等级：中。外部证据 E8" }) } }], usage: { total_tokens: 80 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "英伟达未来两年最关键的反证是什么？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("下一步跟踪");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
