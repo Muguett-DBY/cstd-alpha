@@ -7,9 +7,9 @@ import {
   sendAssistantMessage,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
-import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, speechErrorMessage } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { mergeAssistantDelta } from "./assistant-state";
+import { mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
@@ -117,7 +117,7 @@ export function AssistantView() {
       return;
     }
     setSpeechPhase("starting");
-    setSpeechNotice("正在请求麦克风权限…");
+    setSpeechNotice("正在启动语音识别…");
     const microphoneReady = await ensureMicrophoneReady();
     if (!microphoneReady.ok) {
       setSpeechPhase("error");
@@ -265,14 +265,14 @@ export function AssistantView() {
             {visibleMessages.map((message) => (
               <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
                 <span>{message.role === "user" ? "你" : "助手"}</span>
-                <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(message.content) : message.content} />
+                <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(stripInternalAssistantCompletion(message.content)) : stripInternalAssistantCompletion(message.content)} />
                 <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
               </article>
             ))}
             {draft ? (
               <article className="assistant-message assistant streaming">
                 <span>助手</span>
-                <AssistantText text={draftBlocks.length ? stripRenderedTables(draft) : draft} />
+                <AssistantText text={draftBlocks.length ? stripRenderedTables(stripInternalAssistantCompletion(draft)) : stripInternalAssistantCompletion(draft)} />
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
             ) : null}
@@ -595,17 +595,16 @@ function MemoryCandidateDialog({ candidate, onConfirm, onReject }: { candidate: 
 }
 
 async function ensureMicrophoneReady(): Promise<{ ok: true } | { ok: false; message: string }> {
-  if (!navigator.mediaDevices?.getUserMedia) return { ok: true };
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    for (const track of stream.getTracks()) track.stop();
-    return { ok: true };
+    const permission = await navigator.permissions?.query?.({ name: "microphone" as PermissionName });
+    const blocked = shouldBlockSpeechForPermissionState(permission?.state);
+    if (blocked.blocked) return { ok: false, message: blocked.message };
   } catch (error) {
-    const name = error instanceof DOMException ? error.name : "";
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") return { ok: false, message: "麦克风权限被拒绝，请允许浏览器使用麦克风。" };
-    if (name === "NotFoundError" || name === "DevicesNotFoundError") return { ok: false, message: "没有检测到可用麦克风。" };
-    return { ok: false, message: "麦克风启动失败，请检查浏览器权限和系统输入设备。" };
+    // Some browsers do not expose microphone permission through the Permissions API.
+    // Let SpeechRecognition.start() request/check the device instead of pre-opening the mic.
+    void error;
   }
+  return { ok: true };
 }
 
 function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {

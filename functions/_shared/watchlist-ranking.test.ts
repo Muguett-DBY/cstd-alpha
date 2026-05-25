@@ -56,8 +56,8 @@ describe("watchlist ranking score helpers", () => {
     });
 
     expect(ranking.companyQualityScore).toBe(88);
-    expect(ranking.investmentAttractivenessScore).toBe(70);
-    expect(ranking.overallScore).toBe(79.9);
+    expect(ranking.investmentAttractivenessScore).toBe(62);
+    expect(ranking.overallScore).toBe(76.3);
   });
 
   test("caps scores when the generated rationale says the evidence package is incomplete", () => {
@@ -71,9 +71,25 @@ describe("watchlist ranking score helpers", () => {
       riskFlags: ["证据缺乏管理层展望和竞争格局"],
     });
 
-    expect(ranking.companyQualityScore).toBe(82);
-    expect(ranking.investmentAttractivenessScore).toBe(72);
-    expect(ranking.overallScore).toBe(77.5);
+    expect(ranking.companyQualityScore).toBe(80);
+    expect(ranking.investmentAttractivenessScore).toBe(62);
+    expect(ranking.overallScore).toBe(71.9);
+  });
+
+  test("caps extremely expensive stocks below ordinary high valuation names", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 90,
+      investmentAttractivenessScore: 75,
+      overallScore: 83,
+      verdict: "优秀但极贵",
+      summary: "公司财务质量优秀，但当前PE约102倍，PB约16.7倍，估值极高，安全边际不足。",
+      keyPoints: ["经营现金流强劲", "资产负债率低"],
+      riskFlags: ["PE约102倍", "估值极高"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(90);
+    expect(ranking.investmentAttractivenessScore).toBe(45);
+    expect(ranking.overallScore).toBe(65);
   });
 
   test("does not turn missing numeric fields into zero scores", () => {
@@ -226,8 +242,8 @@ describe("watchlist ranking score helpers", () => {
 
     expect(coverage.usableEvidenceCount).toBe(2);
     expect(coverage.ignoredPlaceholderCount).toBe(2);
-    expect(capped.companyQualityScore).toBe(78);
-    expect(capped.investmentAttractivenessScore).toBe(65);
-    expect(capped.overallScore).toBe(72.2);
+    expect(capped.companyQualityScore).toBe(72);
+    expect(capped.investmentAttractivenessScore).toBe(55);
+    expect(capped.overallScore).toBe(64.4);
   });
 });

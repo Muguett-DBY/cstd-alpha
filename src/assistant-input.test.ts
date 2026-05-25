@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, speechErrorMessage } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 
 describe("assistant input helpers", () => {
   test("submits on plain Enter and keeps Shift+Enter as newline", () => {
@@ -24,5 +24,14 @@ describe("assistant input helpers", () => {
     expect(speechErrorMessage("not-allowed")).toContain("麦克风权限被拒绝");
     expect(canRestartSpeechAfterError("no-speech")).toBe(true);
     expect(canRestartSpeechAfterError("network")).toBe(false);
+  });
+
+  test("does not preflight microphone when permission is available", () => {
+    expect(shouldBlockSpeechForPermissionState("granted")).toEqual({ blocked: false });
+    expect(shouldBlockSpeechForPermissionState("prompt")).toEqual({ blocked: false });
+    expect(shouldBlockSpeechForPermissionState("denied")).toEqual({
+      blocked: true,
+      message: "麦克风权限被拒绝，请允许浏览器使用麦克风。",
+    });
   });
 });

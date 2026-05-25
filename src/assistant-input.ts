@@ -36,3 +36,13 @@ export function speechErrorMessage(error?: string) {
 export function canRestartSpeechAfterError(error?: string) {
   return error === "no-speech";
 }
+
+export function shouldBlockSpeechForPermissionState(state?: PermissionState | string) {
+  if (state === "denied") {
+    return {
+      blocked: true,
+      message: "麦克风权限被拒绝，请允许浏览器使用麦克风。",
+    } as const;
+  }
+  return { blocked: false } as const;
+}

@@ -1092,6 +1092,7 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
 function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mode: AssistantMode) {
   const normalized = answer.trim();
   if (!normalized) return normalized;
+  if (shouldSkipIncompleteAnswerRepair(userMessage)) return answer;
   const asksTable = /(画表|画成表|做成表|表格|比较|对比|矩阵|上行空间|下行风险)/.test(userMessage);
   const missingFollowUp = !/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标)/.test(normalized);
   const missingCounter = !/(反证|我可能错|下行风险|风险)/.test(normalized);
@@ -1103,10 +1104,15 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
     "",
     "---",
     "",
-    "系统补全：上方模型输出存在截断或缺少跟踪/反证项，以下为可审计的整理版。",
-    "",
+    "补充框架：",
     buildConstructiveEvidenceGapAnswer(userMessage, mode),
   ].join("\n");
+}
+
+function shouldSkipIncompleteAnswerRepair(userMessage: string) {
+  const text = userMessage.trim();
+  if (/^(你好|您好|哈喽|hello|hi|你是|你是谁|你能做什么|介绍一下|谢谢|辛苦了)[？?！!。.\s]*$/i.test(text)) return true;
+  return shouldTreatAsSimpleGeneralChat(text, "chat");
 }
 
 function buildSupplyChainRealizationGapAnswer(userMessage: string) {

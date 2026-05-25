@@ -131,8 +131,8 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
             "Penalize weak evidence, leverage, cash-flow weakness, governance risk, valuation bubble, cyclicality and business deterioration.",
             "InvestmentAttractivenessScore >=80 is rare: it requires attractive valuation, clear catalysts, downside protection, and no major evidence gap.",
             "For an excellent but expensive company, a typical output is high CompanyQualityScore and medium InvestmentAttractivenessScore, not low scores for both.",
-            "If you write valuation is high/expensive/safety margin limited/market expectation is already full, investmentAttractivenessScore must be <=70.",
-            "If evidence lacks segment data, forward guidance, valuation or current hard financial facts, cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
+            "If you write valuation is high/expensive/safety margin limited/market expectation is already full, investmentAttractivenessScore must be <=62.",
+            "If evidence lacks segment data, forward guidance, valuation or current hard financial facts, cap companyQualityScore at 80 and investmentAttractivenessScore at 62.",
             "Ignore placeholder sources that say unavailable, no data, fallback returned no data, or symbol search only.",
             "The JSON object MUST include top-level numeric fields: companyQualityScore, investmentAttractivenessScore, overallScore. Do not nest scores under scores/result/output.",
             "If you cannot decide exactly, still return conservative numeric scores instead of omitting fields.",
@@ -156,10 +156,10 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
           },
           hardRules: [
             "Do not give high scores for famous companies without evidence.",
-            "If evidence lacks cash-flow, debt, valuation or current financial facts, cap companyQualityScore at 72 and investmentAttractivenessScore at 65.",
-            "If the company is high quality but valuation is high or safety margin is limited, keep companyQualityScore high but cap investmentAttractivenessScore at 70.",
-            "If the evidence package itself has obvious gaps, do not compensate with brand fame; cap companyQualityScore at 82 and investmentAttractivenessScore at 72.",
-            "If usableEvidenceCount < 4 or usableHardEvidenceCount < 2, companyQualityScore must be <=82 and investmentAttractivenessScore must be <=70.",
+            "If evidence lacks cash-flow, debt, valuation or current financial facts, cap companyQualityScore at 72 and investmentAttractivenessScore at 58.",
+            "If the company is high quality but valuation is high or safety margin is limited, keep companyQualityScore high but cap investmentAttractivenessScore at 62.",
+            "If the evidence package itself has obvious gaps, do not compensate with brand fame; cap companyQualityScore at 80 and investmentAttractivenessScore at 62.",
+            "If usableEvidenceCount < 4 or usableHardEvidenceCount < 2, companyQualityScore must be <=78 and investmentAttractivenessScore must be <=62.",
             "If major red flags exist, cap overallScore at 49.",
             "If valuation is expensive and growth evidence is not strong, investmentAttractivenessScore must be lower than companyQualityScore.",
             "Every score must be explained by evidence ids or source types in keyPoints/riskFlags.",
@@ -239,12 +239,15 @@ function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatc
   const severeNegative = explicitAvoid || weakCashFlowOrLoss;
   const strongFinancialQuality = /财务.*(极为)?强劲|盈利能力.*(强|优秀|极强)|自由现金流.*(极高|充裕|强劲|健康)|经营现金流.*(强劲|充裕|健康)|净利率.*(高达|超过|接近)|资产负债率.*(低|下降)|低杠杆|现金流质量高/.test(text);
 
-  if (/估值(偏高|较高|不低|高|中高|泡沫|已充分|较充分)|安全边际有限|预期已(较)?充分|市盈率.*(高|不低)|PE.*(高|不低)|自由现金流收益率.*低/.test(text)) {
-    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 70);
+  const extremelyExpensive = /估值极高|估值泡沫|市盈率.*(?:[8-9]\d|[1-9]\d{2,})|PE.*(?:[8-9]\d|[1-9]\d{2,})|PB.*(?:1[2-9]|[2-9]\d)|市净率.*(?:1[2-9]|[2-9]\d)/i.test(text);
+  const expensiveOrLimitedMargin = /估值(偏高|较高|不低|高|中高|泡沫|已充分|较充分)|安全边际(有限|不足)|预期已(较)?充分|市盈率.*(高|不低)|PE.*(高|不低)|自由现金流收益率.*低/.test(text);
+  if (expensiveOrLimitedMargin) {
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, extremelyExpensive ? 45 : 62);
+    if (extremelyExpensive) overallCap = Math.min(overallCap, 65);
   }
   if (/证据(未包含|不足|缺|缺乏|缺少)|无法评估|未提供|待核实|需谨慎|证据包未/.test(text)) {
-    companyQualityScore = Math.min(companyQualityScore, 82);
-    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 72);
+    companyQualityScore = Math.min(companyQualityScore, extremelyExpensive ? 78 : 80);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 62);
   }
   if (weakCashFlowOrLoss) {
     companyQualityScore = Math.min(companyQualityScore, 60);
@@ -258,7 +261,7 @@ function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatc
   if (strongFinancialQuality && !severeNegative) {
     const nextQualityScore = Math.max(companyQualityScore, 78);
     companyQualityScore = nextQualityScore;
-    if (/估值(偏高|较高|不低|高|中高|泡沫|已充分|较充分)|安全边际有限|PE.*(高|不低)/.test(text)) {
+    if (expensiveOrLimitedMargin && !extremelyExpensive) {
       const nextAttractivenessScore = Math.max(investmentAttractivenessScore, 55);
       investmentAttractivenessScore = nextAttractivenessScore;
     }
@@ -313,12 +316,12 @@ export function applyEvidenceCoverageCaps(ranking: GeneratedWatchlistRanking, co
   let investmentAttractivenessScore = ranking.investmentAttractivenessScore;
 
   if (coverage.usableEvidenceCount < 4 || coverage.usableHardEvidenceCount < 2 || coverage.sourceFamilies.length < 2) {
-    companyQualityScore = Math.min(companyQualityScore, 82);
-    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 70);
+    companyQualityScore = Math.min(companyQualityScore, 78);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 62);
   }
   if (coverage.usableEvidenceCount <= 2 || coverage.usableHardEvidenceCount <= 1) {
-    companyQualityScore = Math.min(companyQualityScore, 78);
-    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 65);
+    companyQualityScore = Math.min(companyQualityScore, 72);
+    investmentAttractivenessScore = Math.min(investmentAttractivenessScore, 55);
   }
 
   const overallScore = clampScore(Math.min(ranking.overallScore, companyQualityScore * 0.55 + investmentAttractivenessScore * 0.45));

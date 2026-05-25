@@ -65,6 +65,43 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.stream).toBe(true);
   });
 
+  test("does not append internal system completion text to short normal chat replies", async () => {
+    const chunks = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "你好，我是 CSTD Alpha 的私人投研助手。" } }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 })));
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "用一句话解释自由现金流为什么重要。", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("私人投研助手");
+    expect(body).not.toContain("系统补全");
+    expect(body).not.toContain("当前应输出低置信判断");
+  });
+
   test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
