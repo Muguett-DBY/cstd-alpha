@@ -22,6 +22,7 @@ describe("assistant prompt and memory helpers", () => {
 
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toContain("结论");
+    expect(messages[0].content).toContain("第一行必须以“结论：”开头");
     expect(messages[1].content).toContain("已确认长期记忆");
     expect(messages[1].content).toContain("偏好：先看现金流");
     expect(messages[1].content).not.toContain("上轮结论");
