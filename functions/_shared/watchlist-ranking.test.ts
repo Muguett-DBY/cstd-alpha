@@ -39,7 +39,7 @@ describe("watchlist ranking score helpers", () => {
 
     expect(ranking.companyQualityScore).toBe(66);
     expect(ranking.investmentAttractivenessScore).toBe(58.4);
-    expect(ranking.overallScore).toBe(62);
+    expect(ranking.overallScore).toBe(62.6);
     expect(ranking.verdict).toBe("周期资源，观察");
     expect(ranking.keyPoints).toHaveLength(2);
   });
@@ -103,6 +103,36 @@ describe("watchlist ranking score helpers", () => {
     expect(ranking.companyQualityScore).toBe(78);
     expect(ranking.investmentAttractivenessScore).toBe(55);
     expect(ranking.overallScore).toBe(67.7);
+  });
+
+  test("recalculates inconsistent low overall scores from final component scores", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 78,
+      investmentAttractivenessScore: 65,
+      overallScore: 49,
+      verdict: "周期行业，观察",
+      summary: "财务数据强劲，负债率下降，但行业波动较大。",
+      keyPoints: ["经营现金流强劲"],
+      riskFlags: ["周期波动"],
+    });
+
+    expect(ranking.overallScore).toBe(72.2);
+  });
+
+  test("caps severe loss and operating cash flow turning negative", () => {
+    const ranking = normalizeGeneratedRanking({
+      companyQualityScore: 78,
+      investmentAttractivenessScore: 50,
+      overallScore: 60,
+      verdict: "质量极差，价值陷阱",
+      summary: "公司连续巨额亏损，经营现金流转负，建议回避。",
+      keyPoints: [],
+      riskFlags: ["巨额亏损", "经营现金流转负"],
+    });
+
+    expect(ranking.companyQualityScore).toBe(60);
+    expect(ranking.investmentAttractivenessScore).toBe(45);
+    expect(ranking.overallScore).toBe(49);
   });
 
   test("ignores placeholder evidence and caps sparse company packages", () => {
