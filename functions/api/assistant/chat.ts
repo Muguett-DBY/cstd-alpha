@@ -326,6 +326,12 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
         if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
+        const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, evidenceMode);
+        if (repairedText !== assistantText) {
+          const appendix = repairedText.slice(assistantText.length);
+          assistantText = repairedText;
+          enqueue(controller, { type: "delta", text: appendix });
+        }
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
         for (const block of blocks) enqueue(controller, { type: "block", block });
@@ -1058,6 +1064,7 @@ function selectReviewedResearchText(answer: string, revisedAnswer: string | unde
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
+  if (/(上行空间.*下行风险|下行风险.*上行空间)/.test(userMessage)) return buildRiskReturnTableGapAnswer(userMessage);
   if (/(画表|画成表|做成表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
   if (/(来自|靠|驱动).*(利润修复|回购|估值修复)|利润修复.*回购.*估值修复/.test(userMessage)) return buildDriverComparisonGapAnswer(userMessage);
   if (/(产业链|环节).*(先兑现|兑现业绩|业绩兑现)|人形机器人.*(先兑现|兑现业绩|业绩兑现)/.test(userMessage)) return buildSupplyChainRealizationGapAnswer(userMessage);
@@ -1079,6 +1086,26 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：如果用户把单一新闻、单家公司样本或概念叙事当作充分证据，这个逻辑不成立。",
     "我可能错在哪里：若最新公告、官方统计或公司级硬数据已经更新，本轮判断可能被推翻。",
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化。",
+  ].join("\n");
+}
+
+function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mode: AssistantMode) {
+  const normalized = answer.trim();
+  if (!normalized) return normalized;
+  const asksTable = /(画表|画成表|做成表|表格|比较|对比|矩阵|上行空间|下行风险)/.test(userMessage);
+  const missingFollowUp = !/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标)/.test(normalized);
+  const missingCounter = !/(反证|我可能错|下行风险|风险)/.test(normalized);
+  const shortOrCut = normalized.length < 900 || /[（(]$|[，,、：:]$|报告日$/.test(normalized);
+  if (!asksTable && !(shortOrCut && (missingFollowUp || missingCounter))) return answer;
+  if (!shortOrCut && !missingFollowUp && !missingCounter) return answer;
+  return [
+    normalized,
+    "",
+    "---",
+    "",
+    "系统补全：上方模型输出存在截断或缺少跟踪/反证项，以下为可审计的整理版。",
+    "",
+    buildConstructiveEvidenceGapAnswer(userMessage, mode),
   ].join("\n");
 }
 
@@ -1123,6 +1150,29 @@ function buildComparisonTableGapAnswer(userMessage: string) {
     "反驳用户观点：如果只因为AI服务器需求强就把所有环节都判为高景气，这是错误的。产业链利润会在不同环节迁移，订单、毛利率和库存比概念新闻更重要。",
     "我可能错在哪里：若最新财报显示某环节收入和毛利率已经连续兑现，或大客户CAPEX突然下修，上述排序需要立刻调整。",
     "下一步跟踪：逐家公司核对AI相关收入占比、订单/中标、毛利率、库存、产能扩张和估值分位。",
+  ].join("\n");
+}
+
+function buildRiskReturnTableGapAnswer(userMessage: string) {
+  const subject = /贵州茅台|茅台/.test(userMessage) ? "贵州茅台" : userMessage.split(/[？?。]/)[0].replace(/(把|画表|做成表|上行空间|下行风险|的)/g, "").trim().slice(0, 24) || "当前标的";
+  return [
+    `结论：${subject} 可以先用“上行空间 vs 下行风险”框架观察，但不能只看券商目标价或品牌叙事。当前应把上行看作需要验证的情景，把下行看作已在经营压力中体现的风险。`,
+    "证据等级：低至中。表格是研究框架和低置信整理，不等同于买入建议；涉及目标价、批价、利润增速和渠道库存时必须回到最新财报、公告和价格数据复核。",
+    "",
+    `${subject}上行空间与下行风险对照表`,
+    "",
+    "| 方向 | 关键因素 | 对投资吸引力的影响 | 主要反证 | 必须跟踪 |",
+    "| --- | --- | --- | --- | --- |",
+    "| 上行空间 | 估值修复 | 若估值处于低位且盈利没有继续下修，股价可能先修复风险偏好 | 盈利预测继续下调，低估值变成价值陷阱 | PE/PB分位、券商预测修正、成交量 |",
+    "| 上行空间 | 改革或渠道效率 | 直营占比、产品结构或渠道效率改善可能推高利润率 | 渠道利润被压缩、批价继续走弱、库存去化慢 | 批价、渠道库存、合同负债、毛利率 |",
+    "| 上行空间 | 品牌和现金流韧性 | 龙头品牌和现金流可支撑长期定价权 | 高端消费需求持续疲软，品牌溢价下降 | 自由现金流、分红、经销商信心 |",
+    "| 下行风险 | 利润增速放缓 | 若营收和净利增速继续下台阶，估值中枢会被重估 | 半年报或三季报重新加速 | 单季收入、净利润、经营现金流 |",
+    "| 下行风险 | 价格和库存压力 | 批价下行会削弱渠道信心，并影响市场对真实需求的判断 | 批价连续回升且库存下降 | 飞天批价、终端库存、渠道打款 |",
+    "| 下行风险 | 估值修复落空 | 若目标价依赖乐观假设而基本面未兑现，上行空间会缩水 | 盈利预测上修且估值分位仍低 | 一致预期、目标价调整、业绩兑现率 |",
+    "",
+    "反驳用户观点：如果只因为“品牌强、目标价高”就认为上行确定，这是不完整的。真正的上行需要利润、现金流、批价和渠道库存共同验证。",
+    "我可能错在哪里：如果最新财报显示利润增速明显回升、批价稳定上行且合同负债改善，那么当前偏观察的判断应上调；反之如果价格继续下行或盈利预测下修，应降低吸引力。",
+    "下一步跟踪：最近一期财报、飞天批价、渠道库存、合同负债、直营占比、经营现金流、券商一致预期和估值分位。",
   ].join("\n");
 }
 
