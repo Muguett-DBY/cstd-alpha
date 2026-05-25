@@ -1026,7 +1026,7 @@ async function generateReviewedResearchAnswer(input: {
       buildDeepSeekRequestBody({
         model: ASSISTANT_MODEL,
         messages: input.messages,
-        maxTokens: 2600,
+        maxTokens: 3200,
         reasoningEffort: ASSISTANT_REASONING_EFFORT,
         temperature: 0.08,
         stream: false,
@@ -1070,7 +1070,8 @@ function shouldRunModelRationalReview(answer: string, userMessage: string) {
   if (/证据等级[：:]\s*(高|中高|较高|中至高)/.test(normalized) && /(Exa|AnySearch|SearXNG|GDELT|arXiv|Semantic Scholar|海外案例|GCC|印度|美国|券商研报|S&P)/i.test(normalized)) return true;
   if (/(上市\d+年首次业绩双降|首次业绩双降|营收利润首次双降|2025年实际值)/.test(normalized)) return true;
   if (/(无法|不能|不宜)(给出|判断|预测|回答|下结论)/.test(normalized.replace(/\s+/g, "")) && !/(情景|区间|假设|测算|框架|反证|跟踪)/.test(normalized)) return true;
-  if (/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|怎么判断|怎么看)/.test(userMessage)) {
+  if (/(E\d*[:：]?$|\*\*?$|[,，、]$)/.test(normalized)) return true;
+  if (/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|怎么判断|怎么看)/.test(userMessage)) {
     const hasCounter = /(反证|我可能错|风险|削弱|反驳)/.test(normalized);
     const hasFollowUp = /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(normalized);
     const hasEvidenceLevel = /证据等级/.test(normalized);
@@ -1082,10 +1083,16 @@ function shouldRunModelRationalReview(answer: string, userMessage: string) {
 function selectReviewedResearchText(answer: string, revisedAnswer: string | undefined, userMessage: string, mode: AssistantMode) {
   if (!revisedAnswer) return isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(userMessage, mode) : answer;
   const originalUnsatisfactory = isUnsatisfactoryEvidenceOnlyAnswer(answer);
+  if (!hasRequiredInvestmentSections(answer, userMessage) && hasRequiredInvestmentSections(revisedAnswer, userMessage)) return revisedAnswer;
   if (!originalUnsatisfactory && answer.length >= 1000 && revisedAnswer.length < Math.min(700, answer.length * 0.45)) {
     return answer;
   }
   return revisedAnswer;
+}
+
+function hasRequiredInvestmentSections(answer: string, userMessage: string) {
+  if (!/(预测|预估|净利润|营收|利润|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|怎么判断|怎么看)/.test(userMessage)) return true;
+  return /证据等级/.test(answer) && /(反证|我可能错|风险|削弱|反驳)/.test(answer) && /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer);
 }
 
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {

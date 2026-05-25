@@ -309,6 +309,62 @@ describe("assistant chat endpoint", () => {
     expect(JSON.stringify(reviewBody.messages)).toContain("理性审查器");
   });
 
+  test("rational review repairs moat answers missing counter and follow-up sections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "结论：观察。\n证据等级：中。\n核心理由：品牌强，但渠道承压。" } }],
+            usage: { total_tokens: 120 },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    passed: false,
+                    revisedAnswer:
+                      "结论：观察。\n证据等级：中。\n核心理由：品牌心智仍强，但批价和渠道库存削弱短期护城河厚度。\n反驳用户观点：不能只因历史品牌溢价就认为护城河没有变化。\n我可能错在哪里：若批价回升且直营利润率改善，护城河收窄判断应下修。\n下一步跟踪：批价、直营占比、库存、毛利率。",
+                  }),
+                },
+              },
+            ],
+            usage: { total_tokens: 80 },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台护城河是不是变窄了？", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(body).toContain("不能只因历史品牌溢价");
+    expect(body).toContain("下一步跟踪");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
