@@ -70,7 +70,10 @@ function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
 
 function isExplicitMemoryOnlyMessage(message: string) {
   const normalized = message.trim();
-  return /^(记住|请记住|帮我记住|以后|纠正一下|我的投资框架|我的偏好|不要忘了)[:：]/.test(normalized) || /^(记住|请记住|帮我记住)/.test(normalized);
+  return (
+    /^(记住|请记住|帮我记住|以后|纠正一下|我的投资框架|我的偏好|我的规则|不要忘了)[:：]/.test(normalized) ||
+    /^(记住|请记住|帮我记住|我的投资框架是|我的偏好是|我的规则是|以后评分|以后回答|以后分析|以后遇到|纠正一下)/.test(normalized)
+  );
 }
 
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
@@ -513,7 +516,7 @@ function augmentSearchToolCalls(
       reason: "高价值投研问题且站内证据不足，补充 Exa 高质量外部线索。",
     });
   }
-  return augmented.slice(0, 5);
+  return augmented.slice(0, 3);
 }
 
 function buildSearchToolRouterMessages(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }): DeepSeekMessage[] {
@@ -658,7 +661,7 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
       reason: "规则兜底：高价值研究且站内证据不足。",
     });
   }
-  return { toolCalls: calls.slice(0, 5), reason };
+  return { toolCalls: calls.slice(0, 3), reason };
 }
 
 async function executeAssistantSearchToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal) {
@@ -763,8 +766,9 @@ export function shouldAutoUseResearchEvidence(message: string) {
 
 export function shouldAnswerDirectlyWithoutClarification(message: string) {
   if (!containsLikelyResearchSubject(message)) return false;
+  if (/(反驳|你反驳|根据我的自选股|自选股|排雷|还能涨|还能不能涨|继续涨|会不会涨)/.test(message)) return true;
   if (/(能买吗|买不买|该不该|怎么操作|怎么样\??$|如何操作)/.test(message)) return false;
-  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|平稳现金流|高股息|投资价值)/.test(message);
+  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|平稳现金流|高股息|投资价值|涨跌|上涨|下跌)/.test(message);
 }
 
 export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
@@ -1022,7 +1026,7 @@ async function generateReviewedResearchAnswer(input: {
       buildDeepSeekRequestBody({
         model: ASSISTANT_MODEL,
         messages: input.messages,
-        maxTokens: 3600,
+        maxTokens: 2600,
         reasoningEffort: ASSISTANT_REASONING_EFFORT,
         temperature: 0.08,
         stream: false,
@@ -1418,6 +1422,7 @@ function parseClarificationDecision(content: string): AssistantChoiceRequest | n
 
 function buildForcedClarificationRequest(message: string): AssistantChoiceRequest | null {
   if (!/(能买吗|买不买|该不该买|能不能买|可以买|要不要买|该不该卖|要不要卖|能不能卖|卖不卖)/.test(message)) return null;
+  if (/(反驳|你反驳|反证|排雷|根据我的自选股|自选股)/.test(message)) return null;
   if (containsLikelyResearchSubject(message) && /(现在|当前|目前|此时|长期|短期|三年|五年|十年|持有|仓位|左侧|右侧|风险偏好|低风险|高风险|分批|定投|交易|波段|估值区间|安全边际)/.test(message)) return null;
   if (/(长期|短期|三年|五年|十年|持有|仓位|左侧|右侧|风险偏好|低风险|高风险|分批|定投|交易|波段|估值区间|安全边际)/.test(message)) return null;
   return {

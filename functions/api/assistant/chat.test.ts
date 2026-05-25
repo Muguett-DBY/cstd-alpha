@@ -1219,6 +1219,73 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("更适合观察");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  test("treats explicit framework and scoring instructions as memory-only messages", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const message of ["我的投资框架是先排雷，再看现金流，最后看估值。", "以后评分要严格，宁可低估，不要给困境公司虚高分。"]) {
+      const response = await onRequestPost({
+        request: new Request("https://example.com/api/assistant/chat", {
+          method: "POST",
+          headers: { cookie: "cstd_alpha_session=session-1.token" },
+          body: JSON.stringify({ message }),
+        }),
+        env: {
+          AUTH_SECRET: "secret",
+          DEEPSEEK_API_KEY: "key",
+          REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+        },
+        params: {},
+        waitUntil: vi.fn(),
+        next: vi.fn(),
+        data: {},
+      } as never);
+      const body = await response.text();
+      expect(body).toContain("memory_candidate");
+      expect(body).toContain("待确认记忆");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("answers rebuttal and watchlist questions directly without clarification", async () => {
+    const answer = "结论：需要优先排雷。\n证据等级：中。\n核心理由：估值、现金流和行业风险都要核验。\n反驳用户观点：不能只看跌幅或自选股名称。\n我可能错在哪里：若财报和现金流改善应修正。\n下一步跟踪：财报、估值、现金流。";
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (_url, init) => {
+        const requestBody = JSON.parse(String(init?.body ?? "{}"));
+        if (requestBody.stream) {
+          return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }], usage: { total_tokens: 120 } })}\n\ndata: [DONE]\n\n`, {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const message of ["我觉得万科A已经跌够了所以可以买，你反驳一下。", "根据我的自选股，哪些需要优先排雷？", "小米还能涨吗？"]) {
+      const response = await onRequestPost({
+        request: new Request("https://example.com/api/assistant/chat", {
+          method: "POST",
+          headers: { cookie: "cstd_alpha_session=session-1.token" },
+          body: JSON.stringify({ message }),
+        }),
+        env: {
+          AUTH_SECRET: "secret",
+          DEEPSEEK_API_KEY: "key",
+          REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+        },
+        params: {},
+        waitUntil: vi.fn(),
+        next: vi.fn(),
+        data: {},
+      } as never);
+      const body = await response.text();
+      expect(body).not.toContain("choice_request");
+      expect(body).toContain("结论");
+    }
+  });
 });
 
 function mockDb({ role }: { role: string }) {

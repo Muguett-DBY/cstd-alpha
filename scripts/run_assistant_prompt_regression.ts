@@ -15,6 +15,7 @@ type RunResult = {
   issues: string[];
   answerPreview: string;
   answer: string;
+  attempt?: number;
 };
 
 const args = parseArgs(process.argv.slice(2));
@@ -26,6 +27,8 @@ const onlyCategory = args.category;
 const onlyIds = new Set((args.ids || "").split(",").map((value) => value.trim()).filter(Boolean));
 const delayMs = Number(args["delay-ms"] || 600);
 const perPromptTimeoutMs = Number(args["timeout-ms"] || 90_000);
+const retryCount = Number(args.retries || 2);
+const retryDelayMs = Number(args["retry-delay-ms"] || 20_000);
 
 if (!cookie) {
   throw new Error("Missing cookie. Pass --cookie \"cstd_alpha_session=...\" or set ASSISTANT_REGRESSION_COOKIE.");
@@ -71,6 +74,19 @@ function selectPrompts(prompts: AssistantQualityPrompt[]) {
 }
 
 async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
+  let last: RunResult | undefined;
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    const result = await runPromptOnce(prompt, attempt);
+    if (!shouldRetryPromptResult(result) || attempt === retryCount) return result;
+    last = result;
+    const waitMs = retryDelayMs * (attempt + 1);
+    console.log(`RETRY ${prompt.category}/${prompt.id} after ${waitMs}ms because ${result.issues.join(";")}`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  return last ?? runPromptOnce(prompt, 0);
+}
+
+async function runPromptOnce(prompt: AssistantQualityPrompt, attempt: number): Promise<RunResult> {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(`timeout ${perPromptTimeoutMs}ms`), perPromptTimeoutMs);
@@ -102,6 +118,7 @@ async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
       issues,
       answerPreview: compactPreview(parsed.answer || raw),
       answer: parsed.answer || raw,
+      attempt,
     };
   } catch (error) {
     const elapsedMs = Date.now() - startedAt;
@@ -118,10 +135,15 @@ async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
       issues: [error instanceof Error ? error.message : String(error)],
       answerPreview: "",
       answer: "",
+      attempt,
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function shouldRetryPromptResult(result: RunResult) {
+  return result.issues.some((issue) => issue.startsWith("http 503") || issue.includes("timeout") || issue.includes("network") || issue.includes("fetch failed"));
 }
 
 function parseAssistantSse(raw: string) {
