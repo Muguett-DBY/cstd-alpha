@@ -157,4 +157,19 @@ describe("assistant prompt and memory helpers", () => {
     expect(system).toContain("高股息策略可能合理，但“稳赚/无风险/必然赚钱”必须明确反驳");
     expect(system).toContain("禁止输出空标题或空章节");
   });
+
+  test("forbids invented quantitative thresholds in confirmation conditions", () => {
+    const messages = buildAssistantPromptMessages({
+      memories: [],
+      threadSummary: "",
+      evidenceSummary: "自选股排行：优必选综合40，澜起科技综合58。",
+      recentMessages: [],
+      userMessage: "根据我的自选股，哪些需要优先排雷？",
+      mode: "chat",
+    });
+    const system = messages[0].content;
+
+    expect(system).toContain("禁止自造“订单>500台”“渗透率>50%”“贡献>20%”");
+    expect(system).toContain("判断主要依赖站内自选股排行、模板报告、模型评分或搜索线索");
+  });
 });
