@@ -1058,7 +1058,7 @@ function selectReviewedResearchText(answer: string, revisedAnswer: string | unde
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
-  if (/(画表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
+  if (/(画表|画成表|做成表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
   if (/(来自|靠|驱动).*(利润修复|回购|估值修复)|利润修复.*回购.*估值修复/.test(userMessage)) return buildDriverComparisonGapAnswer(userMessage);
   if (/(产业链|环节).*(先兑现|兑现业绩|业绩兑现)|人形机器人.*(先兑现|兑现业绩|业绩兑现)/.test(userMessage)) return buildSupplyChainRealizationGapAnswer(userMessage);
   if (/(业绩|预估|预测|净利润|营收|利润)/.test(userMessage)) {

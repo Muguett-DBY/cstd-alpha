@@ -170,6 +170,7 @@ function evaluatePromptResult(
   if (/^结构化表格\s*\d*$/im.test(parsed.answer)) issues.push("generic table label leaked");
   if (/^#{1,6}\s*(核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级)\s*$/im.test(parsed.answer)) issues.push("empty markdown heading leaked");
   if (prompt.mustUseEvidence && !/(证据|来源|财报|公告|数据|口径|线索|E\d+|反证|跟踪)/.test(parsed.answer)) issues.push("missing evidence language");
+  if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
   if (prompt.mode !== "chat" || prompt.mustUseEvidence) {
     if (!/结论/.test(parsed.answer)) issues.push("missing conclusion");
     if (!/(反证|我可能错|风险|削弱)/.test(parsed.answer)) issues.push("missing counter-evidence");
