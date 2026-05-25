@@ -496,7 +496,7 @@ export function buildAssistantDeepSeekBody(messages: DeepSeekMessage[]) {
     ...buildDeepSeekRequestBody({
     model: ASSISTANT_MODEL,
     messages,
-    maxTokens: 3200,
+    maxTokens: 5600,
     reasoningEffort: ASSISTANT_REASONING_EFFORT,
     temperature: 0.12,
     stream: true,

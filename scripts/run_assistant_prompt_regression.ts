@@ -14,6 +14,7 @@ type RunResult = {
   usage?: unknown;
   issues: string[];
   answerPreview: string;
+  answer: string;
 };
 
 const args = parseArgs(process.argv.slice(2));
@@ -100,6 +101,7 @@ async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
       usage: parsed.usage,
       issues,
       answerPreview: compactPreview(parsed.answer || raw),
+      answer: parsed.answer || raw,
     };
   } catch (error) {
     const elapsedMs = Date.now() - startedAt;
@@ -115,6 +117,7 @@ async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
       gotMemoryCandidate: false,
       issues: [error instanceof Error ? error.message : String(error)],
       answerPreview: "",
+      answer: "",
     };
   } finally {
     clearTimeout(timer);
