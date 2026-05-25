@@ -12,6 +12,9 @@ on:
         description: "Optional watchlist id"
         required: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -25,10 +28,10 @@ jobs:
       COMPANY_EVIDENCE_LIMIT: 80
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 

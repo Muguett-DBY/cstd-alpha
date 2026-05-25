@@ -8,6 +8,9 @@ on:
         required: true
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   score:
     runs-on: ubuntu-latest
@@ -20,10 +23,10 @@ jobs:
       WATCHLIST_RANKING_JOB_ID: ${{ inputs.job_id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
