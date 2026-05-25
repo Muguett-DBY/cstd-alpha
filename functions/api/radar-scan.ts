@@ -1,11 +1,20 @@
 import { jsonrepair } from "jsonrepair";
 import { readSessionCookie } from "../_shared/auth";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
+import {
+  createRadarAnalysisJob,
+  dispatchRadarAnalysisWorkflow,
+  radarDiagnostics,
+  readActiveRadarJob,
+  readLatestRadarJob,
+  readRadarEvidenceFreshness,
+  readRadarEvidenceHash,
+  updateRadarJob,
+  writeRadarJob,
+} from "../_shared/radar-jobs";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
 import type {
   RadarCitation,
-  RadarAnalysisJob,
-  RadarAnalysisJobStatus,
   RadarConclusionStrength,
   RadarCoverageItem,
   RadarCoverageReview,
@@ -14,7 +23,6 @@ import type {
   RadarEvidenceGap,
   RadarEvidenceType,
   RadarEvidenceFreshness,
-  RadarDiagnostics,
   RadarDriverTag,
   RadarItem,
   RadarList,
@@ -222,8 +230,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   if (!session) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
-  const job = await readLatestRadarJob(env);
-  const freshness = await readRadarEvidenceFreshness(env);
+  const job = await readLatestRadarJob(env, RADAR_ANALYSIS_JOB_LATEST_KEY);
+  const freshness = await readRadarEvidenceFreshness(env, RADAR_EVIDENCE_SNAPSHOT_KEY, RADAR_EVIDENCE_SNAPSHOT_VERSION);
   const radar = cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null;
   return json({
     radar,
@@ -239,8 +247,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!session) return json({ error: "Unauthorized." }, 401);
 
   const cached = await readRadarCache(env);
-  const freshness = await readRadarEvidenceFreshness(env);
-  const activeJob = await readActiveRadarJob(env);
+  const freshness = await readRadarEvidenceFreshness(env, RADAR_EVIDENCE_SNAPSHOT_KEY, RADAR_EVIDENCE_SNAPSHOT_VERSION);
+  const activeJob = await readActiveRadarJob(env, RADAR_ANALYSIS_JOB_LATEST_KEY);
   if (activeJob) {
     return json({
       radar: cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null,
@@ -249,13 +257,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }, 202);
   }
 
-  const evidenceHash = freshness?.evidenceHash ?? (await readRadarEvidenceHash(env));
+  const evidenceHash = freshness?.evidenceHash ?? (await readRadarEvidenceHash(env, RADAR_EVIDENCE_SNAPSHOT_KEY));
   const job = createRadarAnalysisJob(evidenceHash);
-  await writeRadarJob(env, job);
+  await writeRadarJob(env, job, RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
 
-  const dispatchTask = dispatchRadarAnalysisWorkflow(env, job.id).catch(async (error) => {
+  const dispatchTask = dispatchRadarAnalysisWorkflow(env, job.id, { repository: GITHUB_RADAR_REPOSITORY, workflow: GITHUB_RADAR_WORKFLOW }).catch(async (error) => {
     logRadarFailure(error, "refresh", Boolean(cached));
-    await writeRadarJob(env, updateRadarJob(job, "failed", "本次后台分析未能启动，已保留上次扫描。"));
+    await writeRadarJob(env, updateRadarJob(job, "failed", "本次后台分析未能启动，已保留上次扫描。"), RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
   });
   context.waitUntil(dispatchTask);
   return json({
@@ -789,108 +797,6 @@ function normalizeRadarScan(value: unknown, model: string, digest: RadarEvidence
   };
 }
 
-function createRadarAnalysisJob(evidenceHash?: string): RadarAnalysisJob {
-  const now = new Date().toISOString();
-  return {
-    id: `radar-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
-    status: "queued",
-    createdAt: now,
-    updatedAt: now,
-    evidenceHash,
-    message: "后台分析已排队，页面会继续显示上次稳定结果。",
-  };
-}
-
-function updateRadarJob(job: RadarAnalysisJob, status: RadarAnalysisJobStatus, message?: string): RadarAnalysisJob {
-  return {
-    ...job,
-    status,
-    updatedAt: new Date().toISOString(),
-    ...(message ? { message } : {}),
-  };
-}
-
-async function readLatestRadarJob(env: Env): Promise<RadarAnalysisJob | null> {
-  const value = await env.REPORT_CACHE?.get<RadarAnalysisJob>(RADAR_ANALYSIS_JOB_LATEST_KEY, "json").catch(() => null);
-  return normalizeRadarJob(value);
-}
-
-async function readActiveRadarJob(env: Env): Promise<RadarAnalysisJob | null> {
-  const job = await readLatestRadarJob(env);
-  if (!job || (job.status !== "queued" && job.status !== "running")) return null;
-  const updatedAt = Date.parse(job.updatedAt);
-  if (Number.isFinite(updatedAt) && Date.now() - updatedAt > 20 * 60 * 1000) return null;
-  return job;
-}
-
-async function writeRadarJob(env: Env, job: RadarAnalysisJob) {
-  const payload = JSON.stringify(job);
-  await Promise.all([
-    env.REPORT_CACHE?.put(`${RADAR_ANALYSIS_JOB_PREFIX}${job.id}`, payload, { expirationTtl: 24 * 60 * 60 }),
-    env.REPORT_CACHE?.put(RADAR_ANALYSIS_JOB_LATEST_KEY, payload, { expirationTtl: 24 * 60 * 60 }),
-  ]);
-}
-
-function normalizeRadarJob(value: unknown): RadarAnalysisJob | null {
-  if (!isRecord(value)) return null;
-  const id = stringValue(value.id);
-  const status = stringValue(value.status) as RadarAnalysisJobStatus;
-  const createdAt = stringValue(value.createdAt);
-  const updatedAt = stringValue(value.updatedAt);
-  if (!id || !["queued", "running", "completed", "failed"].includes(status) || !createdAt || !updatedAt) return null;
-  return {
-    id,
-    status,
-    createdAt,
-    updatedAt,
-    evidenceHash: stringValue(value.evidenceHash) || undefined,
-    message: stringValue(value.message) || undefined,
-    radarGeneratedAt: stringValue(value.radarGeneratedAt) || undefined,
-  };
-}
-
-async function readRadarEvidenceHash(env: Env): Promise<string | undefined> {
-  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotPayload>(RADAR_EVIDENCE_SNAPSHOT_KEY, "json").catch(() => null);
-  return stringValue(value?.evidenceHash) || undefined;
-}
-
-async function readRadarEvidenceFreshness(env: Env): Promise<RadarEvidenceFreshness | null> {
-  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotPayload>(RADAR_EVIDENCE_SNAPSHOT_KEY, "json").catch(() => null);
-  if (!value || value.version !== RADAR_EVIDENCE_SNAPSHOT_VERSION) return null;
-  const generatedAt = stringValue(value.generatedAt) || undefined;
-  const ageHours = generatedAt ? Math.max(0, Math.round(((Date.now() - Date.parse(generatedAt)) / 3_600_000) * 10) / 10) : undefined;
-  return {
-    generatedAt,
-    asOfDate: stringValue(value.asOfDate) || undefined,
-    ageHours,
-    stale: typeof ageHours === "number" ? ageHours > 30 : true,
-    sourceCount: Array.isArray(value.sources) ? value.sources.length : undefined,
-    evidenceHash: stringValue(value.evidenceHash) || undefined,
-  };
-}
-
-async function dispatchRadarAnalysisWorkflow(env: Env, jobId: string) {
-  const token = env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
-  if (!token) throw new Error("missing GitHub radar dispatch token");
-  const repository = env.GITHUB_RADAR_REPOSITORY?.trim() || GITHUB_RADAR_REPOSITORY;
-  const workflow = env.GITHUB_RADAR_WORKFLOW?.trim() || GITHUB_RADAR_WORKFLOW;
-  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "user-agent": "CSTDAlphaRadar/1.0",
-      "x-github-api-version": "2022-11-28",
-    },
-    body: JSON.stringify({
-      ref: "main",
-      inputs: { job_id: jobId },
-    }),
-  });
-  if (!response.ok) throw new Error(`GitHub radar dispatch failed: ${response.status}`);
-}
-
 async function readRadarCache(env: Env): Promise<RadarCachePayload | null> {
   const value = await env.REPORT_CACHE?.get<RadarCachePayload>(RADAR_CACHE_KEY, "json").catch(() => null);
   if (value?.version === RADAR_CACHE_VERSION && value.radar) return value;
@@ -953,25 +859,6 @@ async function readRadarEvidenceSnapshot(env: Env): Promise<RadarSource[] | null
 
 function withRadarFreshness(radar: RadarScan, freshness: RadarEvidenceFreshness | null): RadarScan {
   return freshness ? { ...radar, evidenceFreshness: freshness } : radar;
-}
-
-function radarDiagnostics(cache: RadarCachePayload | null, job: RadarAnalysisJob | null, freshness: RadarEvidenceFreshness | null): RadarDiagnostics {
-  return {
-    jobStatus: job?.status,
-    jobMessage: sanitizeDiagnostic(job?.message),
-    evidenceGeneratedAt: freshness?.generatedAt,
-    evidenceHash: freshness?.evidenceHash,
-    evidenceAgeHours: freshness?.ageHours,
-    latestRadarGeneratedAt: cache?.radar.generatedAt,
-    sourceCount: freshness?.sourceCount ?? cache?.radar.sourceCount,
-    cacheVersion: cache?.version,
-    tokenUsage: job?.tokenUsage,
-  };
-}
-
-function sanitizeDiagnostic(value: string | undefined) {
-  if (!value) return undefined;
-  return value.replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer [redacted]").replace(/[A-Za-z0-9_-]{24,}/g, "[redacted]");
 }
 
 function markCached(radar: RadarScan, reuseReason?: string, refreshWarning?: string): RadarScan {
