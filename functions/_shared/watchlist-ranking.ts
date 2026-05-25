@@ -170,17 +170,19 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
 
 export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRanking {
   const record = isRecord(value) ? value : {};
-  const cqs = clampScore(numberValue(record.companyQualityScore));
-  const ias = clampScore(numberValue(record.investmentAttractivenessScore));
-  const rawOverall = numberValue(record.overallScore);
+  const cqsRaw = firstNumberValue(record, ["companyQualityScore", "company_quality_score", "qualityScore", "quality_score", "公司质量分", "公司质量评分", "质量分"]);
+  const iasRaw = firstNumberValue(record, ["investmentAttractivenessScore", "investment_attractiveness_score", "attractivenessScore", "investmentScore", "投资吸引力分", "投资吸引力评分", "吸引力分"]);
+  const rawOverall = firstNumberValue(record, ["overallScore", "overall_score", "totalScore", "score", "综合分", "综合评分", "总分"]);
+  const cqs = clampScore(cqsRaw);
+  const ias = clampScore(iasRaw);
   return {
     companyQualityScore: cqs,
     investmentAttractivenessScore: ias,
     overallScore: clampScore(Number.isFinite(rawOverall) ? rawOverall : cqs * 0.55 + ias * 0.45),
-    verdict: stringValue(record.verdict) || "观察",
-    summary: stringValue(record.summary) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。",
-    keyPoints: stringArray(record.keyPoints).slice(0, 8),
-    riskFlags: stringArray(record.riskFlags).slice(0, 8),
+    verdict: firstStringValue(record, ["verdict", "conclusion", "结论", "评级"]) || "观察",
+    summary: firstStringValue(record, ["summary", "摘要", "理由", "分析"]) || "已基于当前证据包完成自选股评分，仍需结合证据缺口复核。",
+    keyPoints: firstStringArray(record, ["keyPoints", "positives", "主要得分点", "得分点", "优势"]).slice(0, 8),
+    riskFlags: firstStringArray(record, ["riskFlags", "risks", "风险与反证", "风险点", "风险"]).slice(0, 8),
   };
 }
 
@@ -211,6 +213,37 @@ function numberValue(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string" && value.trim()) return Number(value);
   return Number.NaN;
+}
+
+function firstNumberValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = numberValue(record[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  const scores = isRecord(record.scores) ? record.scores : undefined;
+  if (scores) {
+    for (const key of keys) {
+      const value = numberValue(scores[key]);
+      if (Number.isFinite(value)) return value;
+    }
+  }
+  return Number.NaN;
+}
+
+function firstStringValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = stringValue(record[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function firstStringArray(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = stringArray(record[key]);
+    if (value.length) return value;
+  }
+  return [];
 }
 
 function stringArray(value: unknown) {
