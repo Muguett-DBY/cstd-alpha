@@ -48,9 +48,9 @@ export const ASSISTANT_MODEL = "deepseek-v4-flash";
 export const ASSISTANT_REASONING_EFFORT = "max";
 export const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 export const ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT = 100_000;
-const ASSISTANT_CACHE_ANCHOR_SENTENCE =
+export const ASSISTANT_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha assistant cache anchor: Chinese investment assistant, evidence first, conclusion evidence counter-evidence follow-up, conservative scoring, no hallucinated facts, admin private memory, read-only tools. ";
-const ASSISTANT_CACHE_ANCHOR_REPEAT = 180;
+export const ASSISTANT_CACHE_ANCHOR_REPEAT = 180;
 
 export async function requireAdminSession(request: Request, env: AssistantEnv) {
   const session = await readSessionCookie(request.headers.get("cookie"), env);
@@ -477,7 +477,7 @@ export function buildAssistantPromptMessages(input: {
     return [
       {
         role: "system",
-        content: "你是 CSTD Alpha 的助手，用中文回答用户问题。直接根据你的知识回答，不需要搜索外部证据。不要使用投资研究格式（如证据等级、反证条件等）。",
+        content: `你是 CSTD Alpha 的助手，用中文回答用户问题。直接根据你的知识回答，不需要搜索外部证据。\n- 对于数学/计算问题，直接给出数字结果和简短解释。\n- 不要使用任何投资研究格式：不要写"结论："、"证据等级"、"反证"、"我可能错在哪里"、"后续跟踪"等章节标题。\n- 不要展示代码，给出计算结果和分析即可。`,
       },
       ...input.recentMessages.map((message) => ({ role: message.role, content: message.content })),
       { role: "user", content: input.userMessage },

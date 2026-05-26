@@ -1,4 +1,6 @@
 import {
+  ASSISTANT_CACHE_ANCHOR_REPEAT,
+  ASSISTANT_CACHE_ANCHOR_SENTENCE,
   ASSISTANT_MODEL,
   ASSISTANT_REASONING_EFFORT,
   DEEPSEEK_CHAT_COMPLETIONS_URL,
@@ -417,8 +419,17 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 };
 
 async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal: AbortSignal): Promise<string> {
+  // 使用与主调用相同的 cache anchor + 身份声明以保留缓存前缀命中
+  const system = withCacheProtocol(
+    [
+      ASSISTANT_CACHE_ANCHOR_SENTENCE.repeat(ASSISTANT_CACHE_ANCHOR_REPEAT),
+      "你是 CSTD Alpha 的私人投研助手，只服务 admin。",
+      "本次回答忽略所有投资研究格式约束。不要使用\u201c结论：\u201d、\u201c证据等级\u201d、\u201c反证\u201d、\u201c我可能错在哪里\u201d、\u201c后续跟踪\u201d等章节标题。直接回答问题。如果问题涉及计算，给出数字结果和解释即可，不要展示代码。",
+    ].join("\n"),
+    "assistant-chat",
+  );
   const messages: DeepSeekMessage[] = [
-    { role: "system", content: "你是 CSTD Alpha 的助手，用中文回答用户问题。直接根据你的知识回答，不需要搜索外部证据。回答自然、简洁。" },
+    { role: "system", content: system },
     { role: "user", content: message },
   ];
   try {
@@ -1288,7 +1299,7 @@ export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantM
   if (containsLikelyResearchSubject(message)) return false;
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
   if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(message.trim())) return true;
-  return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义|属于|怎么样|分类|组成部分|环节|角色|前景|趋势|展望|做什么|是做什么|什么样)/.test(message);
+  return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义|属于|怎么样|分类|组成部分|环节|角色|前景|趋势|展望|做什么|是做什么|什么样|计算|算一下|算|标准差|均值|CAGR|增长率|统计|回归|相关性)/.test(message);
 }
 
 function containsLikelyResearchSubject(message: string) {
