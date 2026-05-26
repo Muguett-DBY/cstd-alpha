@@ -5,6 +5,7 @@ import {
   fetchAssistantThread,
   rejectAssistantMemoryCandidate,
   sendAssistantMessage,
+  sendCodeResult,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
@@ -49,6 +50,8 @@ export function AssistantView() {
   const [agentStatus, setAgentStatus] = useState("");
   const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
   const [speechNotice, setSpeechNotice] = useState("");
+  const [pyodideReady, setPyodideReady] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const pyodideRef = useRef<{ runPythonAsync: (code: string) => Promise<unknown> } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastSentMessageRef = useRef("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -264,6 +267,31 @@ export function AssistantView() {
     }
     if (event.type === "memory_candidate") {
       setPendingMemory(event.candidate);
+    }
+    if (event.type === "code_exec") {
+      setAgentStatus("正在用 Python 计算...");
+      void executePyodideCode(event.id, event.code);
+    }
+  }
+
+  async function executePyodideCode(execId: string, code: string) {
+    try {
+      if (!pyodideRef.current) {
+        setPyodideReady("loading");
+        const pyodideModule = await import("pyodide");
+        const pyodide = await pyodideModule.loadPyodide({
+          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.0/full/",
+        });
+        pyodideRef.current = pyodide;
+        setPyodideReady("ready");
+      }
+      const result = await pyodideRef.current.runPythonAsync(code);
+      const output = String(result ?? "");
+      await sendCodeResult(execId, output);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      await sendCodeResult(execId, "", errorMsg);
+      setPyodideReady("error");
     }
   }
 

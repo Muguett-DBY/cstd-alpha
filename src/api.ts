@@ -380,6 +380,16 @@ export async function deleteAssistantMemory(id: string): Promise<void> {
   if (!response.ok) throw new Error((await readError(response)) || "记忆删除失败。");
 }
 
+export async function sendCodeResult(id: string, output: string, error?: string): Promise<void> {
+  const response = await fetch(`/api/assistant/code-result/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ output, error }),
+  });
+  if (!response.ok) throw new Error("代码结果回传失败。");
+}
+
 export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {
   const response = await fetch(`/api/template-analysis?analysisId=${encodeURIComponent(analysisId)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板报告读取失败。");

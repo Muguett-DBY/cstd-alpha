@@ -529,6 +529,7 @@ export function buildAssistantPromptMessages(input: {
       "图表规则：如果用户明确要求画图、画表、对比表、趋势图或证据矩阵，必须先给结论，再给一张 Markdown 表格，表格列名清晰且数值列可解析；不要输出 ECharts JSON 或代码块。",
       "图表规则：表格里的数值必须来自上下文证据或明确标注为打分/估计；无法给出数值时输出证据矩阵而不是编造趋势。",
       "图表规则：不要说“无法画图”或“以表格替代图表”；系统会把合格 Markdown 表格自动渲染为图表。",
+      "Python 计算：你可以使用 python_repl 工具执行 Python 代码来完成数学计算、统计分析、数据可视化和财务指标计算。当你需要精确数字（CAGR、增长率、估值区间、统计指标等）或图表时，主动使用 python_repl 工具，把计算过程写为完整自包含的 Python 代码，使用 print() 输出结果。支持 numpy、pandas、matplotlib。",
     ].join("\n"),
     "assistant-chat",
   );

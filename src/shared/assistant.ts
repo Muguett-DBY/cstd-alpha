@@ -133,5 +133,7 @@ export type AssistantChatStreamEvent =
   | { type: "choice_request"; request: AssistantChoiceRequest }
   | { type: "memory_candidate"; candidate: AssistantMemoryCandidate }
   | { type: "usage"; usage: AssistantUsage }
+  | { type: "code_exec"; id: string; code: string }
+  | { type: "code_result"; id: string; output: string; error?: string }
   | { type: "done"; message: AssistantMessage }
   | { type: "error"; error: string };

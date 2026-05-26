@@ -41,12 +41,13 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl";
 type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
   name: AssistantToolName;
-  query: string;
+  query?: string;
+  code?: string;
   reason?: string;
   freshness?: "day" | "week" | "month" | "year";
   maxResults?: number;
@@ -445,6 +446,44 @@ async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal:
   }
 }
 
+const PYTHON_REPL_POLL_TIMEOUT_MS = 30_000;
+const PYTHON_REPL_POLL_INTERVAL_MS = 1_000;
+
+async function executePythonRepl(
+  env: AssistantEnv,
+  call: AssistantSearchToolCall,
+  emit: (event: AssistantChatStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<string> {
+  const code = call.code ?? "";
+  if (!code.trim()) return "Python 代码为空。";
+  const execId = crypto.randomUUID();
+  if (env.REPORT_CACHE) {
+    await env.REPORT_CACHE.put(
+      `py-exec-${execId}`,
+      JSON.stringify({ output: "", error: "", status: "pending" }),
+      { expirationTtl: 300 },
+    );
+  }
+  emit({ type: "code_exec", id: execId, code });
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < PYTHON_REPL_POLL_TIMEOUT_MS) {
+    if (signal.aborted) return "计算被中断。";
+    await new Promise((resolve) => setTimeout(resolve, PYTHON_REPL_POLL_INTERVAL_MS));
+    if (!env.REPORT_CACHE) break;
+    try {
+      const stored = await env.REPORT_CACHE.get(`py-exec-${execId}`);
+      if (!stored) continue;
+      const parsed = JSON.parse(stored) as { output?: string; error?: string; status?: string };
+      if (parsed.status === "completed") return parsed.output ?? "";
+      if (parsed.status === "error") return `Python 错误：${parsed.error || "未知错误"}`;
+    } catch {
+      continue;
+    }
+  }
+  return "计算超时，请简化问题后重试。";
+}
+
 async function runAssistantAgentLoop(input: {
   env: AssistantEnv;
   message: string;
@@ -498,14 +537,35 @@ async function runAssistantAgentLoop(input: {
       input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "running" });
     }
     input.emit({ type: "agent_step", step: "run_tools", title: "正在并行检索和读取证据...", round });
+    const pyCalls = calls.filter((call) => call.name === "python_repl");
+    const otherCalls = calls.filter((call) => call.name !== "python_repl");
     try {
-      const executed = await executeAssistantToolCalls(input.env, calls, input.signal, input.context);
-      allItems.push(...executed.items);
-      latestExa = executed.exa;
-      lastSummary = executed.summary;
-      for (const call of calls) {
+      for (const call of pyCalls) {
+        const pyResult = await executePythonRepl(input.env, call, input.emit, input.signal);
+        allItems.push({
+          id: `py-${call.id}`,
+          source: "Python",
+          sourceType: "computation",
+          title: `Python 计算结果：${call.reason || ""}`,
+          summary: pyResult,
+          url: "",
+          content: pyResult,
+          weight: 5,
+          score: 3,
+          freshness: "month",
+        } as AnySearchEvidence);
         input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "completed" });
-        input.emit({ type: "tool_result", id: call.id, status: "completed", summary: summarizeToolResult(call, executed.items.length), evidenceCount: executed.items.length });
+        input.emit({ type: "tool_result", id: call.id, status: "completed", summary: `Python 计算完成。`, evidenceCount: 1 });
+      }
+      if (otherCalls.length) {
+        const executed = await executeAssistantToolCalls(input.env, otherCalls, input.signal, input.context);
+        allItems.push(...executed.items);
+        latestExa = executed.exa;
+        lastSummary = executed.summary;
+        for (const call of otherCalls) {
+          input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "completed" });
+          input.emit({ type: "tool_result", id: call.id, status: "completed", summary: summarizeToolResult(call, executed.items.length), evidenceCount: executed.items.length });
+        }
       }
       break;
     } catch (error) {
@@ -520,7 +580,7 @@ async function runAssistantAgentLoop(input: {
   return {
     externalEvidence: {
       triggered: allCalls.length > 0,
-      query: allCalls.map((call) => `${call.name}:${call.query}`).join(" | ").slice(0, 500),
+      query: allCalls.map((call) => `${call.name}:${call.query ?? call.code ?? ""}`).join(" | ").slice(0, 500),
       items: deduped,
       exa: latestExa,
       toolCalls: allCalls,
@@ -532,6 +592,7 @@ async function runAssistantAgentLoop(input: {
 
 function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: AssistantMode) {
   if (shouldTreatAsSimpleGeneralChat(message, mode)) return false;
+  if (env.REPORT_CACHE) return true;
   const hasConfiguredTools = Boolean(
     env.ANYSEARCH_API_KEY?.trim()
       || env.SEARXNG_ENDPOINTS?.trim()
@@ -649,6 +710,21 @@ function assistantAgentTools() {
         },
       },
     })),
+    {
+      type: "function",
+      function: {
+        name: "python_repl",
+        description: "用 Python 执行数学计算、统计、数据分析和图表绘制。当你需要精确计算（CAGR、估值、回归、指标计算等）或画图（柱状图、折线图、散点图等）时使用。把计算逻辑写完整、自包含的 Python 代码。",
+        parameters: {
+          type: "object",
+          required: ["code", "reason"],
+          properties: {
+            code: { type: "string", description: "完整自包含的 Python 代码，使用 print() 输出结果。支持 numpy、pandas、matplotlib。" },
+            reason: { type: "string", description: "为什么需要 Python 计算。" },
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -662,9 +738,10 @@ function formatCollectedEvidenceForAgent(items: AnySearchEvidence[]) {
 
 function naturalToolStatusLabel(call: AssistantSearchToolCall) {
   if (call.name.startsWith("read_")) return `正在读取${internalToolLabel(call.name)}...`;
+  if (call.name === "python_repl") return "正在用 Python 计算...";
   if (call.name === "search_arxiv" || call.name === "search_semantic_scholar") return "正在查技术和论文线索...";
   if (call.name === "search_gdelt") return "正在查全球新闻和风险线索...";
-  return `正在查${call.query.slice(0, 32)}...`;
+  return `正在查${(call.query ?? "").slice(0, 32)}...`;
 }
 
 function internalToolLabel(name: AssistantToolName) {
@@ -674,12 +751,14 @@ function internalToolLabel(name: AssistantToolName) {
     read_template_reports: "模板报告",
     read_radar_result: "行业雷达",
     read_tushare_indicators: "A股结构化指标",
+    python_repl: "Python 计算",
   };
   return labels[name] || "站内证据";
 }
 
 function summarizeToolResult(call: AssistantSearchToolCall, evidenceCount: number) {
   if (call.name.startsWith("read_")) return `${internalToolLabel(call.name)}已读取，形成 ${evidenceCount} 条可用摘要。`;
+  if (call.name === "python_repl") return "Python 计算完成，结果已并入上下文。";
   return evidenceCount ? `已找到 ${evidenceCount} 条相关线索。` : "这个来源没有返回可用线索。";
 }
 
@@ -747,7 +826,7 @@ async function maybeFetchExternalEvidence(
   const executed = await executeAssistantSearchToolCalls(env, routerCalls, signal);
   return {
     triggered: true,
-    query: routerCalls.map((call) => `${call.name}:${call.query}`).join(" | ").slice(0, 500),
+    query: routerCalls.map((call) => `${call.name}:${call.query ?? call.code ?? ""}`).join(" | ").slice(0, 500),
     items: executed.items.slice(0, 12),
     exa: executed.exa,
     routerUsage: routerDecision.usage,
@@ -932,10 +1011,20 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
   const name = typeof fn.name === "string" ? fn.name : "";
   if (!isAssistantToolName(name)) return null;
   const args = parseToolArguments(fn.arguments);
-  const query = stringOrFallback(args.query, "").slice(0, 220);
-  if (!query) return null;
   const freshness = args.freshness === "day" || args.freshness === "week" || args.freshness === "month" || args.freshness === "year" ? args.freshness : "month";
   const maxResults = typeof args.maxResults === "number" && Number.isFinite(args.maxResults) ? Math.min(Math.max(Math.round(args.maxResults), 1), 10) : undefined;
+  if (name === "python_repl") {
+    const code = stringOrFallback(args.code, "");
+    if (!code) return null;
+    return {
+      id: stringOrFallback(value.id, crypto.randomUUID()),
+      name,
+      code,
+      reason: stringOrFallback(args.reason, "").slice(0, 180) || undefined,
+    };
+  }
+  const query = stringOrFallback(args.query, "").slice(0, 220);
+  if (!query) return null;
   return {
     id: stringOrFallback(value.id, crypto.randomUUID()),
     name,
@@ -960,7 +1049,8 @@ function isAssistantToolName(name: string): name is AssistantToolName {
     name === "read_watchlist_ranking" ||
     name === "read_template_reports" ||
     name === "read_radar_result" ||
-    name === "read_tushare_indicators"
+    name === "read_tushare_indicators" ||
+    name === "python_repl"
   );
 }
 
