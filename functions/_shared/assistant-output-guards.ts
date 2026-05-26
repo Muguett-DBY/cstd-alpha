@@ -13,13 +13,15 @@ export function guardAssistantOutputLanguage(
   options?: AssistantOutputGuardOptions,
 ) {
   return cleanAssistantFormatting(
-    guardExternalEvidenceConsistency(
-      guardExternalEvidenceLevel(
-        guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
-        message,
+    guardWeakEvidenceSuperlatives(
+      guardExternalEvidenceConsistency(
+        guardExternalEvidenceLevel(
+          guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
+          message,
+          externalEvidence,
+        ),
         externalEvidence,
       ),
-      externalEvidence,
     ),
   );
 }
@@ -33,6 +35,16 @@ function guardCertaintyPromiseLanguage(text: string) {
     .replace(/“?必涨”?可信/g, "“必涨”不可信")
     .replace(/稳赚可信/g, "“稳赚”不可信")
     .replace(/保证收益可信/g, "“保证收益”不可信");
+}
+
+function guardWeakEvidenceSuperlatives(text: string) {
+  if (!/证据等级[：:]\s*(低|中低|中低|中)/.test(text)) return text;
+  return text
+    .replace(/市场悲观预期最充分、逆向抄底性价比最高的资产类别/g, "市场悲观预期较充分、值得优先观察的逆向资产类别之一")
+    .replace(/性价比最高的资产类别/g, "值得优先观察的资产类别之一")
+    .replace(/预期最充分/g, "预期较充分")
+    .replace(/最值得/g, "相对值得")
+    .replace(/十年最低折扣价/g, "低估值线索");
 }
 
 function guardForecastLanguage(text: string, message: string, options?: AssistantOutputGuardOptions) {

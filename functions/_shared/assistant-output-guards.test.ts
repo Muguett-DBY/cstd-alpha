@@ -38,4 +38,19 @@ describe("assistant output guards", () => {
     expect(guarded).not.toContain("必涨”可能代表选股能力");
     expect(guarded).not.toContain("“必涨”可信");
   });
+
+  test("softens superlatives when evidence grade is weak", () => {
+    const guarded = guardAssistantOutputLanguage(
+      [
+        "结论：A股医药板块当前是市场悲观预期最充分、逆向抄底性价比最高的资产类别。",
+        "证据等级：中低。",
+        "核心理由：相当于“十年最低折扣价”。",
+      ].join("\n"),
+      "哪些资产类别逆向抄底最值得？",
+    );
+
+    expect(guarded).toContain("值得优先观察的逆向资产类别之一");
+    expect(guarded).toContain("低估值线索");
+    expect(guarded).not.toContain("性价比最高");
+  });
 });
