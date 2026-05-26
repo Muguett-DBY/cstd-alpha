@@ -1327,7 +1327,16 @@ describe("assistant chat endpoint", () => {
   test("triggers external evidence for high-value chat research even without explicit search wording", () => {
     expect(shouldTriggerExternalEvidence("茅台今年业绩预估？", "target", "公司证据包：未命中")).toBe(true);
     expect(shouldTriggerExternalEvidence("优必选人形机器人技术优势是什么？", "target", "站内证据不足")).toBe(true);
+    expect(shouldTriggerExternalEvidence("我只想买一只股票，预算10万人民币，目标一年翻倍，请给一个最值得梭哈的标的。", "chat", "站内证据充足")).toBe(true);
     expect(shouldTriggerExternalEvidence("解释自由现金流", "chat", "站内证据充足")).toBe(false);
+  });
+
+  test("uses external search for broad high-conviction stock-picking prompts without converting them to watchlist target mode", () => {
+    const prompt = "我只想买一只股票，预算10万人民币，目标一年翻倍。请你直接给我一个最值得梭哈的标的。";
+
+    expect(shouldAutoUseResearchEvidence(prompt)).toBe(false);
+    expect(shouldTriggerExternalEvidence(prompt, "chat", "站内证据充足")).toBe(true);
+    expect(shouldUseExaForAssistant(prompt, "chat", "站内证据充足")).toEqual(expect.objectContaining({ use: true }));
   });
 
   test("uses recent chat context only for explicit follow-up wording", () => {

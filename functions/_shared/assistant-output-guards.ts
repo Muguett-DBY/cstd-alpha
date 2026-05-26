@@ -112,6 +112,12 @@ function guardForecastLanguage(text: string, message: string, options?: Assistan
 
 function guardStaleHistoryLanguage(text: string) {
   return text
+    .replace(/站内证据无法支撑/g, "当前可用证据无法支撑")
+    .replace(/站内证据不足以支撑/g, "当前可用证据不足以支撑")
+    .replace(/站内证据未显示/g, "当前可用证据未显示")
+    .replace(/站内无任何此类/g, "当前证据未显示此类")
+    .replace(/站内无标的符合/g, "当前证据未显示明确标的符合")
+    .replace(/站内证据包/g, "当前证据包")
     .replace(/当前无新增证据[，,、\s]*/g, "")
     .replace(/本次无新增站内证据或外部检索信息修正此前判断[，,。；;\s]*/g, "")
     .replace(/本轮无新增[^。\n]*(站内|外部|证据|检索)[^。\n]*[。；;]?\s*/g, "")

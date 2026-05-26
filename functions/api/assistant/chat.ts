@@ -832,6 +832,7 @@ function isBroadInvestmentFrameworkQuestion(message: string) {
 
 export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return true;
+  if (isHighConvictionStockPickingQuestion(message)) return true;
   if (mode !== "chat" && isHighValueResearchQuestion(message)) return true;
   if (shouldAutoUseResearchEvidence(message)) return true;
   return containsLikelyResearchSubject(message) && /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary) && isHighValueResearchQuestion(message);
@@ -853,7 +854,14 @@ function containsLikelyResearchSubject(message: string) {
 const COMMON_FINANCIAL_ACRONYMS = new Set(["ROE", "ROIC", "FCF", "DCF", "EPS", "PE", "PB", "PS", "PEG", "EBIT", "EBITDA", "CAPEX", "OPEX", "WACC", "CAGR", "TAM", "GDP", "CPI", "PMI", "IPO", "ETF", "REIT"]);
 
 function isHighValueResearchQuestion(message: string) {
-  return /(今年|业绩|预估|预测|净利润|营收|利润|增长|估值|现金流|财报|公告|技术|优势|人形机器人|大脑|小脑|协调|竞争|风险|订单|库存|价格|批价|行业|公司|股票|自选股|质量|证据强度|对比表|能买吗|持有|买入|卖出|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|产业链|投资价值|AI|硬件|换机|智能驾驶)/.test(message);
+  return /(今年|业绩|预估|预测|净利润|营收|利润|增长|估值|现金流|财报|公告|技术|优势|人形机器人|大脑|小脑|协调|竞争|风险|订单|库存|价格|批价|行业|公司|股票|自选股|质量|证据强度|对比表|能买吗|持有|买入|卖出|最值得|一只|单票|梭哈|翻倍|预算|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|产业链|投资价值|AI|硬件|换机|智能驾驶)/.test(message);
+}
+
+function isHighConvictionStockPickingQuestion(message: string) {
+  return (
+    /(只想买|只买|买一只|一只股票|单票|唯一标的|最值得|最有赔率|最有可能|梭哈|满仓|全仓|翻倍|十倍|10倍|预算|本金|人民币|港币|美元)/.test(message) &&
+    /(股票|标的|公司|A股|港股|美股|自选股|买入|买|投|配置|梭哈|翻倍)/.test(message)
+  );
 }
 
 function isFollowUpResearchQuestion(message: string) {
@@ -888,7 +896,7 @@ function hostLabel(url: string) {
 
 export function shouldUseExaForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
   if (/Exa|exa|深搜|高质量来源|英文来源|全球来源/.test(message)) return { use: true, reason: "用户明确要求高质量外部检索" };
-  const highValue = mode !== "chat" && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外|今年|业绩|预估|预测|净利润|营收|利润|技术|优势|人形机器人|大脑|小脑|协调|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|投资价值|AI|硬件|换机|智能驾驶|消费电子|光伏|白酒|银行|航运|机器人|低空经济)/.test(message);
+  const highValue = (mode !== "chat" || isHighConvictionStockPickingQuestion(message)) && /(最新|全球|海外|英文|竞争|产业链|政策|监管|风险|财报|估值|对比|数据|订单|库存|价格|出海|海外|今年|业绩|预估|预测|净利润|营收|利润|技术|优势|人形机器人|大脑|小脑|协调|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|高股息|平稳现金流|投资价值|AI|硬件|换机|智能驾驶|消费电子|光伏|白酒|银行|航运|机器人|低空经济|股票|标的|梭哈|翻倍|单票|最值得)/.test(message);
   const evidenceWeak = /(未命中|不足|暂无|缺少|缺|必须依赖|外部搜索|证据包为空|无法)/.test(evidenceSummary);
   if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
   if (highValue) return { use: true, reason: "研究问题高价值，补充Exa外部线索交叉验证" };

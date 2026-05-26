@@ -24,6 +24,8 @@ describe("assistant prompt and memory helpers", () => {
     expect(messages[0].content).toContain("结论");
     expect(messages[0].content).toContain("第一行必须以“结论：”开头");
     expect(messages[1].content).toContain("已确认长期记忆");
+    expect(messages[1].content).toContain("站内证据只是私有上下文，不能作为研究边界");
+    expect(messages[0].content).toContain("站内证据是私有上下文和历史沉淀，不是答案边界");
     expect(messages[1].content).toContain("偏好：先看现金流");
     expect(messages[1].content).not.toContain("上轮结论");
     expect(messages[2]).toMatchObject({ role: "assistant", content: "上轮结论" });
@@ -142,7 +144,7 @@ describe("assistant prompt and memory helpers", () => {
       mode: "target",
     });
 
-    const payload = JSON.parse(messages[1].content.replace(/^已确认长期记忆、线程摘要和站内证据如下：\n/, ""));
+    const payload = JSON.parse(messages[1].content.replace(/^已确认长期记忆、线程摘要、站内证据和外部搜索线索如下。站内证据只是私有上下文，不能作为研究边界：\n/, ""));
     expect(payload.outputRules).toBeDefined();
     expect(payload.siteEvidenceSummary).toBeUndefined();
     expect(payload.confirmedMemories).toBeUndefined();

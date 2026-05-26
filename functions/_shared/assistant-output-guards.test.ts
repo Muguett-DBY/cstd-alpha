@@ -54,6 +54,19 @@ describe("assistant output guards", () => {
     expect(guarded).not.toContain("性价比最高");
   });
 
+  test("does not frame public-market research as bounded by site-only evidence", () => {
+    const guarded = guardAssistantOutputLanguage(
+      "结论：站内证据无法支撑一年翻倍，站内无标的符合梭哈条件，站内证据包没有给出催化剂。",
+      "我只想买一只股票，预算10万人民币，目标一年翻倍。",
+    );
+
+    expect(guarded).toContain("当前可用证据无法支撑");
+    expect(guarded).toContain("当前证据未显示明确标的符合");
+    expect(guarded).toContain("当前证据包没有给出催化剂");
+    expect(guarded).not.toContain("站内证据无法支撑");
+    expect(guarded).not.toContain("站内无标的符合");
+  });
+
   test("adds missing risk budget and crisis de-escalation to high-risk answers", () => {
     const guarded = guardAssistantOutputLanguage(
       "结论：不能急着翻身，应先建立偿债和投资框架。证据等级：低。",
