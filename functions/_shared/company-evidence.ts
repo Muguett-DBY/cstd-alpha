@@ -25,6 +25,7 @@ export type CompanyEvidencePackage = {
 export type CompanyEvidenceEnv = {
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
+  TUSHARE_TOKEN?: string;
 };
 
 const COMPANY_EVIDENCE_PREFIX = "user-research/v1/company-evidence";
@@ -64,7 +65,7 @@ export async function fetchAndStoreCompanyEvidence({
   watchlist,
   signal,
 }: {
-  env: Required<Pick<CompanyEvidenceEnv, "REPORT_LIBRARY_DB" | "REPORT_LIBRARY_BUCKET">>;
+  env: Required<Pick<CompanyEvidenceEnv, "REPORT_LIBRARY_DB" | "REPORT_LIBRARY_BUCKET">> & Pick<CompanyEvidenceEnv, "TUSHARE_TOKEN">;
   userId: string;
   watchlist: WatchlistRow;
   signal?: AbortSignal;
@@ -75,6 +76,7 @@ export async function fetchAndStoreCompanyEvidence({
     ticker: watchlist.ticker,
     market: watchlist.market,
     company: watchlistRowToItem(watchlist).company,
+    tushareToken: env.TUSHARE_TOKEN,
     signal,
   });
   const pkg = await buildCompanyEvidencePackage({ userId, watchlistId: watchlist.id, evidence });
@@ -108,11 +110,12 @@ export async function getOrCreateCompanyEvidencePackage(env: CompanyEvidenceEnv,
       ticker: watchlist.ticker,
       market: watchlist.market,
       company: watchlistRowToItem(watchlist).company,
+      tushareToken: env.TUSHARE_TOKEN,
       signal,
     });
     return buildCompanyEvidencePackage({ userId, watchlistId: watchlist.id, evidence });
   }
-  return fetchAndStoreCompanyEvidence({ env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET }, userId, watchlist, signal });
+  return fetchAndStoreCompanyEvidence({ env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET, TUSHARE_TOKEN: env.TUSHARE_TOKEN }, userId, watchlist, signal });
 }
 
 export async function writeCompanyEvidencePackage(

@@ -5,6 +5,7 @@ type Env = {
   COMPANY_EVIDENCE_REFRESH_TOKEN?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
+  TUSHARE_TOKEN?: string;
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -18,11 +19,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, body?.userId, body?.watchlistId, Math.min(Math.max(body?.limit ?? 50, 1), 200));
   const refreshed: Array<{ watchlistId: string; ticker: string; evidenceHash: string }> = [];
   const failed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
+  const useTushareForThisRefresh = Boolean(body?.watchlistId) || rows.length <= 1;
 
   for (const row of rows) {
     const userId = row.user_id || row.user_key;
     try {
-      const pkg = await fetchAndStoreCompanyEvidence({ env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET }, userId, watchlist: row, signal: request.signal });
+      const pkg = await fetchAndStoreCompanyEvidence({
+        env: {
+          REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB,
+          REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET,
+          TUSHARE_TOKEN: useTushareForThisRefresh ? env.TUSHARE_TOKEN : undefined,
+        },
+        userId,
+        watchlist: row,
+        signal: request.signal,
+      });
       refreshed.push({ watchlistId: row.id, ticker: row.ticker, evidenceHash: pkg.evidenceHash });
     } catch (error) {
       await writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB, userId, row, error);

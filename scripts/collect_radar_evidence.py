@@ -36,6 +36,17 @@ ANYSEARCH_CONCURRENCY = max(1, int(os.environ.get("ANYSEARCH_CONCURRENCY", "10")
 SEARXNG_ENDPOINTS = [endpoint.strip().rstrip("/") for endpoint in re.split(r"[\n,]", os.environ.get("SEARXNG_ENDPOINTS", "")) if endpoint.strip().startswith(("http://", "https://"))]
 SEARXNG_MAX_QUERIES = int(os.environ.get("SEARXNG_MAX_QUERIES", "120"))
 SEARXNG_CONCURRENCY = max(1, int(os.environ.get("SEARXNG_CONCURRENCY", "6")))
+TUSHARE_API_URL = "http://api.tushare.pro"
+TUSHARE_MAX_COMPANIES = int(os.environ.get("TUSHARE_MAX_COMPANIES", "1"))
+TUSHARE_ENDPOINTS = [
+    ("disclosure_date", "announcement", "financial_metric", "ts_code,end_date,ann_date,pre_date,actual_date,modify_date", "ts_code"),
+    ("daily_basic", "market", "valuation_metric", "ts_code,trade_date,pe_ttm,pb,total_mv,circ_mv,turnover_rate", "date_range"),
+    ("income", "announcement", "financial_metric", "ts_code,end_date,ann_date,revenue,n_income_attr_p,total_profit,basic_eps", "period"),
+    ("cashflow", "announcement", "financial_metric", "ts_code,end_date,ann_date,n_cashflow_act,c_free_cashflow", "period"),
+    ("fina_indicator", "announcement", "financial_metric", "ts_code,end_date,ann_date,grossprofit_margin,netprofit_margin,roe,roa,debt_to_assets,ocfps", "period"),
+    ("dividend", "announcement", "financial_metric", "ts_code,end_date,ann_date,cash_div,cash_div_tax,div_proc", "ts_code"),
+    ("anns_d", "announcement", "financial_metric", "ts_code,ann_date,title", "date_range"),
+]
 
 ANYSEARCH_EVIDENCE_PROFILES = [
     {
@@ -437,8 +448,11 @@ def collect_sources() -> list[dict[str, Any]]:
         dynamic_financials = fetch_dynamic_company_financials(seed_candidates)
         print_source_summary("eastmoney_dynamic_company_financials", dynamic_financials)
         sources.extend(dynamic_financials)
+        tushare_facts = fetch_tushare_dynamic_company_facts(seed_candidates)
+        print_source_summary("tushare_dynamic_company_facts", tushare_facts)
+        sources.extend(tushare_facts)
     except Exception as exc:
-        print(f"collector_warning eastmoney_dynamic_company_financials: {type(exc).__name__}: {str(exc)[:180]}")
+        print(f"collector_warning dynamic_company_financials: {type(exc).__name__}: {str(exc)[:180]}")
     return sources
 
 
@@ -562,6 +576,140 @@ def dynamic_company_priority(candidate: dict[str, Any]) -> int:
     if re.search(r"缺财报|财报|业绩|净利润|营收|现金流|订单|中标|库存|价格", text, re.I):
         priority += 8
     return priority
+
+
+def fetch_tushare_dynamic_company_facts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    token = clean_text(os.environ.get("TUSHARE_TOKEN"))
+    if not token:
+        return []
+    selected = [
+        candidate
+        for candidate in sorted(candidates, key=lambda item: int(item.get("evidenceStrength") or 0), reverse=True)
+        if clean_text(candidate.get("market")) in ("", "A股") and normalize_a_share_code(candidate.get("code"))
+    ][:TUSHARE_MAX_COMPANIES]
+    sources: list[dict[str, Any]] = []
+    for candidate in selected:
+        ts_code = normalize_a_share_code(candidate.get("code"))
+        if not ts_code:
+            continue
+        disclosure_rows = tushare_rows(token, "disclosure_date", ts_code, "ts_code,end_date,ann_date,pre_date,actual_date,modify_date", "ts_code")
+        report_period = latest_tushare_period_from_rows(disclosure_rows) or latest_report_period()
+        sources.extend(tushare_sources(candidate, ts_code, "disclosure_date", disclosure_rows, "announcement", "financial_metric"))
+        for api_name, source_type, signal_type, fields, params_mode in TUSHARE_ENDPOINTS:
+            if api_name == "disclosure_date":
+                continue
+            try:
+                rows = tushare_rows(token, api_name, ts_code, fields, params_mode, report_period)
+                sources.extend(tushare_sources(candidate, ts_code, api_name, rows, source_type, signal_type))
+            except Exception as exc:
+                print(f"collector_warning tushare.{api_name}.{ts_code}: {type(exc).__name__}: {str(exc)[:160]}")
+    return dedupe_sources(sources)
+
+
+def tushare_rows(token: str, api_name: str, ts_code: str, fields: str, params_mode: str, report_period: str | None = None) -> list[dict[str, Any]]:
+    data = post_json(
+        TUSHARE_API_URL,
+        {"api_name": api_name, "token": token, "params": tushare_params(ts_code, params_mode, report_period), "fields": fields},
+        timeout=20,
+    )
+    if data.get("code") != 0:
+        return []
+    payload_data = data.get("data") or {}
+    field_names = [clean_text(field) for field in payload_data.get("fields") or []]
+    rows: list[dict[str, Any]] = []
+    for item in payload_data.get("items") or []:
+        if not isinstance(item, list):
+            continue
+        row = {field_names[index]: value for index, value in enumerate(item) if index < len(field_names) and field_names[index]}
+        if row:
+            rows.append(row)
+    return rows[:10]
+
+
+def tushare_params(ts_code: str, mode: str, report_period: str | None = None) -> dict[str, str]:
+    if mode == "period":
+        return {"ts_code": ts_code, "period": report_period or latest_report_period()}
+    if mode == "date_range":
+        today = datetime.now(timezone.utc).date()
+        return {"ts_code": ts_code, "start_date": (today - timedelta(days=30)).strftime("%Y%m%d"), "end_date": today.strftime("%Y%m%d")}
+    return {"ts_code": ts_code}
+
+
+def latest_tushare_period_from_rows(rows: list[dict[str, Any]]) -> str:
+    values = sorted(clean_text(row.get("end_date")) for row in rows if re.fullmatch(r"\d{8}", clean_text(row.get("end_date"))))
+    return values[-1] if values else ""
+
+
+def latest_report_period() -> str:
+    today = datetime.now(timezone.utc).date()
+    if today >= datetime(today.year, 10, 31).date():
+        return f"{today.year}0930"
+    if today >= datetime(today.year, 8, 31).date():
+        return f"{today.year}0630"
+    if today >= datetime(today.year, 4, 30).date():
+        return f"{today.year}0331"
+    return f"{today.year - 1}1231"
+
+
+def tushare_sources(candidate: dict[str, Any], ts_code: str, api_name: str, rows: list[dict[str, Any]], source_type: str, signal_type: str) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    company = clean_text(candidate.get("company"))
+    industry = clean_text(candidate.get("industry"))
+    sources: list[dict[str, Any]] = []
+    for row in rows[:3]:
+        period = first_text(row, ("end_date", "trade_date", "ann_date"))
+        sources.append(
+            compact_dict(
+                {
+                    "source": "Tushare Pro API",
+                    "query": f"{industry or company} Tushare {api_name} 财报 估值 分红 公告",
+                    "title": tushare_title(company, ts_code, api_name, row, period),
+                    "url": f"https://tushare.pro/document/2?doc_id=33#{api_name}",
+                    "publishedAt": iso_date(period),
+                    "summary": tushare_summary(api_name, row),
+                    "sourceType": source_type,
+                    "signalType": signal_type,
+                    "weight": SOURCE_WEIGHTS.get(source_type, 3),
+                    "factType": "financial" if signal_type == "financial_metric" else "",
+                    "company": company,
+                    "code": ts_code,
+                    "market": "A股",
+                    "industry": industry,
+                    "metric": api_name,
+                }
+            )
+        )
+    return sources
+
+
+def tushare_title(company: str, ts_code: str, api_name: str, row: dict[str, Any], period: str) -> str:
+    name = company or ts_code
+    if api_name == "daily_basic":
+        return f"{name}({ts_code}) {period} Tushare估值：PE-TTM {number_text(row.get('pe_ttm'))}，PB {number_text(row.get('pb'))}，总市值 {number_text(row.get('total_mv'))}"
+    if api_name == "income":
+        return f"{name}({ts_code}) {period} Tushare利润表：营收 {number_text(row.get('revenue'))}，归母净利润 {number_text(row.get('n_income_attr_p'))}"
+    if api_name == "cashflow":
+        return f"{name}({ts_code}) {period} Tushare现金流：经营现金流 {number_text(row.get('n_cashflow_act'))}"
+    if api_name == "fina_indicator":
+        return f"{name}({ts_code}) {period} Tushare财务指标：毛利率 {format_percent(row.get('grossprofit_margin'))}，ROE {format_percent(row.get('roe'))}"
+    if api_name == "dividend":
+        return f"{name}({ts_code}) {period} Tushare分红：税后现金分红 {number_text(row.get('cash_div_tax'))}"
+    return f"{name}({ts_code}) {period} Tushare公告：{first_text(row, ('title',)) or api_name}"
+
+
+def tushare_summary(api_name: str, row: dict[str, Any]) -> str:
+    if api_name == "daily_basic":
+        return f"估值快照：PE-TTM {number_text(row.get('pe_ttm'))}，PB {number_text(row.get('pb'))}，总市值 {number_text(row.get('total_mv'))}。"
+    if api_name == "income":
+        return f"利润表字段：营收 {number_text(row.get('revenue'))}，归母净利润 {number_text(row.get('n_income_attr_p'))}，总利润 {number_text(row.get('total_profit'))}。"
+    if api_name == "cashflow":
+        return f"现金流字段：经营现金流 {number_text(row.get('n_cashflow_act'))}，自由现金流 {number_text(row.get('c_free_cashflow'))}。"
+    if api_name == "fina_indicator":
+        return f"财务指标：毛利率 {format_percent(row.get('grossprofit_margin'))}，净利率 {format_percent(row.get('netprofit_margin'))}，ROE {format_percent(row.get('roe'))}。"
+    if api_name == "dividend":
+        return f"分红字段：现金分红 {number_text(row.get('cash_div'))}，税后现金分红 {number_text(row.get('cash_div_tax'))}。"
+    return first_text(row, ("title",)) or f"Tushare {api_name} 结构化字段。"
 
 
 def fetch_eastmoney_report_rows(report_name: str, report_filter: str, sort_columns: str, sort_types: str, page_size: int) -> list[dict[str, Any]]:

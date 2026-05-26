@@ -5,6 +5,7 @@ import type { CompanyCandidate } from "../../src/shared/report";
 type Env = {
   AUTH_SECRET: string;
   REPORT_LIBRARY_DB?: D1Database;
+  TUSHARE_TOKEN?: string;
 };
 
 type EvidenceRequest = {
@@ -27,6 +28,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     ticker: body?.company?.code || body?.ticker,
     market: body?.company?.listingPlace || body?.market,
     company: body?.company,
+    tushareToken: env.TUSHARE_TOKEN,
     signal: request.signal,
   });
   return json({ evidence });

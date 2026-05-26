@@ -10,6 +10,7 @@ type Env = {
   REPORT_CACHE?: KVNamespace;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
+  TUSHARE_TOKEN?: string;
 };
 
 type ReportRequest = {
@@ -149,6 +150,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       ticker: company?.code || body?.ticker?.trim() || undefined,
       market: company?.listingPlace || body?.market?.trim() || undefined,
       company,
+      tushareToken: env.TUSHARE_TOKEN,
       signal,
     });
 

@@ -20,6 +20,7 @@ type FetchEvidenceInput = {
   ticker?: string;
   market?: string;
   company?: CompanyCandidate;
+  tushareToken?: string;
   fetchImpl?: FetchLike;
   signal?: AbortSignal;
 };
@@ -79,12 +80,51 @@ const YAHOO_FUNDAMENTAL_TYPES = [
 ] as const;
 
 const YAHOO_FUNDAMENTAL_TYPE_SET = new Set<string>(YAHOO_FUNDAMENTAL_TYPES);
+const TUSHARE_API_URL = "http://api.tushare.pro";
+
+type TushareData = {
+  tsCode: string;
+  dailyBasic: Record<string, unknown>[];
+  income: Record<string, unknown>[];
+  balance: Record<string, unknown>[];
+  cashflow: Record<string, unknown>[];
+  indicators: Record<string, unknown>[];
+  dividend: Record<string, unknown>[];
+  mainBusiness: Record<string, unknown>[];
+  disclosures: Record<string, unknown>[];
+  announcements: Record<string, unknown>[];
+  repurchase: Record<string, unknown>[];
+  pledge: Record<string, unknown>[];
+  shareFloat: Record<string, unknown>[];
+};
+
+const TUSHARE_ENDPOINTS: Array<{
+  apiName: string;
+  field: keyof Omit<TushareData, "tsCode">;
+  fields: string;
+  evidenceGroup: "valuation" | "financial" | "shareholder" | "disclosure";
+  params: "dateRange" | "period" | "tsCode";
+}> = [
+  { apiName: "daily_basic", field: "dailyBasic", fields: "ts_code,trade_date,pe_ttm,pb,total_mv,circ_mv,turnover_rate,volume_ratio", evidenceGroup: "valuation", params: "dateRange" },
+  { apiName: "income", field: "income", fields: "ts_code,end_date,ann_date,revenue,total_revenue,n_income,n_income_attr_p,basic_eps,total_profit", evidenceGroup: "financial", params: "period" },
+  { apiName: "balancesheet", field: "balance", fields: "ts_code,end_date,ann_date,total_assets,total_liab,total_hldr_eqy_exc_min_int,money_cap,accounts_receiv,inventories", evidenceGroup: "financial", params: "period" },
+  { apiName: "cashflow", field: "cashflow", fields: "ts_code,end_date,ann_date,n_cashflow_act,n_cashflow_inv_act,n_cash_flows_fnc_act,c_free_cashflow", evidenceGroup: "financial", params: "period" },
+  { apiName: "fina_indicator", field: "indicators", fields: "ts_code,end_date,ann_date,grossprofit_margin,netprofit_margin,roe,roa,debt_to_assets,ocfps,eps", evidenceGroup: "financial", params: "period" },
+  { apiName: "dividend", field: "dividend", fields: "ts_code,end_date,ann_date,div_proc,cash_div,cash_div_tax,stk_div", evidenceGroup: "shareholder", params: "tsCode" },
+  { apiName: "fina_mainbz", field: "mainBusiness", fields: "ts_code,end_date,bz_item,bz_sales,bz_profit,bz_cost,curr_type", evidenceGroup: "financial", params: "period" },
+  { apiName: "disclosure_date", field: "disclosures", fields: "ts_code,end_date,ann_date,pre_date,actual_date,modify_date", evidenceGroup: "disclosure", params: "tsCode" },
+  { apiName: "anns_d", field: "announcements", fields: "ts_code,ann_date,title", evidenceGroup: "disclosure", params: "dateRange" },
+  { apiName: "repurchase", field: "repurchase", fields: "ts_code,ann_date,end_date,proc,exp_date,vol,amount,high_limit,low_limit", evidenceGroup: "shareholder", params: "dateRange" },
+  { apiName: "pledge_stat", field: "pledge", fields: "ts_code,end_date,pledge_count,unrest_pledge,rest_pledge,total_share,pledge_ratio", evidenceGroup: "shareholder", params: "tsCode" },
+  { apiName: "share_float", field: "shareFloat", fields: "ts_code,ann_date,float_date,float_share,float_ratio,holder_name,share_type", evidenceGroup: "shareholder", params: "dateRange" },
+];
 
 export async function fetchPublicCompanyEvidence({
   companyName,
   ticker,
   market,
   company,
+  tushareToken,
   fetchImpl = fetch,
   signal,
 }: FetchEvidenceInput): Promise<EvidenceBundle> {
@@ -128,6 +168,10 @@ export async function fetchPublicCompanyEvidence({
   const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
   const eastmoneyFinancialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
+  const tushareData =
+    selectedCompany && isAStockListedCompany(selectedCompany)
+      ? await fetchTushareCompanyData({ company: selectedCompany, token: tushareToken, fetchImpl })
+      : undefined;
   const secData = isUsSelected ? await fetchSecCompanyData(symbol, fetchImpl) : undefined;
 
   const shouldFetchYahoo = !selectedCompany || selectedCompany.source !== "eastmoney" || isUsSelected || isHkSelected;
@@ -232,6 +276,9 @@ export async function fetchPublicCompanyEvidence({
                 : "Tencent quote fallback returned no usable price.",
             } satisfies EvidenceItem,
           ]
+        : []),
+      ...(tushareData
+        ? tushareEvidenceItems(symbol, retrievedAt, tushareData)
         : []),
       {
         title: `${symbol} Eastmoney financial statements`,
@@ -339,6 +386,7 @@ export async function fetchPublicCompanyEvidence({
         cashflowRows,
         balanceRows,
       },
+      tushare: tushareData,
       sec: secData
         ? {
             cik: secData.cik,
@@ -1430,6 +1478,188 @@ async function fetchJson(url: string, fetchImpl: FetchLike): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+async function fetchTushareCompanyData({
+  company,
+  token,
+  fetchImpl,
+}: {
+  company: CompanyCandidate;
+  token?: string;
+  fetchImpl: FetchLike;
+}): Promise<TushareData | undefined> {
+  const tsCode = tushareTsCode(company);
+  if (!token?.trim() || !tsCode) return undefined;
+  const rows: TushareData = {
+    tsCode,
+    dailyBasic: [],
+    income: [],
+    balance: [],
+    cashflow: [],
+    indicators: [],
+    dividend: [],
+    mainBusiness: [],
+    disclosures: [],
+    announcements: [],
+    repurchase: [],
+    pledge: [],
+    shareFloat: [],
+  };
+
+  const disclosureEndpoint = TUSHARE_ENDPOINTS.find((endpoint) => endpoint.apiName === "disclosure_date");
+  if (disclosureEndpoint) {
+    rows[disclosureEndpoint.field] = await fetchTushareRows(fetchImpl, token, disclosureEndpoint.apiName, tsCode, disclosureEndpoint.fields, disclosureEndpoint.params);
+  }
+  const reportPeriod = latestTusharePeriodFromRows(rows.disclosures) || latestTushareReportPeriod();
+  for (const endpoint of TUSHARE_ENDPOINTS) {
+    if (endpoint.apiName === "disclosure_date") continue;
+    rows[endpoint.field] = await fetchTushareRows(fetchImpl, token, endpoint.apiName, tsCode, endpoint.fields, endpoint.params, reportPeriod);
+  }
+
+  return Object.values(rows).some((value) => Array.isArray(value) && value.length > 0) ? rows : undefined;
+}
+
+async function fetchTushareRows(
+  fetchImpl: FetchLike,
+  token: string,
+  apiName: string,
+  tsCode: string,
+  fields: string,
+  paramMode: "dateRange" | "period" | "tsCode",
+  reportPeriod?: string,
+): Promise<Record<string, unknown>[]> {
+  try {
+    const params = tushareParams(tsCode, paramMode, reportPeriod);
+    const response = await fetchImpl(TUSHARE_API_URL, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "user-agent": "CSTD Alpha/1.0",
+      },
+      body: JSON.stringify({
+        api_name: apiName,
+        token,
+        params,
+        fields,
+      }),
+    });
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => null);
+    if (!isRecord(payload) || payload.code !== 0) return [];
+    const fieldNames = arrayPath(payload, ["data", "fields"]).map((field) => stringValue(field)).filter(Boolean) as string[];
+    const items = arrayPath(payload, ["data", "items"]);
+    return items
+      .filter(Array.isArray)
+      .slice(0, 12)
+      .map((item) => {
+        const record: Record<string, unknown> = {};
+        (item as unknown[]).forEach((value, index) => {
+          const key = fieldNames[index];
+          if (key) record[key] = value;
+        });
+        return record;
+      });
+  } catch {
+    return [];
+  }
+}
+
+function tushareParams(tsCode: string, mode: "dateRange" | "period" | "tsCode", reportPeriod?: string) {
+  if (mode === "period") return { ts_code: tsCode, period: reportPeriod || latestTushareReportPeriod() };
+  if (mode === "dateRange") {
+    const endDate = formatTushareDate(new Date());
+    const start = new Date();
+    start.setUTCDate(start.getUTCDate() - 30);
+    return { ts_code: tsCode, start_date: formatTushareDate(start), end_date: endDate };
+  }
+  return { ts_code: tsCode };
+}
+
+function latestTusharePeriodFromRows(rows: Record<string, unknown>[]) {
+  return rows
+    .map((row) => stringValue(row.end_date))
+    .filter((value): value is string => Boolean(value && /^\d{8}$/.test(value)))
+    .sort()
+    .at(-1);
+}
+
+function latestTushareReportPeriod(reference = new Date()) {
+  const year = reference.getUTCFullYear();
+  const month = reference.getUTCMonth() + 1;
+  const day = reference.getUTCDate();
+  const periods =
+    month > 10 || (month === 10 && day >= 31)
+      ? [`${year}0930`, `${year}0630`, `${year}0331`, `${year - 1}1231`]
+      : month > 8 || (month === 8 && day >= 31)
+        ? [`${year}0630`, `${year}0331`, `${year - 1}1231`]
+        : month > 4 || (month === 4 && day >= 30)
+          ? [`${year}0331`, `${year - 1}1231`]
+          : [`${year - 1}1231`, `${year - 1}0930`, `${year - 1}0630`];
+  return periods[0];
+}
+
+function formatTushareDate(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function tushareTsCode(company: CompanyCandidate) {
+  if (!isAStockListedCompany(company)) return "";
+  if (/^\d{6}\.(SH|SZ|BJ)$/i.test(company.code)) return company.code.toUpperCase();
+  const code = company.code.match(/\d{6}/)?.[0];
+  if (!code) return "";
+  const suffix =
+    isShanghaiAStock(company) ? "SH" : code.startsWith("8") || code.startsWith("4") || company.listingPlace.includes("北") ? "BJ" : "SZ";
+  return `${code}.${suffix}`;
+}
+
+function tushareEvidenceItems(symbol: string, retrievedAt: string, data: TushareData): EvidenceItem[] {
+  const valuationCount = data.dailyBasic.length;
+  const financialCount = data.income.length + data.balance.length + data.cashflow.length + data.indicators.length + data.mainBusiness.length;
+  const shareholderCount = data.dividend.length + data.repurchase.length + data.pledge.length + data.shareFloat.length;
+  const disclosureCount = data.disclosures.length + data.announcements.length;
+  return [
+    {
+      title: `${symbol} Tushare valuation snapshot`,
+      source: "Tushare Pro API",
+      url: "https://tushare.pro/",
+      retrievedAt,
+      freshness: valuationCount ? "latest-public" : "unavailable",
+      notes: valuationCount ? `A-share daily valuation/basic rows from Tushare for ${data.tsCode}: ${valuationCount}.` : "Tushare valuation rows unavailable.",
+    },
+    {
+      title: `${symbol} Tushare financial statements`,
+      source: "Tushare Pro API",
+      url: "https://tushare.pro/",
+      retrievedAt,
+      freshness: financialCount ? "latest-public" : "unavailable",
+      notes: financialCount
+        ? `A-share company financial rows from Tushare for ${data.tsCode}: income ${data.income.length}, balance ${data.balance.length}, cashflow ${data.cashflow.length}, indicators ${data.indicators.length}, business ${data.mainBusiness.length}.`
+        : "Tushare financial rows unavailable.",
+    },
+    {
+      title: `${symbol} Tushare dividend and capital actions`,
+      source: "Tushare Pro API",
+      url: "https://tushare.pro/",
+      retrievedAt,
+      freshness: shareholderCount ? "latest-public" : "unavailable",
+      notes: shareholderCount
+        ? `A-share dividend, repurchase, pledge and float-share rows from Tushare for ${data.tsCode}: ${shareholderCount}.`
+        : "Tushare shareholder-return rows unavailable.",
+    },
+    {
+      title: `${symbol} Tushare disclosures and announcements`,
+      source: "Tushare Pro API",
+      url: "https://tushare.pro/",
+      retrievedAt,
+      freshness: disclosureCount ? "latest-public" : "unavailable",
+      notes: disclosureCount ? `A-share disclosure-date and announcement rows from Tushare for ${data.tsCode}: ${disclosureCount}.` : "Tushare disclosure rows unavailable.",
+    },
+  ];
 }
 
 async function fetchText(url: string, fetchImpl: FetchLike): Promise<string | undefined> {

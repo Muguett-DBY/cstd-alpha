@@ -985,6 +985,76 @@ describe("public data providers", () => {
     expect(result.facts.quote).toMatchObject({ regularMarketPrice: 415.12, currency: "USD" });
     expect(result.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ source: "Stooq public quote CSV endpoint", freshness: "latest-public" })]));
   });
+
+  test("adds Tushare structured A-share evidence when a token is available", async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: { f57: "300750", f58: "宁德时代", f43: 41116, f116: 1902228788282.36, f162: 2293, f167: 582 },
+          }),
+        });
+      }
+      if (url.includes("datacenter-web.eastmoney.com")) {
+        return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+      }
+      if (url.includes("api.tushare.pro")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { api_name?: string };
+        const fields = {
+          daily_basic: ["ts_code", "trade_date", "pe_ttm", "pb", "total_mv"],
+          income: ["ts_code", "end_date", "revenue", "n_income_attr_p"],
+          cashflow: ["ts_code", "end_date", "n_cashflow_act"],
+          fina_indicator: ["ts_code", "end_date", "grossprofit_margin", "roe"],
+          dividend: ["ts_code", "end_date", "cash_div_tax"],
+          anns_d: ["ts_code", "ann_date", "title"],
+        }[body.api_name || ""] ?? ["ts_code"];
+        const items = {
+          daily_basic: [["300750.SZ", "20260525", 22.93, 5.82, 190222878.88]],
+          income: [["300750.SZ", "20260331", 84704630000, 13963180000]],
+          cashflow: [["300750.SZ", "20260331", 5875900000]],
+          fina_indicator: [["300750.SZ", "20260331", 25.6, 4.1]],
+          dividend: [["300750.SZ", "20251231", 12.3]],
+          anns_d: [["300750.SZ", "20260428", "宁德时代2026年第一季度报告"]],
+        }[body.api_name || ""] ?? [];
+        return Promise.resolve({ ok: true, json: async () => ({ code: 0, data: { fields, items } }) });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "宁德时代",
+      company: {
+        id: "eastmoney:0.300750",
+        name: "宁德时代",
+        code: "300750",
+        exchange: "深圳证券交易所",
+        listingPlace: "深A",
+        marketType: "AStock",
+        quoteId: "0.300750",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+      tushareToken: "test-token",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("http://api.tushare.pro", expect.objectContaining({ method: "POST" }));
+    expect(result.facts.tushare).toMatchObject({
+      tsCode: "300750.SZ",
+      dailyBasic: [expect.objectContaining({ pe_ttm: 22.93 })],
+      income: [expect.objectContaining({ n_income_attr_p: 13963180000 })],
+      cashflow: [expect.objectContaining({ n_cashflow_act: 5875900000 })],
+      indicators: [expect.objectContaining({ grossprofit_margin: 25.6 })],
+      dividend: [expect.objectContaining({ cash_div_tax: 12.3 })],
+      announcements: [expect.objectContaining({ title: "宁德时代2026年第一季度报告" })],
+    });
+    expect(result.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "Tushare Pro API", freshness: "latest-public", title: expect.stringContaining("valuation") }),
+        expect.objectContaining({ source: "Tushare Pro API", freshness: "latest-public", title: expect.stringContaining("financial statements") }),
+      ]),
+    );
+  });
 });
 
 function secAppleFacts() {
