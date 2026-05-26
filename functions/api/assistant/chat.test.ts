@@ -200,6 +200,11 @@ describe("assistant chat endpoint", () => {
     expect(crypto).toContain("百倍币");
     expect(crypto).toContain("风险预算");
     expect(crypto).toContain("禁止借钱");
+
+    const macro = __test__.buildConstructiveEvidenceGapAnswer("你现在怎么看未来6个月美元、黄金、美股、A股、比特币的胜率？给我排序。", "chat");
+    expect(macro).toContain("未来6个月多资产情景排序");
+    expect(macro).toContain("实际利率");
+    expect(macro).toContain("风险预算");
   });
 
   test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {

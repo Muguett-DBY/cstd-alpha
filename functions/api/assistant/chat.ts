@@ -1197,6 +1197,7 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
   if (/(百倍币|币圈|下注方式|MEME|山寨币)/i.test(userMessage)) return buildCryptoSpeculationAnswer();
   if (/(避税|税务规划|税压到最低|大胆的合法)/.test(userMessage)) return buildTaxPlanningBoundaryAnswer();
   if (/(一定涨|必涨|别跟我说风险|保证收益|稳赚)/.test(userMessage)) return buildCertaintyRefusalAnswer();
+  if (/(未来6个月|6个月|半年).*(美元|黄金|美股|A股|比特币).*(胜率|排序)|美元.*黄金.*美股.*A股.*比特币/.test(userMessage)) return buildMacroAssetRankingAnswer();
   if (/(连续涨|涨了\d+%|怕错过|追进去|追涨|FOMO)/i.test(userMessage)) return buildFomoChaseAnswer();
   if (/(逆向抄底|反共识|市场都看空|资产类别|便宜.*更便宜)/.test(userMessage)) return buildContrarianAssetAnswer();
   if (/(上行空间.*下行风险|下行风险.*上行空间)/.test(userMessage)) return buildRiskReturnTableGapAnswer(userMessage);
@@ -1320,6 +1321,26 @@ function buildCertaintyRefusalAnswer() {
     "反驳用户观点：不谈风险的收益预测没有投资价值。真正有用的是条件判断：什么证据支持上涨、什么信号说明判断错了、错了亏多少。",
     "我可能错在哪里：有些资产会因突发消息短期大涨，但这不等于事前可确定；没有可复核证据时，确定性语言只会放大亏损。",
     "下一步跟踪：盘前公告、成交量、资金流、新闻催化、估值位置、止损线和持仓上限。",
+  ].join("\n");
+}
+
+function buildMacroAssetRankingAnswer() {
+  return [
+    "结论：可以做未来6个月多资产情景排序，但不能给确定胜率。没有最新利率、通胀、美元流动性、盈利预期和价格位置时，我会把它当成低置信框架：黄金/美元偏防守，美股取决于盈利和降息预期，A股取决于政策与盈利修复，比特币取决于美元流动性和风险偏好。",
+    "证据等级：低。当前回答未接入实时价格、央行路径、通胀数据和资金流，只能给条件排序，不是投资建议。",
+    "",
+    "| 资产 | 6个月偏有利条件 | 主要风险/反证 | 排序用变量 |",
+    "| --- | --- | --- | --- |",
+    "| 黄金 | 实际利率下行、避险升温、央行购金延续 | 美元走强、实际利率反弹、风险偏好过热 | 实际利率、美元指数、央行购金、ETF资金 |",
+    "| 美元 | 全球风险偏好下降、美国利率维持高位 | 降息超预期、财政/贸易压力削弱美元 | 美债利差、DXY、美元流动性 |",
+    "| 美股 | 盈利上修、AI资本开支延续、流动性宽松 | 估值过高、盈利不及预期、利率反弹 | EPS预期、估值分位、信用利差 |",
+    "| A股 | 政策加码、盈利触底、人民币稳定 | 需求不足、地产/信用拖累、外资流出 | 社融、PMI、盈利修正、资金流 |",
+    "| 比特币 | 美元流动性改善、ETF资金流入、风险偏好提升 | 监管冲击、杠杆清算、流动性收缩 | 稳定币供给、ETF净流入、链上杠杆 |",
+    "",
+    "低置信排序框架：如果未来6个月以降息和避险为主，黄金优先；如果经济软着陆且盈利上修，美股优先；如果中国政策与盈利共振，A股弹性更大；如果美元流动性明显扩张，比特币弹性最高但回撤也最大；美元更像对冲仓而非收益资产。",
+    "风险预算：不要把多资产排序理解成单边押注。每个资产都需要仓位上限和失效条件，尤其比特币和高估值美股要控制回撤。",
+    "我可能错在哪里：宏观变量会快速变化，单次排序可能被CPI、就业、央行表态、地缘事件或监管政策推翻；若最新数据已经变化，需要重排。",
+    "下一步跟踪：美国CPI/非农/FOMC点阵图、10年TIPS实际利率、美元指数、标普盈利修正、A股社融和PMI、比特币ETF净流入与稳定币供给。",
   ].join("\n");
 }
 
