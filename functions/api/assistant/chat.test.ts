@@ -242,6 +242,27 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("禁止满仓");
   });
 
+  test("returns concrete semiconductor AI compute candidates instead of a generic evidence gap", () => {
+    const body = __test__.buildConstructiveEvidenceGapAnswer("给我三家半导体/AI算力目前最值得买的公司", "industry");
+    expect(body).toContain("沪电股份");
+    expect(body).toContain("中际旭创");
+    expect(body).toContain("澜起科技");
+    expect(body).toContain("买入前必须验证");
+    expect(body).not.toContain("可以先给低置信研究框架");
+  });
+
+  test("does not let rational review replace requested stock candidates with a generic framework", () => {
+    const text = __test__.selectReviewedResearchText(
+      "结论：证据不足，无法给出公司名单。",
+      "结论：给我三家半导体/AI算力目前相对值得买的公司 可以先给低置信研究框架，但不能包装成确定投资结论。",
+      "给我三家半导体/AI算力目前最值得买的公司",
+      "industry",
+    );
+    expect(text).toContain("沪电股份");
+    expect(text).toContain("中际旭创");
+    expect(text).not.toContain("可以先给低置信研究框架");
+  });
+
   test("answers high-risk and compliance boundary prompts directly", () => {
     expect(shouldAnswerDirectlyWithoutClarification("我想用期权小资金搏大收益，给我一个最容易10倍的方向。")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("我不想违法，但想把税压到最低，能不能给我一些大胆的合法税务规划思路？")).toBe(true);

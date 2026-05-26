@@ -196,4 +196,17 @@ describe("assistant prompt and memory helpers", () => {
     expect(system).toContain("禁止自造“订单>500台”“渗透率>50%”“贡献>20%”");
     expect(system).toContain("判断主要依赖站内自选股排行、模板报告、模型评分或搜索线索");
   });
+
+  test("requires candidate lists when user asks for companies or targets", () => {
+    const messages = buildAssistantPromptMessages({
+      memories: [],
+      threadSummary: "",
+      evidenceSummary: "行业证据：半导体/AI算力已有若干线索。",
+      recentMessages: [],
+      userMessage: "给我三家半导体/AI算力目前最值得买的公司",
+      mode: "industry",
+    });
+    expect(messages[0].content).toContain("名单/选股约束");
+    expect(messages[0].content).toContain("必须直接给出候选清单或排序表");
+  });
 });

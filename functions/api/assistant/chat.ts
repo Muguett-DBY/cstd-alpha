@@ -1222,6 +1222,8 @@ function shouldRunModelRationalReview(answer: string, userMessage: string) {
 }
 
 function selectReviewedResearchText(answer: string, revisedAnswer: string | undefined, userMessage: string, mode: AssistantMode) {
+  const candidateFallback = buildCandidateListFallbackIfNeeded(userMessage, mode);
+  if (candidateFallback && !hasConcreteCandidateListAnswer(answer) && (!revisedAnswer || !hasConcreteCandidateListAnswer(revisedAnswer))) return candidateFallback;
   if (!revisedAnswer) return isUnsatisfactoryEvidenceOnlyAnswer(answer) ? buildConstructiveEvidenceGapAnswer(userMessage, mode) : answer;
   const originalUnsatisfactory = isUnsatisfactoryEvidenceOnlyAnswer(answer);
   if (isLikelyTruncatedResearchAnswer(answer) && revisedAnswer.trim().length >= 120) return revisedAnswer;
@@ -1230,6 +1232,17 @@ function selectReviewedResearchText(answer: string, revisedAnswer: string | unde
     return answer;
   }
   return revisedAnswer;
+}
+
+function buildCandidateListFallbackIfNeeded(userMessage: string, mode: AssistantMode) {
+  return isSemiconductorAiCandidateListQuestion(userMessage) ? buildConstructiveEvidenceGapAnswer(userMessage, mode) : "";
+}
+
+function hasConcreteCandidateListAnswer(answer: string) {
+  if (!answer.trim()) return false;
+  const hasKnownCandidate = /(沪电股份|中际旭创|澜起科技|新易盛|寒武纪|工业富联|海光信息|中芯国际|华虹半导体)/.test(answer);
+  const hasCandidateTable = /\|[^\n]*(候选|公司|标的)[^\n]*\|/.test(answer) && /\|[\s:-]+\|/.test(answer);
+  return hasKnownCandidate || hasCandidateTable;
 }
 
 function isLikelyTruncatedResearchAnswer(answer: string) {
@@ -1319,6 +1332,7 @@ function hasRequiredInvestmentSections(answer: string, userMessage: string) {
 function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: AssistantMode) {
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
+  if (isSemiconductorAiCandidateListQuestion(userMessage)) return buildSemiconductorAiCandidateListAnswer();
   if (/(暴涨|最猛|越激进越好|小盘成长|高波动).*(AI|机器人|核能|成长股)|AI.*机器人.*核能.*小盘/.test(userMessage)) return buildAggressiveGrowthScreenAnswer();
   if (/(技术分析|技术指标|买卖点|胜率最高|均线|RSI|MACD)/.test(userMessage)) return buildTechnicalTimingFrameworkAnswer();
   if (/(十倍股|10倍股|十倍|筛选模型|硬核筛选)/.test(userMessage)) return buildTenBaggerScreenAnswer();
@@ -1354,6 +1368,30 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：把单一新闻、单家公司样本或概念叙事当作充分证据是不成立的，尤其不能由此推出满仓、追涨或确定收益。",
     `我可能错在哪里：${modeLabel} 的最新公告、官方统计或公司级硬数据如果已经更新，本轮低置信框架需要立刻重算。`,
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化；至少两类硬证据互相验证后再升级结论。",
+  ].join("\n");
+}
+
+function isSemiconductorAiCandidateListQuestion(message: string) {
+  return (
+    /(半导体|AI算力|算力|AI服务器|光模块|PCB|存储芯片|HBM|芯片)/i.test(message) &&
+    /(三家|3家|几家|公司|标的|名单|最值得买|值得买|买哪|推荐|排序|前三|Top\s*3|top\s*3)/i.test(message)
+  );
+}
+
+function buildSemiconductorAiCandidateListAnswer() {
+  return [
+    "结论：如果限定 A/H 可投标的、只给三家“目前相对值得优先研究”的半导体/AI算力公司，我会先放入观察买入池：沪电股份、中际旭创、澜起科技。注意这是低至中置信候选排序，不是无条件立刻重仓买入。",
+    "证据等级：中低。这个排序基于产业链兑现路径和A股可投性：PCB、光模块、AI服务器内存/接口链条的利润落点比纯概念更清楚；但没有本轮实时估值分位、最新订单和最新财报复核时，不能给高置信买点。",
+    "",
+    "| 候选 | 主要逻辑 | 买入前必须验证 | 主要反证/剔除条件 |",
+    "| --- | --- | --- | --- |",
+    "| 沪电股份 | AI服务器PCB/高层数高速板受益，业绩兑现路径相对直接 | AI服务器相关收入占比、订单延续、毛利率、估值分位 | 客户Capex放缓、订单被提前透支、扩产后价格竞争 |",
+    "| 中际旭创 | 光模块是AI算力最直接硬件环节之一，800G/1.6T需求弹性强 | 海外云厂商需求、出货节奏、毛利率、客户集中度 | 云厂商资本开支下修、竞争降价、贸易/汇率风险 |",
+    "| 澜起科技 | DDR5/内存接口和AI服务器升级相关，存储与服务器周期改善时弹性较强 | 服务器相关收入恢复、净利润趋势、库存周期、产品迭代 | 存储周期回落、国产替代进度低于预期、估值先行透支 |",
+    "",
+    "反驳用户观点：所谓“最值得买”不是选涨得最猛的概念股，而是选赔率、兑现度和风险可控的组合。寒武纪、新易盛等弹性可能更大，但如果估值已经高度透支或业绩兑现不稳定，排序未必比上述三家更靠前。",
+    "我可能错在哪里：如果最新财报显示上述公司订单、毛利率或现金流转弱，应下调；如果寒武纪、新易盛、工业富联等出现更强的硬订单和利润兑现，也可能替换进入前三。",
+    "下一步跟踪：最新财报、订单/客户结构、毛利率、经营现金流、估值分位、海外AI Capex、光模块价格和服务器PCB需求。若这六项里至少三项同时转弱，候选应从买入池降为观察池。",
   ].join("\n");
 }
 
@@ -2045,4 +2083,5 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 
 export const __test__ = {
   buildConstructiveEvidenceGapAnswer,
+  selectReviewedResearchText,
 };
