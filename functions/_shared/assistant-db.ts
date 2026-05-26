@@ -470,8 +470,19 @@ export function buildAssistantPromptMessages(input: {
   recentMessages: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
   userMessage: string;
   mode?: AssistantMode;
+  generalChat?: boolean;
 }): DeepSeekMessage[] {
   const mode = input.mode ?? "chat";
+  if (input.generalChat) {
+    return [
+      {
+        role: "system",
+        content: "你是 CSTD Alpha 的助手，用中文回答用户问题。直接根据你的知识回答，不需要搜索外部证据。不要使用投资研究格式（如证据等级、反证条件等）。",
+      },
+      ...input.recentMessages.map((message) => ({ role: message.role, content: message.content })),
+      { role: "user", content: input.userMessage },
+    ];
+  }
   const modeLabel = mode === "target" ? "标的研究" : mode === "industry" ? "行业研究" : "普通聊天";
   const system = withCacheProtocol(
     [

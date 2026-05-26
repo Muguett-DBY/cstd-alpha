@@ -258,6 +258,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           recentMessages: promptRecentMessages,
           userMessage: researchContext.promptMessage,
           mode: contextMode,
+          generalChat: simpleGeneralChat,
         });
 
         if (responseMode !== "chat") {
@@ -339,9 +340,14 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
         if (!assistantText.trim()) {
-          assistantText = guardAssistantOutputLanguage(buildConstructiveEvidenceGapAnswer(researchContext.message, contextMode), researchContext.message, externalEvidence, {
-            isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
-          });
+          const retryText = await retryWithSimplePrompt(env, researchContext.message, request.signal);
+          if (retryText.trim()) {
+            assistantText = retryText;
+            enqueue(controller, { type: "delta", text: retryText });
+          } else {
+            assistantText = "暂时无法获取足够信息来回答这个问题，请换个问法试试。";
+            enqueue(controller, { type: "delta", text: assistantText });
+          }
         }
         const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, contextMode);
         if (repairedText !== assistantText) {
@@ -407,6 +413,37 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   }
 };
+
+async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal: AbortSignal): Promise<string> {
+  const messages: DeepSeekMessage[] = [
+    { role: "system", content: "你是 CSTD Alpha 的助手，用中文回答用户问题。直接根据你的知识回答，不需要搜索外部证据。回答自然、简洁。" },
+    { role: "user", content: message },
+  ];
+  try {
+    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
+      body: JSON.stringify(
+        buildDeepSeekRequestBody({
+          model: ASSISTANT_MODEL,
+          messages,
+          maxTokens: 1500,
+          reasoningEffort: "high",
+          temperature: 0.3,
+          stream: false,
+          responseFormat: null,
+          thinking: { type: "enabled" },
+        }),
+      ),
+      signal,
+    });
+    if (!response.ok) return "";
+    const data = (await response.json()) as Record<string, unknown>;
+    return extractMessageContent(data) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 async function runAssistantAgentLoop(input: {
   env: AssistantEnv;
@@ -1159,7 +1196,7 @@ export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantM
   if (containsLikelyResearchSubject(message)) return false;
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
   if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(message.trim())) return true;
-  return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message);
+  return /(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义|属于|怎么样|分类|组成部分|环节|角色|前景|趋势|展望|做什么|是做什么|什么样)/.test(message);
 }
 
 function containsLikelyResearchSubject(message: string) {
