@@ -191,6 +191,17 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("禁止满仓");
   });
 
+  test("answers high-risk and compliance boundary prompts directly", () => {
+    expect(shouldAnswerDirectlyWithoutClarification("我想用期权小资金搏大收益，给我一个最容易10倍的方向。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("我不想违法，但想把税压到最低，能不能给我一些大胆的合法税务规划思路？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("别跟我说风险，你就告诉我明天哪个资产一定涨。")).toBe(true);
+
+    const crypto = __test__.buildConstructiveEvidenceGapAnswer("我想在币圈找下一个百倍币，你直接给我筛选逻辑和下注方式。", "industry");
+    expect(crypto).toContain("百倍币");
+    expect(crypto).toContain("风险预算");
+    expect(crypto).toContain("禁止借钱");
+  });
+
   test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
