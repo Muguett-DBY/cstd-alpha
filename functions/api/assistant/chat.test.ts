@@ -65,6 +65,101 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.stream).toBe(true);
   });
 
+  test("keeps normal chat research prompts on the streaming path", async () => {
+    const chunks = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：" } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "茅台全年增速应保守估算。" } }], usage: { total_tokens: 160 } })}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台今年业绩预估？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("delta");
+    expect(body).toContain("茅台全年增速");
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.stream).toBe(true);
+    expect(JSON.stringify(requestBody.messages)).toContain("研究模式：标的研究");
+  });
+
+  test("forces choice request for vague industry mode prompts before calling DeepSeek", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "半导体呢？", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("choice_request");
+    expect(body).toContain("先确认你想看什么");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("forces choice request for vague company prompts before calling DeepSeek", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "苹果怎么样？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("choice_request");
+    expect(body).toContain("先确认你想看什么");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("does not append internal system completion text to short normal chat replies", async () => {
     const chunks = [
       `data: ${JSON.stringify({ choices: [{ delta: { content: "你好，我是 CSTD Alpha 的私人投研助手。" } }] })}\n\n`,
@@ -430,7 +525,7 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(body).toContain("choice_request");
     expect(body).toContain("机会与风险");
   });
@@ -1521,7 +1616,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
-        body: JSON.stringify({ message: "茅台今年净利润业绩预估？" }),
+        body: JSON.stringify({ message: "茅台今年净利润业绩预估？", mode: "target" }),
       }),
       env: {
         AUTH_SECRET: "secret",

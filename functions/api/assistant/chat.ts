@@ -152,12 +152,16 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       createdAt: message.createdAt,
     }));
   const researchContext = resolveAssistantResearchContext(userMessage, recentMessages);
-  const evidenceMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? "target" : mode;
-  const simpleGeneralChat = shouldTreatAsSimpleGeneralChat(researchContext.message, evidenceMode);
+  const contextMode = mode === "chat" && shouldAutoUseResearchEvidence(researchContext.message) ? inferAssistantEvidenceMode(researchContext.message) : mode;
+  const responseMode = mode;
+  const simpleGeneralChat = shouldTreatAsSimpleGeneralChat(researchContext.message, responseMode);
+  const directByMessage = shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
+  const shouldConsiderPreClarification = responseMode !== "target" && !directByMessage;
+  const preClarification = shouldConsiderPreClarification ? buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildVagueResearchClarificationRequest(researchContext.message) : null;
   const promptRecentMessages = simpleGeneralChat || !shouldIncludeRecentAssistantContext(researchContext.message) ? [] : recentMessages.slice(-8);
-  const answerDirectly = evidenceMode !== "chat" || shouldAnswerDirectlyWithoutClarification(researchContext.message) || simpleGeneralChat;
+  const answerDirectly = !preClarification && (responseMode !== "chat" || directByMessage);
   const clarificationDecision =
-    answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
+    preClarification || answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
       ? { request: null }
       : await askModelForClarification({
           env,
@@ -167,7 +171,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           recentMessages: promptRecentMessages,
           signal: request.signal,
         });
-  const forcedClarification = answerDirectly || clarificationDecision.request ? null : buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildForcedClarificationRequest(researchContext.message);
+  const forcedClarification = preClarification ?? (answerDirectly || clarificationDecision.request ? null : buildForcedClarificationRequest(researchContext.message));
   const choiceRequest = clarificationDecision.request ?? forcedClarification;
   if (choiceRequest) {
     const encoder = new TextEncoder();
@@ -198,9 +202,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 
   const [siteEvidenceSummary, modeEvidenceSummary] = await Promise.all([
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
-    buildModeEvidenceSummary(env, session.userId, researchContext.message, evidenceMode, { strictTargetMatch: mode === "chat", signal: request.signal }),
+    buildModeEvidenceSummary(env, session.userId, researchContext.message, contextMode, { strictTargetMatch: mode === "chat", signal: request.signal }),
   ]);
-  const externalEvidence = await maybeFetchExternalEvidence(env, researchContext.message, evidenceMode, request.signal, {
+  const externalEvidence = await maybeFetchExternalEvidence(env, researchContext.message, contextMode, request.signal, {
     siteEvidenceSummary,
     modeEvidenceSummary,
   });
@@ -223,17 +227,17 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     externalEvidenceSummary,
     recentMessages: promptRecentMessages,
     userMessage: researchContext.promptMessage,
-    mode: evidenceMode,
+    mode: contextMode,
   });
 
   const assistantMessageId = crypto.randomUUID();
   const startedAt = Date.now();
-  if (evidenceMode !== "chat") {
+  if (responseMode !== "chat") {
     const reviewed = await generateReviewedResearchAnswer({
       env,
       messages: promptMessages,
       userMessage: researchContext.promptMessage,
-      mode: evidenceMode,
+      mode: contextMode,
       signal: request.signal,
     });
     const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence, {
@@ -332,11 +336,11 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
         if (!assistantText.trim()) {
-          assistantText = guardAssistantOutputLanguage(buildConstructiveEvidenceGapAnswer(researchContext.message, evidenceMode), researchContext.message, externalEvidence, {
+          assistantText = guardAssistantOutputLanguage(buildConstructiveEvidenceGapAnswer(researchContext.message, contextMode), researchContext.message, externalEvidence, {
             isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
           });
         }
-        const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, evidenceMode);
+        const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, contextMode);
         if (repairedText !== assistantText) {
           assistantText = repairedText;
         }
@@ -806,6 +810,13 @@ export function resolveAssistantResearchContext(
 
 export function shouldAutoUseResearchEvidence(message: string) {
   return containsLikelyResearchSubject(message) && isHighValueResearchQuestion(message);
+}
+
+function inferAssistantEvidenceMode(message: string): AssistantMode {
+  if (/(行业|产业|产业链|环节|赛道|板块|半导体|AI算力|算力|光模块|PCB|存储芯片|HBM|光伏|白酒|航运|银行|机器人|创新药|CXO|电网|储能|锂电|水泥|钢铁|铜|地产链|港股互联网)/i.test(message)) {
+    return "industry";
+  }
+  return "target";
 }
 
 export function shouldAnswerDirectlyWithoutClarification(message: string) {
@@ -1581,7 +1592,7 @@ function buildAggressiveGrowthScreenAnswer() {
     "| 核能/电力设备 | 有招标、中标、在手订单和交付周期证据 | 只有政策口号，缺公司订单 | 项目延期、毛利率低、回款慢 |",
     "| 小盘成长 | 营收/扣非利润连续改善，经营现金流不恶化，成交额足够 | 应收高增、减持、商誉、流动性差 | 暴涨后回撤、流动性踩踏、财务质量差 |",
     "",
-    "风险预算：如果用户坚持做激进策略，单一标的应设仓位上限，组合也要预设最大亏损上限；未出现订单或财报验证前，只能用小仓试错，不能满仓追涨。",
+    "高风险交易纪律：如果用户坚持做激进策略，单一标的应设仓位上限，组合也要预设最大亏损上限；未出现订单或财报验证前，只能用小仓试错，禁止满仓追涨。",
     "反驳用户观点：“越激进越好”容易把波动当收益，把题材热度当基本面。真正可投的激进成长股必须同时满足催化剂、业绩路径、流动性和退出纪律，否则只是高赔率叙事。",
     "我可能错在哪里：若某个主题突然出现重大订单、政策落地或财报超预期，候选池排序会快速变化；若市场风险偏好下行，小盘成长会先杀估值。",
     "下一步跟踪：最新公告/中标、收入占比、毛利率、经营现金流、成交额、减持公告、估值分位和主题热度是否已经反映在股价里。",
@@ -1961,10 +1972,31 @@ function buildForcedClarificationRequest(message: string): AssistantChoiceReques
   };
 }
 
+function buildVagueResearchClarificationRequest(message: string): AssistantChoiceRequest | null {
+  const normalized = message.trim().replace(/[？?。.!！\s]/g, "");
+  if (normalized.length > 16) return null;
+  if (!containsLikelyResearchSubject(message)) return null;
+  if (!/(呢|怎么样|怎么看|咋样|好不好|可以吗|风险大吗|能买吗|买不买|该不该买)$/i.test(normalized)) return null;
+  if (/(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|竞争|订单|库存|价格|行业|投资价值|反证|反驳)/.test(message)) return null;
+  return {
+    id: `vague-research-${Math.abs(hashString(message)).toString(36)}`,
+    title: "先确认你想看什么",
+    question: "这个问题太宽，直接答容易跑偏。你希望我先按哪个口径研究？",
+    reason: "同一个公司或行业可以看买卖、基本面、估值、风险或产业趋势；先定口径，答案会更像投研判断而不是泛泛介绍。",
+    customPlaceholder: "也可以自己写：例如“只看未来一年估值修复空间”",
+    options: [
+      { id: "opportunity-risk", label: "机会与风险", description: "先判断当前最值得关注的机会、风险和反证条件。", recommended: true },
+      { id: "valuation-action", label: "估值与操作", description: "聚焦贵不贵、能不能买、持有或等待什么触发条件。" },
+      { id: "fundamental-evidence", label: "基本面证据", description: "优先看财报、现金流、订单、价格和行业硬数据。" },
+    ],
+  };
+}
+
 function buildSubjectOnlyClarificationRequest(message: string): AssistantChoiceRequest | null {
   const normalized = message.trim().replace(/[？?。.!！\s]/g, "");
   if (normalized.length > 8) return null;
-  if (!/(半导体|光伏|白酒|银行|地产|煤炭|电力|航运|机器人|创新药|CXO|AI|算力|储能|锂电|水泥|钢铁|铜|猪周期|港股互联网)/i.test(normalized)) return null;
+  if (/(呢|怎么样|怎么看|咋样|好不好|可以吗|风险大吗|能买吗|买不买|该不该买|还能涨|还能不能涨|继续涨|会不会涨|今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|竞争|订单|库存|价格|投资价值|反证|反驳)/.test(normalized)) return null;
+  if (!/(茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|苹果|中芯国际|紫金矿业|药明康德|半导体|光伏|白酒|银行|地产|煤炭|电力|航运|机器人|创新药|CXO|AI|算力|储能|锂电|水泥|钢铁|铜|猪周期|港股互联网)/i.test(normalized)) return null;
   return {
     id: "research_scope",
     title: "先确认研究口径",
