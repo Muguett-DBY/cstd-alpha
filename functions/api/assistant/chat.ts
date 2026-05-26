@@ -543,17 +543,18 @@ async function runAssistantAgentLoop(input: {
       for (const call of pyCalls) {
         const pyResult = await executePythonRepl(input.env, call, input.emit, input.signal);
         allItems.push({
-          id: `py-${call.id}`,
-          source: "Python",
-          sourceType: "computation",
+          source: "AnySearch",
+          query: "",
           title: `Python 计算结果：${call.reason || ""}`,
           summary: pyResult,
-          url: "",
+          url: `py:${call.id}`,
           content: pyResult,
+          sourceType: "news",
+          signalType: "external_search",
           weight: 5,
           score: 3,
           freshness: "month",
-        } as AnySearchEvidence);
+        });
         input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "completed" });
         input.emit({ type: "tool_result", id: call.id, status: "completed", summary: `Python 计算完成。`, evidenceCount: 1 });
       }
@@ -788,7 +789,7 @@ function executeInternalAssistantTools(toolCalls: AssistantSearchToolCall[], con
     if (!summary.trim()) continue;
     items.push({
       source: "CSTD Alpha",
-      query: call.query,
+      query: call.query ?? "",
       title: internalToolLabel(call.name),
       url: "",
       summary: summary.slice(0, 900),
@@ -1166,7 +1167,7 @@ async function executeAssistantSearchToolCalls(env: AssistantEnv, toolCalls: Ass
 
 function toolCallToAnySearchQuery(call: AssistantSearchToolCall): AnySearchQuery {
   return {
-    query: call.query,
+    query: call.query ?? "",
     topic: "assistant",
     sourceType: "news",
     maxResults: call.maxResults ?? 4,
