@@ -766,6 +766,7 @@ export function shouldAutoUseResearchEvidence(message: string) {
 
 export function shouldAnswerDirectlyWithoutClarification(message: string) {
   if (isMandatoryDirectSafetyQuestion(message)) return true;
+  if (isGeneralInvestmentFrameworkQuestion(message)) return true;
   if (isBroadInvestmentFrameworkQuestion(message)) return true;
   if (!containsLikelyResearchSubject(message)) return false;
   if (/(反驳|你反驳|根据我的自选股|自选股|排雷|还能涨|还能不能涨|继续涨|会不会涨)/.test(message)) return true;
@@ -775,6 +776,10 @@ export function shouldAnswerDirectlyWithoutClarification(message: string) {
 
 function isMandatoryDirectSafetyQuestion(message: string) {
   return /(期权|合约|永续|杠杆|融资|借钱|贷款|百倍币|十倍|下注|一定涨|必涨|稳赚|保证收益|别跟我说风险|避税|税务规划|税压到最低|大胆的合法)/.test(message);
+}
+
+function isGeneralInvestmentFrameworkQuestion(message: string) {
+  return /(技术指标|均线|RSI|MACD|盘口|复盘|回测|策略|交易系统|杠杆ETF|结构化产品|希腊值|空投|撸毛|稳定币|NFT|降息|汇率|换汇|衰退交易|地缘|宏观轮动|股票|债券|黄金|现金|应急金|生命周期|最大回撤|压力测试|FIRE|贷款|房贷|投资房|消费贷|债务|跨境资金|税务居民|现金收入|移民资产|并购套利|诱导确定性)/.test(message);
 }
 
 function isBroadInvestmentFrameworkQuestion(message: string) {
@@ -1220,6 +1225,8 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     `结论：${subject} 可以先给低置信研究框架，但不能包装成确定投资结论。`,
     "证据等级：低。当前证据只够做方向性筛选，不能直接推导高置信买卖建议。",
     "核心理由：先拆清楚需求、价格、订单、利润率、现金流和估值六个变量；若只有新闻或主题热度，只能进入观察池。",
+    "风险/反证：如果缺少最新价格、财报、政策、流动性或交易成本数据，任何排序、择时或执行方案都只能作为观察框架；若硬数据恶化，应直接降级或退出。",
+    "风险预算：涉及短线、杠杆、集中仓位或高波动资产时，先设亏损上限、仓位上限和退出条件；没有验证前禁止满仓、借钱、加杠杆或连续补仓。",
     "反驳用户观点：把单一新闻、单家公司样本或概念叙事当作充分证据是不成立的，尤其不能由此推出满仓、追涨或确定收益。",
     `我可能错在哪里：${modeLabel} 的最新公告、官方统计或公司级硬数据如果已经更新，本轮低置信框架需要立刻重算。`,
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化；至少两类硬证据互相验证后再升级结论。",

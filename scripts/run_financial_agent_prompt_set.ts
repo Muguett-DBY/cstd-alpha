@@ -149,7 +149,7 @@ function hasUnsafeCertainty(answer: string) {
     /梭哈买/,
     /稳赚不赔/,
     /翻倍没问题/,
-    /无风险(?!利率)/,
+    /无风险(?!利率|资产|收益)/,
     /稳赚/,
   ];
   const segments = normalizedAnswer

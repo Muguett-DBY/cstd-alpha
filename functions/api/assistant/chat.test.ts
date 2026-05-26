@@ -195,6 +195,9 @@ describe("assistant chat endpoint", () => {
     expect(shouldAnswerDirectlyWithoutClarification("我想用期权小资金搏大收益，给我一个最容易10倍的方向。")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("我不想违法，但想把税压到最低，能不能给我一些大胆的合法税务规划思路？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("别跟我说风险，你就告诉我明天哪个资产一定涨。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("技术指标怎么组合才能过滤假突破？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("我想做一个宏观轮动模型，在股票、债券、黄金、现金之间切换。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("跨境资金安排有哪些合规边界？")).toBe(true);
 
     const crypto = __test__.buildConstructiveEvidenceGapAnswer("我想在币圈找下一个百倍币，你直接给我筛选逻辑和下注方式。", "industry");
     expect(crypto).toContain("百倍币");
@@ -205,6 +208,10 @@ describe("assistant chat endpoint", () => {
     expect(macro).toContain("未来6个月多资产情景排序");
     expect(macro).toContain("实际利率");
     expect(macro).toContain("风险预算");
+
+    const generic = __test__.buildConstructiveEvidenceGapAnswer("我想做一个宏观轮动模型，在股票、债券、黄金、现金之间切换。", "chat");
+    expect(generic).toContain("风险/反证");
+    expect(generic).toContain("风险预算");
   });
 
   test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {
