@@ -184,7 +184,7 @@ export function AssistantView() {
 
   async function sendMessage(message: string) {
     setInput("");
-    setDraft("");
+    setDraft("正在分析…");
     setDraftBlocks([]);
     setAgentStatus("");
     setError("");
@@ -237,8 +237,9 @@ export function AssistantView() {
   }
 
   function handleStreamEvent(event: AssistantChatStreamEvent) {
-    if (event.type === "agent_step") setAgentStatus(event.title);
+    if (event.type === "agent_step") { setDraft(""); setAgentStatus(event.title); }
     if (event.type === "tool_status") {
+      setDraft("");
       if (event.status === "running") setAgentStatus(event.label);
       if (event.status === "completed") setAgentStatus("正在整合证据...");
       if (event.status === "failed") setAgentStatus("部分来源暂时不可用，继续分析...");
