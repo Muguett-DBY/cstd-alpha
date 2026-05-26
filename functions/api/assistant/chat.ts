@@ -165,7 +165,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           recentMessages: promptRecentMessages,
           signal: request.signal,
         });
-  const forcedClarification = clarificationDecision.request ? null : buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildForcedClarificationRequest(researchContext.message);
+  const forcedClarification = answerDirectly || clarificationDecision.request ? null : buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildForcedClarificationRequest(researchContext.message);
   const choiceRequest = clarificationDecision.request ?? forcedClarification;
   if (choiceRequest) {
     const encoder = new TextEncoder();

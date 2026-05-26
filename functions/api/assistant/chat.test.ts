@@ -107,14 +107,22 @@ describe("assistant chat endpoint", () => {
       `data: ${JSON.stringify({ choices: [{ delta: { content: "你好，我是 CSTD Alpha 的私人投研助手。" } }] })}\n\n`,
       "data: [DONE]\n\n",
     ];
-    const stream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-        controller.close();
-      },
+    const makeStream = () =>
+      new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+          controller.close();
+        },
+      });
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+      if (String(url).includes("deepseek")) {
+        if (body.stream) return Promise.resolve(new Response(makeStream(), { status: 200 }));
+        return Promise.resolve(Response.json({ choices: [{ message: { content: "无需外部搜索工具。" } }] }));
+      }
+      return Promise.resolve(Response.json({ articles: [] }));
     });
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(stream, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
@@ -139,6 +147,49 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("私人投研助手");
     expect(body).not.toContain("补充框架");
     expect(body).not.toContain("当前应输出低置信判断");
+  });
+
+  test("does not force clarification after direct-answer investment framework detection", async () => {
+    const chunks = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：先用趋势、量能和风控三层过滤假突破。证据等级：低。风险/反证：失效就退出。下一步跟踪：价格和成交量。" } }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+    const makeStream = () =>
+      new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+          controller.close();
+        },
+      });
+    const fetchMock = vi.fn().mockImplementation((_url: unknown, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+      if (body.stream) return Promise.resolve(new Response(makeStream(), { status: 200 }));
+      return Promise.resolve(Response.json({ choices: [{ message: { content: "无需外部搜索工具。" } }] }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "技术指标怎么组合才能过滤假突破？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).not.toContain("choice_request");
+    expect(body).toContain("过滤假突破");
+    expect(fetchMock.mock.calls.some(([, init]) => typeof init?.body === "string" && JSON.parse(init.body).stream === true)).toBe(true);
   });
 
   test("adds risk budget discipline to aggressive growth screening answers", async () => {
