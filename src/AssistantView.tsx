@@ -325,10 +325,10 @@ export function AssistantView() {
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
             ) : null}
-            {!draft && agentStatus ? (
+            {!draft && (agentStatus || pyodideReady === "loading") ? (
               <div className="assistant-agent-status" role="status" aria-live="polite">
                 <span aria-hidden="true" />
-                {agentStatus}
+                {pyodideReady === "loading" ? "正在加载计算环境…" : agentStatus}
               </div>
             ) : null}
             <div ref={messagesEndRef} />
