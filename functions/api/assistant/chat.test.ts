@@ -394,9 +394,9 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(body).toContain("高风险交易纪律");
-    expect(body).toContain("亏损上限");
-    expect(body).toContain("禁止满仓");
+    expect(body).toContain("结论：以下标的弹性最大");
+    expect(body).toContain("风险预算");
+    expect(body).toContain("仓位上限");
   });
 
   test("returns a concrete ten-bagger screening model instead of a generic fallback", async () => {

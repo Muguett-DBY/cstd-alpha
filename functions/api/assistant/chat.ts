@@ -337,10 +337,11 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             }
           }
         }
+        const rawAssistantText = assistantText;
         assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
-        if (!assistantText.trim()) {
+        if (!rawAssistantText.trim()) {
           const retryText = await retryWithSimplePrompt(env, researchContext.message, request.signal);
           if (retryText.trim()) {
             assistantText = retryText;
@@ -2071,6 +2072,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   const shortOrCut = normalized.length < 900 || /[（(]$|[，,、：:]$|报告日$/.test(normalized);
   if (!asksTable && !(shortOrCut && (missingFollowUp || missingCounter))) return answer;
   if (!shortOrCut && !missingFollowUp && !missingCounter) return answer;
+  // 纯计算/无投资结构的短答案跳过补充框架追加
+  if (normalized.length < 900 && !/^结论[：:]/.test(normalized) && !/(证据等级|反证|我可能错|后续跟踪)/.test(normalized)) return answer;
   return [
     normalized,
     "",
