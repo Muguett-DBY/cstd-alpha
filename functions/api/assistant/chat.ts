@@ -330,7 +330,12 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
-        if (!assistantText.trim()) throw new Error("DeepSeek 未返回助手内容。");
+        if (!assistantText.trim()) {
+          assistantText = guardAssistantOutputLanguage(buildConstructiveEvidenceGapAnswer(researchContext.message, evidenceMode), researchContext.message, externalEvidence, {
+            isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
+          });
+          enqueue(controller, { type: "delta", text: assistantText });
+        }
         const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, evidenceMode);
         if (repairedText !== assistantText) {
           const appendix = repairedText.slice(assistantText.length);
@@ -1136,7 +1141,7 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
 }
 
 function isHighRiskAssistantQuestion(message: string) {
-  return /(梭哈|满仓|翻倍|暴涨|最猛|越激进越好|高波动|追涨|追进去|怕错过|日内|短线|期权|杠杆|融资|期货|永续|合约|借钱|贷款|补仓|摊低成本|网红|必涨)/.test(message);
+  return /(梭哈|满仓|翻倍|暴涨|最猛|越激进越好|高波动|追涨|追进去|怕错过|日内|短线|期权|杠杆|融资|期货|永续|合约|借钱|贷款|补仓|摊低成本|网红|必涨|投资房|负现金流|房贷|消费贷|债务|信用卡|车贷|降息|战争风险|NFT|空投|撸毛|翻身)/.test(message);
 }
 
 function shouldEnsureResearchStructure(userMessage: string) {
@@ -1197,6 +1202,7 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
   if (/(暴涨|最猛|越激进越好|小盘成长|高波动).*(AI|机器人|核能|成长股)|AI.*机器人.*核能.*小盘/.test(userMessage)) return buildAggressiveGrowthScreenAnswer();
+  if (/(技术分析|技术指标|买卖点|胜率最高|均线|RSI|MACD)/.test(userMessage)) return buildTechnicalTimingFrameworkAnswer();
   if (/(十倍股|10倍股|十倍|筛选模型|硬核筛选)/.test(userMessage)) return buildTenBaggerScreenAnswer();
   if (/(期权|最容易10倍|小资金搏大收益)/.test(userMessage)) return buildOptionsSpeculationAnswer();
   if (/(百倍币|币圈|下注方式|MEME|山寨币)/i.test(userMessage)) return buildCryptoSpeculationAnswer();
@@ -1230,6 +1236,25 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：把单一新闻、单家公司样本或概念叙事当作充分证据是不成立的，尤其不能由此推出满仓、追涨或确定收益。",
     `我可能错在哪里：${modeLabel} 的最新公告、官方统计或公司级硬数据如果已经更新，本轮低置信框架需要立刻重算。`,
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化；至少两类硬证据互相验证后再升级结论。",
+  ].join("\n");
+}
+
+function buildTechnicalTimingFrameworkAnswer() {
+  return [
+    "结论：不存在“胜率最高”的单一买卖点组合。更可靠的是把技术分析降级为执行工具，用“趋势过滤 + 量能确认 + 波动止损 + 交易后复盘”四层组合，目标不是预测必涨，而是减少假突破和控制亏损。",
+    "证据等级：低。该框架来自交易系统的一般原则；没有标的、周期、历史回测、滑点和手续费数据，不能声称真实胜率。",
+    "",
+    "| 层级 | 可用规则 | 通过条件 | 失效信号 |",
+    "| --- | --- | --- | --- |",
+    "| 大趋势 | 20/60日均线、周线趋势 | 价格在中期均线之上且均线斜率向上 | 跌回关键均线且放量 |",
+    "| 突破确认 | 前高突破 + 成交量 | 突破日成交量高于20日均量，收盘站稳关键位 | 盘中突破但收盘回落 |",
+    "| 动量过滤 | RSI/MACD | RSI不过热或MACD趋势改善 | 背离、缩量上涨、连续跳空 |",
+    "| 风控执行 | ATR/前低止损 | 入场前确定亏损上限和仓位 | 触发止损仍加仓 |",
+    "",
+    "风险预算：单笔交易先限定最大亏损，例如账户资金的0.5%-1%；止损距离越远，仓位越小。没有止损位、没有成交量确认、没有复盘样本，不应因为一个信号重仓。",
+    "反驳用户观点：只用技术分析不能提高到稳定高胜率。很多“高胜率组合”来自过拟合回测，实盘会被滑点、流动性、市场状态切换和情绪执行破坏。",
+    "我可能错在哪里：如果你有长期、跨市场、含手续费滑点的真实成交回测，某些组合可能在特定品种上有效；但那是品种和周期特化，不是通用最高胜率。",
+    "下一步跟踪：按标的和周期做至少三年样本回测，记录胜率、盈亏比、最大回撤、连续亏损次数、滑点和交易后执行偏差；只有期望值为正且回撤可承受，才允许小仓实盘验证。",
   ].join("\n");
 }
 

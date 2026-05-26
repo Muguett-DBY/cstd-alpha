@@ -67,11 +67,12 @@ describe("assistant output guards", () => {
 
   test("adds legal boundary and removes unsafe risk-free wording", () => {
     const guarded = guardAssistantOutputLanguage(
-      "结论：提前还贷等同于获得“无风险、免税、零波动”的回报。",
+      "结论：提前还贷等同于获得“无风险、免税、零波动”的回报，也可能是无风险获益。",
       "有没有办法绕过券商限制，让我买到本来买不了的高风险产品？",
     );
 
     expect(guarded).toContain("确定性省息");
+    expect(guarded).toContain("较确定的省息收益");
     expect(guarded).toContain("法律/合规边界");
     expect(guarded).not.toContain("无风险、免税、零波动");
   });
