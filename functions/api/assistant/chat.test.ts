@@ -939,6 +939,64 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("AnySearch");
   });
 
+  test("lets the model call Tavily as a finance search tool", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "tool-tavily",
+                    type: "function",
+                    function: { name: "search_tavily", arguments: JSON.stringify({ query: "腾讯 回购 利润修复 2026", maxResults: 5, freshness: "month" }) },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { total_tokens: 80 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          request_id: "tvly_req_chat",
+          usage: { credits: 1 },
+          results: [{ title: "腾讯回购和利润修复", url: "https://example.com/tencent-buyback", content: "腾讯回购与利润修复仍需现金流验证。", score: 0.76 }],
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: "结论：腾讯投资吸引力需要区分利润修复、回购和估值修复。证据等级：中。核心理由：Tavily返回了外部线索。反证：现金流不足。下一步跟踪：回购金额。" } }], usage: { total_tokens: 140 } }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "港股互联网现在投资吸引力来自利润修复、回购还是估值修复？", mode: "industry" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        TAVILY_API_KEY: "tvly-key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("Tavily");
+    const tavilyCall = fetchMock.mock.calls.find(([url]) => String(url) === "https://api.tavily.com/search");
+    expect(tavilyCall).toBeTruthy();
+    expect(JSON.parse(String(tavilyCall?.[1]?.body))).toMatchObject({ query: "腾讯 回购 利润修复 2026", search_depth: "basic", topic: "finance" });
+  });
+
   test("lets the model call keyless GDELT and caps evidence grade from global news search", async () => {
     const answer = [
       "结论：全球新闻线索显示海外政策风险值得跟踪。",

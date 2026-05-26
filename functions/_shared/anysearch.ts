@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch" | "SearXNG" | "Exa" | "GDELT" | "ArXiv" | "SemanticScholar";
+  source: "AnySearch" | "SearXNG" | "Exa" | "Tavily" | "GDELT" | "ArXiv" | "SemanticScholar";
   query: string;
   title: string;
   url: string;
@@ -115,6 +115,21 @@ type ExaSearchResponse = {
   };
 };
 
+type TavilySearchResponse = {
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number;
+    raw_content?: string | null;
+  }>;
+  response_time?: number | string;
+  usage?: {
+    credits?: number;
+  };
+  request_id?: string;
+};
+
 type GdeltResponse = {
   articles?: Array<{
     title?: string;
@@ -140,6 +155,7 @@ type SemanticScholarResponse = {
 
 const ANYSEARCH_URL = "https://api.anysearch.com/v1/search";
 export const EXA_SEARCH_URL = "https://api.exa.ai/search";
+export const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const GDELT_SEARCH_URL = "https://api.gdeltproject.org/api/v2/doc/doc";
 const ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query";
 const SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search";
@@ -169,6 +185,20 @@ export function buildExaSearchRequestBody(query: AnySearchQuery) {
       highlights: true,
     },
     category: query.contentTypes?.includes("news") ? "news" : undefined,
+  };
+}
+
+export function buildTavilySearchRequestBody(query: AnySearchQuery) {
+  return {
+    query: query.query,
+    search_depth: "basic",
+    topic: "finance",
+    max_results: Math.min(Math.max(query.maxResults ?? 8, 1), 10),
+    time_range: query.freshness ?? "month",
+    include_answer: false,
+    include_raw_content: false,
+    include_images: false,
+    include_usage: true,
   };
 }
 
@@ -301,6 +331,41 @@ export async function fetchExaEvidence({
       }
       const payload = (await response.json().catch(() => null)) as ExaSearchResponse | null;
       evidence.push(...normalizeExaResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
+export async function fetchTavilyEvidence({
+  queries,
+  apiKey,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  apiKey?: string;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const normalizedApiKey = apiKey?.trim();
+  if (!normalizedApiKey) return [];
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(TAVILY_SEARCH_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${normalizedApiKey}` },
+        signal,
+        body: JSON.stringify(buildTavilySearchRequestBody(query)),
+      });
+      if (!response.ok) {
+        await response.text().catch(() => "");
+        continue;
+      }
+      const payload = (await response.json().catch(() => null)) as TavilySearchResponse | null;
+      evidence.push(...normalizeTavilyResults(payload, query));
     } catch {
       continue;
     }
@@ -471,6 +536,46 @@ export function normalizeExaResults(payload: unknown, context: AnySearchQuery): 
   return items;
 }
 
+export function normalizeTavilyResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const requestId = cleanText(record.request_id);
+  const usageCredits = isRecord(record.usage) ? numberValue(record.usage.credits) : undefined;
+  const results = Array.isArray(record.results) ? record.results : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of results) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const content = cleanText(raw.content);
+    const rawContent = cleanText(raw.raw_content);
+    const sourceType = inferSupplementalSourceType(url);
+    const score = numberValue(raw.score);
+    items.push({
+      source: "Tavily",
+      query: context.query,
+      title,
+      url,
+      summary: trimText(content || rawContent, MAX_SUMMARY_CHARS),
+      content: trimText([content, rawContent].filter(Boolean).join(" "), MAX_CONTENT_CHARS) || undefined,
+      sourceType,
+      signalType: "external_search",
+      weight: sourceType === "official" ? 4 : 3,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      qualityScore: score,
+      score: usageCredits,
+      anysearchSource: "tavily",
+      anysearchRequestId: requestId || undefined,
+      contentType: context.contentTypes?.includes("news") ? "news" : "web",
+      cached: false,
+    });
+  }
+  return items;
+}
+
 export function normalizeGdeltResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
   const record = isRecord(payload) ? payload : {};
   const articles = Array.isArray(record.articles) ? record.articles : [];
@@ -593,6 +698,7 @@ export function anySearchEvidenceToReportEvidence(items: AnySearchEvidence[], re
       item.anysearchRequestId ? `request_id=${item.anysearchRequestId}` : "",
       item.source === "SearXNG" ? "SearXNG 为低权重补召回来源。" : "",
       item.source === "GDELT" ? "GDELT 为免费全球新闻补召回来源。" : "",
+      item.source === "Tavily" ? "Tavily 为 AI 搜索补强来源，默认 basic 深度，不能替代官方硬数据。" : "",
       item.source === "ArXiv" || item.source === "SemanticScholar" ? "学术检索只证明技术/论文线索，不能证明公司财务或商业化领先。" : "",
       "仅作为外部搜索线索，不能替代财报、公告、价格或销量硬数据。",
     ]

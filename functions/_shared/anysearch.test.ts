@@ -5,17 +5,20 @@ import {
   buildExaSearchRequestBody,
   buildGdeltSearchUrl,
   buildSemanticScholarSearchUrl,
+  buildTavilySearchRequestBody,
   fetchAnySearchEvidence,
   fetchArxivEvidence,
   fetchExaEvidence,
   fetchGdeltEvidence,
   fetchSearxngEvidence,
   fetchSemanticScholarEvidence,
+  fetchTavilyEvidence,
   normalizeAnySearchResults,
   normalizeArxivResults,
   normalizeExaResults,
   normalizeGdeltResults,
   normalizeSemanticScholarResults,
+  normalizeTavilyResults,
 } from "./anysearch";
 
 describe("AnySearch helper", () => {
@@ -216,6 +219,71 @@ describe("AnySearch helper", () => {
     );
     expect(items[0]).toEqual(expect.objectContaining({ source: "Exa", title: "白酒库存" }));
     await expect(fetchExaEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
+  });
+
+  test("builds Tavily search requests with basic depth, finance topic and usage accounting", () => {
+    expect(buildTavilySearchRequestBody({ query: "腾讯 回购 利润修复", maxResults: 50, freshness: "week", contentTypes: ["news", "web"] })).toEqual({
+      query: "腾讯 回购 利润修复",
+      search_depth: "basic",
+      topic: "finance",
+      max_results: 10,
+      time_range: "week",
+      include_answer: false,
+      include_raw_content: false,
+      include_images: false,
+      include_usage: true,
+    });
+  });
+
+  test("normalizes Tavily results as supplemental search evidence", () => {
+    const items = normalizeTavilyResults(
+      {
+        request_id: "tvly_req_1",
+        usage: { credits: 1 },
+        results: [
+          {
+            title: "Tencent buyback and earnings recovery",
+            url: "https://www.tencent.com/en-us/investors.html",
+            content: "Tencent disclosed buyback activity and operating profit recovery.",
+            score: 0.84,
+          },
+        ],
+      },
+      { query: "Tencent buyback earnings recovery", topic: "港股互联网" },
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "Tavily",
+        sourceType: "news",
+        signalType: "external_search",
+        qualityScore: 0.84,
+        anysearchRequestId: "tvly_req_1",
+        topic: "港股互联网",
+        score: 1,
+      }),
+    ]);
+    expect(items[0].summary).toContain("operating profit recovery");
+  });
+
+  test("fetches Tavily with bearer token and fails closed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ request_id: "tvly_req_2", results: [{ title: "Moutai channel inventory", url: "https://example.com/maotai", content: "批价和库存变化。", score: 0.7 }] }),
+    });
+
+    const items = await fetchTavilyEvidence({
+      apiKey: "tvly-key",
+      queries: [{ query: "茅台 批价 库存", maxResults: 10 }],
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.tavily.com/search",
+      expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer tvly-key" }) }),
+    );
+    expect(items[0]).toEqual(expect.objectContaining({ source: "Tavily", title: "Moutai channel inventory" }));
+    await expect(fetchTavilyEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
   });
 
   test("builds GDELT requests as keyless global news search with capped records", () => {

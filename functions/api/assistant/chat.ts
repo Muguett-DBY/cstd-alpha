@@ -28,6 +28,7 @@ import {
   fetchGdeltEvidence,
   fetchSearxngEvidence,
   fetchSemanticScholarEvidence,
+  fetchTavilyEvidence,
   type AnySearchEvidence,
   type AnySearchQuery,
 } from "../../_shared/anysearch";
@@ -38,7 +39,7 @@ import { readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_
 import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
-type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
+type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
 type AssistantSearchToolCall = {
   id: string;
   name: AssistantSearchToolName;
@@ -403,7 +404,7 @@ async function maybeFetchExternalEvidence(
   if (shouldTreatAsSimpleGeneralChat(message, mode)) {
     return { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需外部搜索" }, toolCalls: [] };
   }
-  const hasConfiguredSearch = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim());
+  const hasConfiguredSearch = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim() || env.TAVILY_API_KEY?.trim());
   if (!hasConfiguredSearch && !shouldUseKeylessFreeSearch(message)) {
     return { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置付费/自建搜索源，且问题不适合仅用免费开放源补证据" }, toolCalls: [] };
   }
@@ -511,6 +512,17 @@ function augmentSearchToolCalls(
     });
   }
   const needsExa = shouldUseExaForAssistant(message, mode, evidenceText).use;
+  const needsTavily = shouldUseTavilyForAssistant(message, mode, evidenceText);
+  if (needsTavily && !augmented.some((call) => call.name === "search_tavily")) {
+    augmented.push({
+      id: "model-router-tavily-augment",
+      name: "search_tavily" as const,
+      query: `${message.slice(0, 160)} 最新 财报 预测 风险 回购 估值`,
+      freshness: "month" as const,
+      maxResults: 8,
+      reason: "投研问题需要快速网页搜索补充证据。",
+    });
+  }
   if (needsExa && !augmented.some((call) => call.name === "search_exa")) {
     augmented.push({
       id: "model-router-exa-augment",
@@ -528,10 +540,10 @@ function buildSearchToolRouterMessages(message: string, mode: AssistantMode, con
   const system = withCacheProtocol(
     [
       "你是 CSTD Alpha 助手的工具路由器。你只决定是否调用外部搜索工具，不输出最终答案。",
-      "可用工具：search_anysearch 用于中文财经/公告/行业线索；search_searxng 用于免费元搜索补召回；search_gdelt 用于免费全球新闻召回；search_arxiv/search_semantic_scholar 用于机器人、AI、半导体、医药等技术/学术线索；search_exa 用于高价值、全球、英文、技术、产业链和站内证据不足的深度线索。",
+      "可用工具：search_anysearch 用于中文财经/公告/行业线索；search_searxng 用于免费元搜索补召回；search_tavily 用于快速 AI 搜索和财经网页摘要；search_gdelt 用于免费全球新闻召回；search_arxiv/search_semantic_scholar 用于机器人、AI、半导体、医药等技术/学术线索；search_exa 用于高价值、全球、英文、技术、产业链和站内证据不足的深度线索。",
       "不要要求用户必须提到 Exa、联网或搜索。只要问题需要最新公开信息、站内证据不足、涉及公司/行业预测/技术/风险/估值/订单/价格/库存/政策，就应主动调用合适工具。",
       "如果用户只是解释通用概念，且站内证据不是必要条件，可以不调用工具。",
-      "如果调用工具，优先用 1-3 个高质量查询；高价值研究可同时调用 AnySearch、SearXNG、GDELT、Exa；技术类问题可加 arXiv/Semantic Scholar。Exa 不必总用，但站内证据不足且问题有投资价值时应使用。",
+      "如果调用工具，优先用 1-3 个高质量查询；高价值研究可同时调用 AnySearch、Tavily、SearXNG、GDELT、Exa；技术类问题可加 arXiv/Semantic Scholar。Exa/Tavily 不必总用，但站内证据不足且问题有投资价值时应使用。",
       "工具 query 必须具体，包含公司/行业、年份或最新、关键指标，不要只复制用户原句。",
     ].join("\n"),
     "assistant-tool-router",
@@ -568,6 +580,7 @@ function assistantSearchTools() {
   return [
     { type: "function", function: { name: "search_anysearch", description: "中文财经、公司公告、行业变化、政策风险的高质量搜索。", parameters } },
     { type: "function", function: { name: "search_searxng", description: "免费元搜索补充召回，用于发现新闻、网页和遗漏来源。", parameters } },
+    { type: "function", function: { name: "search_tavily", description: "Tavily AI 搜索，适合快速补充财经网页摘要、新闻线索和跨来源投研证据。", parameters } },
     { type: "function", function: { name: "search_gdelt", description: "免费 GDELT 全球新闻搜索，用于补充海外、政策、风险、产业链新闻线索。", parameters } },
     { type: "function", function: { name: "search_arxiv", description: "免费 arXiv 学术论文搜索，用于技术路线、机器人、AI、半导体、控制算法等学术线索。", parameters } },
     { type: "function", function: { name: "search_semantic_scholar", description: "免费 Semantic Scholar 学术搜索，用于技术/论文/专利前沿的补充线索。", parameters } },
@@ -587,7 +600,7 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
   if (!isRecord(value)) return null;
   const fn = isRecord(value.function) ? value.function : {};
   const name = typeof fn.name === "string" ? fn.name : "";
-  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa" && name !== "search_gdelt" && name !== "search_arxiv" && name !== "search_semantic_scholar") return null;
+  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa" && name !== "search_tavily" && name !== "search_gdelt" && name !== "search_arxiv" && name !== "search_semantic_scholar") return null;
   const args = parseToolArguments(fn.arguments);
   const query = stringOrFallback(args.query, "").slice(0, 220);
   if (!query) return null;
@@ -666,26 +679,38 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
       reason: "规则兜底：高价值研究且站内证据不足。",
     });
   }
+  if (shouldUseTavilyForAssistant(message, mode, evidenceText) && !calls.some((call) => call.name === "search_tavily")) {
+    calls.push({
+      id: "fallback-tavily",
+      name: "search_tavily",
+      query: `${message.slice(0, 160)} 最新 财报 预测 风险 回购 估值`,
+      freshness: "month",
+      maxResults: 8,
+      reason: "规则兜底：站内证据不足，用 Tavily 快速补充财经搜索线索。",
+    });
+  }
   return { toolCalls: calls.slice(0, 3), reason };
 }
 
 async function executeAssistantSearchToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal) {
   const anysearchQueries = toolCalls.filter((call) => call.name === "search_anysearch").map(toolCallToAnySearchQuery);
   const searxngQueries = toolCalls.filter((call) => call.name === "search_searxng").map(toolCallToAnySearchQuery);
+  const tavilyQueries = toolCalls.filter((call) => call.name === "search_tavily").map(toolCallToAnySearchQuery);
   const gdeltQueries = toolCalls.filter((call) => call.name === "search_gdelt").map(toolCallToAnySearchQuery);
   const arxivQueries = toolCalls.filter((call) => call.name === "search_arxiv").map(toolCallToAnySearchQuery);
   const semanticScholarQueries = toolCalls.filter((call) => call.name === "search_semantic_scholar").map(toolCallToAnySearchQuery);
   const exaCalls = toolCalls.filter((call) => call.name === "search_exa");
-  const [anysearch, searxng, gdelt, arxiv, semanticScholar, exaDecision] = await Promise.all([
+  const [anysearch, searxng, tavily, gdelt, arxiv, semanticScholar, exaDecision] = await Promise.all([
     anysearchQueries.length && env.ANYSEARCH_API_KEY?.trim() ? fetchAnySearchEvidence({ queries: anysearchQueries, apiKey: env.ANYSEARCH_API_KEY, signal }) : Promise.resolve([]),
     searxngQueries.length && env.SEARXNG_ENDPOINTS?.trim() ? fetchSearxngEvidence({ queries: searxngQueries, endpoints: env.SEARXNG_ENDPOINTS, signal }) : Promise.resolve([]),
+    tavilyQueries.length && env.TAVILY_API_KEY?.trim() ? fetchTavilyEvidence({ queries: tavilyQueries, apiKey: env.TAVILY_API_KEY, signal }) : Promise.resolve([]),
     gdeltQueries.length ? fetchGdeltEvidence({ queries: gdeltQueries, signal }) : Promise.resolve([]),
     arxivQueries.length ? fetchArxivEvidence({ queries: arxivQueries, signal }) : Promise.resolve([]),
     semanticScholarQueries.length ? fetchSemanticScholarEvidence({ queries: semanticScholarQueries, signal }) : Promise.resolve([]),
     executeExaToolCalls(env, exaCalls, signal),
   ]);
-  const items = [...anysearch, ...searxng, ...gdelt, ...arxiv, ...semanticScholar, ...exaDecision.items];
-  const summary = `模型调用工具：${toolCalls.map((call) => call.name).join("、")}；AnySearch ${anysearch.length} 条，SearXNG ${searxng.length} 条，GDELT ${gdelt.length} 条，ArXiv ${arxiv.length} 条，Semantic Scholar ${semanticScholar.length} 条，Exa ${exaDecision.exa.count} 条。`;
+  const items = [...anysearch, ...searxng, ...tavily, ...gdelt, ...arxiv, ...semanticScholar, ...exaDecision.items];
+  const summary = `模型调用工具：${toolCalls.map((call) => call.name).join("、")}；AnySearch ${anysearch.length} 条，SearXNG ${searxng.length} 条，Tavily ${tavily.length} 条，GDELT ${gdelt.length} 条，ArXiv ${arxiv.length} 条，Semantic Scholar ${semanticScholar.length} 条，Exa ${exaDecision.exa.count} 条。`;
   return { items: dedupeExternalEvidence(items), exa: exaDecision.exa, summary };
 }
 
@@ -854,6 +879,12 @@ export function shouldUseExaForAssistant(message: string, mode: AssistantMode, e
   if (highValue && evidenceWeak) return { use: true, reason: "研究问题高价值且站内证据不足" };
   if (highValue) return { use: true, reason: "研究问题高价值，补充Exa外部线索交叉验证" };
   return { use: false, reason: "不是Exa高价值触发场景" };
+}
+
+function shouldUseTavilyForAssistant(message: string, mode: AssistantMode, evidenceSummary: string) {
+  if (/Tavily|tavily|联网|搜索|查一下|最新/.test(message)) return true;
+  if (!shouldTriggerExternalEvidence(message, mode, evidenceSummary)) return false;
+  return /(今年|业绩|预估|预测|净利润|营收|利润|估值|回购|股价|风险|财报|公告|行业|公司|竞争|政策|监管|价格|库存|订单|现金流|港股|美股|A股)/i.test(message);
 }
 
 function shouldUseFreeGlobalSearch(message: string, mode: AssistantMode, evidenceSummary: string) {
