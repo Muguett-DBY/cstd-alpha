@@ -314,7 +314,6 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             const text = extractDeltaText(data);
             if (text) {
               assistantText += text;
-              enqueue(controller, { type: "delta", text });
             }
             if (data.usage) {
               latestUsage = {
@@ -334,14 +333,15 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           assistantText = guardAssistantOutputLanguage(buildConstructiveEvidenceGapAnswer(researchContext.message, evidenceMode), researchContext.message, externalEvidence, {
             isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
           });
-          enqueue(controller, { type: "delta", text: assistantText });
         }
         const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, evidenceMode);
         if (repairedText !== assistantText) {
-          const appendix = repairedText.slice(assistantText.length);
           assistantText = repairedText;
-          enqueue(controller, { type: "delta", text: appendix });
         }
+        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
+          isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
+        });
+        enqueue(controller, { type: "delta", text: assistantText });
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
         for (const block of blocks) enqueue(controller, { type: "block", block });
