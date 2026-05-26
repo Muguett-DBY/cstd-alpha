@@ -1217,6 +1217,41 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("无法给出净利润预测");
   });
 
+  test("rational review rewrites evidence-only stock price forecasts into valuation scenarios", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：证据不足，无法预测股价。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台当前股价是多少，预测明年股价", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("当前股价");
+    expect(body).toContain("明年股价");
+    expect(body).toContain("保守");
+    expect(body).toContain("中性");
+    expect(body).toContain("乐观");
+    expect(body).toContain("估值倍数");
+    expect(body).not.toContain("当前应给低置信情景测算");
+    expect(body).not.toContain("给保守、中性、乐观三个净利润增速区间");
+  });
+
   test("removes stale-history wording from clear technical research answers", async () => {
     const fetchMock = vi
       .fn()

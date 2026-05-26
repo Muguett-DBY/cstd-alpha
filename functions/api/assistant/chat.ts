@@ -1178,6 +1178,7 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
   if (/(画表|画成表|做成表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
   if (/(来自|靠|驱动).*(利润修复|回购|估值修复)|利润修复.*回购.*估值修复/.test(userMessage)) return buildDriverComparisonGapAnswer(userMessage);
   if (/(产业链|环节).*(先兑现|兑现业绩|业绩兑现)|人形机器人.*(先兑现|兑现业绩|业绩兑现)/.test(userMessage)) return buildSupplyChainRealizationGapAnswer(userMessage);
+  if (isStockPriceForecastQuestion(userMessage)) return buildStockPriceForecastGapAnswer(userMessage);
   if (/(业绩|预估|预测|净利润|营收|利润)/.test(userMessage)) {
     return [
       `结论：${subject} 不能只停在“资料不够”，当前应给低置信情景测算。`,
@@ -1196,6 +1197,33 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：如果用户把单一新闻、单家公司样本或概念叙事当作充分证据，这个逻辑不成立。",
     "我可能错在哪里：若最新公告、官方统计或公司级硬数据已经更新，本轮判断可能被推翻。",
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化。",
+  ].join("\n");
+}
+
+function isStockPriceForecastQuestion(message: string) {
+  return /(股价|目标价|市值|估值).*(预测|预估|明年|未来|一年|12个月|空间|涨跌)|预测.*(股价|目标价|市值)|当前股价/.test(message);
+}
+
+function extractStockPriceSubject(message: string) {
+  const known = ["贵州茅台", "茅台", "五粮液", "宁德时代", "腾讯", "英伟达", "比亚迪", "万科A", "隆基绿能", "阿里巴巴"];
+  return known.find((name) => message.includes(name)) || message.replace(/(当前股价|股价|是多少|预测|预估|明年|未来|目标价|请|一下|？|\?)/g, "").trim().slice(0, 18) || "当前标的";
+}
+
+function buildStockPriceForecastGapAnswer(userMessage: string) {
+  const subject = extractStockPriceSubject(userMessage);
+  return [
+    `结论：${subject} 的“当前股价 + 明年股价”不能用一句目标价糊弄，应拆成当前价格口径、盈利假设和估值倍数三步。若本轮证据没有可审计实时价，就必须先标注“当前价需以交易时段实时行情为准”，再给低置信情景区间。`,
+    "证据等级：低。股价预测天然不确定；没有最新行情、EPS/净利润预测和估值分位交叉验证时，只能做情景测算，不能给确定目标价。",
+    "",
+    "| 情景 | 明年股价推算逻辑 | 需要满足的条件 | 主要反证 |",
+    "| --- | --- | --- | --- |",
+    "| 保守 | 当前合理估值下修，或利润增速低于预期 | 需求疲软、价格/批价走弱、盈利预测下调 | 财报重新加速、现金流改善、估值风险释放 |",
+    "| 中性 | 明年EPS或净利润小幅增长，估值倍数大致维持 | 经营稳定，市场风险偏好不再恶化 | 估值继续压缩或盈利预测下修 |",
+    "| 乐观 | 盈利上修叠加估值修复 | 价格/销量/渠道或成本端至少两个变量改善 | 利润兑现不足、库存压力、监管或宏观风险上升 |",
+    "",
+    "反驳用户观点：如果只想要一个明年股价数字，这个数字很可能是伪精确。真正有用的是“当前价相对三种情景的上行/下行空间”，以及哪些变量能让区间重算。",
+    "我可能错在哪里：如果站内行情、最新财报、券商一致预期或估值分位已经更新，本轮低置信区间需要立即重算；尤其是当前价如果取错，会直接影响上行空间。",
+    "下一步跟踪：实时股价、TTM/预期PE、明年EPS或净利润预测、经营现金流、核心产品价格/批价、渠道库存、分红回购和市场风险偏好。",
   ].join("\n");
 }
 
@@ -1378,6 +1406,7 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "重点检查对比问题：用户问 A 和 B 谁更稳/哪个更好/对比时，回答必须同时覆盖 A 和 B，并给相对判断；禁止只给某一个标的“持有/买入/观察”。",
       "重点检查格式：禁止空标题、空章节和只有横线的章节；Markdown 表格必须有具体标题，不能写“结构化表格1/2/3”。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
+      "重点检查股价预测：用户问当前股价/明年股价/目标价时，不能套用净利润预测兜底；必须包含当前价口径、保守/中性/乐观情景、估值倍数或EPS/利润假设、反证条件。",
       "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",
       "重点检查事实口径：没有明确证据时，禁止写“首次业绩双降”“业绩双降”“上市25年首次业绩双降”等强事实；若只是搜索线索或推断，必须改成“业绩承压待核验线索”。",
     ].join("\n"),
