@@ -32,4 +32,21 @@ describe("assistant markdown parser", () => {
       },
     ]);
   });
+
+  test("cleans malformed heading markers instead of rendering raw hashes", () => {
+    const blocks = parseAssistantMarkdown(
+      [
+        "结论：可以继续观察。",
+        "###",
+        "###证据等级 中",
+        "普通段落",
+      ].join("\n"),
+    );
+
+    expect(blocks).toEqual([
+      { type: "paragraph", text: "结论：可以继续观察。" },
+      { type: "heading", level: 3, text: "证据等级 中" },
+      { type: "paragraph", text: "普通段落" },
+    ]);
+  });
 });

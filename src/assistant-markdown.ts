@@ -38,7 +38,13 @@ export function parseAssistantMarkdown(text: string): AssistantMarkdownBlock[] {
       continue;
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (/^#{1,6}\s*$/.test(line)) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s*(.+)$/);
     if (heading) {
       flushParagraph();
       flushList();

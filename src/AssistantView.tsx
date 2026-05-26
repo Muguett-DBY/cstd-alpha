@@ -298,13 +298,8 @@ export function AssistantView() {
   const visibleMessages = useMemo(() => thread?.messages ?? [], [thread]);
 
   return (
-    <section className="assistant-workspace" aria-labelledby="assistant-title">
+    <section className="assistant-workspace" aria-label="投研助手">
       <section className="assistant-chat-panel" aria-label="助手聊天">
-        <header className="assistant-chat-header">
-          <div>
-            <h2 id="assistant-title">AI 助手</h2>
-          </div>
-        </header>
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {
@@ -312,7 +307,7 @@ export function AssistantView() {
               if (message.role === "assistant" && !cleanContent.trim()) return null;
               return (
                 <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
-                  <span>{message.role === "user" ? "你" : "助手"}</span>
+                  <span className="assistant-role-label">{message.role === "user" ? "你" : "助手"}</span>
                   <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(cleanContent) : cleanContent} />
                   <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
                 </article>
@@ -320,7 +315,7 @@ export function AssistantView() {
             })}
             {draft ? (
               <article className="assistant-message assistant streaming">
-                <span>助手</span>
+                <span className="assistant-role-label">助手</span>
                 <AssistantText text={draftBlocks.length ? stripRenderedTables(stripInternalAssistantCompletion(draft)) : stripInternalAssistantCompletion(draft)} />
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
@@ -335,7 +330,7 @@ export function AssistantView() {
           </div>
           <form className="assistant-composer" onSubmit={(event) => void submitMessage(event)}>
             <div className="assistant-composer-tools">
-              <span>{mode === "chat" ? "普通问答" : assistantModes.find((item) => item.id === mode)?.label}</span>
+              <span>{mode === "chat" ? "普通" : assistantModes.find((item) => item.id === mode)?.label}</span>
               <div className="assistant-mode-switch" aria-label="助手模式">
                 {assistantModes.filter((item) => item.id !== "chat").map((item) => (
                   <button
@@ -376,8 +371,8 @@ export function AssistantView() {
               </button>
             </div>
             {speechNotice ? <p className={`assistant-speech-status ${speechPhase === "error" || speechPhase === "unsupported" ? "is-error" : ""}`}>{speechNotice}</p> : null}
+            {error ? <p className="error-text">{error}</p> : null}
           </form>
-          {error ? <p className="error-text">{error}</p> : null}
       </section>
       {pendingClarification ? (
         <ClarificationDialog
@@ -430,20 +425,7 @@ function AssistantText({ text }: { text: string }) {
             }
             if (block.type === "table") {
               return (
-                <div key={`table-${index}`} className="assistant-inline-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>{block.headers.map((cell, cellIndex) => <th key={`${cell}-${cellIndex}`}>{renderInlineMarkdown(cell)}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {block.rows.map((row, rowIndex) => (
-                        <tr key={`${rowIndex}-${row.join("|")}`}>
-                          {row.map((cell, cellIndex) => <td key={`${cellIndex}-${cell}`}>{renderInlineMarkdown(cell)}</td>)}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <InlineAssistantTable key={`table-${index}`} headers={block.headers} rows={block.rows} />
               );
             }
             const isConclusion = /^结论[：:]/.test(block.text.trim());
@@ -451,6 +433,32 @@ function AssistantText({ text }: { text: string }) {
           })
         : <p>{text}</p>}
     </div>
+  );
+}
+
+function InlineAssistantTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  const table = (
+    <div className="assistant-inline-table-wrap">
+      <table>
+        <thead>
+          <tr>{headers.map((cell, cellIndex) => <th key={`${cell}-${cellIndex}`}>{renderInlineMarkdown(cell)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`${rowIndex}-${row.join("|")}`}>
+              {row.map((cell, cellIndex) => <td key={`${cellIndex}-${cell}`}>{renderInlineMarkdown(cell)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+  if (isCompactTable(headers.length, rows.length)) return table;
+  return (
+    <details className="assistant-collapsible-block">
+      <summary>展开表格（{rows.length} 行）</summary>
+      {table}
+    </details>
   );
 }
 
@@ -468,7 +476,7 @@ function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
     <div className="assistant-blocks">
       {blocks.map((block) => {
         if (block.type === "table") {
-          return (
+          const table = (
             <div key={block.id} className="assistant-table-block">
               {block.title ? <strong>{block.title}</strong> : null}
               <div>
@@ -487,8 +495,17 @@ function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
               </div>
             </div>
           );
+          if (isCompactTable(block.columns.length, block.rows.length)) return table;
+          return (
+            <details key={block.id} className="assistant-collapsible-block">
+              <summary>{block.title || "展开表格"}（{block.rows.length} 行）</summary>
+              {table}
+            </details>
+          );
         }
-        if (block.type === "chart") return <AssistantChart key={block.id} block={block} />;
+        if (block.type === "chart") {
+          return <CollapsibleAssistantChart key={block.id} block={block} />;
+        }
         return (
           <div key={block.id} className="assistant-text-block">
             {block.title ? <strong>{block.title}</strong> : null}
@@ -497,6 +514,20 @@ function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
         );
       })}
     </div>
+  );
+}
+
+function isCompactTable(columnCount: number, rowCount: number) {
+  return columnCount <= 4 && rowCount <= 4;
+}
+
+function CollapsibleAssistantChart({ block }: { block: AssistantChartBlock }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="assistant-collapsible-block" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>{block.title || "展开图表"}</summary>
+      {open ? <AssistantChart block={block} /> : null}
+    </details>
   );
 }
 
