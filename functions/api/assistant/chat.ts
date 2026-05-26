@@ -1026,7 +1026,7 @@ async function generateReviewedResearchAnswer(input: {
       buildDeepSeekRequestBody({
         model: ASSISTANT_MODEL,
         messages: input.messages,
-        maxTokens: 3200,
+        maxTokens: 3600,
         reasoningEffort: ASSISTANT_REASONING_EFFORT,
         temperature: 0.08,
         stream: false,

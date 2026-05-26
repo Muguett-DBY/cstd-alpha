@@ -19,6 +19,7 @@ type RunResult = {
 };
 
 const args = parseArgs(process.argv.slice(2));
+const isCliRun = process.argv[1]?.replaceAll("\\", "/").endsWith("run_assistant_prompt_regression.ts") ?? false;
 const baseUrl = args["base-url"] || "https://alpha.custard.top";
 const cookie = args.cookie || process.env.ASSISTANT_REGRESSION_COOKIE || "";
 const promptsPerCategory = Number(args["prompts-per-category"] || 1);
@@ -30,33 +31,37 @@ const perPromptTimeoutMs = Number(args["timeout-ms"] || 90_000);
 const retryCount = Number(args.retries || 2);
 const retryDelayMs = Number(args["retry-delay-ms"] || 20_000);
 
-if (!cookie) {
-  throw new Error("Missing cookie. Pass --cookie \"cstd_alpha_session=...\" or set ASSISTANT_REGRESSION_COOKIE.");
-}
+if (isCliRun) await main();
 
-const selectedPrompts = selectPrompts(ASSISTANT_QUALITY_PROMPTS);
-const results: RunResult[] = [];
-
-for (const prompt of selectedPrompts) {
-  const result = await runPrompt(prompt);
-  results.push(result);
-  const status = result.ok ? "PASS" : "FAIL";
-  console.log(`${status} ${prompt.category}/${prompt.id} ${result.elapsedMs}ms issues=${result.issues.join(";") || "-"}`);
-  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-await mkdir(".tmp", { recursive: true });
-const outputPath = `.tmp/assistant-regression-${new Date().toISOString().replaceAll(":", "-")}.json`;
-await writeFile(outputPath, JSON.stringify({ baseUrl, prompts: selectedPrompts.length, results }, null, 2), "utf8");
-
-const failed = results.filter((result) => !result.ok);
-console.log(`\nAssistant regression: ${results.length - failed.length}/${results.length} passed. Output: ${outputPath}`);
-if (failed.length) {
-  console.log("Failures:");
-  for (const item of failed) {
-    console.log(`- ${item.category}/${item.id}: ${item.issues.join("; ")} | ${item.answerPreview}`);
+async function main() {
+  if (!cookie) {
+    throw new Error("Missing cookie. Pass --cookie \"cstd_alpha_session=...\" or set ASSISTANT_REGRESSION_COOKIE.");
   }
-  process.exitCode = 1;
+
+  const selectedPrompts = selectPrompts(ASSISTANT_QUALITY_PROMPTS);
+  const results: RunResult[] = [];
+
+  for (const prompt of selectedPrompts) {
+    const result = await runPrompt(prompt);
+    results.push(result);
+    const status = result.ok ? "PASS" : "FAIL";
+    console.log(`${status} ${prompt.category}/${prompt.id} ${result.elapsedMs}ms issues=${result.issues.join(";") || "-"}`);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  await mkdir(".tmp", { recursive: true });
+  const outputPath = `.tmp/assistant-regression-${new Date().toISOString().replaceAll(":", "-")}.json`;
+  await writeFile(outputPath, JSON.stringify({ baseUrl, prompts: selectedPrompts.length, results }, null, 2), "utf8");
+
+  const failed = results.filter((result) => !result.ok);
+  console.log(`\nAssistant regression: ${results.length - failed.length}/${results.length} passed. Output: ${outputPath}`);
+  if (failed.length) {
+    console.log("Failures:");
+    for (const item of failed) {
+      console.log(`- ${item.category}/${item.id}: ${item.issues.join("; ")} | ${item.answerPreview}`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 function selectPrompts(prompts: AssistantQualityPrompt[]) {
@@ -193,6 +198,10 @@ function evaluatePromptResult(
   if (/^#{1,6}\s*(核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级)\s*$/im.test(parsed.answer)) issues.push("empty markdown heading leaked");
   if (prompt.mustUseEvidence && !/(证据|来源|财报|公告|数据|口径|线索|E\d+|反证|跟踪)/.test(parsed.answer)) issues.push("missing evidence language");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
+  if (prompt.category === "compare") {
+    const compareIssues = evaluateCompareAnswer(prompt.prompt, parsed.answer);
+    issues.push(...compareIssues);
+  }
   if (prompt.mode !== "chat" || prompt.mustUseEvidence) {
     if (!/结论/.test(parsed.answer)) issues.push("missing conclusion");
     if (!/(反证|我可能错|风险|削弱)/.test(parsed.answer)) issues.push("missing counter-evidence");
@@ -202,6 +211,48 @@ function evaluatePromptResult(
     issues.push("unhelpful cannot-answer");
   }
   return issues;
+}
+
+function evaluateCompareAnswer(promptText: string, answer: string) {
+  const issues: string[] = [];
+  const subjects = expectedCompareSubjects(promptText);
+  for (const subject of subjects) {
+    if (!subject.aliases.some((alias) => answer.includes(alias))) issues.push(`missing compared subject: ${subject.name}`);
+  }
+  if (subjects.length >= 2 && !/(\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\||相比|更稳|更强|更弱|优于|弱于|差异|分别|两者|谁更|相对)/.test(answer)) {
+    issues.push("missing comparison structure");
+  }
+  const conclusionLine = answer.split(/\n/).find((line) => /结论/.test(line)) ?? "";
+  if (subjects.length >= 2 && /(持有|买入|卖出|加仓|减仓)/.test(conclusionLine) && !/(相比|更稳|更强|更弱|优于|弱于|两者|相对)/.test(conclusionLine)) {
+    issues.push("single-stock action verdict in comparison");
+  }
+  return issues;
+}
+
+function expectedCompareSubjects(promptText: string) {
+  const known = [
+    { name: "贵州茅台", aliases: ["贵州茅台", "茅台"] },
+    { name: "五粮液", aliases: ["五粮液"] },
+    { name: "宁德时代", aliases: ["宁德时代"] },
+    { name: "比亚迪", aliases: ["比亚迪"] },
+    { name: "CXO", aliases: ["CXO"] },
+    { name: "创新药", aliases: ["创新药"] },
+    { name: "航运", aliases: ["航运"] },
+    { name: "航空", aliases: ["航空"] },
+    { name: "AI硬件", aliases: ["AI硬件", "硬件"] },
+    { name: "AI应用", aliases: ["AI应用", "应用"] },
+    { name: "电网设备", aliases: ["电网设备", "电网"] },
+    { name: "储能", aliases: ["储能"] },
+    { name: "铜", aliases: ["铜"] },
+    { name: "铝", aliases: ["铝"] },
+    { name: "港股AI", aliases: ["港股AI", "港股"] },
+    { name: "美股AI", aliases: ["美股AI", "美股"] },
+    { name: "银行", aliases: ["银行"] },
+    { name: "地产链", aliases: ["地产链", "地产"] },
+    { name: "内需消费", aliases: ["内需消费", "消费"] },
+    { name: "出口链", aliases: ["出口链", "出口"] },
+  ];
+  return known.filter((item) => item.aliases.some((alias) => promptText.includes(alias)));
 }
 
 function compactPreview(value: string) {
@@ -224,3 +275,5 @@ function parseArgs(values: string[]) {
   }
   return parsed;
 }
+
+export const __test__ = { evaluateCompareAnswer };

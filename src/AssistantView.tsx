@@ -395,7 +395,8 @@ function AssistantText({ text }: { text: string }) {
                 </div>
               );
             }
-            return <p key={`p-${index}`}>{renderInlineMarkdown(block.text)}</p>;
+            const isConclusion = /^结论[：:]/.test(block.text.trim());
+            return <p key={`p-${index}`} className={isConclusion ? "assistant-conclusion-line" : undefined}>{renderInlineMarkdown(block.text)}</p>;
           })
         : <p>{text}</p>}
     </div>

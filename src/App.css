@@ -1296,6 +1296,20 @@ button:not(:disabled):active,
   line-height: 1.58;
 }
 
+.assistant-rich-text .assistant-conclusion-line {
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 850;
+  color: var(--ink);
+  padding-bottom: 2px;
+}
+
+.assistant-rich-text .assistant-conclusion-line span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
 .assistant-rich-text h3,
 .assistant-rich-text h4 {
   margin: 2px 0 0;

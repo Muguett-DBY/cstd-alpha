@@ -422,6 +422,45 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("下一步跟踪");
   });
 
+  test("comparison answers are framed as relative judgments, not single-stock hold calls", async () => {
+    const answer = "结论：贵州茅台相对五粮液长期回报更稳，但五粮液估值弹性可能更高。\n证据等级：中。\n核心理由：贵州茅台品牌和现金流更强，五粮液受渠道和批价波动影响更大。\n反驳用户观点：不能把单一低估值当作更稳。\n我可能错在哪里：若五粮液库存去化和批价回升更快，弹性会改善。\n下一步跟踪：两者批价、库存、合同负债和自由现金流。";
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (_url, init) => {
+        const requestBody = JSON.parse(String(init?.body ?? "{}"));
+        if (requestBody.stream === false) {
+          return new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 });
+        }
+        return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }], usage: { total_tokens: 120 } })}\n\ndata: [DONE]\n\n`, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "贵州茅台和五粮液长期回报谁更稳？请列表对比。", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("相对");
+    expect(body).toContain("五粮液");
+    expect(body).not.toContain("结论：持有");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
