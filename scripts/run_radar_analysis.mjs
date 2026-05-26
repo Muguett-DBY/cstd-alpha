@@ -149,6 +149,7 @@ async function main() {
   const structuredFacts = {
     financialFacts: Array.isArray(evidence.financialFacts) ? evidence.financialFacts.slice(0, 120) : [],
     industryFacts: Array.isArray(evidence.industryFacts) ? evidence.industryFacts.slice(0, 160) : [],
+    indicatorValues: Array.isArray(evidence.indicatorValues) ? evidence.indicatorValues.slice(0, 300) : [],
     companyCandidates: Array.isArray(evidence.companyCandidates) ? evidence.companyCandidates.slice(0, 120) : [],
     industryPackets,
   };
@@ -259,6 +260,7 @@ function stableRadarEvidencePayload(digest, structuredFacts) {
     structuredFacts: {
       financialFacts: sortedByStableKey(structuredFacts.financialFacts.slice(0, 120).map(compactFinancialFact), factSortKey),
       industryFacts: sortedByStableKey(structuredFacts.industryFacts.slice(0, 120).map(compactIndustryFact), factSortKey),
+      indicatorValues: sortedByStableKey(structuredFacts.indicatorValues.slice(0, 240).map(compactIndicatorValue), indicatorSortKey),
       companyCandidates: sortedByStableKey(structuredFacts.companyCandidates.slice(0, 120).map(compactCompanyCandidate), factSortKey),
       industryPackets: sortedByStableKey(arrayValue(structuredFacts.industryPackets).map(compactStableIndustryPacket), industrySortKey),
     },
@@ -279,6 +281,7 @@ function compactStableIndustryPacket(packet) {
     factCounts: {
       financial: arrayValue(packet.financialFacts).length,
       industry: arrayValue(packet.industryFacts).length,
+      indicators: arrayValue(packet.indicatorValues).length,
       companies: arrayValue(packet.companyCandidates).length,
     },
   };
@@ -301,6 +304,10 @@ function citationSortKey(item) {
 
 function factSortKey(item) {
   return `${stringValue(item.industry)}|${stringValue(item.company)}|${stringValue(item.code)}|${stringValue(item.metric)}|${stringValue(item.publishedAt)}|${stringValue(item.title)}`;
+}
+
+function indicatorSortKey(item) {
+  return `${stringValue(item.industry)}|${stringValue(item.company)}|${stringValue(item.code)}|${stringValue(item.indicatorName)}|${stringValue(item.period)}|${stringValue(item.source)}`;
 }
 
 async function callDeepSeek(body) {
@@ -463,6 +470,7 @@ function normalizeIndustryPackets(value) {
         sources: arrayValue(record.sources).slice(0, 12),
         financialFacts: arrayValue(record.financialFacts).slice(0, 10),
         industryFacts: arrayValue(record.industryFacts).slice(0, 10),
+        indicatorValues: arrayValue(record.indicatorValues).slice(0, 20),
         companyCandidates: arrayValue(record.companyCandidates).slice(0, 10),
         evidenceGaps: normalizeEvidenceGaps(record.evidenceGaps).slice(0, 6),
       };
@@ -530,6 +538,7 @@ function compactIndustryPacket(packet) {
     factCounts: {
       financial: packet.financialFacts.length,
       industry: packet.industryFacts.length,
+      indicators: arrayValue(packet.indicatorValues).length,
       companies: packet.companyCandidates.length,
     },
   };
@@ -559,6 +568,22 @@ function compactIndustryFact(fact) {
     publishedAt: stringValue(fact.publishedAt),
     title: trimText(fact.title, 110),
     summary: trimText(fact.summary, 120),
+  };
+}
+
+function compactIndicatorValue(indicator) {
+  return {
+    entityType: stringValue(indicator.entityType),
+    company: stringValue(indicator.company),
+    code: stringValue(indicator.code),
+    market: stringValue(indicator.market),
+    industry: stringValue(indicator.industry),
+    indicatorName: stringValue(indicator.indicatorName),
+    value: typeof indicator.value === "number" ? indicator.value : undefined,
+    period: stringValue(indicator.period),
+    source: stringValue(indicator.source),
+    sourceType: stringValue(indicator.sourceType),
+    signalType: stringValue(indicator.signalType),
   };
 }
 
@@ -2716,6 +2741,17 @@ function buildRadarD1Sql(radar, evidence, jobId) {
     if (industryId) statements.push(`INSERT OR IGNORE INTO industries (id, name, parent_id, level) VALUES (${sql(industryId)}, ${sql(industry)}, NULL, 2);`);
     statements.push(
       `INSERT OR REPLACE INTO evidence_items (id, source_type, title, content, url, published_at, fetched_at, related_industry_id, confidence, raw_value) VALUES (${sql(sourceId)}, ${sql(source.sourceType || "news")}, ${sql(source.title || "未命名证据")}, ${sql(source.summary || source.query || "")}, ${sql(source.url || "")}, ${sql(source.publishedAt || "")}, ${sql(radar.generatedAt)}, ${industryId ? sql(industryId) : "NULL"}, ${numberSql(source.score)}, ${sql(source.signalType || "")});`,
+    );
+  }
+  for (const indicator of arrayValue(evidence.indicatorValues).slice(0, 500)) {
+    const industry = stringValue(indicator.industry) || "市场";
+    const industryId = industryIdForName(industry);
+    const metric = stringValue(indicator.indicatorName);
+    const value = numericValue(indicator.value);
+    if (!metric || value === null) continue;
+    statements.push(`INSERT OR IGNORE INTO industries (id, name, parent_id, level) VALUES (${sql(industryId)}, ${sql(industry)}, NULL, 2);`);
+    statements.push(
+      `INSERT OR REPLACE INTO indicator_values (id, entity_type, entity_id, indicator_name, value, period, source, created_at) VALUES (${sql(safeId(`${runId}_${industryId}_${stringValue(indicator.code)}_${metric}_${stringValue(indicator.period)}`))}, ${sql(stringValue(indicator.entityType) || "company")}, ${sql(stringValue(indicator.code) || stringValue(indicator.company) || industryId)}, ${sql(metric)}, ${numberSql(value)}, ${sql(stringValue(indicator.period) || radar.asOfDate)}, ${sql(stringValue(indicator.source) || "evidence_indicator")}, ${sql(radar.generatedAt)});`,
     );
   }
   for (const fact of [...arrayValue(evidence.financialFacts), ...arrayValue(evidence.industryFacts)].slice(0, 260)) {

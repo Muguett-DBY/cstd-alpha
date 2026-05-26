@@ -231,6 +231,36 @@ describe("rolling radar evidence collector", () => {
     );
   });
 
+  test("normalizes batch Tushare rows into reusable indicator values", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "candidate={'company':'宁德时代','code':'300750.SZ','market':'A股','industry':'锂电储能','evidenceStrength':20}",
+          "sources=[]",
+          "sources += m.tushare_sources(candidate, '300750.SZ', 'daily_basic', [{'ts_code':'300750.SZ','trade_date':'20260525','pe_ttm':22.9,'pb':5.8,'total_mv':19000000}], 'market', 'valuation_metric')",
+          "sources += m.tushare_sources(candidate, '300750.SZ', 'income', [{'ts_code':'300750.SZ','end_date':'20260331','revenue':84704630000,'n_income_attr_p':13963180000}], 'announcement', 'financial_metric')",
+          "sources += m.tushare_sources(candidate, '300750.SZ', 'fina_indicator', [{'ts_code':'300750.SZ','end_date':'20260331','grossprofit_margin':25.6,'roe':4.1}], 'announcement', 'financial_metric')",
+          "print(json.dumps(m.indicator_values_from_sources(sources), ensure_ascii=False))",
+        ].join("\n"),
+      ],
+      { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } },
+    );
+    const indicators = JSON.parse(output) as Array<{ company?: string; code?: string; indicatorName?: string; value?: number; period?: string; source?: string }>;
+
+    expect(indicators).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "Tushare Pro API", company: "宁德时代", code: "300750.SZ", indicatorName: "pe_ttm", value: 22.9, period: "20260525" }),
+        expect.objectContaining({ source: "Tushare Pro API", company: "宁德时代", code: "300750.SZ", indicatorName: "n_income_attr_p", value: 13963180000, period: "20260331" }),
+        expect.objectContaining({ source: "Tushare Pro API", company: "宁德时代", code: "300750.SZ", indicatorName: "roe", value: 4.1, period: "20260331" }),
+      ]),
+    );
+  });
+
   test("offline fixture exercises the same real hard-data source families as live collection", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");

@@ -243,7 +243,7 @@ describe("background radar analyzer", () => {
     const requestBody = JSON.parse(readFileSync(requestPath, "utf8")) as { reasoning_effort?: string; messages?: Array<{ content?: string }> };
     const stablePayload = JSON.parse(String(requestBody.messages?.[2].content)) as {
       evidenceDigest?: { citations?: Array<{ source?: string; qualityScore?: number; evidenceProfile?: string; anysearchTags?: string[]; anysearchContentTypes?: string[]; anysearchFreshness?: string }>; packets?: unknown[] };
-      structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; companyCandidates?: unknown[]; industryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }> };
+      structuredFacts?: { financialFacts?: unknown[]; industryFacts?: unknown[]; indicatorValues?: Array<{ indicatorName?: string; value?: number; code?: string }>; companyCandidates?: unknown[]; industryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }> };
     };
     const volatilePayload = JSON.parse(String(requestBody.messages?.[3].content)) as {
       analysisScope?: { changedIndustryPackets?: Array<{ scores?: { evidence?: number }; industry?: string }>; unchangedIndustrySummaries?: Array<{ scores?: unknown }>; totalIndustryCount?: number };
@@ -269,6 +269,9 @@ describe("background radar analyzer", () => {
     });
     expect(stablePayload.structuredFacts?.financialFacts?.length).toBeGreaterThan(0);
     expect(stablePayload.structuredFacts?.industryFacts?.length).toBeGreaterThan(0);
+    expect(stablePayload.structuredFacts?.indicatorValues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "300750.SZ", indicatorName: "pe_ttm", value: 22.9 })]),
+    );
     expect(stablePayload.structuredFacts?.companyCandidates?.length).toBeGreaterThan(0);
     expect(stablePayload.structuredFacts?.industryPackets?.length).toBe(14);
     expect(stablePayload.structuredFacts?.industryPackets?.find((packet) => packet.industry === "存储芯片")?.scores?.evidence).toBeLessThanOrEqual(45);
@@ -1740,6 +1743,10 @@ function evidenceSnapshot() {
     ],
     industryFacts: [
       { source: "AKShare/乘联会汽车统计", industry: "汽车/智能驾驶", metric: "出口销量", value: 77.02, yoy: 82.16, unit: "万辆", publishedAt: "2026-04-01T00:00:00Z" },
+    ],
+    indicatorValues: [
+      { entityType: "company", company: "宁德时代", code: "300750.SZ", market: "A股", industry: "锂电储能", indicatorName: "pe_ttm", value: 22.9, period: "20260525", source: "Tushare Pro API", sourceType: "market", signalType: "valuation_metric" },
+      { entityType: "company", company: "宁德时代", code: "300750.SZ", market: "A股", industry: "锂电储能", indicatorName: "roe", value: 4.1, period: "20260331", source: "Tushare Pro API", sourceType: "announcement", signalType: "financial_metric" },
     ],
     companyCandidates: [
       { company: "百济神州", code: "688235.SH", market: "A股", industry: "化学制药", triggerEvidence: "净利润同比 1801.30%", evidenceStrength: 4 },

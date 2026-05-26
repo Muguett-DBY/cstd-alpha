@@ -405,8 +405,9 @@ def main() -> int:
     validate_quality(quality, min_sources=args.min_sources)
     financial_facts = financial_facts_from_sources(sources)
     industry_facts = industry_facts_from_sources(sources)
+    indicator_values = indicator_values_from_sources(sources)
     company_candidates = company_candidates_from_sources(sources)
-    industry_packets = industry_packets_from_sources(sources, financial_facts, industry_facts, company_candidates)
+    industry_packets = industry_packets_from_sources(sources, financial_facts, industry_facts, company_candidates, indicator_values)
 
     now = datetime.now(timezone.utc)
     snapshot = {
@@ -420,6 +421,7 @@ def main() -> int:
         "sources": sources,
         "financialFacts": financial_facts,
         "industryFacts": industry_facts,
+        "indicatorValues": indicator_values,
         "companyCandidates": company_candidates,
         "industryPackets": industry_packets,
     }
@@ -771,10 +773,28 @@ def tushare_sources(candidate: dict[str, Any], ts_code: str, api_name: str, rows
                     "market": "A股",
                     "industry": industry,
                     "metric": api_name,
+                    "period": period,
+                    "metrics": tushare_metrics(api_name, row),
                 }
             )
         )
     return sources
+
+
+def tushare_metrics(api_name: str, row: dict[str, Any]) -> dict[str, float]:
+    metric_keys = {
+        "daily_basic": ("pe_ttm", "pb", "total_mv", "circ_mv", "turnover_rate"),
+        "income": ("revenue", "n_income_attr_p", "total_profit", "basic_eps"),
+        "cashflow": ("n_cashflow_act", "c_free_cashflow"),
+        "fina_indicator": ("grossprofit_margin", "netprofit_margin", "roe", "roa", "debt_to_assets", "ocfps"),
+        "dividend": ("cash_div", "cash_div_tax"),
+    }.get(api_name, ())
+    metrics: dict[str, float] = {}
+    for key in metric_keys:
+        value = numeric(row.get(key))
+        if value is not None:
+            metrics[key] = value
+    return metrics
 
 
 def tushare_title(company: str, ts_code: str, api_name: str, row: dict[str, Any], period: str) -> str:
@@ -2327,6 +2347,46 @@ def industry_facts_from_sources(sources: list[dict[str, Any]]) -> list[dict[str,
     return facts[:180]
 
 
+def indicator_values_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in sources:
+        metrics = source.get("metrics")
+        if not isinstance(metrics, dict):
+            continue
+        company = clean_text(source.get("company"))
+        code = clean_text(source.get("code"))
+        period = clean_text(source.get("period")) or clean_text(source.get("publishedAt"))[:10]
+        for metric_name, metric_value in metrics.items():
+            value = numeric(metric_value)
+            if value is None:
+                continue
+            indicator_name = clean_text(metric_name)
+            key = f"{code or company}|{indicator_name}|{period}|{source.get('source')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            values.append(
+                compact_dict(
+                    {
+                        "entityType": "company" if company or code else "industry",
+                        "company": company,
+                        "code": code,
+                        "market": source.get("market"),
+                        "industry": source.get("industry"),
+                        "indicatorName": indicator_name,
+                        "value": value,
+                        "period": period,
+                        "source": source.get("source"),
+                        "sourceId": source.get("url"),
+                        "sourceType": source.get("sourceType"),
+                        "signalType": source.get("signalType"),
+                    }
+                )
+            )
+    return values[:500]
+
+
 def company_candidates_from_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates: dict[str, dict[str, Any]] = {}
     for source in sources:
@@ -2358,8 +2418,10 @@ def industry_packets_from_sources(
     financial_facts: list[dict[str, Any]],
     industry_facts: list[dict[str, Any]],
     company_candidates: list[dict[str, Any]],
+    indicator_values: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     packets: list[dict[str, Any]] = []
+    indicators = indicator_values or []
     for taxonomy in FINE_INDUSTRY_TAXONOMY:
         industry = taxonomy["industry"]
         keywords = tuple(taxonomy["keywords"])
@@ -2367,6 +2429,7 @@ def industry_packets_from_sources(
         matched_financial = [fact for fact in financial_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('company', '')}", industry, keywords)]
         matched_industry = [fact for fact in industry_facts if industry_matches(f"{fact.get('industry', '')} {fact.get('title', '')} {fact.get('summary', '')}", industry, keywords)]
         matched_companies = [candidate for candidate in company_candidates if industry_matches(f"{candidate.get('industry', '')} {candidate.get('triggerEvidence', '')} {candidate.get('company', '')}", industry, keywords)]
+        matched_indicators = [indicator for indicator in indicators if industry_matches(f"{indicator.get('industry', '')} {indicator.get('company', '')} {indicator.get('indicatorName', '')}", industry, keywords)]
         evidence_types = unique_strings(clean_text(source.get("sourceType")) for source in matched_sources)
         signal_types = unique_strings(clean_text(source.get("signalType")) for source in matched_sources if source.get("signalType"))
         packet_sources = sorted(matched_sources, key=lambda source: int(source.get("score") or 0), reverse=True)
@@ -2394,6 +2457,7 @@ def industry_packets_from_sources(
             ],
             "financialFacts": matched_financial[:10],
             "industryFacts": matched_industry[:10],
+            "indicatorValues": matched_indicators[:20],
             "companyCandidates": matched_companies[:10],
             "evidenceGaps": industry_evidence_gaps(taxonomy, matched_sources, matched_financial, matched_industry),
         }
