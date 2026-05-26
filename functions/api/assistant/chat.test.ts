@@ -141,6 +141,48 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("当前应输出低置信判断");
   });
 
+  test("adds risk budget discipline to aggressive growth screening answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          Response.json({
+          choices: [
+            {
+              message: {
+                content: "结论：以下标的弹性最大。\n证据等级：低。\n核心理由：AI、机器人、小盘成长股有高波动机会。\n反证：概念退潮。\n下一步跟踪：订单和财报。",
+              },
+            },
+          ],
+          usage: { prompt_cache_hit_tokens: 80, prompt_cache_miss_tokens: 20, total_tokens: 150 },
+          }),
+        ),
+      ),
+    );
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "帮我找一批最有可能暴涨的AI、机器人、核能、小盘成长股，越激进越好。", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("高风险交易纪律");
+    expect(body).toContain("亏损上限");
+    expect(body).toContain("禁止满仓");
+  });
+
   test("memory-only teaching messages create a candidate without calling DeepSeek", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

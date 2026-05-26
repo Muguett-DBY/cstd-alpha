@@ -1119,7 +1119,14 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
     const subject = mode === "industry" ? "行业价格、销量、库存、产能、政策和龙头公司财报" : "最新财报、现金流、估值、核心业务增速、竞争变化和重大公告";
     parts.push(`下一步跟踪：优先跟踪${subject}；若关键变量连续两个报告期恶化，不应维持原结论。`);
   }
+  if (isHighRiskAssistantQuestion(userMessage) && !/(仓位|上限|止损|退出|亏损上限|最大回撤|小仓|分批|禁入|回避)/.test(answer)) {
+    parts.push("高风险交易纪律：如果仍要参与，只能作为试错仓处理；单一标的不应超过可承受亏损资金的小比例，必须预设亏损上限、止损位、退出触发条件和复盘日期。没有公告、财报、订单或成交量验证前，禁止满仓、借钱、杠杆或追涨加仓。");
+  }
   return parts.join("\n\n");
+}
+
+function isHighRiskAssistantQuestion(message: string) {
+  return /(梭哈|满仓|翻倍|暴涨|最猛|越激进越好|高波动|追涨|追进去|怕错过|日内|短线|期权|杠杆|融资|期货|永续|合约|借钱|贷款|补仓|摊低成本|网红|必涨)/.test(message);
 }
 
 function shouldEnsureResearchStructure(userMessage: string) {
