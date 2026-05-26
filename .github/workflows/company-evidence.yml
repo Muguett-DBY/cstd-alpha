@@ -26,6 +26,9 @@ jobs:
       COMPANY_EVIDENCE_USER_ID: ${{ inputs.user_id }}
       COMPANY_EVIDENCE_WATCHLIST_ID: ${{ inputs.watchlist_id }}
       COMPANY_EVIDENCE_LIMIT: 80
+      COMPANY_EVIDENCE_BATCH_SIZE: 5
+      COMPANY_EVIDENCE_REQUEST_TIMEOUT_MS: 90000
+      COMPANY_EVIDENCE_MAX_RETRIES: 2
     steps:
       - name: Checkout
         uses: actions/checkout@v6

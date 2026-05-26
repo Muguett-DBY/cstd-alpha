@@ -15,8 +15,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!expected || actual !== expected) return json({ error: "Unauthorized." }, 401);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
-  const body = (await request.json().catch(() => null)) as { userId?: string; watchlistId?: string; limit?: number } | null;
-  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, body?.userId, body?.watchlistId, Math.min(Math.max(body?.limit ?? 50, 1), 200));
+  const body = (await request.json().catch(() => null)) as { userId?: string; watchlistId?: string; limit?: number; offset?: number } | null;
+  const limit = Math.min(Math.max(body?.limit ?? 50, 1), 200);
+  const offset = Math.min(Math.max(body?.offset ?? 0, 0), 10_000);
+  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, body?.userId, body?.watchlistId, limit, offset);
   const refreshed: Array<{ watchlistId: string; ticker: string; evidenceHash: string }> = [];
   const failed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
   const useTushareForThisRefresh = Boolean(body?.watchlistId) || rows.length <= 1;
@@ -41,10 +43,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  return json({ refreshed, failed, count: rows.length, refreshedCount: refreshed.length, failedCount: failed.length });
+  return json({ refreshed, failed, count: rows.length, refreshedCount: refreshed.length, failedCount: failed.length, limit, offset });
 };
 
-async function readWatchlistRows(db: D1Database, userId?: string, watchlistId?: string, limit = 50) {
+async function readWatchlistRows(db: D1Database, userId?: string, watchlistId?: string, limit = 50, offset = 0) {
   const where: string[] = [];
   const params: unknown[] = [];
   if (userId?.trim()) {
@@ -55,14 +57,15 @@ async function readWatchlistRows(db: D1Database, userId?: string, watchlistId?: 
     params.push(watchlistId.trim());
     where.push(`id = ?${params.length}`);
   }
-  params.push(limit);
+  params.push(limit, offset);
   const result = await db
     .prepare(
       `SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
        FROM user_watchlist
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY added_at DESC
-       LIMIT ?${params.length}`,
+       LIMIT ?${params.length - 1}
+       OFFSET ?${params.length}`,
     )
     .bind(...params)
     .all<WatchlistRow>();
