@@ -784,7 +784,7 @@ function isMandatoryDirectSafetyQuestion(message: string) {
 }
 
 function isGeneralInvestmentFrameworkQuestion(message: string) {
-  return /(技术分析|技术指标|买卖点|胜率最高|均线|RSI|MACD|盘口|复盘|回测|策略|交易系统|杠杆ETF|结构化产品|希腊值|空投|撸毛|稳定币|NFT|抄底|翻身|降息|汇率|换汇|人民币|澳元|美元|经济衰退|衰退交易|战争风险|地缘|宏观轮动|投资组合|股票|债券|黄金|现金|应急金|生命周期|最大回撤|压力测试|FIRE|退休|贷款|房贷|投资房|消费贷|信用卡债|车贷|债务|跨境资金|跨境配置|税务居民|少交税|现金收入|移民资产|移民前|并购套利|做空机构|理财顾问|名额有限|忽略你的规则|满仓|梭哈翻身|人生完了|绕过券商限制|诱导确定性)/.test(message);
+  return /(技术分析|技术指标|买卖点|胜率最高|均线|RSI|MACD|盘口|复盘|回测|策略|交易系统|杠杆ETF|3倍ETF|倍ETF|ETF涨得快|结构化产品|希腊值|Delta|Gamma|Theta|Vega|空投|撸毛|稳定币|MEME|MEME币|NFT|抄底|翻身|降息|汇率|换汇|人民币|澳元|美元|经济衰退|衰退交易|战争风险|地缘|宏观轮动|投资组合|股票|债券|黄金|现金|应急金|生命周期|最大回撤|压力测试|FIRE|退休|贷款|房贷|投资房|消费贷|信用卡债|车贷|债务|跨境资金|跨境配置|税务居民|少交税|现金收入|移民资产|移民前|并购套利|做空机构|管理层|画饼|理财顾问|名额有限|忽略你的规则|满仓|梭哈翻身|人生完了|绕过券商限制|诱导确定性)/i.test(message);
 }
 
 function isBroadInvestmentFrameworkQuestion(message: string) {

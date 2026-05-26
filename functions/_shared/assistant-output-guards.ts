@@ -18,8 +18,11 @@ export function guardAssistantOutputLanguage(
         guardExternalEvidenceLevel(
           guardCrisisDeEscalationLanguage(
             guardRiskBudgetLanguage(
-              guardLegalBoundaryLanguage(
-                guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
+              guardOnchainCopyTradeBoundary(
+                guardLegalBoundaryLanguage(
+                  guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
+                  message,
+                ),
                 message,
               ),
               message,
@@ -39,8 +42,11 @@ function guardCertaintyPromiseLanguage(text: string) {
   return text
     .replace(/无风险、免税、零波动/g, "确定性省息、税后口径清晰、低波动")
     .replace(/无风险、免税/g, "确定性省息、税后口径清晰")
+    .replace(/完全确定、无风险、税后/g, "较确定、税后")
+    .replace(/无风险、税后/g, "较确定、税后")
     .replace(/无风险[、，,]?\s*免税[、，,]?\s*零波动/g, "确定性省息、税后口径清晰、低波动")
     .replace(/无风险[、，,]?\s*税后收益率/g, "较确定的税后收益率")
+    .replace(/接近无风险/g, "接近低风险但非零风险")
     .replace(/获得“?无风险[^”"\n。]*回报”?/g, "获得较确定的省息收益")
     .replace(/无风险获益/g, "较确定的省息收益")
     .replace(/无风险收益/g, "较确定的收益")
@@ -71,6 +77,12 @@ function guardLegalBoundaryLanguage(text: string, message: string) {
   if (!/(内幕|逃税|税|跨境|资本管制|套现|绕过|限制|助记词|空投|女巫|离岸|现金收入|报销|募资|亲友借钱|合规|洗钱)/.test(message)) return text;
   if (/(违法|违规|合规|合法|不得|不能|拒绝|不建议|申报|监管|内幕|逃税|洗钱|绕过|助记词|盗币|风险)/.test(text)) return text;
   return `${text.trim()}\n\n法律/合规边界：不能提供逃税、隐匿收入、绕过券商/监管限制、内幕交易、操纵市场、洗钱或规避反女巫/风控的操作步骤；只能讨论公开、可申报、可留痕、可被监管复核的合规框架。`;
+}
+
+function guardOnchainCopyTradeBoundary(text: string, message: string) {
+  if (!/(聪明钱|钱包|跟买|链上)/.test(message)) return text;
+  if (/(不建议|不得|不能|合规|只作为观察|不要复制|不要跟单)/.test(text)) return text;
+  return `${text.trim()}\n\n合规/执行边界：链上钱包跟踪只能作为公开信息观察，不应直接复制交易、诱导跟单、绕过平台风控或参与疑似操纵/拉盘；任何地址标签都可能误判，必须先做仓位上限、流动性和退出规则。`;
 }
 
 function guardWeakEvidenceSuperlatives(text: string) {
