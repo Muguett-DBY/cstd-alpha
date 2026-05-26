@@ -765,10 +765,15 @@ export function shouldAutoUseResearchEvidence(message: string) {
 }
 
 export function shouldAnswerDirectlyWithoutClarification(message: string) {
+  if (isBroadInvestmentFrameworkQuestion(message)) return true;
   if (!containsLikelyResearchSubject(message)) return false;
   if (/(反驳|你反驳|根据我的自选股|自选股|排雷|还能涨|还能不能涨|继续涨|会不会涨)/.test(message)) return true;
   if (/(能买吗|买不买|该不该|怎么操作|怎么样\??$|如何操作)/.test(message)) return false;
   return /(今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|人形机器人|大脑|小脑|协调|竞争|订单|库存|价格|批价|行业|影响|周期|反转|修复|出清|到底|框架|反证|反驳|泡沫|区分|平稳现金流|高股息|投资价值|涨跌|上涨|下跌)/.test(message);
+}
+
+function isBroadInvestmentFrameworkQuestion(message: string) {
+  return /(逆向抄底|反共识|最值得.*资产类别|资产类别|便宜.*更便宜|连续涨.*怕错过|怕错过.*追|追进去|追涨|FOMO|高波动成长股|最可能暴涨|十倍股|筛选模型)/i.test(message);
 }
 
 export function shouldTriggerExternalEvidence(message: string, mode: AssistantMode, evidenceSummary: string) {
@@ -1175,6 +1180,8 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
   if (/(暴涨|最猛|越激进越好|小盘成长|高波动).*(AI|机器人|核能|成长股)|AI.*机器人.*核能.*小盘/.test(userMessage)) return buildAggressiveGrowthScreenAnswer();
+  if (/(连续涨|涨了\d+%|怕错过|追进去|追涨|FOMO)/i.test(userMessage)) return buildFomoChaseAnswer();
+  if (/(逆向抄底|反共识|市场都看空|资产类别|便宜.*更便宜)/.test(userMessage)) return buildContrarianAssetAnswer();
   if (/(上行空间.*下行风险|下行风险.*上行空间)/.test(userMessage)) return buildRiskReturnTableGapAnswer(userMessage);
   if (/(画表|画成表|做成表|表格|比较|对比|矩阵)/.test(userMessage)) return buildComparisonTableGapAnswer(userMessage);
   if (/(来自|靠|驱动).*(利润修复|回购|估值修复)|利润修复.*回购.*估值修复/.test(userMessage)) return buildDriverComparisonGapAnswer(userMessage);
@@ -1198,6 +1205,43 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：把单一新闻、单家公司样本或概念叙事当作充分证据是不成立的，尤其不能由此推出满仓、追涨或确定收益。",
     `我可能错在哪里：${modeLabel} 的最新公告、官方统计或公司级硬数据如果已经更新，本轮低置信框架需要立刻重算。`,
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化；至少两类硬证据互相验证后再升级结论。",
+  ].join("\n");
+}
+
+function buildFomoChaseAnswer() {
+  return [
+    "结论：不能因为已经涨了40%就直接追进去。正确做法不是简单劝退，而是把它当成高波动交易，先验证趋势延续证据，再用小仓、分批和硬退出规则参与。",
+    "证据等级：低。没有当前价格、成交量、涨幅发生时间、基本面催化剂和估值位置，本轮只能给交易计划模板，不能判断这只股票是否值得追。",
+    "",
+    "| 方案 | 触发条件 | 仓位/风险预算 | 退出规则 |",
+    "| --- | --- | --- | --- |",
+    "| 不追，等待回撤 | 缺少公告、财报或订单催化，只有情绪上涨 | 0 仓位 | 回撤到关键均线或估值回到合理区间再评估 |",
+    "| 小仓试错 | 有明确催化剂，成交量放大但未明显放巨量滞涨 | 总资金 1%-3% | 跌破突破位或回撤 8%-10% 退出 |",
+    "| 回撤买入 | 上涨后缩量回踩，基本面催化仍在 | 分 2-3 笔，每笔不超过 2%-3% | 跌破回踩低点或催化证伪退出 |",
+    "| 突破确认 | 放量突破前高且次日不回落 | 小仓跟随，禁止满仓 | 放量长上影、跌回突破位或基本面无新增即退出 |",
+    "",
+    "反驳用户观点：怕错过是典型 FOMO。真正的强趋势不需要在最拥挤的位置一次性买满；如果涨幅只靠情绪，追进去承担的是别人获利了结的风险。",
+    "我可能错在哪里：如果上涨来自重大订单、利润上修或政策落地，且市场还没有充分定价，等待回撤可能错过一段趋势。但这需要硬证据，不是看涨幅本身。",
+    "下一步跟踪：当前价、成交量、换手率、涨停/断板结构、财报或公告催化、估值分位、机构预期变化和是否出现减持/监管关注。",
+  ].join("\n");
+}
+
+function buildContrarianAssetAnswer() {
+  return [
+    "结论：逆向抄底应优先找“预期极差但基本面未继续恶化”的资产，而不是单纯找跌得多的资产。低置信排序框架：高股息金融/公用事业、港股互联网核心资产、部分周期资源、被错杀的消费龙头；地产链和高杠杆资产只能放最后观察。",
+    "证据等级：低至中。没有实时估值分位、资金流、盈利预测修正和违约风险数据时，只能给框架和确认信号，不能给确定买入清单。",
+    "",
+    "| 资产类别 | 逆向逻辑 | 确认信号 | 失效信号 |",
+    "| --- | --- | --- | --- |",
+    "| 高股息金融/公用事业 | 市场担心增长慢，但现金流和分红可能提供底部支撑 | 净息差/现金流稳定、分红政策不降、估值分位低 | 不良率/资本开支恶化、分红下调 |",
+    "| 港股互联网核心资产 | 风险溢价高，若利润和回购兑现，估值可修复 | 利润率改善、回购持续、监管边际稳定 | EPS 下修、竞争加剧、回购缩量 |",
+    "| 周期资源 | 若供给收缩强于需求下行，价格可能反转 | 库存下降、价格企稳、龙头现金流改善 | 价格继续破位、产能复产、需求塌陷 |",
+    "| 消费龙头 | 需求差时估值压缩，若渠道库存出清可修复 | 批价/库存稳定、现金流恢复、费用率下降 | 价格继续下跌、渠道利润恶化 |",
+    "| 地产链/高杠杆资产 | 最便宜但尾部风险最大 | 销售、融资、现金流三者同时改善 | 债务展期失败、销售继续下滑、资产减值 |",
+    "",
+    "反驳用户观点：便宜可能更便宜。逆向不是和市场情绪对赌，而是找市场过度定价但硬数据正在止跌的地方。",
+    "我可能错在哪里：如果宏观流动性突然收紧或信用风险扩散，低估值资产会继续下跌；如果政策快速托底，高杠杆资产弹性可能比稳健资产更大。",
+    "下一步跟踪：估值分位、盈利预测上修/下修、资金流、信用利差、违约风险、行业价格、库存和龙头公司现金流。",
   ].join("\n");
 }
 

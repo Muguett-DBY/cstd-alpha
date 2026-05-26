@@ -71,6 +71,7 @@ async function runCase(testCase: FinancialPromptCase): Promise<FinancialPromptRe
     const raw = await response.text();
     const parsed = parseAssistantSse(raw);
     const issues = evaluateFinancialAnswer(testCase, response.status, parsed.answer, parsed.error);
+    if (parsed.gotClarification) issues.push("unexpected clarification");
     return {
       ...testCase,
       ok: issues.length === 0,
@@ -186,6 +187,7 @@ function parseAssistantSse(raw: string) {
   let answer = "";
   let usage: unknown;
   let error = "";
+  let gotClarification = false;
   for (const line of raw.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
     const payload = line.slice(5).trim();
@@ -193,13 +195,14 @@ function parseAssistantSse(raw: string) {
     try {
       const event = JSON.parse(payload) as { type?: string; text?: string; usage?: unknown; error?: string };
       if (event.type === "delta" && typeof event.text === "string") answer += event.text;
+      if (event.type === "choice_request") gotClarification = true;
       if (event.type === "usage") usage = event.usage;
       if (event.type === "error") error = event.error || "assistant error";
     } catch {
       error = "invalid SSE JSON";
     }
   }
-  return { answer: answer.trim(), usage, error };
+  return { answer: answer.trim(), usage, error, gotClarification };
 }
 
 async function runWithConcurrency<T, R>(items: T[], workers: number, fn: (item: T) => Promise<R>) {
