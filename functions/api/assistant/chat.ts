@@ -1187,6 +1187,7 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
   const subject = userMessage.split(/\n/)[0]?.slice(0, 80) || "当前问题";
   const modeLabel = mode === "industry" ? "行业" : "标的";
   if (/(暴涨|最猛|越激进越好|小盘成长|高波动).*(AI|机器人|核能|成长股)|AI.*机器人.*核能.*小盘/.test(userMessage)) return buildAggressiveGrowthScreenAnswer();
+  if (/(十倍股|10倍股|十倍|筛选模型|硬核筛选)/.test(userMessage)) return buildTenBaggerScreenAnswer();
   if (/(连续涨|涨了\d+%|怕错过|追进去|追涨|FOMO)/i.test(userMessage)) return buildFomoChaseAnswer();
   if (/(逆向抄底|反共识|市场都看空|资产类别|便宜.*更便宜)/.test(userMessage)) return buildContrarianAssetAnswer();
   if (/(上行空间.*下行风险|下行风险.*上行空间)/.test(userMessage)) return buildRiskReturnTableGapAnswer(userMessage);
@@ -1212,6 +1213,27 @@ function buildConstructiveEvidenceGapAnswer(userMessage: string, mode: Assistant
     "反驳用户观点：把单一新闻、单家公司样本或概念叙事当作充分证据是不成立的，尤其不能由此推出满仓、追涨或确定收益。",
     `我可能错在哪里：${modeLabel} 的最新公告、官方统计或公司级硬数据如果已经更新，本轮低置信框架需要立刻重算。`,
     "下一步跟踪：补公司公告、财务指标、行业价格/销量/库存/订单、竞争格局和政策变化；至少两类硬证据互相验证后再升级结论。",
+  ].join("\n");
+}
+
+function buildTenBaggerScreenAnswer() {
+  return [
+    "结论：可以给“未来3年十倍股”的硬核筛选模型，但不能把它包装成命中率很高的公式。真正可用的模型应先排雷，再找赔率，最后用小仓组合验证。",
+    "证据等级：低。十倍股本质是小概率分布，单次筛选不能证明未来收益；它更适合生成观察池和跟踪清单，不适合直接买入。",
+    "",
+    "| 层级 | 必须满足 | 剔除信号 | 评分权重 |",
+    "| --- | --- | --- | --- |",
+    "| 赛道天花板 | 3年市场空间至少翻倍，且公司收入能真实吃到增量 | 只有概念热度、缺订单/收入占比 | 20% |",
+    "| 商业模式 | 毛利率有上行空间，单位经济模型改善 | 靠补贴、一次性收入、应收账款堆利润 | 20% |",
+    "| 财务拐点 | 营收高增同时经营现金流不恶化，扣非利润改善 | 亏损扩大、存货/应收高增、资本开支失控 | 20% |",
+    "| 估值赔率 | 当前市值未充分反映未来利润，成交额足够退出 | 已按完美剧本定价，PS/PE 极端 | 15% |",
+    "| 催化剂 | 订单、产能释放、政策落地、产品商业化节点清楚 | 只有发布会、互动平台或网红叙事 | 15% |",
+    "| 治理与流动性 | 无大额减持、质押、财务造假疑点 | 减持密集、审计保留、监管问询未消除 | 10% |",
+    "",
+    "风险预算：这类策略必须组合化。单一标的建议只作为 1%-3% 试错仓，组合最大亏损先设上限；没有财报或订单验证前，禁止满仓、融资或追涨。",
+    "反驳用户观点：十倍股不是“找最热主题”，而是找市场还没完全定价、但基本面已经开始兑现的非线性拐点。越硬核的筛选越应该先淘汰故事股，而不是扩大候选名单。",
+    "我可能错在哪里：早期十倍股常常在证据还不完整时启动，过于严格会错过左侧机会；但如果放松财务和治理约束，误中概念股和财务雷的概率会显著上升。",
+    "下一步跟踪：每月更新订单/收入占比、毛利率、扣非利润、经营现金流、应收存货、估值分位、成交额、减持和监管问询；连续两期硬指标改善才从观察池升级。",
   ].join("\n");
 }
 
@@ -1750,3 +1772,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeAssistantMode(value: unknown): AssistantMode {
   return value === "target" || value === "industry" || value === "chat" ? value : "chat";
 }
+
+export const __test__ = {
+  buildConstructiveEvidenceGapAnswer,
+};

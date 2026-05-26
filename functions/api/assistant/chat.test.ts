@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { __test__, buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -180,6 +180,14 @@ describe("assistant chat endpoint", () => {
     const body = await response.text();
     expect(body).toContain("高风险交易纪律");
     expect(body).toContain("亏损上限");
+    expect(body).toContain("禁止满仓");
+  });
+
+  test("returns a concrete ten-bagger screening model instead of a generic fallback", async () => {
+    const body = __test__.buildConstructiveEvidenceGapAnswer("我要找未来3年十倍股，你给我一个筛选模型，越硬核越好。", "chat");
+    expect(body).toContain("未来3年十倍股");
+    expect(body).toContain("评分权重");
+    expect(body).toContain("风险预算");
     expect(body).toContain("禁止满仓");
   });
 
