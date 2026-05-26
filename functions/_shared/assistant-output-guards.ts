@@ -16,7 +16,16 @@ export function guardAssistantOutputLanguage(
     guardWeakEvidenceSuperlatives(
       guardExternalEvidenceConsistency(
         guardExternalEvidenceLevel(
-          guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
+          guardCrisisDeEscalationLanguage(
+            guardRiskBudgetLanguage(
+              guardLegalBoundaryLanguage(
+                guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
+                message,
+              ),
+              message,
+            ),
+            message,
+          ),
           message,
           externalEvidence,
         ),
@@ -28,6 +37,9 @@ export function guardAssistantOutputLanguage(
 
 function guardCertaintyPromiseLanguage(text: string) {
   return text
+    .replace(/无风险、免税、零波动/g, "确定性省息、税后口径清晰、低波动")
+    .replace(/无风险[、，,]?\s*免税[、，,]?\s*零波动/g, "确定性省息、税后口径清晰、低波动")
+    .replace(/获得“?无风险[^”"\n。]*回报”?/g, "获得较确定的省息收益")
     .replace(/若该博主为持牌机构或已披露历史收益率曲线（如连续3年跑赢大盘），则“?必涨”?可能代表选股能力而非操纵/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
     .replace(/该博主若为持牌机构或已披露历史收益率曲线（如连续3年跑赢大盘），则“?必涨”?可能代表选股能力而非操纵/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
     .replace(/若该博主为持牌机构或已披露历史收益率曲线[^。\n]*“?必涨”?[^。\n]*选股能力[^。\n]*/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
@@ -35,6 +47,24 @@ function guardCertaintyPromiseLanguage(text: string) {
     .replace(/“?必涨”?可信/g, "“必涨”不可信")
     .replace(/稳赚可信/g, "“稳赚”不可信")
     .replace(/保证收益可信/g, "“保证收益”不可信");
+}
+
+function guardRiskBudgetLanguage(text: string, message: string) {
+  if (!/(梭哈|翻倍|暴涨|最猛|追|赌|日内|月收益|高频|补仓|加倍|期权|杠杆|融资|期货|永续|20倍|3倍|合约|满仓|百倍|MEME|高收益|借钱|贷款|信用卡|高风险|降息|战争风险|衰退|房贷|投资房|消费贷|债务|空投|撸毛|NFT|抄底|翻身)/.test(message)) return text;
+  if (/(仓位|上限|止损|亏损上限|最大回撤|退出|压力测试|小仓|分批|禁入|回避|不建议|等待|剔除)/.test(text)) return text;
+  return `${text.trim()}\n\n风险预算：这类问题必须先限定最大可承受亏损和退出条件；若没有可量化仓位上限、止损/再平衡规则和最坏情景压力测试，应默认降级为观察，不应满仓、借钱或用生活资金执行。`;
+}
+
+function guardCrisisDeEscalationLanguage(text: string, message: string) {
+  if (!/(人生完了|亏惨|翻身|尽快回本|一把梭哈|加倍下注|赢回来)/.test(message)) return text;
+  if (/(暂停交易|不要梭哈|联系|求助|可信任的人|专业帮助|先停|情绪)/.test(text)) return text;
+  return `${text.trim()}\n\n危机降速：如果当前状态是亏损后急着翻身，第一步不是找更高赔率，而是先暂停新增交易，和可信任的人复盘现金流、债务、仓位和情绪状态；在恢复理性前，不做杠杆、借贷、补仓和梭哈。`;
+}
+
+function guardLegalBoundaryLanguage(text: string, message: string) {
+  if (!/(内幕|逃税|税|跨境|资本管制|套现|绕过|限制|助记词|空投|女巫|离岸|现金收入|报销|募资|亲友借钱|合规|洗钱)/.test(message)) return text;
+  if (/(违法|违规|合规|合法|不得|不能|拒绝|不建议|申报|监管|内幕|逃税|洗钱|绕过|助记词|盗币|风险)/.test(text)) return text;
+  return `${text.trim()}\n\n法律/合规边界：不能提供逃税、隐匿收入、绕过券商/监管限制、内幕交易、操纵市场、洗钱或规避反女巫/风控的操作步骤；只能讨论公开、可申报、可留痕、可被监管复核的合规框架。`;
 }
 
 function guardWeakEvidenceSuperlatives(text: string) {

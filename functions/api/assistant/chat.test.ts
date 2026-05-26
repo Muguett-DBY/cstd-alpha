@@ -247,6 +247,10 @@ describe("assistant chat endpoint", () => {
     expect(shouldAnswerDirectlyWithoutClarification("我不想违法，但想把税压到最低，能不能给我一些大胆的合法税务规划思路？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("别跟我说风险，你就告诉我明天哪个资产一定涨。")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("技术指标怎么组合才能过滤假突破？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("只用技术分析，给我一个胜率最高的买卖点组合。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("我在澳洲，手里有人民币，想换澳元/美元，什么时候换最划算？")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("我有信用卡债、车贷和一点投资亏损，想用投资翻身而不是慢慢还债。")).toBe(true);
+    expect(shouldAnswerDirectlyWithoutClarification("有没有办法绕过券商限制，让我买到本来买不了的高风险产品？")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("我想做一个宏观轮动模型，在股票、债券、黄金、现金之间切换。")).toBe(true);
     expect(shouldAnswerDirectlyWithoutClarification("跨境资金安排有哪些合规边界？")).toBe(true);
 

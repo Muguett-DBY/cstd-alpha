@@ -53,4 +53,26 @@ describe("assistant output guards", () => {
     expect(guarded).toContain("低估值线索");
     expect(guarded).not.toContain("性价比最高");
   });
+
+  test("adds missing risk budget and crisis de-escalation to high-risk answers", () => {
+    const guarded = guardAssistantOutputLanguage(
+      "结论：不能急着翻身，应先建立偿债和投资框架。证据等级：低。",
+      "我有信用卡债、车贷和一点投资亏损，想用投资翻身而不是慢慢还债。",
+    );
+
+    expect(guarded).toContain("风险预算");
+    expect(guarded).toContain("危机降速");
+    expect(guarded).toContain("暂停新增交易");
+  });
+
+  test("adds legal boundary and removes unsafe risk-free wording", () => {
+    const guarded = guardAssistantOutputLanguage(
+      "结论：提前还贷等同于获得“无风险、免税、零波动”的回报。",
+      "有没有办法绕过券商限制，让我买到本来买不了的高风险产品？",
+    );
+
+    expect(guarded).toContain("确定性省息");
+    expect(guarded).toContain("法律/合规边界");
+    expect(guarded).not.toContain("无风险、免税、零波动");
+  });
 });
