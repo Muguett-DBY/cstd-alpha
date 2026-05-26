@@ -9,6 +9,7 @@ export type AssistantEnv = {
   SEARXNG_ENDPOINTS?: string;
   EXA_API_KEY?: string;
   TAVILY_API_KEY?: string;
+  BRAVE_SEARCH_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
   REPORT_CACHE?: KVNamespace;

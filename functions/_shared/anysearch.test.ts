@@ -2,12 +2,14 @@ import { describe, expect, test, vi } from "vitest";
 import {
   buildAnySearchRequestBody,
   buildArxivSearchUrl,
+  buildBraveSearchUrl,
   buildExaSearchRequestBody,
   buildGdeltSearchUrl,
   buildSemanticScholarSearchUrl,
   buildTavilySearchRequestBody,
   fetchAnySearchEvidence,
   fetchArxivEvidence,
+  fetchBraveEvidence,
   fetchExaEvidence,
   fetchGdeltEvidence,
   fetchSearxngEvidence,
@@ -15,6 +17,7 @@ import {
   fetchTavilyEvidence,
   normalizeAnySearchResults,
   normalizeArxivResults,
+  normalizeBraveResults,
   normalizeExaResults,
   normalizeGdeltResults,
   normalizeSemanticScholarResults,
@@ -284,6 +287,67 @@ describe("AnySearch helper", () => {
     );
     expect(items[0]).toEqual(expect.objectContaining({ source: "Tavily", title: "Moutai channel inventory" }));
     await expect(fetchTavilyEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
+  });
+
+  test("builds Brave search URLs with capped result count and language", () => {
+    const url = new URL(buildBraveSearchUrl({ query: "腾讯 回购 利润修复", maxResults: 50 }));
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://api.search.brave.com/res/v1/web/search");
+    expect(url.searchParams.get("q")).toBe("腾讯 回购 利润修复");
+    expect(url.searchParams.get("count")).toBe("10");
+    expect(url.searchParams.get("search_lang")).toBe("zh-hans");
+    expect(url.searchParams.get("text_decorations")).toBe("false");
+  });
+
+  test("normalizes Brave results as supplemental search evidence", () => {
+    const items = normalizeBraveResults(
+      {
+        web: {
+          results: [
+            {
+              title: "Tencent investor relations",
+              url: "https://www.tencent.com/en-us/investors.html",
+              description: "Tencent official investor relations and disclosures.",
+              extra_snippets: ["Buyback and financial disclosure links."],
+              page_age: "2026-05-20T00:00:00Z",
+            },
+          ],
+        },
+      },
+      { query: "Tencent buyback profit recovery", topic: "港股互联网" },
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        source: "Brave",
+        sourceType: "news",
+        signalType: "external_search",
+        anysearchSource: "brave",
+        topic: "港股互联网",
+        publishedAt: "2026-05-20T00:00:00Z",
+      }),
+    ]);
+    expect(items[0].summary).toContain("Buyback");
+  });
+
+  test("fetches Brave with subscription token and fails closed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ web: { results: [{ title: "Moutai price channel", url: "https://example.com/maotai", description: "批价和库存变化。" }] } }),
+    });
+
+    const items = await fetchBraveEvidence({
+      apiKey: "brave-key",
+      queries: [{ query: "茅台 批价 库存", maxResults: 10 }],
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("https://api.search.brave.com/res/v1/web/search?"),
+      expect.objectContaining({ headers: expect.objectContaining({ "x-subscription-token": "brave-key" }) }),
+    );
+    expect(items[0]).toEqual(expect.objectContaining({ source: "Brave", title: "Moutai price channel" }));
+    await expect(fetchBraveEvidence({ queries: [{ query: "no key" }], fetchImpl: fetchMock })).resolves.toEqual([]);
   });
 
   test("builds GDELT requests as keyless global news search with capped records", () => {

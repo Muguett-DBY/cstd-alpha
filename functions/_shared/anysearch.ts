@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch" | "SearXNG" | "Exa" | "Tavily" | "GDELT" | "ArXiv" | "SemanticScholar";
+  source: "AnySearch" | "SearXNG" | "Exa" | "Tavily" | "Brave" | "GDELT" | "ArXiv" | "SemanticScholar";
   query: string;
   title: string;
   url: string;
@@ -130,6 +130,25 @@ type TavilySearchResponse = {
   request_id?: string;
 };
 
+type BraveSearchResponse = {
+  web?: {
+    results?: Array<{
+      title?: string;
+      url?: string;
+      description?: string;
+      extra_snippets?: string[];
+      page_age?: string;
+      age?: string;
+      profile?: {
+        name?: string;
+      };
+    }>;
+  };
+  mixed?: {
+    main?: Array<{ type?: string; index?: number }>;
+  };
+};
+
 type GdeltResponse = {
   articles?: Array<{
     title?: string;
@@ -156,6 +175,7 @@ type SemanticScholarResponse = {
 const ANYSEARCH_URL = "https://api.anysearch.com/v1/search";
 export const EXA_SEARCH_URL = "https://api.exa.ai/search";
 export const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
+export const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 const GDELT_SEARCH_URL = "https://api.gdeltproject.org/api/v2/doc/doc";
 const ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query";
 const SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search";
@@ -200,6 +220,17 @@ export function buildTavilySearchRequestBody(query: AnySearchQuery) {
     include_images: false,
     include_usage: true,
   };
+}
+
+export function buildBraveSearchUrl(query: AnySearchQuery) {
+  const url = new URL(BRAVE_SEARCH_URL);
+  url.searchParams.set("q", query.query);
+  url.searchParams.set("count", String(Math.min(Math.max(query.maxResults ?? 8, 1), 10)));
+  url.searchParams.set("country", "ALL");
+  url.searchParams.set("search_lang", /[\u4e00-\u9fff]/.test(query.query) ? "zh-hans" : "en");
+  url.searchParams.set("safesearch", "moderate");
+  url.searchParams.set("text_decorations", "false");
+  return url.toString();
 }
 
 export function buildGdeltSearchUrl(query: AnySearchQuery) {
@@ -366,6 +397,39 @@ export async function fetchTavilyEvidence({
       }
       const payload = (await response.json().catch(() => null)) as TavilySearchResponse | null;
       evidence.push(...normalizeTavilyResults(payload, query));
+    } catch {
+      continue;
+    }
+  }
+  return dedupeAnySearchEvidence(evidence);
+}
+
+export async function fetchBraveEvidence({
+  queries,
+  apiKey,
+  fetchImpl = fetch,
+  signal,
+}: {
+  queries: AnySearchQuery[];
+  apiKey?: string;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}) {
+  const normalizedApiKey = apiKey?.trim();
+  if (!normalizedApiKey) return [];
+  const evidence: AnySearchEvidence[] = [];
+  for (const query of queries) {
+    try {
+      const response = await fetchImpl(buildBraveSearchUrl(query), {
+        headers: { accept: "application/json", "x-subscription-token": normalizedApiKey },
+        signal,
+      });
+      if (!response.ok) {
+        await response.text().catch(() => "");
+        continue;
+      }
+      const payload = (await response.json().catch(() => null)) as BraveSearchResponse | null;
+      evidence.push(...normalizeBraveResults(payload, query));
     } catch {
       continue;
     }
@@ -569,6 +633,42 @@ export function normalizeTavilyResults(payload: unknown, context: AnySearchQuery
       score: usageCredits,
       anysearchSource: "tavily",
       anysearchRequestId: requestId || undefined,
+      contentType: context.contentTypes?.includes("news") ? "news" : "web",
+      cached: false,
+    });
+  }
+  return items;
+}
+
+export function normalizeBraveResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {
+  const record = isRecord(payload) ? payload : {};
+  const web = isRecord(record.web) ? record.web : {};
+  const results = Array.isArray(web.results) ? web.results : [];
+  const items: AnySearchEvidence[] = [];
+  for (const raw of results) {
+    if (!isRecord(raw)) continue;
+    const title = cleanText(raw.title);
+    const url = cleanText(raw.url);
+    if (!title || !url) continue;
+    const description = cleanText(raw.description);
+    const snippets = Array.isArray(raw.extra_snippets) ? raw.extra_snippets.map(cleanText).filter(Boolean) : [];
+    const sourceType = inferSupplementalSourceType(url);
+    items.push({
+      source: "Brave",
+      query: context.query,
+      title,
+      url,
+      summary: trimText([description, ...snippets].filter(Boolean).join(" "), MAX_SUMMARY_CHARS),
+      content: trimText([description, ...snippets].filter(Boolean).join(" "), MAX_CONTENT_CHARS) || undefined,
+      sourceType,
+      signalType: "external_search",
+      weight: sourceType === "official" ? 4 : 2,
+      topic: context.topic,
+      tags: context.tags,
+      contentTypes: context.contentTypes,
+      freshness: context.freshness,
+      publishedAt: cleanText(raw.page_age) || cleanText(raw.age) || undefined,
+      anysearchSource: "brave",
       contentType: context.contentTypes?.includes("news") ? "news" : "web",
       cached: false,
     });
