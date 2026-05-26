@@ -15,13 +15,24 @@ export function guardAssistantOutputLanguage(
   return cleanAssistantFormatting(
     guardExternalEvidenceConsistency(
       guardExternalEvidenceLevel(
-        guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardForecastLanguage(text, message, options))),
+        guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
         message,
         externalEvidence,
       ),
       externalEvidence,
     ),
   );
+}
+
+function guardCertaintyPromiseLanguage(text: string) {
+  return text
+    .replace(/若该博主为持牌机构或已披露历史收益率曲线（如连续3年跑赢大盘），则“?必涨”?可能代表选股能力而非操纵/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
+    .replace(/该博主若为持牌机构或已披露历史收益率曲线（如连续3年跑赢大盘），则“?必涨”?可能代表选股能力而非操纵/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
+    .replace(/若该博主为持牌机构或已披露历史收益率曲线[^。\n]*“?必涨”?[^。\n]*选股能力[^。\n]*/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
+    .replace(/该博主若为持牌机构或已披露历史收益率曲线[^。\n]*“?必涨”?[^。\n]*选股能力[^。\n]*/g, "即使该博主有持牌资质或历史业绩，“必涨”也只能视为未经验证的营销话术，不能作为确定承诺")
+    .replace(/“?必涨”?可信/g, "“必涨”不可信")
+    .replace(/稳赚可信/g, "“稳赚”不可信")
+    .replace(/保证收益可信/g, "“保证收益”不可信");
 }
 
 function guardForecastLanguage(text: string, message: string, options?: AssistantOutputGuardOptions) {
