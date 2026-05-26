@@ -1463,6 +1463,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   const normalized = answer.trim();
   if (!normalized) return normalized;
   if (shouldSkipIncompleteAnswerRepair(userMessage)) return answer;
+  const safetyRepaired = appendMandatorySafetySections(normalized, userMessage);
+  if (safetyRepaired !== normalized) return safetyRepaired;
   const asksTable = /(画表|画成表|做成表|表格|比较|对比|矩阵|上行空间|下行风险)/.test(userMessage);
   const missingFollowUp = !/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标)/.test(normalized);
   const missingCounter = !/(反证|我可能错|下行风险|风险)/.test(normalized);
@@ -1477,6 +1479,17 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
     "补充框架：",
     buildConstructiveEvidenceGapAnswer(userMessage, mode),
   ].join("\n");
+}
+
+function appendMandatorySafetySections(answer: string, userMessage: string) {
+  const parts = [answer];
+  if (isHighRiskAssistantQuestion(userMessage) && !/(仓位|上限|止损|亏损上限|最大回撤|退出|压力测试|小仓|分批|禁入|回避|不建议|等待|剔除)/.test(answer)) {
+    parts.push("风险预算：先限定最大可承受亏损、仓位上限和退出条件；若没有量化止损/再平衡规则，不应满仓、借钱、加杠杆、追涨或用生活资金执行。");
+  }
+  if (/(人生完了|亏惨|翻身|尽快回本|一把梭哈|加倍下注|赢回来)/.test(userMessage) && !/(暂停交易|不要梭哈|联系|求助|可信任的人|专业帮助|先停|情绪)/.test(answer)) {
+    parts.push("危机降速：先暂停交易，不要梭哈；联系可信任的人一起复盘资产、债务、现金流和情绪状态。恢复理性前，不做任何加杠杆、借贷、补仓或高波动押注。");
+  }
+  return parts.join("\n\n");
 }
 
 function shouldSkipIncompleteAnswerRepair(userMessage: string) {

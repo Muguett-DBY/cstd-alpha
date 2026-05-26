@@ -38,7 +38,9 @@ export function guardAssistantOutputLanguage(
 function guardCertaintyPromiseLanguage(text: string) {
   return text
     .replace(/无风险、免税、零波动/g, "确定性省息、税后口径清晰、低波动")
+    .replace(/无风险、免税/g, "确定性省息、税后口径清晰")
     .replace(/无风险[、，,]?\s*免税[、，,]?\s*零波动/g, "确定性省息、税后口径清晰、低波动")
+    .replace(/无风险[、，,]?\s*税后收益率/g, "较确定的税后收益率")
     .replace(/获得“?无风险[^”"\n。]*回报”?/g, "获得较确定的省息收益")
     .replace(/无风险获益/g, "较确定的省息收益")
     .replace(/无风险收益/g, "较确定的收益")
