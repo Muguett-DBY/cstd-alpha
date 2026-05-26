@@ -36,7 +36,7 @@ import {
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../_shared/deepseek-cache";
 import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import { guardAssistantOutputLanguage } from "../../_shared/assistant-output-guards";
-import { getOrCreateCompanyEvidencePackage, readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_shared/company-evidence";
+import { fetchAndStoreCompanyEvidence, getOrCreateCompanyEvidencePackage, readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_shared/company-evidence";
 import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
@@ -988,11 +988,28 @@ async function summarizeCompanyEvidencePackage(env: AssistantEnv, userKey: strin
     REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET,
     TUSHARE_TOKEN: env.TUSHARE_TOKEN,
   };
-  const pkg = options.allowCreate
+  let pkg = options.allowCreate
     ? await getOrCreateCompanyEvidencePackage(evidenceEnv, userKey, watchlist, options.signal)
     : await readCompanyEvidencePackage(evidenceEnv, userKey, watchlist);
+  if (options.allowCreate && shouldRefreshAStockPackageForTushare(pkg, watchlist, env.TUSHARE_TOKEN)) {
+    pkg = await fetchAndStoreCompanyEvidence({ env: evidenceEnv, userId: userKey, watchlist, signal: options.signal });
+  }
   if (!pkg) return "";
   return formatCompanyEvidencePackageForAssistant(pkg);
+}
+
+function shouldRefreshAStockPackageForTushare(pkg: CompanyEvidencePackage | null, watchlist: WatchlistRow, token: string | undefined) {
+  if (!token?.trim()) return false;
+  if (!isAStockWatchlist(watchlist)) return false;
+  if (!pkg) return true;
+  const facts = isRecord(pkg.evidence.facts) ? pkg.evidence.facts : {};
+  const tushare = isRecord(facts.tushare) ? facts.tushare : undefined;
+  if (!tushare) return true;
+  return !["dailyBasic", "income", "balance", "cashflow", "indicators", "dividend", "mainBusiness", "announcements", "repurchase", "pledge", "shareFloat"].some((key) => Array.isArray(tushare[key]) && (tushare[key] as unknown[]).length > 0);
+}
+
+function isAStockWatchlist(watchlist: WatchlistRow) {
+  return /A股|沪A|深A|北交所|上海|深圳|上交所|深交所|SSE|SZSE|SH|SZ/i.test(`${watchlist.market} ${watchlist.exchange_name ?? ""} ${watchlist.listing_place ?? ""} ${watchlist.market_type ?? ""}`) || /^\d{6}$/.test(watchlist.ticker);
 }
 
 function formatCompanyEvidencePackageForAssistant(pkg: CompanyEvidencePackage) {
