@@ -38,6 +38,9 @@ SEARXNG_MAX_QUERIES = int(os.environ.get("SEARXNG_MAX_QUERIES", "120"))
 SEARXNG_CONCURRENCY = max(1, int(os.environ.get("SEARXNG_CONCURRENCY", "6")))
 TUSHARE_API_URL = "http://api.tushare.pro"
 TUSHARE_MAX_COMPANIES = int(os.environ.get("TUSHARE_MAX_COMPANIES", "1"))
+TUSHARE_BATCH_ENABLED = os.environ.get("TUSHARE_BATCH_ENABLED", "1") != "0"
+TUSHARE_COMPANY_FALLBACK_ENABLED = os.environ.get("TUSHARE_COMPANY_FALLBACK_ENABLED", "0") == "1"
+TUSHARE_BATCH_MAX_ROWS = int(os.environ.get("TUSHARE_BATCH_MAX_ROWS", "120"))
 TUSHARE_ENDPOINTS = [
     ("disclosure_date", "announcement", "financial_metric", "ts_code,end_date,ann_date,pre_date,actual_date,modify_date", "ts_code"),
     ("daily_basic", "market", "valuation_metric", "ts_code,trade_date,pe_ttm,pb,total_mv,circ_mv,turnover_rate", "date_range"),
@@ -45,6 +48,14 @@ TUSHARE_ENDPOINTS = [
     ("cashflow", "announcement", "financial_metric", "ts_code,end_date,ann_date,n_cashflow_act,c_free_cashflow", "period"),
     ("fina_indicator", "announcement", "financial_metric", "ts_code,end_date,ann_date,grossprofit_margin,netprofit_margin,roe,roa,debt_to_assets,ocfps", "period"),
     ("dividend", "announcement", "financial_metric", "ts_code,end_date,ann_date,cash_div,cash_div_tax,div_proc", "ts_code"),
+    ("anns_d", "announcement", "financial_metric", "ts_code,ann_date,title", "date_range"),
+]
+TUSHARE_BATCH_ENDPOINTS = [
+    ("daily_basic", "market", "valuation_metric", "ts_code,trade_date,pe_ttm,pb,total_mv,circ_mv,turnover_rate", "trade_date"),
+    ("income", "announcement", "financial_metric", "ts_code,end_date,ann_date,revenue,n_income_attr_p,total_profit,basic_eps", "period"),
+    ("cashflow", "announcement", "financial_metric", "ts_code,end_date,ann_date,n_cashflow_act,c_free_cashflow", "period"),
+    ("fina_indicator", "announcement", "financial_metric", "ts_code,end_date,ann_date,grossprofit_margin,netprofit_margin,roe,roa,debt_to_assets,ocfps", "period"),
+    ("dividend", "announcement", "financial_metric", "ts_code,end_date,ann_date,cash_div,cash_div_tax,div_proc", "empty"),
     ("anns_d", "announcement", "financial_metric", "ts_code,ann_date,title", "date_range"),
 ]
 
@@ -448,9 +459,13 @@ def collect_sources() -> list[dict[str, Any]]:
         dynamic_financials = fetch_dynamic_company_financials(seed_candidates)
         print_source_summary("eastmoney_dynamic_company_financials", dynamic_financials)
         sources.extend(dynamic_financials)
-        tushare_facts = fetch_tushare_dynamic_company_facts(seed_candidates)
-        print_source_summary("tushare_dynamic_company_facts", tushare_facts)
+        tushare_facts = fetch_tushare_batch_market_facts(seed_candidates) if TUSHARE_BATCH_ENABLED else []
+        print_source_summary("tushare_batch_market_facts", tushare_facts)
         sources.extend(tushare_facts)
+        if TUSHARE_COMPANY_FALLBACK_ENABLED and not tushare_facts:
+            tushare_company_facts = fetch_tushare_dynamic_company_facts(seed_candidates)
+            print_source_summary("tushare_dynamic_company_facts", tushare_company_facts)
+            sources.extend(tushare_company_facts)
     except Exception as exc:
         print(f"collector_warning dynamic_company_financials: {type(exc).__name__}: {str(exc)[:180]}")
     return sources
@@ -606,6 +621,67 @@ def fetch_tushare_dynamic_company_facts(candidates: list[dict[str, Any]]) -> lis
     return dedupe_sources(sources)
 
 
+def fetch_tushare_batch_market_facts(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    token = clean_text(os.environ.get("TUSHARE_TOKEN"))
+    if not token:
+        return []
+    candidate_map = tushare_candidate_map(candidates)
+    if not candidate_map:
+        return []
+    sources: list[dict[str, Any]] = []
+    report_period = os.environ.get("TUSHARE_REPORT_PERIOD") or latest_report_period()
+    for api_name, source_type, signal_type, fields, params_mode in TUSHARE_BATCH_ENDPOINTS:
+        try:
+            rows = tushare_batch_rows(token, api_name, fields, params_mode, report_period)
+        except Exception as exc:
+            print(f"collector_warning tushare_batch.{api_name}: {type(exc).__name__}: {str(exc)[:160]}")
+            continue
+        for row in rows:
+            ts_code = normalize_a_share_code(row.get("ts_code"))
+            candidate = candidate_map.get(ts_code)
+            if not candidate:
+                continue
+            sources.extend(tushare_sources(candidate, ts_code, api_name, [row], source_type, signal_type))
+    return dedupe_sources(sources)
+
+
+def tushare_candidate_map(candidates: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for candidate in candidates:
+        if clean_text(candidate.get("market")) not in ("", "A股"):
+            continue
+        ts_code = normalize_a_share_code(candidate.get("code"))
+        if not ts_code:
+            continue
+        ranked.append((dynamic_company_priority(candidate), ts_code, candidate))
+    result: dict[str, dict[str, Any]] = {}
+    for _priority, ts_code, candidate in sorted(ranked, reverse=True):
+        result.setdefault(ts_code, candidate)
+        if len(result) >= max(TUSHARE_BATCH_MAX_ROWS, 1):
+            break
+    return result
+
+
+def tushare_batch_rows(token: str, api_name: str, fields: str, params_mode: str, report_period: str | None = None) -> list[dict[str, Any]]:
+    data = post_json(
+        TUSHARE_API_URL,
+        {"api_name": api_name, "token": token, "params": tushare_batch_params(params_mode, report_period), "fields": fields},
+        timeout=20,
+    )
+    if data.get("code") != 0:
+        return []
+    payload_data = data.get("data") or {}
+    field_names = [clean_text(field) for field in payload_data.get("fields") or []]
+    rows: list[dict[str, Any]] = []
+    for item in payload_data.get("items") or []:
+        if not isinstance(item, list):
+            continue
+        row = {field_names[index]: value for index, value in enumerate(item) if index < len(field_names) and field_names[index]}
+        if row:
+            rows.append(row)
+    return rows[: max(TUSHARE_BATCH_MAX_ROWS * 3, TUSHARE_BATCH_MAX_ROWS)]
+
+
 def tushare_rows(token: str, api_name: str, ts_code: str, fields: str, params_mode: str, report_period: str | None = None) -> list[dict[str, Any]]:
     data = post_json(
         TUSHARE_API_URL,
@@ -626,6 +702,17 @@ def tushare_rows(token: str, api_name: str, ts_code: str, fields: str, params_mo
     return rows[:10]
 
 
+def tushare_batch_params(mode: str, report_period: str | None = None) -> dict[str, str]:
+    if mode == "period":
+        return {"period": report_period or latest_report_period()}
+    if mode == "trade_date":
+        return {"trade_date": os.environ.get("TUSHARE_TRADE_DATE") or latest_tushare_trade_date()}
+    if mode == "date_range":
+        today = datetime.now(timezone.utc).date()
+        return {"start_date": os.environ.get("TUSHARE_START_DATE") or (today - timedelta(days=30)).strftime("%Y%m%d"), "end_date": os.environ.get("TUSHARE_END_DATE") or today.strftime("%Y%m%d")}
+    return {}
+
+
 def tushare_params(ts_code: str, mode: str, report_period: str | None = None) -> dict[str, str]:
     if mode == "period":
         return {"ts_code": ts_code, "period": report_period or latest_report_period()}
@@ -633,6 +720,13 @@ def tushare_params(ts_code: str, mode: str, report_period: str | None = None) ->
         today = datetime.now(timezone.utc).date()
         return {"ts_code": ts_code, "start_date": (today - timedelta(days=30)).strftime("%Y%m%d"), "end_date": today.strftime("%Y%m%d")}
     return {"ts_code": ts_code}
+
+
+def latest_tushare_trade_date() -> str:
+    day = datetime.now(timezone.utc).date()
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.strftime("%Y%m%d")
 
 
 def latest_tushare_period_from_rows(rows: list[dict[str, Any]]) -> str:
@@ -665,7 +759,7 @@ def tushare_sources(candidate: dict[str, Any], ts_code: str, api_name: str, rows
                     "source": "Tushare Pro API",
                     "query": f"{industry or company} Tushare {api_name} 财报 估值 分红 公告",
                     "title": tushare_title(company, ts_code, api_name, row, period),
-                    "url": f"https://tushare.pro/document/2?doc_id=33#{api_name}",
+                    "url": f"https://tushare.pro/document/2?doc_id=33#{api_name}:{ts_code}:{period}",
                     "publishedAt": iso_date(period),
                     "summary": tushare_summary(api_name, row),
                     "sourceType": source_type,

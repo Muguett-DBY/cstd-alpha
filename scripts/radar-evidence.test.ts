@@ -191,6 +191,46 @@ describe("rolling radar evidence collector", () => {
     );
   });
 
+  test("can request batch Tushare market rows without one API call per company", () => {
+    const output = execFileSync(
+      "python",
+      [
+        "-c",
+        [
+          "import importlib.util, json, os",
+          "spec=importlib.util.spec_from_file_location('collector','scripts/collect_radar_evidence.py')",
+          "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+          "os.environ['TUSHARE_TOKEN']='test-token'",
+          "calls=[]",
+          "def fake_post(url, payload, headers=None, timeout=25):",
+          "    calls.append({'api': payload.get('api_name'), 'params': payload.get('params')})",
+          "    fields={'daily_basic':['ts_code','trade_date','pe_ttm','pb','total_mv'],'income':['ts_code','end_date','revenue','n_income_attr_p'],'cashflow':['ts_code','end_date','n_cashflow_act'],'fina_indicator':['ts_code','end_date','grossprofit_margin','roe'],'dividend':['ts_code','end_date','cash_div_tax'],'anns_d':['ts_code','ann_date','title']}.get(payload.get('api_name'), ['ts_code'])",
+          "    items={'daily_basic':[['300750.SZ','20260525',22.9,5.8,19000000],['600519.SH','20260525',21.1,6.2,18000000]],'income':[['300750.SZ','20260331',84704630000,13963180000],['600519.SH','20260331',46000000000,24000000000]],'cashflow':[['300750.SZ','20260331',5875900000]],'fina_indicator':[['300750.SZ','20260331',25.6,4.1]],'dividend':[['600519.SH','20251231',25.0]],'anns_d':[['300750.SZ','20260428','宁德时代一季报']]}.get(payload.get('api_name'), [])",
+          "    return {'code': 0, 'data': {'fields': fields, 'items': items}}",
+          "m.post_json=fake_post",
+          "sources=m.fetch_tushare_batch_market_facts([{'company':'宁德时代','code':'300750.SZ','market':'A股','industry':'锂电储能','evidenceStrength':20}, {'company':'贵州茅台','code':'600519.SH','market':'A股','industry':'白酒','evidenceStrength':18}])",
+          "print(json.dumps({'calls': calls, 'sources': sources}, ensure_ascii=False))",
+        ].join("\n"),
+      ],
+      { encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } },
+    );
+    const result = JSON.parse(output) as {
+      calls: Array<{ api?: string; params?: Record<string, string> }>;
+      sources: Array<{ source?: string; company?: string; code?: string; sourceType?: string; signalType?: string; title?: string }>;
+    };
+
+    expect(result.calls.map((call) => call.api)).toEqual(expect.arrayContaining(["daily_basic", "income", "cashflow", "fina_indicator", "dividend", "anns_d"]));
+    expect(result.calls.every((call) => !call.params?.ts_code)).toBe(true);
+    expect(result.calls.some((call) => call.api === "income" && call.params?.period)).toBe(true);
+    expect(result.calls.some((call) => call.api === "daily_basic" && call.params?.trade_date)).toBe(true);
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "Tushare Pro API", company: "宁德时代", code: "300750.SZ", sourceType: "announcement", signalType: "financial_metric" }),
+        expect.objectContaining({ source: "Tushare Pro API", company: "贵州茅台", code: "600519.SH", sourceType: "market", signalType: "valuation_metric" }),
+      ]),
+    );
+  });
+
   test("offline fixture exercises the same real hard-data source families as live collection", () => {
     const script = "scripts/collect_radar_evidence.py";
     const outputPath = join(mkdtempSync(join(tmpdir(), "radar-evidence-")), "radar-evidence.json");
