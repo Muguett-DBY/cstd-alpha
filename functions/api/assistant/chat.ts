@@ -1043,7 +1043,10 @@ async function generateReviewedResearchAnswer(input: {
   const review = shouldRunModelRationalReview(answer, input.userMessage)
     ? await reviewResearchAnswer({ env: input.env, userMessage: input.userMessage, mode: input.mode, answer, signal: input.signal })
     : { usage: {} };
-  const text = ensureMinimumResearchSections(selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode), input.userMessage, input.mode);
+  const text = ensureComparisonCompleteness(
+    ensureMinimumResearchSections(selectReviewedResearchText(answer, review.revisedAnswer, input.userMessage, input.mode), input.userMessage, input.mode),
+    input.userMessage,
+  );
   return {
     text,
     review: review.raw,
@@ -1141,6 +1144,28 @@ function buildMinimumComparisonTable(userMessage: string) {
   ].join("\n");
 }
 
+function ensureComparisonCompleteness(answer: string, userMessage: string) {
+  if (!isComparisonQuestion(userMessage)) return answer;
+  const subjects = extractComparisonItems(userMessage);
+  if (subjects.length < 2) return answer;
+  const missing = subjects.filter((subject) => !answer.includes(subject));
+  const conclusion = answer.match(/^结论[:：]\s*([^\n]+)/)?.[1] ?? "";
+  const singleActionConclusion = /^(持有|买入|卖出|回避|观察|增持|减持)([。；;，,]|$)/.test(conclusion.trim());
+  if (!missing.length && !singleActionConclusion) return answer;
+  return [
+    answer.trim(),
+    "",
+    "---",
+    "",
+    "对比口径补正：",
+    buildComparisonTableGapAnswer(userMessage),
+  ].join("\n");
+}
+
+function isComparisonQuestion(message: string) {
+  return /(对比|比较|谁更|哪个更|哪一个更|差异|胜出|更稳|更好|优劣|vs|VS|和.*与|和.*谁|与.*谁)/.test(message);
+}
+
 function hasRequiredInvestmentSections(answer: string, userMessage: string) {
   if (!/(预测|预估|净利润|营收|利润|亏损|能买吗|买入|卖出|反驳|高股息|风险|投资价值|长期|护城河|技术|优势|协调|怎么判断|怎么看)/.test(userMessage)) return true;
   return /证据等级/.test(answer) && /(反证|我可能错|风险|削弱)/.test(answer) && /(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标|关注)/.test(answer);
@@ -1229,19 +1254,22 @@ function buildComparisonTableGapAnswer(userMessage: string) {
     if (/PCB/.test(name)) return "| PCB | 中性偏强观察 | 中低 | AI服务器高层数板和高频高速材料升级 | 良率、扩产、价格竞争 | 服务器PCB收入占比、订单、毛利率 |";
     if (/液冷/.test(name)) return "| 液冷 | 早期强观察 | 低至中 | 高功耗机柜推动渗透率提升 | 项目制波动、标准不统一、价格战 | 中标金额、交付节奏、客户复购 |";
     if (/存储|HBM/.test(name)) return "| 存储/HBM | 偏强但高周期 | 中 | HBM和DRAM涨价、AI服务器拉动 | 周期反转、扩产、终端需求下修 | 现货价格、合约价、库存、A/H链条业绩 |";
+    if (/茅台|五粮液|白酒/.test(name)) return `| ${name} | 观察 | 低至中 | 品牌、批价、渠道库存、现金流和估值共同决定长期回报 | 高端消费疲软、批价下行、渠道利润收缩 | 批价、合同负债、经营现金流、分红、估值分位 |`;
+    if (/宁德时代|比亚迪/.test(name)) return `| ${name} | 观察 | 中 | 技术路线、成本、客户结构、现金流和资本开支决定长期质量 | 价格战、产能过剩、技术替代、海外政策 | 电池毛利率、现金流、产能利用率、客户订单 |`;
     return `| ${name} | 观察 | 低 | 需要拆需求、价格、订单和利润率 | 概念化叙事、估值透支 | 财报、订单、价格、库存、客户验证 |`;
   });
+  const subjectLabel = items.slice(0, 4).join("、");
   return [
-    "结论：可以先做低置信横向比较，但不能把概念热度直接当成投资结论。当前排序应优先看“订单和利润率已兑现”的环节，而不是只看题材热度。",
+    `结论：${subjectLabel} 需要做相对判断，不能只给单一标的“持有/买入/观察”。当前只能给低置信排序框架：谁更稳取决于现金流韧性、估值安全边际和关键经营变量是否继续恶化。`,
     "证据等级：低至中。以下表格是研究框架和初步判断，必须用公司公告、财报、订单、价格和库存继续验证。",
     "",
-    "| 环节 | 景气度初判 | 证据强度 | 主要驱动 | 主要风险 | 下一步必须验证 |",
+    "| 对比对象 | 初步判断 | 证据强度 | 主要驱动 | 主要风险 | 下一步必须验证 |",
     "| --- | --- | --- | --- | --- | --- |",
     ...rows,
     "",
-    "反驳用户观点：如果只因为AI服务器需求强就把所有环节都判为高景气，这是错误的。产业链利润会在不同环节迁移，订单、毛利率和库存比概念新闻更重要。",
-    "我可能错在哪里：若最新财报显示某环节收入和毛利率已经连续兑现，或大客户CAPEX突然下修，上述排序需要立刻调整。",
-    "下一步跟踪：逐家公司核对AI相关收入占比、订单/中标、毛利率、库存、产能扩张和估值分位。",
+    "反驳用户观点：如果只因为龙头地位、品牌或历史高回报就判断长期更稳，这是不充分的；长期回报必须回到现金流、估值、增长韧性和反证条件。",
+    "我可能错在哪里：若其中一方最新财报、价格、现金流或渠道数据明显好于另一方，上述低置信排序必须改写。",
+    "下一步跟踪：逐家公司核对收入/净利增速、经营现金流、毛利率、库存/批价或订单、分红回购和估值分位。",
   ].join("\n");
 }
 
@@ -1291,7 +1319,11 @@ function extractComparisonItems(message: string) {
   const segment = match?.[1] || message;
   const items = segment
     .split(/[、,，/和与]/)
-    .map((item) => item.replace(/(画表|比较|对比|矩阵|产业链|环节|景气度|证据强度|风险|里)/g, "").trim())
+    .map((item) =>
+      item
+        .replace(/(画表|比较|对比|列表|矩阵|产业链|环节|景气度|证据强度|风险|里|长期回报|谁更稳|谁更好|哪个更好|哪一个更好|护城河差异|业务的|的|请|一下|？|\?)/g, "")
+        .trim(),
+    )
     .filter((item) => item.length >= 2 && item.length <= 12)
     .slice(0, 8);
   return items.length ? items : ["核心环节", "上游", "中游", "下游"];
@@ -1343,6 +1375,7 @@ function buildRationalReviewMessages(input: { userMessage: string; mode: Assista
       "重点检查跨市场类比：海外银行、海外公司或海外行业案例只能作为风险机制类比，不能直接证明中国/A股/港股标的；需要在回答中写明适用边界。",
       "重点检查反驳类问题：必须拆分“用户观点中合理的部分”和“错误的绝对化部分”；例如高股息可以是策略，但“稳赚”必须被明确反驳。",
       "重点检查反驳表格：不要把反证条件写成“支持稳赚”；应写为“削弱反驳的条件”或“我可能错在哪里”。",
+      "重点检查对比问题：用户问 A 和 B 谁更稳/哪个更好/对比时，回答必须同时覆盖 A 和 B，并给相对判断；禁止只给某一个标的“持有/买入/观察”。",
       "重点检查格式：禁止空标题、空章节和只有横线的章节；Markdown 表格必须有具体标题，不能写“结构化表格1/2/3”。",
       "重点检查业绩预估：没有站内财报或官方公告支撑的基数，不能写成“实际值”；只能写“外部线索/券商预测显示”或“待核验基数”。",
       "重点检查事实口径：没有明确证据时，禁止写“营收利润双降”“上市首次亏损”“首次下滑”等强事实；若只是搜索线索或推断，必须改成“待核验线索”。",

@@ -461,6 +461,37 @@ describe("assistant chat endpoint", () => {
     expect(body).not.toContain("结论：持有");
   });
 
+  test("comparison repair preserves every compared subject when model omits one", async () => {
+    const answer = "结论：持有。\n证据等级：低。\n核心理由：贵州茅台品牌较强。\n反驳用户观点：不能只看品牌。\n我可能错在哪里：若数据变化需要修正。\n下一步跟踪：批价和现金流。";
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: answer } }], usage: { total_tokens: 120 } }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "贵州茅台和五粮液长期回报谁更稳？请列表对比。", mode: "target" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain("对比口径补正");
+    expect(body).toContain("贵州茅台");
+    expect(body).toContain("五粮液");
+    expect(body).toContain("不能只给单一标的");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
@@ -927,7 +958,7 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(body).toContain("| 环节 |");
+    expect(body).toContain("| 对比对象 |");
     expect(body).toContain("光模块");
     expect(body).toContain("PCB");
     expect(body).toContain("液冷");

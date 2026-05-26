@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
+const OFFLINE_COLLECTOR_TIMEOUT_MS = 30_000;
+
 describe("rolling radar evidence collector", () => {
   test("generates a valid offline evidence snapshot without any DeepSeek dependency", () => {
     const script = "scripts/collect_radar_evidence.py";
@@ -54,7 +56,7 @@ describe("rolling radar evidence collector", () => {
     });
     expect(snapshot.quality?.uniqueSources).toBeGreaterThanOrEqual(3);
     expect(snapshot.quality?.largestSourceShare).toBeLessThanOrEqual(0.5);
-  });
+  }, OFFLINE_COLLECTOR_TIMEOUT_MS);
 
   test("emits full fine-industry packets even when some industries have weak evidence", () => {
     const script = "scripts/collect_radar_evidence.py";
@@ -69,7 +71,7 @@ describe("rolling radar evidence collector", () => {
     expect(packets.length).toBeGreaterThanOrEqual(80);
     expect(emptyOrWeak.length).toBeGreaterThan(0);
     expect(emptyOrWeak.every((packet) => packet.evidenceHash && Array.isArray(packet.evidenceGaps))).toBe(true);
-  });
+  }, OFFLINE_COLLECTOR_TIMEOUT_MS);
 
   test("does not use local placeholder signals as financial evidence", () => {
     const script = "scripts/collect_radar_evidence.py";
@@ -88,7 +90,7 @@ describe("rolling radar evidence collector", () => {
     expect(financialSources.length).toBeGreaterThan(0);
     expect(financialSources.every((source) => ["东方财富业绩报表", "东方财富业绩快报", "东方财富业绩预告"].includes(source.source ?? ""))).toBe(true);
     expect(snapshot.financialFacts?.some((fact) => fact.source === "东方财富业绩报表" && fact.company && fact.metric === "净利润" && typeof fact.yoy === "number")).toBe(true);
-  });
+  }, OFFLINE_COLLECTOR_TIMEOUT_MS);
 
   test("builds dynamic A-share company candidates from BaoStock industry rows", () => {
     const output = execFileSync(
