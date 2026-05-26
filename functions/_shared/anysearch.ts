@@ -39,7 +39,7 @@ export type AnySearchQuery = {
 };
 
 export type AnySearchEvidence = {
-  source: "AnySearch" | "SearXNG" | "Exa" | "Tavily" | "Brave" | "GDELT" | "ArXiv" | "SemanticScholar";
+  source: "AnySearch" | "SearXNG" | "Exa" | "Tavily" | "Brave" | "GDELT" | "ArXiv" | "SemanticScholar" | "CSTD Alpha";
   query: string;
   title: string;
   url: string;

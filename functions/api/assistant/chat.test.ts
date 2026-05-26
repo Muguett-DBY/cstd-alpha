@@ -106,6 +106,76 @@ describe("assistant chat endpoint", () => {
     expect(JSON.stringify(requestBody.messages)).toContain("研究模式：标的研究");
   });
 
+  test("runs an agent tool loop with progress events before the final answer", async () => {
+    const finalStream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "结论：茅台全年利润更可能低个位数增长。" } }], usage: { total_tokens: 220 } })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "tool-tavily-1",
+                    type: "function",
+                    function: {
+                      name: "search_tavily",
+                      arguments: JSON.stringify({ query: "贵州茅台 2026 净利润 业绩预估 批价", freshness: "month", maxResults: 5 }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { total_tokens: 80 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          request_id: "tvly-maotai",
+          results: [{ title: "贵州茅台批价与业绩预估", url: "https://example.com/maotai", content: "券商预计低个位数增长，批价承压。", score: 0.8 }],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(finalStream, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "茅台今年业绩预估？", mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        DEEPSEEK_API_KEY: "key",
+        TAVILY_API_KEY: "tvly-key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain('"type":"agent_step"');
+    expect(body).toContain('"type":"tool_status"');
+    expect(body).toContain('"status":"running"');
+    expect(body).toContain('"status":"completed"');
+    expect(body).toContain('"type":"tool_result"');
+    expect(body).toContain("正在查");
+    expect(body).toContain("低个位数增长");
+  });
+
   test("forces choice request for vague industry mode prompts before calling DeepSeek", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

@@ -41,9 +41,11 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators";
+type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
-  name: AssistantSearchToolName;
+  name: AssistantToolName;
   query: string;
   reason?: string;
   freshness?: "day" | "week" | "month" | "year";
@@ -61,6 +63,9 @@ type ExternalEvidenceResult = {
 };
 
 const ASSISTANT_AUXILIARY_REASONING_EFFORT = "high" as const;
+const ASSISTANT_AGENT_MAX_ROUNDS = 6;
+const ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND = 5;
+const ASSISTANT_AGENT_MAX_MS = 90_000;
 
 function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
   if (!externalEvidence.triggered) return `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`;
@@ -204,108 +209,105 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
     buildModeEvidenceSummary(env, session.userId, researchContext.message, contextMode, { strictTargetMatch: mode === "chat", signal: request.signal }),
   ]);
-  const externalEvidence = await maybeFetchExternalEvidence(env, researchContext.message, contextMode, request.signal, {
-    siteEvidenceSummary,
-    modeEvidenceSummary,
-  });
-  const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
-    userKey: session.userId,
-    threadId: thread.id,
-    toolName: "站内证据/外部搜索",
-    status: externalEvidence.triggered ? "completed" : "skipped",
-    summary: assistantToolRunSummary(externalEvidence),
-    input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa, toolCalls: externalEvidence.toolCalls } : externalEvidence.toolCalls ? { toolCalls: externalEvidence.toolCalls } : undefined,
-    output: externalEvidence.items.slice(0, 8),
-    now,
-  });
-  const evidenceSummary = [siteEvidenceSummary, modeEvidenceSummary].filter(Boolean).join("\n");
-  const externalEvidenceSummary = formatExternalEvidence(externalEvidence.items, externalEvidence.exa);
-  const promptMessages = buildAssistantPromptMessages({
-    memories,
-    threadSummary: thread.summary,
-    evidenceSummary,
-    externalEvidenceSummary,
-    recentMessages: promptRecentMessages,
-    userMessage: researchContext.promptMessage,
-    mode: contextMode,
-  });
 
   const assistantMessageId = crypto.randomUUID();
   const startedAt = Date.now();
-  if (responseMode !== "chat") {
-    const reviewed = await generateReviewedResearchAnswer({
-      env,
-      messages: promptMessages,
-      userMessage: researchContext.promptMessage,
-      mode: contextMode,
-      signal: request.signal,
-    });
-    const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence, {
-      isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
-    });
-    if (!guardedText.trim()) return json({ error: "DeepSeek 助手连接失败。" }, 502);
-    const blocks = extractAssistantBlocks(guardedText, userMessage);
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
-        if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
-        enqueue(controller, { type: "delta", text: guardedText });
-        for (const block of blocks) enqueue(controller, { type: "block", block });
-        const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
-          id: assistantMessageId,
-          userKey: session.userId,
-          threadId: thread.id,
-          role: "assistant",
-          content: guardedText,
-          metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review, blocks },
-        });
-        await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: reviewed.usage });
-        await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
-          userKey: session.userId,
-          threadId: thread.id,
-          previousSummary: thread.summary,
-          recentMessages,
-          latestUserMessage: userMessage,
-          latestAssistantMessage: guardedText,
-        });
-        enqueue(controller, { type: "usage", usage: reviewed.usage });
-        enqueue(controller, { type: "done", message });
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-store",
-        "x-accel-buffering": "no",
-      },
-    });
-
-    function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: AssistantChatStreamEvent) {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-    }
-  }
-
-  const upstream = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
-    body: JSON.stringify(buildAssistantDeepSeekBody(promptMessages)),
-    signal: request.signal,
-  });
-  if (!upstream.ok || !upstream.body) return json({ error: "DeepSeek 助手连接失败。" }, 502);
-
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
-  let assistantText = "";
-  let latestUsage: AssistantUsage | undefined;
-  let buffer = "";
 
   const stream = new ReadableStream({
     async start(controller) {
       enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
       if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
+      try {
+        const agent = await runAssistantAgentLoop({
+          env,
+          message: researchContext.message,
+          mode: contextMode,
+          context: { siteEvidenceSummary, modeEvidenceSummary },
+          signal: request.signal,
+          emit: (event) => enqueue(controller, event),
+        });
+        let externalEvidence = agent.externalEvidence;
+        if (!externalEvidence.triggered) {
+          externalEvidence = await maybeFetchExternalEvidence(
+            env,
+            researchContext.message,
+            contextMode,
+            request.signal,
+            { siteEvidenceSummary, modeEvidenceSummary },
+          );
+        }
+        const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB!, {
+          userKey: session.userId,
+          threadId: thread.id,
+          toolName: "Agent工具循环",
+          status: externalEvidence.triggered ? "completed" : "skipped",
+          summary: assistantToolRunSummary(externalEvidence),
+          input: externalEvidence.query ? { query: externalEvidence.query, exa: externalEvidence.exa, toolCalls: externalEvidence.toolCalls } : externalEvidence.toolCalls ? { toolCalls: externalEvidence.toolCalls } : undefined,
+          output: externalEvidence.items.slice(0, 8),
+          now,
+        });
+        const evidenceSummary = [siteEvidenceSummary, modeEvidenceSummary].filter(Boolean).join("\n");
+        const externalEvidenceSummary = formatExternalEvidence(externalEvidence.items, externalEvidence.exa);
+        const promptMessages = buildAssistantPromptMessages({
+          memories,
+          threadSummary: thread.summary,
+          evidenceSummary,
+          externalEvidenceSummary,
+          recentMessages: promptRecentMessages,
+          userMessage: researchContext.promptMessage,
+          mode: contextMode,
+        });
 
+        if (responseMode !== "chat") {
+          const reviewed = await generateReviewedResearchAnswer({
+            env,
+            messages: promptMessages,
+            userMessage: researchContext.promptMessage,
+            mode: contextMode,
+            signal: request.signal,
+          });
+          const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence, {
+            isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
+          });
+          if (!guardedText.trim()) throw new Error("DeepSeek 助手连接失败。");
+          const blocks = extractAssistantBlocks(guardedText, userMessage);
+          enqueue(controller, { type: "delta", text: guardedText });
+          for (const block of blocks) enqueue(controller, { type: "block", block });
+          const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
+            id: assistantMessageId,
+            userKey: session.userId,
+            threadId: thread.id,
+            role: "assistant",
+            content: guardedText,
+            metadata: { usage: reviewed.usage, toolRuns: [toolRun], rationalReview: reviewed.review, blocks },
+          });
+          await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage: reviewed.usage });
+          await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
+            userKey: session.userId,
+            threadId: thread.id,
+            previousSummary: thread.summary,
+            recentMessages,
+            latestUserMessage: userMessage,
+            latestAssistantMessage: guardedText,
+          });
+          enqueue(controller, { type: "usage", usage: reviewed.usage });
+          enqueue(controller, { type: "done", message });
+          controller.close();
+          return;
+        }
+
+        const upstream = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
+          body: JSON.stringify(buildAssistantDeepSeekBody(promptMessages)),
+          signal: request.signal,
+        });
+        if (!upstream.ok || !upstream.body) throw new Error("DeepSeek 助手连接失败。");
+        let assistantText = "";
+        let latestUsage: AssistantUsage | undefined;
+        let buffer = "";
       const reader = upstream.body!.getReader();
       try {
         while (true) {
@@ -320,6 +322,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             const text = extractDeltaText(data);
             if (text) {
               assistantText += text;
+              enqueue(controller, { type: "delta", text });
             }
             if (data.usage) {
               latestUsage = {
@@ -342,12 +345,14 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         }
         const repairedText = repairIncompleteAssistantAnswer(assistantText, researchContext.message, contextMode);
         if (repairedText !== assistantText) {
+          if (repairedText.startsWith(assistantText)) {
+            enqueue(controller, { type: "delta", text: repairedText.slice(assistantText.length) });
+          }
           assistantText = repairedText;
         }
         assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
-        enqueue(controller, { type: "delta", text: assistantText });
         latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
         for (const block of blocks) enqueue(controller, { type: "block", block });
@@ -383,6 +388,10 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
       } finally {
         reader.releaseLock();
       }
+      } catch (error) {
+        enqueue(controller, { type: "error", error: error instanceof Error ? error.message : "助手生成失败。" });
+        controller.close();
+      }
     },
   });
 
@@ -398,6 +407,284 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   }
 };
+
+async function runAssistantAgentLoop(input: {
+  env: AssistantEnv;
+  message: string;
+  mode: AssistantMode;
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string };
+  signal: AbortSignal;
+  emit: (event: AssistantChatStreamEvent) => void;
+}): Promise<{ externalEvidence: ExternalEvidenceResult; usage: AssistantUsage[] }> {
+  if (shouldTreatAsSimpleGeneralChat(input.message, input.mode)) {
+    return {
+      externalEvidence: { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需工具循环" }, toolCalls: [] },
+      usage: [],
+    };
+  }
+  if (!shouldRunAssistantAgentLoop(input.env, input.message, input.mode)) {
+    return {
+      externalEvidence: { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置可用实时工具，跳过工具循环" }, toolCalls: [] },
+      usage: [],
+    };
+  }
+  const startedAt = Date.now();
+  const allItems: AnySearchEvidence[] = [];
+  const allCalls: AssistantSearchToolCall[] = [];
+  const usages: AssistantUsage[] = [];
+  let latestExa: ExternalEvidenceResult["exa"] = { used: false, count: 0 };
+  let lastSummary = "";
+  for (let round = 1; round <= ASSISTANT_AGENT_MAX_ROUNDS; round += 1) {
+    if (Date.now() - startedAt > ASSISTANT_AGENT_MAX_MS) {
+      lastSummary = lastSummary ? `${lastSummary}；已触达时间护栏，停止继续检索。` : "已触达时间护栏，停止继续检索。";
+      break;
+    }
+    input.emit({ type: "agent_step", step: "plan_tools", title: round === 1 ? "正在判断需要哪些证据..." : "正在判断是否还要补证据...", round });
+    const decision = await askModelForAgentToolCalls({
+      env: input.env,
+      message: input.message,
+      mode: input.mode,
+      context: input.context,
+      collectedEvidence: allItems,
+      round,
+      remainingRounds: ASSISTANT_AGENT_MAX_ROUNDS - round,
+      signal: input.signal,
+    });
+    if (decision.usage) usages.push(decision.usage);
+    if (!decision.toolCalls.length || decision.finalReady) {
+      lastSummary = decision.reason || lastSummary || "模型判断当前证据足够，进入最终回答。";
+      break;
+    }
+    const calls = decision.toolCalls.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+    for (const call of calls) {
+      allCalls.push(call);
+      input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "running" });
+    }
+    input.emit({ type: "agent_step", step: "run_tools", title: "正在并行检索和读取证据...", round });
+    try {
+      const executed = await executeAssistantToolCalls(input.env, calls, input.signal, input.context);
+      allItems.push(...executed.items);
+      latestExa = executed.exa;
+      lastSummary = executed.summary;
+      for (const call of calls) {
+        input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "completed" });
+        input.emit({ type: "tool_result", id: call.id, status: "completed", summary: summarizeToolResult(call, executed.items.length), evidenceCount: executed.items.length });
+      }
+      break;
+    } catch (error) {
+      lastSummary = error instanceof Error ? error.message : "工具执行失败。";
+      for (const call of calls) {
+        input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "failed" });
+        input.emit({ type: "tool_result", id: call.id, status: "failed", summary: "这个来源暂时失败，继续用其他证据。", evidenceCount: 0 });
+      }
+    }
+  }
+  const deduped = dedupeExternalEvidence(allItems).slice(0, 24);
+  return {
+    externalEvidence: {
+      triggered: allCalls.length > 0,
+      query: allCalls.map((call) => `${call.name}:${call.query}`).join(" | ").slice(0, 500),
+      items: deduped,
+      exa: latestExa,
+      toolCalls: allCalls,
+      toolSummary: lastSummary || (allCalls.length ? `Agent工具循环返回 ${deduped.length} 条线索。` : "模型判断无需工具循环。"),
+    },
+    usage: usages,
+  };
+}
+
+function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: AssistantMode) {
+  if (shouldTreatAsSimpleGeneralChat(message, mode)) return false;
+  const hasConfiguredTools = Boolean(
+    env.ANYSEARCH_API_KEY?.trim()
+      || env.SEARXNG_ENDPOINTS?.trim()
+      || env.EXA_API_KEY?.trim()
+      || env.TAVILY_API_KEY?.trim()
+      || env.BRAVE_SEARCH_API_KEY?.trim()
+      || env.TUSHARE_TOKEN?.trim(),
+  );
+  return hasConfiguredTools;
+}
+
+async function askModelForAgentToolCalls(input: {
+  env: AssistantEnv;
+  message: string;
+  mode: AssistantMode;
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string };
+  collectedEvidence: AnySearchEvidence[];
+  round: number;
+  remainingRounds: number;
+  signal: AbortSignal;
+}): Promise<{ toolCalls: AssistantSearchToolCall[]; finalReady: boolean; reason?: string; usage?: AssistantUsage }> {
+  const startedAt = Date.now();
+  const messages = buildAgentToolLoopMessages(input);
+  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+    signal: input.signal,
+    body: JSON.stringify({
+      ...buildDeepSeekRequestBody({
+        model: ASSISTANT_MODEL,
+        messages,
+        maxTokens: 900,
+        reasoningEffort: ASSISTANT_REASONING_EFFORT,
+        temperature: 0,
+        responseFormat: null,
+        stream: false,
+        thinking: { type: "enabled" },
+      }),
+      tools: assistantAgentTools(),
+      tool_choice: "auto",
+    }),
+  });
+  if (!response.ok) return { toolCalls: [], finalReady: true, reason: "工具规划模型调用失败，直接基于已有证据回答。" };
+  const data = (await response.json()) as Record<string, unknown>;
+  const usage: AssistantUsage = {
+    model: ASSISTANT_MODEL,
+    reasoningEffort: ASSISTANT_REASONING_EFFORT,
+    ...parseDeepSeekUsage(data.usage),
+    elapsedMs: Date.now() - startedAt,
+  };
+  let toolCalls = normalizeSearchToolCalls(data).slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+  const content = extractMessageContent(data).trim();
+  if (!toolCalls.length) {
+    toolCalls = fallbackSearchToolCalls(input.message, input.mode, input.context, content || "工具规划未选择工具").toolCalls
+      .slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+  }
+  const finalReady = !toolCalls.length || /final_ready|证据足够|可以回答|停止|无需继续/i.test(content);
+  return { toolCalls, finalReady, reason: content.slice(0, 180), usage };
+}
+
+function buildAgentToolLoopMessages(input: {
+  message: string;
+  mode: AssistantMode;
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string };
+  collectedEvidence: AnySearchEvidence[];
+  round: number;
+  remainingRounds: number;
+}): DeepSeekMessage[] {
+  const system = withCacheProtocol(
+    [
+      "你是 CSTD Alpha 投研 Agent 的工具规划器，只决定下一步工具调用或停止，不输出最终答案。",
+      "目标：让最终回答有足够公司、行业、价格、财报、公告、政策、风险和反证证据；不要因为站内证据少就停止。",
+      "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
+      "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；search_* 用于外部补证据。",
+    ].join("\n"),
+    "assistant-agent-tool-loop",
+  );
+  const payload = cacheStableUserContent({
+    kind: "assistant-agent-tool-loop",
+    stable: {
+      mode: input.mode,
+      round: input.round,
+      remainingRounds: input.remainingRounds,
+      stopRule: "call_tools_or_final_ready",
+    },
+    volatile: {
+      userMessage: input.message,
+      siteEvidenceSummary: input.context.siteEvidenceSummary || "暂无站内证据。",
+      modeEvidenceSummary: input.context.modeEvidenceSummary || "当前模式没有命中结构化证据。",
+      collectedEvidence: formatCollectedEvidenceForAgent(input.collectedEvidence),
+    },
+  });
+  return [
+    { role: "system", content: system },
+    { role: "user", content: payload },
+  ];
+}
+
+function assistantAgentTools() {
+  return [
+    ...assistantSearchTools(),
+    ...["read_company_evidence", "read_watchlist_ranking", "read_template_reports", "read_radar_result", "read_tushare_indicators"].map((name) => ({
+      type: "function",
+      function: {
+        name,
+        description: "读取 CSTD Alpha 站内投研证据摘要，只读，不修改业务数据。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "要读取的公司、行业、主题或指标口径。" },
+            reason: { type: "string", description: "为什么需要这个站内工具。" },
+          },
+        },
+      },
+    })),
+  ];
+}
+
+function formatCollectedEvidenceForAgent(items: AnySearchEvidence[]) {
+  if (!items.length) return "尚未收集工具证据。";
+  return items
+    .slice(0, 16)
+    .map((item, index) => `E${index + 1} ${item.title}（${item.source}/${item.sourceType}）：${item.summary}`)
+    .join("\n");
+}
+
+function naturalToolStatusLabel(call: AssistantSearchToolCall) {
+  if (call.name.startsWith("read_")) return `正在读取${internalToolLabel(call.name)}...`;
+  if (call.name === "search_arxiv" || call.name === "search_semantic_scholar") return "正在查技术和论文线索...";
+  if (call.name === "search_gdelt") return "正在查全球新闻和风险线索...";
+  return `正在查${call.query.slice(0, 32)}...`;
+}
+
+function internalToolLabel(name: AssistantToolName) {
+  const labels: Record<string, string> = {
+    read_company_evidence: "公司证据包",
+    read_watchlist_ranking: "自选股排行",
+    read_template_reports: "模板报告",
+    read_radar_result: "行业雷达",
+    read_tushare_indicators: "A股结构化指标",
+  };
+  return labels[name] || "站内证据";
+}
+
+function summarizeToolResult(call: AssistantSearchToolCall, evidenceCount: number) {
+  if (call.name.startsWith("read_")) return `${internalToolLabel(call.name)}已读取，形成 ${evidenceCount} 条可用摘要。`;
+  return evidenceCount ? `已找到 ${evidenceCount} 条相关线索。` : "这个来源没有返回可用线索。";
+}
+
+async function executeAssistantToolCalls(
+  env: AssistantEnv,
+  toolCalls: AssistantSearchToolCall[],
+  signal: AbortSignal,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+) {
+  const internalItems = executeInternalAssistantTools(toolCalls, context);
+  const externalCalls = toolCalls.filter((call) => !call.name.startsWith("read_"));
+  const external = externalCalls.length ? await executeAssistantSearchToolCalls(env, externalCalls, signal) : { items: [], exa: { used: false, count: 0 }, summary: "未调用外部搜索。" };
+  return {
+    items: dedupeExternalEvidence([...internalItems, ...external.items]),
+    exa: external.exa,
+    summary: [internalItems.length ? `站内工具返回 ${internalItems.length} 条摘要。` : "", external.summary].filter(Boolean).join(" "),
+  };
+}
+
+function executeInternalAssistantTools(toolCalls: AssistantSearchToolCall[], context: { siteEvidenceSummary: string; modeEvidenceSummary: string }) {
+  const items: AnySearchEvidence[] = [];
+  const now = new Date().toISOString();
+  for (const call of toolCalls.filter((item) => item.name.startsWith("read_"))) {
+    const summary = call.name === "read_watchlist_ranking" || call.name === "read_template_reports" || call.name === "read_radar_result"
+      ? context.siteEvidenceSummary
+      : context.modeEvidenceSummary || context.siteEvidenceSummary;
+    if (!summary.trim()) continue;
+    items.push({
+      source: "CSTD Alpha",
+      query: call.query,
+      title: internalToolLabel(call.name),
+      url: "",
+      summary: summary.slice(0, 900),
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 1,
+      publishedAt: now,
+      qualityScore: 0.9,
+    });
+  }
+  return items;
+}
 
 async function maybeFetchExternalEvidence(
   env: AssistantEnv,
@@ -606,7 +893,7 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
   if (!isRecord(value)) return null;
   const fn = isRecord(value.function) ? value.function : {};
   const name = typeof fn.name === "string" ? fn.name : "";
-  if (name !== "search_anysearch" && name !== "search_searxng" && name !== "search_exa" && name !== "search_tavily" && name !== "search_brave" && name !== "search_gdelt" && name !== "search_arxiv" && name !== "search_semantic_scholar") return null;
+  if (!isAssistantToolName(name)) return null;
   const args = parseToolArguments(fn.arguments);
   const query = stringOrFallback(args.query, "").slice(0, 220);
   if (!query) return null;
@@ -620,6 +907,24 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
     freshness,
     maxResults,
   };
+}
+
+function isAssistantToolName(name: string): name is AssistantToolName {
+  return (
+    name === "search_anysearch" ||
+    name === "search_searxng" ||
+    name === "search_exa" ||
+    name === "search_tavily" ||
+    name === "search_brave" ||
+    name === "search_gdelt" ||
+    name === "search_arxiv" ||
+    name === "search_semantic_scholar" ||
+    name === "read_company_evidence" ||
+    name === "read_watchlist_ranking" ||
+    name === "read_template_reports" ||
+    name === "read_radar_result" ||
+    name === "read_tushare_indicators"
+  );
 }
 
 function parseToolArguments(value: unknown): Record<string, unknown> {

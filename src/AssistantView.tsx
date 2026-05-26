@@ -46,6 +46,7 @@ export function AssistantView() {
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
+  const [agentStatus, setAgentStatus] = useState("");
   const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
   const [speechNotice, setSpeechNotice] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -67,7 +68,7 @@ export function AssistantView() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [thread?.messages.length, draft]);
+  }, [thread?.messages.length, draft, agentStatus]);
 
   async function reloadThread() {
     setPhase("loading");
@@ -185,6 +186,7 @@ export function AssistantView() {
     setInput("");
     setDraft("");
     setDraftBlocks([]);
+    setAgentStatus("");
     setError("");
     setPhase("streaming");
     lastSentMessageRef.current = message;
@@ -213,6 +215,7 @@ export function AssistantView() {
       if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
       setDraftBlocks([]);
+      setAgentStatus("");
       setPhase("ready");
       if (final) void reloadThread();
     } catch (err) {
@@ -234,10 +237,23 @@ export function AssistantView() {
   }
 
   function handleStreamEvent(event: AssistantChatStreamEvent) {
-    if (event.type === "delta") setDraft((current) => mergeAssistantDelta(current, event.text));
+    if (event.type === "agent_step") setAgentStatus(event.title);
+    if (event.type === "tool_status") {
+      if (event.status === "running") setAgentStatus(event.label);
+      if (event.status === "completed") setAgentStatus("正在整合证据...");
+      if (event.status === "failed") setAgentStatus("部分来源暂时不可用，继续分析...");
+    }
+    if (event.type === "tool_result") {
+      setAgentStatus(event.status === "failed" ? "部分来源暂时不可用，继续分析..." : "正在整合证据...");
+    }
+    if (event.type === "delta") {
+      setAgentStatus("");
+      setDraft((current) => mergeAssistantDelta(current, event.text));
+    }
     if (event.type === "block") setDraftBlocks((current) => [...current.filter((item) => item.id !== event.block.id), event.block]);
     if (event.type === "choice_request") {
       setDraft("");
+      setAgentStatus("");
       setPendingClarification({
         original: lastSentMessageRef.current,
         request: event.request,
@@ -279,6 +295,12 @@ export function AssistantView() {
                 <AssistantText text={draftBlocks.length ? stripRenderedTables(stripInternalAssistantCompletion(draft)) : stripInternalAssistantCompletion(draft)} />
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
+            ) : null}
+            {!draft && agentStatus ? (
+              <div className="assistant-agent-status" role="status" aria-live="polite">
+                <span aria-hidden="true" />
+                {agentStatus}
+              </div>
             ) : null}
             <div ref={messagesEndRef} />
           </div>
