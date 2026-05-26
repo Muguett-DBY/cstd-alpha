@@ -458,8 +458,8 @@ async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal:
   }
 }
 
-const PYTHON_REPL_POLL_TIMEOUT_MS = 30_000;
-const PYTHON_REPL_POLL_INTERVAL_MS = 1_000;
+const PYTHON_REPL_POLL_TIMEOUT_MS = 90_000;
+const PYTHON_REPL_POLL_INTERVAL_MS = 3_000;
 
 async function executePythonRepl(
   env: AssistantEnv,
@@ -474,7 +474,7 @@ async function executePythonRepl(
     await env.REPORT_CACHE.put(
       `py-exec-${execId}`,
       JSON.stringify({ output: "", error: "", status: "pending" }),
-      { expirationTtl: 300 },
+      { expirationTtl: 600 },
     );
   }
   emit({ type: "code_exec", id: execId, code });
