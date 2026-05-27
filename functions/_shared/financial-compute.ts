@@ -1,3 +1,5 @@
+import { computeTechnicalIndicators } from "./assistant-a-stock";
+
 type ComputeInput = {
   operation: string;
   params: Record<string, unknown>;
@@ -20,6 +22,8 @@ export function executeFinancialCompute(input: ComputeInput): ComputeResult {
       return computeStats(input.params);
     case "ratios":
       return computeRatios(input.params);
+    case "technical":
+      return computeTechnical(input.params);
     default:
       return {
         operation: input.operation,
@@ -186,4 +190,14 @@ function computeRatios(params: Record<string, unknown>): ComputeResult {
     summary: summary.length ? summary.join("，") : "缺少参数，至少需要 price + eps 或 netIncome + totalEquity。",
     rows,
   };
+}
+
+function computeTechnical(params: Record<string, unknown>): ComputeResult {
+  const closes = parseNumArray(params.closes);
+  if (closes.length < 20) return { operation: "technical", label: "技术指标", summary: "至少需要20期收盘价数据。", rows: [] };
+  const highs = parseNumArray(params.highs);
+  const lows = parseNumArray(params.lows);
+  const volumes = parseNumArray(params.volumes);
+  const rows = computeTechnicalIndicators(closes, highs.length >= closes.length ? highs : closes, lows.length >= closes.length ? lows : closes, volumes.length >= closes.length ? volumes : []);
+  return { operation: "technical", label: "技术指标", summary: rows.map((r) => `${r.label}=${r.value}`).join("；"), rows };
 }

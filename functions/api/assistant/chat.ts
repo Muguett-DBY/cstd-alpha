@@ -22,7 +22,7 @@ import {
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
 import { executeFinancialCompute } from "../../_shared/financial-compute";
-import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchDragonTigerBoard, fetchDailyDragonTiger, fetchLockupExpiry, fetchMarginTrading, fetchBlockTrades, fetchHolderCount, fetchDividendHistory, fetchFundFlow120d, fetchNorthboundFlow, fetchResearchReports, fetchCninfoFilings, fetchSinaFinancialStatements, fetchEastmoneyStockInfo, fetchIndustryRanking, fetchBaiduKline, fetchStockNews, fetchGlobalNews } from "../../_shared/assistant-a-stock";
+import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchDragonTigerBoard, fetchDailyDragonTiger, fetchLockupExpiry, fetchMarginTrading, fetchBlockTrades, fetchHolderCount, fetchDividendHistory, fetchFundFlow120d, fetchNorthboundFlow, fetchResearchReports, fetchCninfoFilings, fetchSinaFinancialStatements, fetchEastmoneyStockInfo, fetchIndustryRanking, fetchBaiduKline, fetchStockNews, fetchGlobalNews, formatComparisonTable } from "../../_shared/assistant-a-stock";
 import {
   fetchAnySearchEvidence,
   fetchArxivEvidence,
@@ -44,7 +44,7 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_market_data" | "read_capital_analysis" | "read_filings_news" | "read_financial_statements" | "read_reports_concepts";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "compare_stocks" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_market_data" | "read_capital_analysis" | "read_filings_news" | "read_financial_statements" | "read_reports_concepts";
 type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
@@ -706,7 +706,7 @@ function buildAgentToolLoopMessages(input: {
       "主动调用规则：只要问题涉及具体公司、行业、估值、业绩、热点、新闻、资金流向、概念板块、公告、研报，就应主动调用合适的工具收集证据，不要等用户说'查一下'或'联网搜索'。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
-      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表；read_reports_concepts 查东财研报/K线；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股/港股/指数/ETF实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；compare_stocks 横向对比多只股票估值；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表；read_reports_concepts 查东财研报/K线；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率、技术指标）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
     ].join("\n"),
     "assistant-agent-tool-loop",
   );
@@ -759,13 +759,28 @@ function assistantAgentTools() {
       type: "function",
       function: {
         name: "read_tencent_quote",
-        description: "A股实时行情数据，包括当前价、PE(TTM)、PB、总市值、换手率、涨停价、跌停价。一次最多查5只股票。",
+        description: "A股/港股/指数/ETF实时行情数据，包括当前价、PE(TTM)、PB、总市值、换手率、涨停价、跌停价。一次最多查5只。支持A股代码(600519)、港股代码(00700.HK或0700)、指数(000001上证、000300沪深300、399006创业板)、ETF(510050)。",
         parameters: {
           type: "object",
           required: ["query"],
           properties: {
             query: { type: "string", description: "股票代码或名称，多个用逗号分隔。例：600519,000858" },
             reason: { type: "string", description: "为什么需要查询实时行情。" },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "compare_stocks",
+        description: "横向对比多只股票的实时估值数据。返回并排对比表，包含现价、涨跌幅、PE、PB、市值、换手率。支持A股、港股、指数。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "股票代码列表，逗号分隔。例：600519,000858,00700.HK" },
+            reason: { type: "string", description: "为什么需要对比。" },
           },
         },
       },
@@ -859,19 +874,19 @@ function assistantAgentTools() {
       type: "function",
       function: {
         name: "compute_financial",
-        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）。结果自动保留在上下文中。",
+        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）、technical（技术指标RSI/MACD/布林带/均线）。结果自动保留在上下文中。",
         parameters: {
           type: "object",
           required: ["operation", "params", "reason"],
           properties: {
             operation: {
               type: "string",
-              enum: ["cagr", "dcf", "stats", "ratios"],
-              description: "计算类型：cagr=复合年增长率，dcf=DCF估值，stats=描述性统计，ratios=财务比率",
+              enum: ["cagr", "dcf", "stats", "ratios", "technical"],
+              description: "计算类型：cagr=复合年增长率，dcf=DCF估值，stats=描述性统计，ratios=财务比率，technical=技术指标(RSI/MACD/布林带/均线)",
             },
             params: {
               type: "object",
-              description: "计算参数。cagr: { values: number[] }；dcf: { cashFlows: number[], terminalCashFlow?: number, terminalGrowthRate?: number(%), discountRate?: number(%), sharesOutstanding?: number, netDebt?: number }；stats: { values: number[] }；ratios: { price, eps, bookValue, revenue, netIncome, totalAssets, totalEquity, totalLiab }",
+              description: "计算参数。cagr: { values: number[] }；dcf: { cashFlows: number[], terminalCashFlow?: number, terminalGrowthRate?: number(%), discountRate?: number(%), sharesOutstanding?: number, netDebt?: number }；stats: { values: number[] }；ratios: { price, eps, bookValue, revenue, netIncome, totalAssets, totalEquity, totalLiab }；technical: { closes: number[], highs?: number[], lows?: number[], volumes?: number[] }",
             },
             reason: { type: "string", description: "为什么需要这个计算。" },
           },
@@ -893,6 +908,7 @@ function naturalToolStatusLabel(call: AssistantSearchToolCall) {
   if (call.name.startsWith("read_")) return `正在读取${internalToolLabel(call.name)}...`;
   if (call.name === "python_repl") return "正在用 Python 计算...";
   if (call.name === "compute_financial") return "正在执行金融计算...";
+  if (call.name === "compare_stocks") return "正在横向对比...";
   if (call.name === "search_arxiv" || call.name === "search_semantic_scholar") return "正在查技术和论文线索...";
   if (call.name === "search_gdelt") return "正在查全球新闻和风险线索...";
   return `正在查${(call.query ?? "").slice(0, 32)}...`;
@@ -907,6 +923,7 @@ function internalToolLabel(name: AssistantToolName) {
     read_tushare_indicators: "A股结构化指标",
     python_repl: "Python 计算",
     compute_financial: "金融计算",
+    compare_stocks: "横向对比",
     read_tencent_quote: "腾讯实时行情",
     read_ths_hot_stocks: "同花顺热点题材",
     read_ths_consensus_eps: "同花顺一致预期",
@@ -965,7 +982,7 @@ async function executeAssistantToolCalls(
   };
 }
 
-const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts"]);
+const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts", "compare_stocks"]);
 
 async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Promise<AnySearchEvidence[]> {
   const now = new Date().toISOString();
@@ -1077,6 +1094,17 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
       } else if (query) {
         const reports = await fetchResearchReports(query);
         items.push({ source: "CSTD Alpha", query, title: "研报与概念板块", url: "", summary: `【研报】\n${reports}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      }
+    } else if (call.name === "compare_stocks") {
+      const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 10);
+      if (codes.length < 2) {
+        items.push({ source: "CSTD Alpha", query, title: "横向对比", url: "", summary: "请提供至少2只股票代码。", sourceType: "official", signalType: "external_search", weight: 1, publishedAt: now, qualityScore: 1 });
+      } else {
+        const quotes = await fetchTencentQuote(codes);
+        if (quotes.length >= 2) {
+          const table = formatComparisonTable(quotes);
+          items.push({ source: "CSTD Alpha", query, title: "横向对比表", url: "", summary: table.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
+        }
       }
     }
   }
@@ -1359,6 +1387,7 @@ function isAssistantToolName(name: string): name is AssistantToolName {
     name === "read_tushare_indicators" ||
     name === "python_repl" ||
     name === "compute_financial" ||
+    name === "compare_stocks" ||
     name === "read_tencent_quote" ||
     name === "read_ths_hot_stocks" ||
     name === "read_ths_consensus_eps" ||

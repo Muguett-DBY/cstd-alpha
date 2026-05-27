@@ -5,11 +5,23 @@ type ThsHotStock = { code: string; name: string; changePct: number; reason: stri
 type ThsEpsForecast = { year: string; institutionCount: number; minEps: number; avgEps: number; maxEps: number };
 type ClsNewsItem = { id: string; title: string; ctime: string; content: string };
 type EastmoneyRow = Record<string, unknown>;
+type TechnicalResultRow = { label: string; value: string };
 
-function normalizeCode(c: string): string { return c.replace(/[.SHshSZszBJBJ]/g, "").trim(); }
+function normalizeCode(c: string): string {
+  let s = c.trim().toUpperCase();
+  if (s.endsWith(".HK")) s = s.slice(0, -3);
+  if (s.endsWith(".SZ") || s.endsWith(".SH") || s.endsWith(".BJ")) s = s.slice(0, -3);
+  if (s.startsWith("HK")) s = s.slice(2);
+  if (s.startsWith("SH") || s.startsWith("SZ") || s.startsWith("BJ")) s = s.slice(2);
+  return s;
+}
 function marketPrefix(code: string): string {
-  if (code.startsWith("6") || code.startsWith("9")) return "sh";
-  if (code.startsWith("8")) return "bj";
+  const u = code.toUpperCase();
+  if (u.startsWith("HK")) return "hk";
+  const c = code.replace(/HK|hk/g, "");
+  if (c.startsWith("6") || c.startsWith("9")) return "sh";
+  if (c.startsWith("8")) return "bj";
+  if (c.startsWith("5")) return "sh";
   return "sz";
 }
 function secid(code: string): string {
@@ -36,7 +48,12 @@ async function eastmoneyPush2(path: string, params: Record<string, string>, fetc
 }
 
 export async function fetchTencentQuote(codes: string[], fetchImpl = fetch): Promise<AStockQuote[]> {
-  const prefixed = codes.map((c) => `${marketPrefix(normalizeCode(c))}${normalizeCode(c)}`);
+  const prefixed = codes.map((c) => {
+    const n = normalizeCode(c);
+    const mk = marketPrefix(c);
+    if (c.toUpperCase().includes("HK")) return `hk${n}`;
+    return `${mk}${n}`;
+  });
   try {
     const r = await fetchImpl(`https://qt.gtimg.cn/q=${prefixed.join(",")}`, { headers: { "User-Agent": UA } });
     const buf = await r.arrayBuffer();
@@ -46,8 +63,21 @@ export async function fetchTencentQuote(codes: string[], fetchImpl = fetch): Pro
       if (!line.includes('"')) continue;
       const key = line.split("=")[0].split("_").pop() ?? "";
       const vals = line.split('"')[1]?.split("~") ?? [];
-      if (vals.length < 53) continue;
-      results.push({ code: key.slice(2), name: vals[1] ?? "", price: parseFloat(vals[3]) || 0, changePct: parseFloat(vals[32]) || 0, peTtm: parseFloat(vals[39]) || 0, pb: parseFloat(vals[46]) || 0, mcapYi: parseFloat(vals[44]) || 0, turnoverPct: parseFloat(vals[38]) || 0, limitUp: parseFloat(vals[47]) || 0, limitDown: parseFloat(vals[48]) || 0 });
+      if (vals.length < 5) continue;
+      const code = key.replace(/^(sh|sz|bj|hk)/i, "");
+      const mcap = parseFloat(vals[44]) || 0;
+      results.push({
+        code,
+        name: vals[1] ?? "",
+        price: parseFloat(vals[3]) || 0,
+        changePct: parseFloat(vals[32]) || 0,
+        peTtm: parseFloat(vals[39]) || 0,
+        pb: parseFloat(vals[46]) || 0,
+        mcapYi: mcap,
+        turnoverPct: parseFloat(vals[38]) || 0,
+        limitUp: parseFloat(vals[47]) || 0,
+        limitDown: parseFloat(vals[48]) || 0,
+      });
     }
     return results;
   } catch { return []; }
@@ -308,4 +338,80 @@ export async function fetchGlobalNews(fetchImpl = fetch): Promise<string> {
     if (!list.length) return "无全球资讯数据。";
     return list.map((a) => `${(a.Art_Ptime ?? "").slice(0, 10)} ${a.Art_Title ?? ""}`).join("\n");
   } catch { return "全球资讯暂不可用。"; }
+}
+
+// === 技术指标 ===
+export function computeTechnicalIndicators(closes: number[], highs: number[], lows: number[], volumes: number[]): TechnicalResultRow[] {
+  const results: TechnicalResultRow[] = [];
+  const n = closes.length;
+  if (n < 20) return results;
+
+  // RSI(14)
+  const rsiPeriod = 14;
+  if (n > rsiPeriod) {
+    let gains = 0, losses = 0;
+    for (let i = n - rsiPeriod; i < n; i++) {
+      const diff = closes[i] - closes[i - 1];
+      if (diff > 0) gains += diff; else losses -= diff;
+    }
+    const avgGain = gains / rsiPeriod, avgLoss = losses / rsiPeriod;
+    const rsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    results.push({ label: `RSI(14)`, value: rsi.toFixed(1) });
+  }
+
+  // MACD(12,26,9)
+  if (n > 26) {
+    const ema12 = calcEMA(closes, 12);
+    const ema26 = calcEMA(closes, 26);
+    const dif = ema12 - ema26;
+    const dea = calcEMA(ema12, 9) - calcEMA(ema26, 9);
+
+    const macd = 2 * (dif - dea);
+    results.push({ label: "MACD", value: `${macd.toFixed(2)}（DIF=${dif.toFixed(2)} DEA=${dea.toFixed(2)}）` });
+  }
+
+  // Bollinger Bands(20,2)
+  if (n >= 20) {
+    const recent = closes.slice(-20);
+    const ma = recent.reduce((a, b) => a + b, 0) / 20;
+    const std = Math.sqrt(recent.reduce((s, v) => s + (v - ma) ** 2, 0) / 20);
+    const upper = ma + 2 * std, lower = ma - 2 * std;
+    results.push({ label: "布林带(20,2)", value: `上轨${upper.toFixed(2)} 中轨${ma.toFixed(2)} 下轨${lower.toFixed(2)}` });
+  }
+
+  // MA(5,10,20,60)
+  [5, 10, 20, 60].forEach((p) => {
+    if (n >= p) {
+      const ma = closes.slice(-p).reduce((a, b) => a + b, 0) / p;
+      results.push({ label: `MA${p}`, value: ma.toFixed(2) });
+    }
+  });
+
+  // Volume trend (5-day vs 20-day avg)
+  if (n >= 20 && volumes.length >= n) {
+    const avg5 = volumes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+    const avg20 = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+    results.push({ label: "量比(5/20)", value: avg20 > 0 ? (avg5 / avg20).toFixed(2) : "N/A" });
+  }
+
+  return results;
+}
+
+function calcEMA(data: number[], period: number): number {
+  if (data.length < period) return data[data.length - 1] ?? 0;
+  const k = 2 / (period + 1);
+  let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < data.length; i++) ema = data[i] * k + ema * (1 - k);
+  return ema;
+}
+
+// === 横向对比格式化 ===
+export function formatComparisonTable(quotes: AStockQuote[]): string {
+  if (!quotes.length) return "无数据。";
+  const headers = ["名称", "代码", "现价", "涨跌幅%", "PE(TTM)", "PB", "市值(亿)", "换手率%"];
+  const rows = quotes.map((q) => [q.name, q.code, String(q.price), q.changePct.toFixed(2), q.peTtm ? q.peTtm.toFixed(1) : "-", q.pb ? q.pb.toFixed(2) : "-", q.mcapYi ? q.mcapYi.toFixed(0) : "-", q.turnoverPct ? q.turnoverPct.toFixed(2) : "-"]);
+  const header = `| ${headers.join(" | ")} |`;
+  const sep = `| ${headers.map(() => "---").join(" | ")} |`;
+  const body = rows.map((r) => `| ${r.join(" | ")} |`).join("\n");
+  return `${header}\n${sep}\n${body}`;
 }
