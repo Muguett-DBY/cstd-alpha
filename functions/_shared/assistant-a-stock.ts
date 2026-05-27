@@ -65,18 +65,20 @@ export async function fetchTencentQuote(codes: string[], fetchImpl = fetch): Pro
       const vals = line.split('"')[1]?.split("~") ?? [];
       if (vals.length < 5) continue;
       const code = key.replace(/^(sh|sz|bj|hk)/i, "");
+      const isHK = key.startsWith("hk");
+      const isIndex = /^[0-9]{3}(001|002|003|005|006|008|009|300|688|399)/.test(code) && vals.length < 53;
       const mcap = parseFloat(vals[44]) || 0;
       results.push({
         code,
         name: vals[1] ?? "",
         price: parseFloat(vals[3]) || 0,
         changePct: parseFloat(vals[32]) || 0,
-        peTtm: parseFloat(vals[39]) || 0,
-        pb: parseFloat(vals[46]) || 0,
+        peTtm: isHK && vals[39] ? parseFloat(vals[39]) || 0 : parseFloat(vals[39]) || 0,
+        pb: isHK ? (parseFloat(vals[47]) || 0) : (parseFloat(vals[46]) || 0),
         mcapYi: mcap,
-        turnoverPct: parseFloat(vals[38]) || 0,
-        limitUp: parseFloat(vals[47]) || 0,
-        limitDown: parseFloat(vals[48]) || 0,
+        turnoverPct: isHK || isIndex ? 0 : (parseFloat(vals[38]) || 0),
+        limitUp: isHK ? 0 : (parseFloat(vals[47]) || 0),
+        limitDown: isHK ? 0 : (parseFloat(vals[48]) || 0),
       });
     }
     return results;
