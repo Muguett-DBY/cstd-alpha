@@ -395,17 +395,17 @@ export function AssistantView() {
             {!draft && (agentStatus || toolCalls.size || pyodideReady === "loading") ? (
               <div className="assistant-agent-status" role="status" aria-live="polite">
                 {toolCalls.size ? (
-                  <div className="assistant-tool-list">
-                    {Array.from(toolCalls.values()).map((call, i) => (
-                      <div key={i} className={`assistant-tool-item ${call.status}`}>
-                        <span className="assistant-tool-icon">
-                          {call.status === "running" ? "●" : call.status === "completed" ? "✓" : "✗"}
-                        </span>
-                        <span className="assistant-tool-label">{call.label}</span>
-                      </div>
-                    ))}
-                    {agentStatus ? <div className="assistant-tool-summary">{agentStatus}</div> : null}
-                  </div>
+                  <span>
+                    <span aria-hidden="true" />
+                    {agentStatus || (() => {
+                      const running = Array.from(toolCalls.values()).filter((c) => c.status === "running");
+                      const completed = Array.from(toolCalls.values()).filter((c) => c.status === "completed");
+                      const parts: string[] = [];
+                      if (running.length) parts.push(`正在${running.map((c) => c.label).join("、")}`);
+                      if (completed.length) parts.push(`已完成${completed.length}项`);
+                      return parts.join("，");
+                    })()}
+                  </span>
                 ) : pyodideReady === "loading" ? (
                   "正在加载计算环境…"
                 ) : (
