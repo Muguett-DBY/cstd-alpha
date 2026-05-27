@@ -97,13 +97,18 @@ async function fetchYahooChartTable(symbol: string, fetchImpl: typeof fetch = fe
   try {
     const response = await fetchImpl(url);
     if (!response.ok) return null;
-    const json: unknown = await response.json();
-    const result = Array.isArray((json as Record<string, unknown>)?.chart?.result) ? (json as Record<string, unknown>).chart.result[0] as Record<string, unknown> : null;
-    if (!result) return null;
-    const timestamps = Array.isArray(result.timestamp) ? result.timestamp as number[] : [];
-    const quote = Array.isArray(result.indicators?.quote) ? result.indicators.quote[0] as Record<string, unknown> : null;
+    const json: Record<string, unknown> = await response.json();
+    const chart = json.chart as Record<string, unknown> | undefined;
+    const resultArr = Array.isArray(chart?.result) ? chart.result as unknown[] : null;
+    const result = resultArr?.[0] as Record<string, unknown> | undefined;
+    if (!result || !Array.isArray(result.timestamp)) return null;
+    const timestamps = result.timestamp as number[];
+    const indicators = result.indicators as Record<string, unknown> | undefined;
+    const quoteArr = Array.isArray(indicators?.quote) ? indicators.quote as unknown[] : null;
+    const quote = quoteArr?.[0] as Record<string, unknown> | undefined;
     const closes = Array.isArray(quote?.close) ? quote.close as (number | null)[] : [];
-    const adjResult = Array.isArray(result.indicators?.adjclose) ? result.indicators.adjclose[0] as Record<string, unknown> : null;
+    const adjcloseArr = Array.isArray(indicators?.adjclose) ? indicators.adjclose as unknown[] : null;
+    const adjResult = adjcloseArr?.[0] as Record<string, unknown> | undefined;
     const adjCloses = Array.isArray(adjResult?.adjclose) ? adjResult.adjclose as (number | null)[] : [];
     const rows: string[] = [];
     for (let i = 0; i < timestamps.length; i++) {
