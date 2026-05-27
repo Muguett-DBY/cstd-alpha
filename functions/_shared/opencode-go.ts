@@ -29,6 +29,7 @@ export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekF
   const zenKey = cleanKey(env.OPENCODE_ZEN_API_KEY);
   const goKey = cleanKey(env.OPENCODE_GO_API_KEY) || cleanKey(env.OPENCODE_API_KEY);
   const officialKey = cleanKey(env.DEEPSEEK_API_KEY);
+  console.log("[routes] zenKey:", !!zenKey, "goKey:", !!goKey, "officialKey:", !!officialKey);
   return [
     ...(goKey
       ? [
