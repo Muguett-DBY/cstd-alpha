@@ -1,4 +1,4 @@
-import { ensureAssistantSchema, getOrCreateDefaultThread, json, readAllMemories, readLatestUsage, readPendingMemoryCandidates, readRecentMessages, requireAdminSession, type AssistantEnv } from "../../_shared/assistant-db";
+import { ensureAssistantSchema, getOrCreateDefaultThread, json, listAssistantThreads, readAllMemories, readLatestUsage, readPendingMemoryCandidates, readRecentMessages, requireAdminSession, type AssistantEnv } from "../../_shared/assistant-db";
 
 export const onRequestGet: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
@@ -8,9 +8,15 @@ export const onRequestGet: PagesFunction<AssistantEnv> = async ({ request, env }
   await ensureAssistantSchema(env.REPORT_LIBRARY_DB);
   const url = new URL(request.url);
   const threadId = url.searchParams.get("threadId");
-  const thread = threadId
-    ? await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, threadId)
-    : await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId);
+  let thread;
+  if (threadId) {
+    thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, threadId);
+  } else {
+    const threads = await listAssistantThreads(env.REPORT_LIBRARY_DB, session.userId);
+    thread = threads.length
+      ? threads[0]
+      : await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId);
+  }
   const [messages, memories, memoryCandidates, latestUsage] = await Promise.all([
     readRecentMessages(env.REPORT_LIBRARY_DB, session.userId, thread.id, 80),
     readAllMemories(env.REPORT_LIBRARY_DB, session.userId),
