@@ -1,17 +1,16 @@
 import type { AssistantBlock, AssistantChartBlock, AssistantTableBlock } from "../../src/shared/assistant";
 
-const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|矩阵|可视化|chart|table|表格|对比表)/i;
-
 export function extractAssistantBlocks(text: string, userMessage = ""): AssistantBlock[] {
   const tables = extractMarkdownTables(text);
   const blocks: AssistantBlock[] = [];
   tables.forEach((table, index) => {
-    blocks.push({ ...table, id: `table-${index + 1}`, title: table.title || inferTableTitle(userMessage, table.columns, index) });
+    const chartBlock = tableToChartBlock(table, index);
+    if (chartBlock) {
+      blocks.push(chartBlock);
+    } else {
+      blocks.push({ ...table, id: `table-${index + 1}`, title: table.title || inferTableTitle(userMessage, table.columns, index) });
+    }
   });
-  if (CHART_REQUEST_RE.test(userMessage)) {
-    const chartBlocks = tables.map((table, index) => tableToChartBlock(table, index)).filter((block): block is AssistantChartBlock => Boolean(block));
-    blocks.push(...chartBlocks);
-  }
   return blocks.slice(0, 6);
 }
 
@@ -72,10 +71,23 @@ function tableToChartBlock(table: Omit<AssistantTableBlock, "id">, index: number
     id: `chart-${index + 1}`,
     type: "chart",
     title: `${labelColumn || "项目"}对比`,
-    chartType: labels.length > 8 ? "line" : "bar",
+    chartType: inferChartType(table.columns, labels, series),
     labels,
     series,
   };
+}
+
+function inferChartType(columns: string[], labels: string[], series: Array<{ name: string; data: number[] }>): "pie" | "area" | "line" | "bar" {
+  if (series.length === 1) {
+    const joinedName = columns.slice(1).join(" ");
+    if (/(占比|比重|构成|组成|比例|份额|分布|结构)/.test(joinedName)) return "pie";
+    const total = series[0].data.reduce((a, b) => a + Math.abs(b), 0);
+    if ((total > 80 && total < 120) || (total > 0.8 && total < 1.2)) return "pie";
+  }
+  if (labels.length >= 3 && /^\d{4}$/.test(labels[0])) return "area";
+  if (labels.length >= 3 && /^\d{4}[-/]\d{1,2}$/.test(labels[0])) return "area";
+  if (labels.length > 8) return "line";
+  return "bar";
 }
 
 function splitMarkdownRow(line: string) {

@@ -624,20 +624,40 @@ function AssistantChart({ block }: { block: AssistantChartBlock }) {
   useEffect(() => {
     if (!ref.current) return undefined;
     const chart = echarts.init(ref.current);
-    chart.setOption({
-      animation: false,
-      tooltip: { trigger: "axis" },
-      legend: { top: 0, textStyle: { fontWeight: 700 } },
-      grid: { left: 44, right: 16, top: 42, bottom: 42 },
-      xAxis: { type: "category", data: block.labels, axisLabel: { interval: 0, rotate: block.labels.length > 6 ? 24 : 0 } },
-      yAxis: { type: "value" },
-      series: block.series.map((series) => ({
-        name: series.name,
-        type: block.chartType === "scatter" ? "scatter" : block.chartType,
-        data: series.data,
-        smooth: block.chartType === "line",
-      })),
-    });
+    if (block.chartType === "pie") {
+      chart.setOption({
+        animation: false,
+        tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+        legend: { orient: "vertical", left: "left", textStyle: { fontWeight: 700 } },
+        series: [
+          {
+            type: "pie",
+            radius: ["30%", "60%"],
+            center: ["50%", "55%"],
+            data: block.labels.map((label, i) => ({ name: label, value: block.series[0]?.data[i] ?? 0 })),
+            emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: "rgba(0, 0, 0, 0.5)" } },
+          },
+        ],
+      });
+    } else {
+      const isArea = block.chartType === "area";
+      const isLine = block.chartType === "line" || isArea;
+      chart.setOption({
+        animation: false,
+        tooltip: { trigger: "axis" },
+        legend: { top: 0, textStyle: { fontWeight: 700 } },
+        grid: { left: 44, right: 16, top: 42, bottom: 42 },
+        xAxis: { type: "category", data: block.labels, axisLabel: { interval: 0, rotate: block.labels.length > 6 ? 24 : 0 } },
+        yAxis: { type: "value" },
+        series: block.series.map((series) => ({
+          name: series.name,
+          type: isLine ? "line" : block.chartType === "scatter" ? "scatter" : "bar",
+          data: series.data,
+          smooth: isLine,
+          ...(isArea ? { areaStyle: {} } : {}),
+        })),
+      });
+    }
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);
     return () => {

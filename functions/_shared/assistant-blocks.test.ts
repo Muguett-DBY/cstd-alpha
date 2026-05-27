@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { extractAssistantBlocks, stripRenderedMarkdownTables } from "./assistant-blocks";
 
 describe("assistant structured blocks", () => {
-  test("extracts table and chart blocks from markdown tables when chart is requested", () => {
+  test("extracts chart block from numeric markdown tables", () => {
     const text = [
       "结论：先观察。",
       "",
@@ -15,7 +15,6 @@ describe("assistant structured blocks", () => {
     const blocks = extractAssistantBlocks(text, "请画图对比营收和净利润");
 
     expect(blocks).toEqual([
-      expect.objectContaining({ type: "table", columns: ["指标", "2025", "2026"], rows: expect.any(Array) }),
       expect.objectContaining({ type: "chart", chartType: "bar", labels: ["营收同比", "净利润同比"] }),
     ]);
   });

@@ -62,7 +62,7 @@ export type AssistantChartBlock = {
   id: string;
   type: "chart";
   title?: string;
-  chartType: "bar" | "line" | "scatter";
+  chartType: "bar" | "line" | "scatter" | "pie" | "area";
   labels: string[];
   series: Array<{ name: string; data: number[] }>;
 };
