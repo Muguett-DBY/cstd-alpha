@@ -1,13 +1,15 @@
 import { jsonrepair } from "jsonrepair";
 import type { EvidenceBundle } from "./providers";
 import { sha256, type WatchlistRankingRow, type WatchlistRow } from "./user-research-db";
-import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "./opencode-go";
+import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "./opencode-go";
 
-const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const WATCHLIST_RANKING_SCHEMA_VERSION = "v1";
 
 export type WatchlistRankingEnv = {
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
 };
 
@@ -112,11 +114,36 @@ export async function writeCompletedWatchlistRanking(db: D1Database, userId: str
 }
 
 export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, watchlist: WatchlistRow, evidence: EvidenceBundle): Promise<GeneratedWatchlistRanking> {
-  const apiKey = requireOpenCodeGoApiKey(env, "watchlist ranking");
   const coverage = evidenceCoverageSummary(evidence);
-  const body = {
-    model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
-    reasoning_effort: "max",
+  const routes = buildDeepSeekFallbackRoutes(env);
+  let lastError: unknown;
+  for (const route of routes) {
+    const body = buildWatchlistRankingBody(route, watchlist, evidence, coverage);
+    const response = await fetch(route.url, {
+      method: "POST",
+      headers: { ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}), "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      lastError = new Error(`DeepSeek watchlist ranking failed: ${route.model} ${response.status} ${text.slice(0, 300)}`);
+      continue;
+    }
+    const payload = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = payload.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      lastError = new Error(`${route.model} 未返回自选排行评分。`);
+      continue;
+    }
+    return applyEvidenceCoverageCaps({ ...normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), modelUsed: route.model }, coverage);
+  }
+  throw lastError instanceof Error ? lastError : new Error("DeepSeek 未返回自选排行评分。");
+}
+
+function buildWatchlistRankingBody(route: DeepSeekFallbackRoute, watchlist: WatchlistRow, evidence: EvidenceBundle, coverage: ReturnType<typeof evidenceCoverageSummary>) {
+  return {
+    model: route.model,
+    ...(route.isFree ? { thinking: { type: "enabled" } } : { reasoning_effort: "max" }),
     temperature: 0.08,
     response_format: { type: "json_object" },
     messages: [
@@ -175,17 +202,6 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
       },
     ],
   };
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`DeepSeek watchlist ranking failed: ${response.status} ${text.slice(0, 300)}`);
-  const payload = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = payload.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error("DeepSeek 未返回自选排行评分。");
-  return applyEvidenceCoverageCaps(normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), coverage);
 }
 
 export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRanking {

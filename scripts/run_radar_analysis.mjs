@@ -4,8 +4,13 @@ import { jsonrepair } from "jsonrepair";
 
 const RADAR_CACHE_VERSION = "v2";
 const RADAR_VALID_HOURS = 12;
-const DEEPSEEK_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash-free";
+const OPENCODE_GO_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const OPENCODE_GO_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
+const DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_OFFICIAL_FLASH_MODEL = "deepseek-v4-flash";
+const DEEPSEEK_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 const DEEPSEEK_CACHE_PROTOCOL = "CSTD_ALPHA_DEEPSEEK_CACHE_PROTOCOL_V1";
 const EVIDENCE_WEIGHTS = {
   hard_data: 5,
@@ -311,27 +316,44 @@ function indicatorSortKey(item) {
 }
 
 async function callDeepSeek(body) {
-  const apiKey = process.env.OPENCODE_API_KEY?.trim();
-  if (!apiKey) throw new Error("OPENCODE_API_KEY is required");
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`DeepSeek failed: ${response.status} ${text.slice(0, 400)}`);
-  const payload = JSON.parse(text);
-  try {
-    return parseDeepSeekResponsePayload(payload);
-  } catch (error) {
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content?.trim()) throw error;
-    const repaired = await repairDeepSeekJsonContent(content, apiKey);
-    return {
-      output: parseModelJsonContent(repaired.outputText),
-      tokenUsage: mergeDeepSeekUsage(normalizeDeepSeekUsage(payload.usage), repaired.tokenUsage),
-    };
+  const routes = deepSeekFallbackRoutesFromEnv();
+  if (!routes.length) throw new Error("No DeepSeek-compatible route is configured");
+  const errors = [];
+  for (const route of routes) {
+    const response = await fetch(route.url, {
+      method: "POST",
+      headers: deepSeekHeaders(route),
+      body: JSON.stringify(bodyForDeepSeekRoute(body, route)),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      errors.push(`${route.provider}: ${response.status} ${text.slice(0, 400)}`);
+      continue;
+    }
+    const payload = JSON.parse(text);
+    try {
+      return withRouteUsage(parseDeepSeekResponsePayload(payload), route);
+    } catch (error) {
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content?.trim()) {
+        errors.push(`${route.provider}: ${error?.message || "invalid JSON"}`);
+        continue;
+      }
+      try {
+        const repaired = await repairDeepSeekJsonContent(content);
+        return {
+          output: parseModelJsonContent(repaired.outputText),
+          tokenUsage: withRouteUsage(
+            { tokenUsage: mergeDeepSeekUsage(normalizeDeepSeekUsage(payload.usage), repaired.tokenUsage) },
+            route,
+          ).tokenUsage,
+        };
+      } catch (repairError) {
+        errors.push(`${route.provider}: ${repairError?.message || "JSON repair failed"}`);
+      }
+    }
   }
+  throw new Error(`DeepSeek failed on all routes: ${errors.join(" | ").slice(0, 1200)}`);
 }
 
 function parseDeepSeekResponsePayload(payload) {
@@ -375,7 +397,7 @@ function extractJsonObjectText(text) {
   return text.slice(start, end + 1).trim();
 }
 
-async function repairDeepSeekJsonContent(content, apiKey) {
+async function repairDeepSeekJsonContent(content) {
   const repairBody = {
     model: DEEPSEEK_MODEL,
     reasoning_effort: "max",
@@ -399,17 +421,94 @@ async function repairDeepSeekJsonContent(content, apiKey) {
       },
     ],
   };
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(repairBody),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`DeepSeek JSON repair failed: ${response.status} ${text.slice(0, 400)}`);
-  const payload = JSON.parse(text);
-  const outputText = payload.choices?.[0]?.message?.content;
-  if (!outputText?.trim()) throw new Error("DeepSeek JSON repair returned empty content");
-  return { outputText, tokenUsage: normalizeDeepSeekUsage(payload.usage) };
+  const errors = [];
+  for (const route of deepSeekFallbackRoutesFromEnv()) {
+    const response = await fetch(route.url, {
+      method: "POST",
+      headers: deepSeekHeaders(route),
+      body: JSON.stringify(bodyForDeepSeekRoute(repairBody, route)),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      errors.push(`${route.provider}: ${response.status} ${text.slice(0, 300)}`);
+      continue;
+    }
+    const payload = JSON.parse(text);
+    const outputText = payload.choices?.[0]?.message?.content;
+    if (!outputText?.trim()) {
+      errors.push(`${route.provider}: empty JSON repair content`);
+      continue;
+    }
+    return { outputText, tokenUsage: withRouteUsage({ tokenUsage: normalizeDeepSeekUsage(payload.usage) }, route).tokenUsage };
+  }
+  throw new Error(`DeepSeek JSON repair failed on all routes: ${errors.join(" | ").slice(0, 800)}`);
+}
+
+function deepSeekFallbackRoutesFromEnv() {
+  const zenKey = cleanEnvKey(process.env.OPENCODE_ZEN_API_KEY);
+  const goKey = cleanEnvKey(process.env.OPENCODE_GO_API_KEY) || cleanEnvKey(process.env.OPENCODE_API_KEY);
+  const officialKey = cleanEnvKey(process.env.DEEPSEEK_API_KEY);
+  return [
+    {
+      provider: "opencode-zen-free",
+      model: OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL,
+      url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
+      apiKey: zenKey,
+      isFree: true,
+    },
+    ...(goKey
+      ? [
+          {
+            provider: "opencode-go",
+            model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
+            url: OPENCODE_GO_CHAT_COMPLETIONS_URL,
+            apiKey: goKey,
+            isFree: false,
+          },
+        ]
+      : []),
+    ...(officialKey
+      ? [
+          {
+            provider: "deepseek-official",
+            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
+            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
+            apiKey: officialKey,
+            isFree: false,
+          },
+        ]
+      : []),
+  ];
+}
+
+function bodyForDeepSeekRoute(body, route) {
+  const next = { ...body, model: route.model };
+  if (route.isFree) {
+    delete next.reasoning_effort;
+    next.thinking = next.thinking || { type: "enabled" };
+  } else {
+    delete next.thinking;
+    next.reasoning_effort = next.reasoning_effort || "max";
+  }
+  return next;
+}
+
+function deepSeekHeaders(route) {
+  return {
+    "content-type": "application/json",
+    ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}),
+  };
+}
+
+function withRouteUsage(result, route) {
+  return {
+    ...result,
+    tokenUsage: result.tokenUsage ? { ...result.tokenUsage, model: route.model, provider: route.provider } : result.tokenUsage,
+  };
+}
+
+function cleanEnvKey(value) {
+  return value?.trim() || undefined;
 }
 
 function mergeDeepSeekUsage(primary, fallback) {

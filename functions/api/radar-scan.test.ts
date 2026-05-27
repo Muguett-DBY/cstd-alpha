@@ -24,18 +24,32 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model contract", () => {
-  test("uses only the OpenCode Go DeepSeek Flash Max route when the background analyzer builds a model request", () => {
-    const routes = radarModelRoutes("paid-key");
+  test("routes DeepSeek requests through free OpenCode Zen, OpenCode Go, then official DeepSeek", () => {
+    const routes = radarModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" });
 
     expect(routes).toEqual([
       {
+        model: "deepseek-v4-flash-free",
+        url: "https://opencode.ai/zen/v1/chat/completions",
+        apiKey: undefined,
+        isFree: true,
+        provider: "opencode-zen-free",
+      },
+      {
         model: "deepseek-v4-flash",
         url: "https://opencode.ai/zen/v1/chat/completions",
-        apiKey: "paid-key",
+        apiKey: "go-key",
         isFree: false,
+        provider: "opencode-go",
+      },
+      {
+        model: "deepseek-v4-flash",
+        url: "https://api.deepseek.com/chat/completions",
+        apiKey: "deepseek-key",
+        isFree: false,
+        provider: "deepseek-official",
       },
     ]);
-    expect(routes.every((route) => route.url.includes("opencode.ai"))).toBe(true);
   });
 
   test("builds a DeepSeek request from structured evidence and previous scan context", () => {
@@ -62,7 +76,7 @@ describe("radar scan model contract", () => {
     ]);
 
     const request = buildRadarRequest(
-      { model: "deepseek-v4-flash", url: "https://opencode.ai/zen/v1/chat/completions", apiKey: "paid-key", isFree: false },
+      { model: "deepseek-v4-flash-free", url: "https://opencode.ai/zen/v1/chat/completions", isFree: true, provider: "opencode-zen-free" },
       digest,
       new AbortController().signal,
       previous,
@@ -71,14 +85,14 @@ describe("radar scan model contract", () => {
     const stablePayload = JSON.parse(body.messages[1].content) as Record<string, unknown>;
     const dynamicPayload = JSON.parse(body.messages[2].content) as Record<string, unknown>;
 
-    expect(request.headers).toMatchObject({ authorization: "Bearer paid-key" });
+    expect(request.headers).not.toHaveProperty("authorization");
     expect(body).toMatchObject({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4-flash-free",
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.1,
     });
-    expect(body.reasoning_effort).toBe("max");
+    expect(body.reasoning_effort).toBeUndefined();
     expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
     expect(JSON.stringify(stablePayload)).toContain("信息差");
     expect(JSON.stringify(stablePayload)).toContain("代表公司只能列 A 股或港股上市公司");

@@ -3,7 +3,6 @@ import {
   ASSISTANT_CACHE_ANCHOR_SENTENCE,
   ASSISTANT_MODEL,
   ASSISTANT_REASONING_EFFORT,
-  DEEPSEEK_CHAT_COMPLETIONS_URL,
   buildAssistantDeepSeekBody,
   buildAssistantPromptMessages,
   buildSiteEvidenceSummary,
@@ -39,6 +38,7 @@ import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, ty
 import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-quality";
 import { guardAssistantOutputLanguage } from "../../_shared/assistant-output-guards";
 import { fetchAndStoreCompanyEvidence, getOrCreateCompanyEvidencePackage, readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_shared/company-evidence";
+import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../../_shared/opencode-go";
 import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
@@ -91,7 +91,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  if (!env.OPENCODE_API_KEY) return json({ error: "OPENCODE_API_KEY is not configured." }, 500);
+  if (!buildDeepSeekFallbackRoutes(env).length) return json({ error: "No DeepSeek-compatible route is configured." }, 500);
 
   await ensureAssistantSchema(env.REPORT_LIBRARY_DB);
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
@@ -302,13 +302,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           return;
         }
 
-        const upstream = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${env.OPENCODE_API_KEY}` },
-          body: JSON.stringify(buildAssistantDeepSeekBody(promptMessages)),
-          signal: request.signal,
-        });
-        if (!upstream.ok || !upstream.body) throw new Error("DeepSeek 助手连接失败。");
+        const { response: upstream, route: answerRoute } = await fetchAssistantModel(env, request.signal, (route) => buildAssistantDeepSeekBody(promptMessages, route));
         let assistantText = "";
         let latestUsage: AssistantUsage | undefined;
         let buffer = "";
@@ -330,7 +324,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             }
             if (data.usage) {
               latestUsage = {
-                model: ASSISTANT_MODEL,
+                model: answerRoute.model,
                 reasoningEffort: ASSISTANT_REASONING_EFFORT,
                 ...parseDeepSeekUsage(data.usage),
                 elapsedMs: Date.now() - startedAt,
@@ -363,7 +357,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
-        latestUsage ??= { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
+        latestUsage ??= { model: answerRoute.model, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
         for (const block of blocks) enqueue(controller, { type: "block", block });
         const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
@@ -418,6 +412,65 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   }
 };
 
+async function fetchAssistantModel(
+  env: AssistantEnv,
+  signal: AbortSignal,
+  buildBody: (route: DeepSeekFallbackRoute) => Record<string, unknown>,
+): Promise<{ response: Response; route: DeepSeekFallbackRoute }> {
+  let lastError: unknown;
+  for (const route of buildDeepSeekFallbackRoutes(env)) {
+    try {
+      const response = await fetch(route.url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+        body: JSON.stringify(buildBody(route)),
+        signal,
+      });
+      if (response.ok && response.body) return { response, route };
+      lastError = new Error(`${route.provider} ${route.model} failed: ${response.status} ${(await response.text().catch(() => "")).slice(0, 300)}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("DeepSeek 助手连接失败。");
+}
+
+async function fetchAssistantJson(
+  env: AssistantEnv,
+  signal: AbortSignal,
+  buildBody: (route: DeepSeekFallbackRoute) => Record<string, unknown>,
+): Promise<{ data: Record<string, unknown>; route: DeepSeekFallbackRoute }> {
+  const { response, route } = await fetchAssistantModel(env, signal, buildBody);
+  return { data: (await response.json()) as Record<string, unknown>, route };
+}
+
+function nonStreamingModelBody({
+  route,
+  messages,
+  maxTokens,
+  temperature,
+  reasoningEffort = ASSISTANT_AUXILIARY_REASONING_EFFORT,
+  responseFormat = null,
+}: {
+  route: DeepSeekFallbackRoute;
+  messages: DeepSeekMessage[];
+  maxTokens: number;
+  temperature: number;
+  reasoningEffort?: "high" | "max";
+  responseFormat?: { type: "json_object" } | null;
+}) {
+  return buildDeepSeekRequestBody({
+    model: route.model,
+    messages,
+    maxTokens,
+    reasoningEffort: route.isFree ? undefined : reasoningEffort,
+    temperature,
+    stream: false,
+    responseFormat,
+    thinking: route.isFree ? { type: "enabled" } : undefined,
+  });
+}
+
 async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal: AbortSignal): Promise<string> {
   // 使用与主调用相同的 cache anchor + 身份声明以保留缓存前缀命中
   const system = withCacheProtocol(
@@ -433,25 +486,7 @@ async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal:
     { role: "user", content: message },
   ];
   try {
-    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.OPENCODE_API_KEY}` },
-      body: JSON.stringify(
-        buildDeepSeekRequestBody({
-          model: ASSISTANT_MODEL,
-          messages,
-          maxTokens: 1500,
-          reasoningEffort: "max",
-          temperature: 0.3,
-          stream: false,
-          responseFormat: null,
-          thinking: { type: "enabled" },
-        }),
-      ),
-      signal,
-    });
-    if (!response.ok) return "";
-    const data = (await response.json()) as Record<string, unknown>;
+    const { data } = await fetchAssistantJson(env, signal, (route) => nonStreamingModelBody({ route, messages, maxTokens: 1500, reasoningEffort: "max", temperature: 0.3 }));
     return extractMessageContent(data) ?? "";
   } catch {
     return "";
@@ -629,29 +664,19 @@ async function askModelForAgentToolCalls(input: {
 }): Promise<{ toolCalls: AssistantSearchToolCall[]; finalReady: boolean; reason?: string; usage?: AssistantUsage }> {
   const startedAt = Date.now();
   const messages = buildAgentToolLoopMessages(input);
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
-    signal: input.signal,
-    body: JSON.stringify({
-      ...buildDeepSeekRequestBody({
-        model: ASSISTANT_MODEL,
+  const { data, route } = await fetchAssistantJson(input.env, input.signal, (route) => ({
+      ...nonStreamingModelBody({
+        route,
         messages,
         maxTokens: 900,
         reasoningEffort: ASSISTANT_REASONING_EFFORT,
         temperature: 0,
-        responseFormat: null,
-        stream: false,
-        thinking: { type: "enabled" },
       }),
       tools: assistantAgentTools(),
       tool_choice: "auto",
-    }),
-  });
-  if (!response.ok) return { toolCalls: [], finalReady: true, reason: "工具规划模型调用失败，直接基于已有证据回答。" };
-  const data = (await response.json()) as Record<string, unknown>;
+    }));
   const usage: AssistantUsage = {
-    model: ASSISTANT_MODEL,
+    model: route.model,
     reasoningEffort: ASSISTANT_REASONING_EFFORT,
     ...parseDeepSeekUsage(data.usage),
     elapsedMs: Date.now() - startedAt,
@@ -858,29 +883,19 @@ async function askModelForSearchToolCalls(input: {
   const startedAt = Date.now();
   const messages = buildSearchToolRouterMessages(input.message, input.mode, input.context);
   try {
-    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
-      signal: input.signal,
-      body: JSON.stringify({
-        ...buildDeepSeekRequestBody({
-          model: ASSISTANT_MODEL,
+    const { data, route } = await fetchAssistantJson(input.env, input.signal, (route) => ({
+        ...nonStreamingModelBody({
+          route,
           messages,
           maxTokens: 900,
           reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
           temperature: 0,
-          responseFormat: null,
-          stream: false,
-          thinking: { type: "enabled" },
         }),
         tools: assistantSearchTools(),
         tool_choice: "auto",
-      }),
-    });
-    if (!response.ok) return fallbackSearchToolCalls(input.message, input.mode, input.context, "工具路由模型调用失败");
-    const data = (await response.json()) as Record<string, unknown>;
+      }));
     const usage: AssistantUsage = {
-      model: ASSISTANT_MODEL,
+      model: route.model,
       reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
       ...parseDeepSeekUsage(data.usage),
       elapsedMs: Date.now() - startedAt,
@@ -1613,25 +1628,17 @@ async function generateReviewedResearchAnswer(input: {
   signal: AbortSignal;
 }): Promise<{ text: string; usage: AssistantUsage; review?: unknown }> {
   const startedAt = Date.now();
-  const answerResponse = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
-    body: JSON.stringify(
-      buildDeepSeekRequestBody({
-        model: ASSISTANT_MODEL,
-        messages: input.messages,
-        maxTokens: 3600,
-        reasoningEffort: ASSISTANT_REASONING_EFFORT,
-        temperature: 0.08,
-        stream: false,
-        responseFormat: null,
-        thinking: { type: "enabled" },
-      }),
-    ),
-    signal: input.signal,
-  });
-  if (!answerResponse.ok) return { text: "", usage: { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt } };
-  const answerData = (await answerResponse.json()) as Record<string, unknown>;
+  let answerData: Record<string, unknown>;
+  let answerRoute: DeepSeekFallbackRoute | undefined;
+  try {
+    const result = await fetchAssistantJson(input.env, input.signal, (route) =>
+      nonStreamingModelBody({ route, messages: input.messages, maxTokens: 3600, reasoningEffort: ASSISTANT_REASONING_EFFORT, temperature: 0.08 }),
+    );
+    answerData = result.data;
+    answerRoute = result.route;
+  } catch {
+    return { text: "", usage: { model: ASSISTANT_MODEL, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt } };
+  }
   const answer = extractMessageContent(answerData);
   const answerUsage = parseDeepSeekUsage(answerData.usage);
   const review = shouldRunModelRationalReview(answer, input.userMessage)
@@ -1645,7 +1652,7 @@ async function generateReviewedResearchAnswer(input: {
     text,
     review: review.raw,
     usage: {
-      model: ASSISTANT_MODEL,
+      model: answerRoute?.model ?? ASSISTANT_MODEL,
       reasoningEffort: ASSISTANT_REASONING_EFFORT,
       ...answerUsage,
       totalTokens: (answerUsage.totalTokens ?? 0) + (review.usage.totalTokens ?? 0) || answerUsage.totalTokens,
@@ -2218,25 +2225,10 @@ function extractComparisonItems(message: string) {
 
 async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: string; mode: AssistantMode; answer: string; signal: AbortSignal }): Promise<{ revisedAnswer?: string; usage: ReturnType<typeof parseDeepSeekUsage>; raw?: unknown }> {
   try {
-    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
-      body: JSON.stringify(
-        buildDeepSeekRequestBody({
-          model: ASSISTANT_MODEL,
-          messages: buildRationalReviewMessages(input),
-          maxTokens: 1200,
-          reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
-          temperature: 0,
-          responseFormat: { type: "json_object" },
-          stream: false,
-          thinking: { type: "enabled" },
-        }),
-      ),
-      signal: input.signal,
-    });
-    if (!response.ok) return { usage: {} };
-    const data = (await response.json()) as Record<string, unknown>;
+    const messages = buildRationalReviewMessages(input);
+    const { data } = await fetchAssistantJson(input.env, input.signal, (route) =>
+      nonStreamingModelBody({ route, messages, maxTokens: 1200, reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT, temperature: 0, responseFormat: { type: "json_object" } }),
+    );
     const content = extractMessageContent(data);
     const parsed = parseRationalReview(content);
     return { revisedAnswer: parsed.revisedAnswer, raw: parsed.raw, usage: parseDeepSeekUsage(data.usage) };
@@ -2308,29 +2300,13 @@ async function askModelForClarification(input: {
   const startedAt = Date.now();
   const messages = buildClarificationDecisionMessages(input);
   try {
-    const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
-      signal: input.signal,
-      body: JSON.stringify(
-        buildDeepSeekRequestBody({
-          model: ASSISTANT_MODEL,
-          messages,
-          maxTokens: 850,
-          reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
-          temperature: 0,
-          responseFormat: { type: "json_object" },
-          stream: false,
-          thinking: { type: "enabled" },
-        }),
-      ),
-    });
-    if (!response.ok) return { request: null };
-    const data = (await response.json()) as Record<string, unknown>;
+    const { data, route } = await fetchAssistantJson(input.env, input.signal, (route) =>
+      nonStreamingModelBody({ route, messages, maxTokens: 850, reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT, temperature: 0, responseFormat: { type: "json_object" } }),
+    );
     const content = extractMessageContent(data);
     const parsed = parseClarificationDecision(content);
     const usage: AssistantUsage = {
-      model: ASSISTANT_MODEL,
+      model: route.model,
       reasoningEffort: ASSISTANT_AUXILIARY_REASONING_EFFORT,
       ...parseDeepSeekUsage(data.usage),
       elapsedMs: Date.now() - startedAt,

@@ -1,13 +1,15 @@
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
-import { requireOpenCodeGoApiKey } from "../_shared/opencode-go";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "../../src/shared/report";
 import { buildReportLibraryEntry, validateLibraryReport } from "../../src/shared/report-library";
 
 type Env = {
   AUTH_SECRET: string;
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   REPORT_CACHE?: KVNamespace;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
@@ -178,7 +180,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
 
     const modelMetrics: { modelCalls?: number; tokenUsage?: ReportGenerationMetrics["tokenUsage"] } = { modelCalls: 0 };
     const report = await callDeepSeekReport({
-      apiKey: requireOpenCodeGoApiKey(env, "report generation"),
+      apiKey: env.OPENCODE_API_KEY,
+      opencodeZenApiKey: env.OPENCODE_ZEN_API_KEY,
+      opencodeGoApiKey: env.OPENCODE_GO_API_KEY,
+      deepseekApiKey: env.DEEPSEEK_API_KEY,
       evidence,
       language: "zh-CN",
       signal,

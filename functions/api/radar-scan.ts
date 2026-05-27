@@ -1,7 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { readSessionCookie } from "../_shared/auth";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
-import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
+import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../_shared/opencode-go";
 import {
   createRadarAnalysisJob,
   dispatchRadarAnalysisWorkflow,
@@ -34,7 +34,10 @@ import type {
 
 type Env = {
   AUTH_SECRET: string;
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
   GITHUB_RADAR_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
@@ -42,7 +45,7 @@ type Env = {
   REPORT_LIBRARY_DB?: D1Database;
 };
 
-type RadarModel = typeof DEEPSEEK_PAID_MODEL;
+type RadarModel = DeepSeekFallbackRoute["model"];
 type RadarRoute = { model: RadarModel; url: string; apiKey?: string; isFree: boolean };
 
 export type RadarCachePayload = {
@@ -115,9 +118,7 @@ const LEGACY_RADAR_CACHE_KEYS = ["radar-scan:v1:latest"];
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
 
-const DEEPSEEK_PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 const RADAR_MODEL_REASONING: Partial<Record<RadarModel, "max">> = { "deepseek-v4-flash": "max" };
-const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const GITHUB_RADAR_REPOSITORY = "Muguett-DBY/cstd-alpha";
 const GITHUB_RADAR_WORKFLOW = "radar-analysis.yml";
 const RADAR_VALID_HOURS = 12;
@@ -274,9 +275,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }, 202);
 };
 
-export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
-  const paidKey = requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "radar scan");
-  return [{ model: DEEPSEEK_PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: paidKey, isFree: false }];
+export function radarModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">): RadarRoute[] {
+  return buildDeepSeekFallbackRoutes(env);
 }
 
 export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest, signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
@@ -285,8 +285,8 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort: RADAR_MODEL_REASONING[route.model],
-    thinking: RADAR_MODEL_REASONING[route.model] ? { type: "enabled", budget_tokens: 1024 } : undefined,
+    reasoningEffort: route.isFree ? undefined : RADAR_MODEL_REASONING[route.model],
+    thinking: route.isFree ? { type: "enabled", budget_tokens: 1024 } : undefined,
     maxTokens: 4500,
     messages: [
         {
@@ -361,7 +361,7 @@ export async function generateRadarScan(env: Env, signal: AbortSignal, previousS
   if (digest.sourceCount < MIN_RADAR_SOURCE_COUNT) {
     throw new Error(`雷达证据包过薄：${digest.sourceCount}/${MIN_RADAR_SOURCE_COUNT}`);
   }
-  const routes = radarModelRoutes(env.OPENCODE_API_KEY);
+  const routes = radarModelRoutes(env);
   let lastError: unknown;
   for (const route of routes) {
     const modelTimeout = timeoutSignal(signal, RADAR_MODEL_TIMEOUT_MS);

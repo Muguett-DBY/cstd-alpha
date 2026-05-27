@@ -62,10 +62,11 @@ describe("assistant prompt and memory helpers", () => {
     const body = buildAssistantDeepSeekBody([{ role: "user", content: "test" }]);
 
     expect(body).toMatchObject({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4-flash-free",
       reasoning_effort: "max",
       stream: true,
       stream_options: { include_usage: true },
+      thinking: { type: "enabled" },
     });
   });
 

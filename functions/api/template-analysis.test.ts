@@ -109,11 +109,11 @@ describe("isUsableTemplateAnalysisCache", () => {
 });
 
 describe("template model routing", () => {
-  test("uses DeepSeek paid model first when a paid key exists", () => {
-    const routes = templateModelRoutes("paid-key", true);
+  test("uses free OpenCode Zen before OpenCode Go and official DeepSeek", () => {
+    const routes = templateModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" }, true);
 
-    expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
-    expect(routes.some((route) => route.isFree)).toBe(false);
+    expect(routes.map((route) => route.provider)).toEqual(["opencode-zen-free", "opencode-go", "deepseek-official"]);
+    expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash-free", isFree: true });
   });
 
   test("calls DeepSeek directly for template reports", async () => {
@@ -152,11 +152,14 @@ describe("template model routing", () => {
     expect(generated.markdown).toContain("DeepSeek 直接生成");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe("deepseek-v4-flash-free");
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toEqual({ type: "enabled" });
   });
 
   test("accepts short completed template reports without expansion when fields are complete", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [
@@ -190,11 +193,11 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("内容短，但关键字段完整");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled" });
   });
 
   test("fails instead of writing an evidence fallback when high reasoning returns no final content", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [
@@ -217,8 +220,9 @@ describe("template model routing", () => {
       ),
     ).rejects.toThrow("未返回完整模板分析内容");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).reasoning_effort).toBe("max");
   });
 
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
@@ -406,7 +410,7 @@ describe("template model routing", () => {
       [],
     );
 
-    expect(generated.modelUsed).toBe("deepseek-v4-flash");
+    expect(generated.modelUsed).toBe("deepseek-v4-flash-free");
     expect(generated.markdown).not.toContain("证据包基础版");
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls[3][0]).toBe("https://opencode.ai/zen/v1/chat/completions");

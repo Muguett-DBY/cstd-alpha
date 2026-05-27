@@ -17,7 +17,10 @@ jobs:
     permissions:
       contents: read
     env:
+      OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
       SEARXNG_ENDPOINTS: ${{ secrets.SEARXNG_ENDPOINTS }}
       TEMPLATE_ANALYSIS_WORKER_URL: ${{ secrets.TEMPLATE_ANALYSIS_WORKER_URL }}
@@ -42,5 +45,5 @@ jobs:
         run: |
           node -e "const id=process.env.TEMPLATE_ANALYSIS_JOB_ID||''; if(!/^[a-f0-9]{64}$/i.test(id)){throw new Error('Invalid template analysis job id')}"
 
-      - name: Run OpenCode Go DeepSeek template analysis
+      - name: Run DeepSeek template analysis
         run: npx tsx scripts/run_template_analysis_job.ts

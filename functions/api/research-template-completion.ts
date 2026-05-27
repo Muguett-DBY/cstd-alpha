@@ -1,19 +1,20 @@
 import { jsonrepair } from "jsonrepair";
 import { json, requireUserSession } from "../_shared/user-research-db";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
-import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
+import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../_shared/opencode-go";
 import { normalizeTemplateSectionRequirements, type ResearchTemplate } from "../../src/shared/user-research";
 
 type Env = {
   AUTH_SECRET: string;
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
 };
 
 type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
-type TemplateCompletionRoute = { model: typeof PAID_MODEL; apiKey: string; isFree: false };
+type TemplateCompletionRoute = DeepSeekFallbackRoute;
 
-const PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
-const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const TEMPLATE_COMPLETION_TIMEOUT_MS = 240_000;
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -26,16 +27,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   return json({ completion });
 };
 
-export async function requestTemplateCompletion(env: Pick<Env, "OPENCODE_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
+export async function requestTemplateCompletion(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
   const messages = buildTemplateCompletionMessages(draft);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("template-completion-timeout"), TEMPLATE_COMPLETION_TIMEOUT_MS);
   signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
   let lastError: unknown;
   try {
-    for (const route of templateCompletionModelRoutes(env.OPENCODE_API_KEY)) {
+    for (const route of templateCompletionModelRoutes(env)) {
       try {
-        const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, buildTemplateCompletionRequest(route, messages, controller.signal));
+        const response = await fetch(route.url, buildTemplateCompletionRequest(route, messages, controller.signal));
         if (!response.ok) {
           lastError = new Error(`模板补全失败：${route.model} ${response.status} ${(await response.text()).slice(0, 500)}`);
           continue;
@@ -112,7 +113,8 @@ export function buildTemplateCompletionRequest(route: TemplateCompletionRoute, m
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort: "max",
+    reasoningEffort: route.isFree ? undefined : "max",
+    thinking: route.isFree ? { type: "enabled" } : undefined,
     maxTokens: 8000,
     messages,
   });
@@ -155,8 +157,8 @@ function normalizeDraftInput(value: Partial<TemplateCompletionDraft> | undefined
   };
 }
 
-function templateCompletionModelRoutes(apiKey: string | undefined): TemplateCompletionRoute[] {
-  return [{ model: PAID_MODEL, apiKey: requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "research template completion"), isFree: false }];
+function templateCompletionModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">): TemplateCompletionRoute[] {
+  return buildDeepSeekFallbackRoutes(env);
 }
 
 function stringValue(value: unknown) {

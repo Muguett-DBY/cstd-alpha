@@ -19,7 +19,10 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       RADAR_EVIDENCE_KV_NAMESPACE_ID: d2c77bf9e7f14258af33e2efd3f59c60
       RADAR_D1_DATABASE_NAME: cstd-alpha-report-library
       RADAR_JOB_ID: ${{ inputs.job_id }}
@@ -52,26 +55,26 @@ jobs:
             ? fs.readFileSync("dist-radar/job-current.json", "utf8").trim()
             : "";
           if (!raw || raw === "null") {
-            throw new Error(`No queued radar job was found in KV for ${jobId}; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`No queued radar job was found in KV for ${jobId}; refusing to run DeepSeek analysis.`);
           }
           let job;
           try {
             job = JSON.parse(raw);
           } catch (error) {
-            throw new Error(`Queued radar job ${jobId} is not valid JSON; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`Queued radar job ${jobId} is not valid JSON; refusing to run DeepSeek analysis.`);
           }
           if (!job || job.id !== jobId) {
-            throw new Error(`Radar job id mismatch for ${jobId}; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`Radar job id mismatch for ${jobId}; refusing to run DeepSeek analysis.`);
           }
           if (!/^radar-\d+-[0-9a-f-]{8}$/i.test(job.id)) {
-            throw new Error(`Radar job ${jobId} was not created by the website scan endpoint; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`Radar job ${jobId} was not created by the website scan endpoint; refusing to run DeepSeek analysis.`);
           }
           if (job.status !== "queued") {
-            throw new Error(`Radar job ${jobId} is ${job.status}, not queued; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`Radar job ${jobId} is ${job.status}, not queued; refusing to run DeepSeek analysis.`);
           }
           const updatedAt = Date.parse(job.updatedAt || "");
           if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 60 * 60 * 1000) {
-            throw new Error(`Radar job ${jobId} is stale; refusing to run OpenCode Go DeepSeek.`);
+            throw new Error(`Radar job ${jobId} is stale; refusing to run DeepSeek analysis.`);
           }
           console.log(`Validated queued website radar job ${jobId}.`);
           NODE
@@ -109,7 +112,7 @@ jobs:
             --namespace-id "$RADAR_EVIDENCE_KV_NAMESPACE_ID" \
             --remote > dist-radar/previous-radar-cache.json || echo "null" > dist-radar/previous-radar-cache.json
 
-      - name: Run OpenCode Go DeepSeek radar analysis
+      - name: Run DeepSeek radar analysis
         run: |
           node scripts/run_radar_analysis.mjs \
             --evidence dist-radar/radar-evidence.json \

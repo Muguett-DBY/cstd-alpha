@@ -11,12 +11,12 @@ import {
 } from "../../src/shared/report";
 import { jsonrepair } from "jsonrepair";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "./deepseek-cache";
-import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL } from "./opencode-go";
+import { OPENCODE_GO_DEEPSEEK_FLASH_MODEL, buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "./opencode-go";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
-type DeepSeekModel = typeof OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
+type DeepSeekModel = DeepSeekFallbackRoute["model"];
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
@@ -106,6 +106,9 @@ export class DeepSeekReportError extends Error {
 
 type DeepSeekInput = {
   apiKey?: string;
+  opencodeZenApiKey?: string;
+  opencodeGoApiKey?: string;
+  deepseekApiKey?: string;
   evidence: EvidenceBundle;
   language?: "zh-CN" | "en";
   fetchImpl?: FetchLike;
@@ -119,8 +122,18 @@ type DeepSeekUsageTracker = {
   byModel: Map<DeepSeekModel, ReportTokenUsage>;
 };
 
+type DeepSeekRouteEnv = {
+  opencodeZenApiKey?: string;
+  opencodeGoApiKey?: string;
+  opencodeApiKey?: string;
+  deepseekApiKey?: string;
+};
+
 export async function callDeepSeekReport({
   apiKey,
+  opencodeZenApiKey,
+  opencodeGoApiKey,
+  deepseekApiKey,
   evidence,
   language = "zh-CN",
   fetchImpl = fetch,
@@ -131,6 +144,12 @@ export async function callDeepSeekReport({
 }: DeepSeekInput): Promise<InvestmentReport> {
   let modelCalls = 0;
   const usageTracker: DeepSeekUsageTracker = { byModel: new Map() };
+  const routeEnv: DeepSeekRouteEnv = {
+    opencodeZenApiKey,
+    opencodeGoApiKey,
+    opencodeApiKey: apiKey,
+    deepseekApiKey,
+  };
   const countedFetch = ((...args: Parameters<FetchLike>) => {
     const resource = args[0];
     const url =
@@ -147,7 +166,7 @@ export async function callDeepSeekReport({
 
   try {
     const scoringJson = await requestScoringJson({
-      apiKey,
+      routeEnv,
       fetchImpl: countedFetch,
       language,
       evidence,
@@ -161,7 +180,7 @@ export async function callDeepSeekReport({
         {
           ...scoringReport,
           scoreItems20: await requestScoreItemDetails({
-            apiKey,
+            routeEnv,
             fetchImpl: countedFetch,
             language,
             scoringReport,
@@ -174,7 +193,7 @@ export async function callDeepSeekReport({
       ),
     );
     const fullSections = await requestNarrativeSections({
-      apiKey,
+      routeEnv,
       fetchImpl: countedFetch,
       language,
       scoringReport: enrichedReport,
@@ -194,14 +213,14 @@ export async function callDeepSeekReport({
 }
 
 async function requestScoringJson({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   evidence,
   onProgress,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
@@ -209,7 +228,7 @@ async function requestScoringJson({
   usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true, usageTracker });
+    return await requestScoringJsonOnce({ routeEnv, fetchImpl, language, evidence, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     onProgress?.({
@@ -218,19 +237,19 @@ async function requestScoringJson({
       detail: "模型第一次返回的评分 JSON 不完整，正在用更紧凑结构重试。",
       percent: 64,
     });
-    return requestScoringJsonOnce({ apiKey, fetchImpl, language, evidence, strictLength: true, usageTracker });
+    return requestScoringJsonOnce({ routeEnv, fetchImpl, language, evidence, strictLength: true, usageTracker });
   }
 }
 
 async function requestScoringJsonOnce({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   evidence,
   strictLength,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   evidence: EvidenceBundle;
@@ -238,7 +257,7 @@ async function requestScoringJsonOnce({
   usageTracker: DeepSeekUsageTracker;
 }) {
   const scoringJson = await requestDeepSeekJson({
-    apiKey,
+    routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: 12000,
@@ -272,7 +291,7 @@ async function requestScoringJsonOnce({
 }
 
 async function requestNarrativeSections({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -280,7 +299,7 @@ async function requestNarrativeSections({
   onProgress,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -297,7 +316,7 @@ async function requestNarrativeSections({
       percent: 70 + Math.round((index * 15) / Math.max(1, NARRATIVE_SECTION_BATCHES.length - 1)),
     });
     return requestNarrativeBatch({
-      apiKey,
+      routeEnv,
       fetchImpl,
       language,
       scoringReport,
@@ -311,7 +330,7 @@ async function requestNarrativeSections({
 }
 
 async function requestScoreItemDetails({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -319,7 +338,7 @@ async function requestScoreItemDetails({
   onProgress,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -336,7 +355,7 @@ async function requestScoreItemDetails({
       percent: 64 + index,
     });
     return requestScoreItemDetailBatch({
-      apiKey,
+      routeEnv,
       fetchImpl,
       language,
       scoringReport,
@@ -399,7 +418,7 @@ function isPlaceholderScoreDetailText(value: unknown) {
 }
 
 async function requestScoreItemDetailBatch({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -407,7 +426,7 @@ async function requestScoreItemDetailBatch({
   itemIds,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -416,7 +435,7 @@ async function requestScoreItemDetailBatch({
   usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   try {
-    return await requestScoreItemDetailBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
+    return await requestScoreItemDetailBatchOnce({ routeEnv, fetchImpl, language, scoringReport, evidence, itemIds, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     return fallbackScoreItemDetails(scoringReport, itemIds);
@@ -432,7 +451,7 @@ function fallbackScoreItemDetails(scoringReport: InvestmentReport, itemIds: stri
 }
 
 async function requestScoreItemDetailBatchOnce({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -441,7 +460,7 @@ async function requestScoreItemDetailBatchOnce({
   strictLength,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -451,7 +470,7 @@ async function requestScoreItemDetailBatchOnce({
   usageTracker: DeepSeekUsageTracker;
 }): Promise<ScoreItemDetail[]> {
   const detailJson = await requestDeepSeekJson({
-    apiKey,
+    routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: strictLength ? 2400 : 3600,
@@ -522,7 +541,7 @@ async function requestScoreItemDetailBatchOnce({
 }
 
 async function requestNarrativeBatch({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -530,7 +549,7 @@ async function requestNarrativeBatch({
   keys,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -539,15 +558,15 @@ async function requestNarrativeBatch({
   usageTracker: DeepSeekUsageTracker;
 }) {
   try {
-    return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
+    return await requestNarrativeBatchOnce({ routeEnv, fetchImpl, language, scoringReport, evidence, keys, strictLength: true, usageTracker });
   } catch (error) {
     if (!isRetryableModelOutputError(error)) throw error;
     try {
-      return await requestNarrativeBatchOnce({ apiKey, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
+      return await requestNarrativeBatchOnce({ routeEnv, fetchImpl, language, scoringReport, evidence, keys, strictLength: false, usageTracker });
     } catch (retryError) {
       if (!isRetryableModelOutputError(retryError) || keys.length <= 1) throw retryError;
       return requestNarrativeSectionsIndividually({
-        apiKey,
+        routeEnv,
         fetchImpl,
         language,
         scoringReport,
@@ -560,7 +579,7 @@ async function requestNarrativeBatch({
 }
 
 async function requestNarrativeSectionsIndividually({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -568,7 +587,7 @@ async function requestNarrativeSectionsIndividually({
   keys,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -581,7 +600,7 @@ async function requestNarrativeSectionsIndividually({
     Object.assign(
       fullSections,
       await requestNarrativeBatchOnce({
-        apiKey,
+        routeEnv,
         fetchImpl,
         language,
         scoringReport,
@@ -596,7 +615,7 @@ async function requestNarrativeSectionsIndividually({
 }
 
 async function requestNarrativeBatchOnce({
-  apiKey,
+  routeEnv,
   fetchImpl,
   language,
   scoringReport,
@@ -605,7 +624,7 @@ async function requestNarrativeBatchOnce({
   strictLength,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   language: "zh-CN" | "en";
   scoringReport: InvestmentReport;
@@ -615,7 +634,7 @@ async function requestNarrativeBatchOnce({
   usageTracker: DeepSeekUsageTracker;
 }) {
   const narrativeJson = await requestDeepSeekJson({
-    apiKey,
+    routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: strictLength ? 2600 : 4200,
@@ -651,7 +670,7 @@ async function requestNarrativeBatchOnce({
 }
 
 async function requestDeepSeekJson({
-  apiKey,
+  routeEnv,
   fetchImpl,
   model,
   messages,
@@ -659,7 +678,7 @@ async function requestDeepSeekJson({
   timeoutMs,
   usageTracker,
 }: {
-  apiKey?: string;
+  routeEnv: DeepSeekRouteEnv;
   fetchImpl: FetchLike;
   model: DeepSeekModel;
   messages: Array<{ role: "system" | "user"; content: string }>;
@@ -669,7 +688,7 @@ async function requestDeepSeekJson({
 }) {
   const timeoutController = timeoutMs ? new AbortController() : undefined;
   const timeoutId = timeoutController ? setTimeout(() => timeoutController.abort(), timeoutMs) : undefined;
-  const routes = modelRoutes(apiKey, model);
+  const routes = modelRoutes(routeEnv, model);
   let lastFailure: unknown;
   try {
     for (const route of routes) {
@@ -714,10 +733,16 @@ async function requestDeepSeekJson({
   throw new DeepSeekReportError(DEEPSEEK_NETWORK_MESSAGE, "DEEPSEEK_NETWORK", true, { cause: lastFailure });
 }
 
-function modelRoutes(apiKey: string | undefined, preferredModel: DeepSeekModel): Array<{ model: DeepSeekModel; url: string; apiKey?: string; isFree: boolean }> {
-  const key = apiKey?.trim();
-  if (!key) throw new DeepSeekReportError("OPENCODE_API_KEY 未配置，本次报告未完成。", "OPENCODE_API_KEY_MISSING", false);
-  return [{ model: preferredModel, url: OPENCODE_GO_CHAT_COMPLETIONS_URL, apiKey: key, isFree: false }];
+function modelRoutes(routeEnv: DeepSeekRouteEnv, preferredModel: DeepSeekModel): Array<{ model: DeepSeekModel; url: string; apiKey?: string; isFree: boolean }> {
+  void preferredModel;
+  const routes = buildDeepSeekFallbackRoutes({
+    OPENCODE_ZEN_API_KEY: routeEnv.opencodeZenApiKey,
+    OPENCODE_GO_API_KEY: routeEnv.opencodeGoApiKey,
+    OPENCODE_API_KEY: routeEnv.opencodeApiKey,
+    DEEPSEEK_API_KEY: routeEnv.deepseekApiKey,
+  });
+  if (!routes.length) throw new DeepSeekReportError("DeepSeek 路由未配置，本次报告未完成。", "DEEPSEEK_ROUTE_MISSING", false);
+  return routes;
 }
 
 function buildDeepSeekRequest(

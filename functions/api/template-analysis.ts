@@ -2,7 +2,7 @@ import { jsonrepair } from "jsonrepair";
 import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../_shared/anysearch";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
 import { getOrCreateCompanyEvidencePackage, type CompanyEvidencePackage } from "../_shared/company-evidence";
-import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
+import { OPENCODE_GO_DEEPSEEK_FLASH_MODEL, buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../_shared/opencode-go";
 import type { EvidenceBundle } from "../_shared/providers";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
@@ -27,7 +27,10 @@ import {
 
 type Env = {
   AUTH_SECRET: string;
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
@@ -39,7 +42,10 @@ type Env = {
 };
 
 type DurableTemplateEnv = {
+  OPENCODE_ZEN_API_KEY?: string;
+  OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB?: D1Database;
@@ -66,7 +72,6 @@ type TemplateGenerationAttempt = {
 };
 
 const PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
-const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
 const GITHUB_TEMPLATE_REPOSITORY = "Muguett-DBY/cstd-alpha";
@@ -288,7 +293,7 @@ async function requestTemplateReportOnce(
     const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
     const enrichedEvidence = await enrichTemplateEvidenceWithAnySearch(env, watchlist, evidence, template, controller.signal);
     let lastError: unknown;
-    for (const route of templateModelRoutes(env.OPENCODE_API_KEY, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
+    for (const route of templateModelRoutes(env, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
       for (const attempt of templateGenerationAttempts(template.id, maxTokens, route.isFree ? "free" : "paid")) {
         try {
           const messages = buildTemplateMessages(
@@ -551,14 +556,13 @@ function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
   return `${normalized.slice(0, Math.max(0, maxChars - 60)).trim()}\n\n（后文因上下文长度限制截断，汇总时以已提供正文和结构化要点交叉验证。）`;
 }
 
-export function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof PAID_MODEL; url: string; apiKey: string; isFree: false }> {
-  const paidRoute = { model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "template analysis"), isFree: false } as const;
+export function templateModelRoutes(env: Pick<DurableTemplateEnv, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">, preferPaid = false): DeepSeekFallbackRoute[] {
   void preferPaid;
-  return [paidRoute];
+  return buildDeepSeekFallbackRoutes(env);
 }
 
 function buildTemplateRequest(
-  route: { model: typeof PAID_MODEL; apiKey: string; isFree: false },
+  route: DeepSeekFallbackRoute,
   messages: ReturnType<typeof buildTemplateMessages>,
   maxTokens: number,
   reasoningEffort: TemplateReasoningEffort,
@@ -568,7 +572,8 @@ function buildTemplateRequest(
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort,
+    reasoningEffort: route.isFree ? undefined : reasoningEffort,
+    thinking: route.isFree ? { type: "enabled" } : undefined,
     maxTokens,
     messages,
   });
