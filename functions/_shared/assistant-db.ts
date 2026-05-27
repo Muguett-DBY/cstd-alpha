@@ -194,6 +194,11 @@ export async function deleteAssistantThread(db: D1Database, threadId: string, us
   await db.prepare(`DELETE FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
 }
 
+export async function updateAssistantThreadTitle(db: D1Database, threadId: string, userKey: string, title: string) {
+  await ensureAssistantSchema(db);
+  await db.prepare(`UPDATE assistant_threads SET title = ?1 WHERE id = ?2 AND user_key = ?3`).bind(title, threadId, userKey).run();
+}
+
 export async function readActiveMemories(db: D1Database, userKey: string): Promise<AssistantMemory[]> {
   await ensureAssistantSchema(db);
   const result = await db

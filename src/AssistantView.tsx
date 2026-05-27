@@ -6,6 +6,7 @@ import {
   listAssistantThreads,
   createAssistantThread,
   deleteAssistantThread,
+  renameAssistantThread,
   rejectAssistantMemoryCandidate,
   sendAssistantMessage,
   sendCodeResult,
@@ -47,7 +48,6 @@ export function AssistantView() {
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
   const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
-  const [threadListOpen, setThreadListOpen] = useState(false);
   const [mode, setMode] = useState<AssistantMode>("chat");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
@@ -101,7 +101,6 @@ export function AssistantView() {
   }
 
   async function switchThread(threadId: string) {
-    setThreadListOpen(false);
     setDraft("");
     await reloadThread(threadId);
   }
@@ -260,7 +259,14 @@ export function AssistantView() {
       setDraftBlocks([]);
       setAgentStatus("");
       setPhase("ready");
-      if (final) void reloadThread();
+      if (final) {
+        if (thread?.title === "新对话" && final.content) {
+          const title = final.content.replace(/^[：:]\s*/, "").slice(0, 40).replace(/\n.*$/s, "") || message.slice(0, 40);
+          try { await renameAssistantThread(thread.id, title); } catch { /* ignore */ }
+        }
+        void reloadThread(thread?.id);
+        void loadThreadList();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "助手生成失败。");
       setPhase("error");
@@ -346,29 +352,21 @@ export function AssistantView() {
 
   return (
     <section className="assistant-workspace" aria-label="投研助手">
-      <section className="assistant-chat-panel" aria-label="助手聊天">
-          <div className="assistant-chat-header">
-            <button type="button" className="assistant-thread-toggle" onClick={() => setThreadListOpen((v) => !v)} aria-label="切换会话" title="切换会话">
-              ☰
-            </button>
-            <span className="assistant-thread-title">{thread?.title || "投研助手"}</span>
-          </div>
-          {threadListOpen ? (
-            <div className="assistant-thread-sidebar">
-              <div className="assistant-thread-sidebar-header">
-                <span>会话列表</span>
-                <button type="button" className="assistant-thread-new" onClick={() => void newThread()}>＋ 新对话</button>
-              </div>
-              <div className="assistant-thread-list">
-                {threadList.map((t) => (
-                  <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
-                    <span className="assistant-thread-item-title">{t.title}</span>
-                    <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
-                  </div>
-                ))}
-              </div>
+      <div className="assistant-thread-sidebar">
+        <div className="assistant-thread-sidebar-header">
+          <span>会话列表</span>
+          <button type="button" className="assistant-thread-new" onClick={() => void newThread()}>＋ 新对话</button>
+        </div>
+        <div className="assistant-thread-list">
+          {threadList.map((t) => (
+            <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
+              <span className="assistant-thread-item-title">{t.title}</span>
+              <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
             </div>
-          ) : null}
+          ))}
+        </div>
+      </div>
+      <section className="assistant-chat-panel" aria-label="助手聊天">
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {

@@ -1108,7 +1108,7 @@ button:not(:disabled):active,
 }
 
 .assistant-workspace {
-  display: grid;
+  display: flex;
   height: 100%;
   min-height: 0;
   max-width: 1180px;
@@ -1180,12 +1180,19 @@ button:not(:disabled):active,
   background: rgba(255, 255, 255, 0.92);
 }
 
-.assistant-chat-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+.assistant-workspace {
+  display: flex;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
-  position: relative;
+}
+
+.assistant-chat-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: #fff;
@@ -1220,14 +1227,10 @@ button:not(:disabled):active,
 }
 
 .assistant-thread-sidebar {
-  position: absolute;
-  top: 40px;
-  left: 0;
-  bottom: 0;
-  width: 260px;
-  background: var(--surface);
+  width: 240px;
+  min-width: 0;
+  background: color-mix(in srgb, var(--bg) 50%, var(--surface));
   border-right: 1px solid var(--line);
-  z-index: 10;
   display: flex;
   flex-direction: column;
   overflow: hidden;

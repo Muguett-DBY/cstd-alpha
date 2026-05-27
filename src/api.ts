@@ -357,6 +357,16 @@ export async function deleteAssistantThread(threadId: string): Promise<void> {
   if (!response.ok) throw new Error((await readError(response)) || "线程删除失败。");
 }
 
+export async function renameAssistantThread(threadId: string, title: string): Promise<void> {
+  const response = await fetch(`/api/assistant/threads/${encodeURIComponent(threadId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "线程重命名失败。");
+}
+
 export async function sendAssistantMessage(
   message: string,
   modeOrEvent?: AssistantMode | ((event: AssistantChatStreamEvent) => void),
