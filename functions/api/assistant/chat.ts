@@ -703,6 +703,7 @@ function buildAgentToolLoopMessages(input: {
     [
       "你是 CSTD Alpha 投研 Agent 的工具规划器，只决定下一步工具调用或停止，不输出最终答案。",
       "目标：让最终回答有足够公司、行业、价格、财报、公告、政策、风险和反证证据；不要因为站内证据少就停止。",
+      "主动调用规则：只要问题涉及具体公司、行业、估值、业绩、热点、新闻、资金流向、概念板块、公告、研报，就应主动调用合适的工具收集证据，不要等用户说'查一下'或'联网搜索'。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
       "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；read_cls_news 查财联社实时快讯；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表；read_reports_concepts 查研报/概念板块/K线；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
@@ -733,11 +734,17 @@ function buildAgentToolLoopMessages(input: {
 function assistantAgentTools() {
   return [
     ...assistantSearchTools(),
-    ...["read_company_evidence", "read_watchlist_ranking", "read_template_reports", "read_radar_result", "read_tushare_indicators"].map((name) => ({
+    ...(["read_company_evidence", "read_watchlist_ranking", "read_template_reports", "read_radar_result", "read_tushare_indicators"] as const).map((name) => ({
       type: "function",
       function: {
         name,
-        description: "读取 CSTD Alpha 站内投研证据摘要，只读，不修改业务数据。",
+        description: ({
+          read_company_evidence: "读取公司站内证据包（财务数据、评分、历史分析）。当用户询问某公司基本面、自选股评分、或需要查已有投研证据时使用。",
+          read_watchlist_ranking: "读取自选股排行评分。当用户需要查看自选股列表、排名对比、评分排序时使用。",
+          read_template_reports: "读取模板分析报告。当用户需要查看已有标的/行业模板报告时使用。",
+          read_radar_result: "读取行业雷达结果。当用户需要行业全景扫描、雷达图、行业主题结论时使用。",
+          read_tushare_indicators: "读取A股结构化指标（Tushare数据）。当需要A股的PE、PB、ROE、营收、利润等结构化财务指标时使用。",
+        })[name],
         parameters: {
           type: "object",
           required: ["query"],
