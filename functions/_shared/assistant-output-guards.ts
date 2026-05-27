@@ -43,7 +43,7 @@ export async function guardAssistantOutputLanguage(
 
 const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|可视化|chart|table|表格|对比表)/i;
 
-const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|生成图片|生成图表|绘制图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图|文字描述[^。\n]{0,10}(?:图片|图表|ASCII|趋势|走势))/i;
+const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|绘制|生成图片|生成图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图|文字描述[^。\n]{0,10}(?:图片|图表|ASCII|趋势|走势))/i;
 
 /** 公司名称到 Yahoo Finance 代码的映射。 */
 const COMPANY_SYMBOL_MAP: Record<string, string> = {
@@ -151,7 +151,7 @@ async function guardChartRefusalLanguage(text: string, message: string, fetchImp
 
   const subject = message.replace(/画.*$/u, "").replace(/[了给请把的]/gu, "").trim() || "当前标的";
   return [
-    `结论：${subject}股价数据已从 Yahoo Finance 获取，系统会自动渲染为折线图。`,
+    `结论：${subject}数据已从 Yahoo Finance 获取，系统会自动渲染为折线图。`,
     "",
     yahooTable,
     "",

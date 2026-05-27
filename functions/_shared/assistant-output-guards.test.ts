@@ -189,5 +189,34 @@ describe("assistant output guards", () => {
       expect(guarded).toContain("| 日期 | 指标1 | 指标2 | 指标3 |");
       expect(guarded).toContain("| 2020-01-01 | 100 | 200 | 300 |");
     });
+
+    test("rewrites prose-only '无法绘制' refusal by falling back to Yahoo Finance", async () => {
+      const mockFetch = async (_url: string) => {
+        const response = {
+          chart: {
+            result: [{
+              timestamp: [1262304000, 1264982400, 1267401600],
+              indicators: {
+                quote: [{ close: [10.5, 11.2, 12.8] }],
+                adjclose: [{ adjclose: [10.5, 11.2, 12.8] }],
+              },
+            }],
+          },
+        };
+        return new Response(JSON.stringify(response), { status: 200 });
+      };
+
+      const guarded = await guardAssistantOutputLanguage(
+        "结论：现有搜索证据仅返回5个交易日的收盘价，无法绘制小米自2018年7月9日上市以来的完整折线图。",
+        "小米上市以来股价画个折线图",
+        undefined,
+        { fetchImpl: mockFetch },
+      );
+
+      expect(guarded).toContain("数据已从 Yahoo Finance 获取");
+      expect(guarded).toContain("| 日期 | 收盘价 |");
+      expect(guarded).toContain("| 2010-01-01 | 10.50 |");
+      expect(guarded).toContain("| 2010-02-01 | 11.20 |");
+    });
   });
 });
