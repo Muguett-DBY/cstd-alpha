@@ -7,7 +7,6 @@ import {
   buildAssistantPromptMessages,
   buildSiteEvidenceSummary,
   detectMemoryCandidate,
-  ensureAssistantSchema,
   getOrCreateDefaultThread,
   json,
   parseDeepSeekUsage,
@@ -96,8 +95,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
   const userMessage = body?.message?.trim();
-  if (!userMessage) return json({ error: "请输入助手问题。", routes: routes.map((r) => ({ provider: r.provider, model: r.model, isFree: r.isFree, hasKey: !!r.apiKey })) }, 400);
-  if (userMessage === "__debug") return json({ routes: routes.map((r) => ({ provider: r.provider, model: r.model, url: r.url, isFree: r.isFree, hasKey: !!r.apiKey })) });
+  if (!userMessage) return json({ error: "请输入助手问题。" }, 400);
   const mode = normalizeAssistantMode(body?.mode);
 
   const now = new Date().toISOString();
