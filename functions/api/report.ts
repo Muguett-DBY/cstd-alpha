@@ -1,12 +1,13 @@
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport } from "../_shared/deepseek";
+import { requireOpenCodeGoApiKey } from "../_shared/opencode-go";
 import { fetchPublicCompanyEvidence } from "../_shared/providers";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from "../../src/shared/report";
 import { buildReportLibraryEntry, validateLibraryReport } from "../../src/shared/report-library";
 
 type Env = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   REPORT_CACHE?: KVNamespace;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
@@ -173,11 +174,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       percent: 48,
       evidenceCount: evidence.evidence.length,
     });
-    emit({ type: "progress", stage: "deepseek_scoring", label: "DeepSeek 评分生成", detail: "V4 Flash max reasoning 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
+    emit({ type: "progress", stage: "deepseek_scoring", label: "OpenCode Go 评分生成", detail: "DeepSeek Flash max reasoning 正在生成 20 项评分、红线封顶和估值结构。", percent: 62 });
 
     const modelMetrics: { modelCalls?: number; tokenUsage?: ReportGenerationMetrics["tokenUsage"] } = { modelCalls: 0 };
     const report = await callDeepSeekReport({
-      apiKey: env.DEEPSEEK_API_KEY,
+      apiKey: requireOpenCodeGoApiKey(env, "report generation"),
       evidence,
       language: "zh-CN",
       signal,

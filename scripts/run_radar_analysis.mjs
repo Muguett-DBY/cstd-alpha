@@ -5,7 +5,7 @@ import { jsonrepair } from "jsonrepair";
 const RADAR_CACHE_VERSION = "v2";
 const RADAR_VALID_HOURS = 12;
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const DEEPSEEK_CACHE_PROTOCOL = "CSTD_ALPHA_DEEPSEEK_CACHE_PROTOCOL_V1";
 const EVIDENCE_WEIGHTS = {
   hard_data: 5,
@@ -311,8 +311,8 @@ function indicatorSortKey(item) {
 }
 
 async function callDeepSeek(body) {
-  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
-  if (!apiKey) throw new Error("DEEPSEEK_API_KEY is required");
+  const apiKey = process.env.OPENCODE_API_KEY?.trim();
+  if (!apiKey) throw new Error("OPENCODE_API_KEY is required");
   const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -378,6 +378,7 @@ function extractJsonObjectText(text) {
 async function repairDeepSeekJsonContent(content, apiKey) {
   const repairBody = {
     model: DEEPSEEK_MODEL,
+    reasoning_effort: "max",
     response_format: { type: "json_object" },
     stream: false,
     temperature: 0,

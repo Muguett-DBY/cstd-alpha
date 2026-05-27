@@ -11,17 +11,16 @@ import {
 } from "../../src/shared/report";
 import { jsonrepair } from "jsonrepair";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "./deepseek-cache";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL } from "./opencode-go";
 import type { EvidenceBundle } from "./providers";
 
 type FetchLike = typeof fetch;
 type FullSectionKey = (typeof REQUIRED_FULL_SECTION_KEYS)[number];
-type DeepSeekModel = "deepseek-v4-flash-free" | "deepseek-v4-flash";
+type DeepSeekModel = typeof OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 
 export const MODEL_OUTPUT_LENGTH_MESSAGE = "模型输出超过长度限制，本次报告未完成，请重试。";
 export const MODEL_OUTPUT_INVALID_JSON_MESSAGE = "模型返回的 JSON 不完整，本次报告未完成，请重试。";
 export const DEEPSEEK_NETWORK_MESSAGE = "DeepSeek 网络连接不稳定，本次报告未完成，请重试。";
-const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 
 const NARRATIVE_SECTION_BATCHES: FullSectionKey[][] = [
   ["accountRules"],
@@ -241,7 +240,7 @@ async function requestScoringJsonOnce({
   const scoringJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: 12000,
     usageTracker,
     messages: [
@@ -454,7 +453,7 @@ async function requestScoreItemDetailBatchOnce({
   const detailJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: strictLength ? 2400 : 3600,
     timeoutMs: 90_000,
     usageTracker,
@@ -618,7 +617,7 @@ async function requestNarrativeBatchOnce({
   const narrativeJson = await requestDeepSeekJson({
     apiKey,
     fetchImpl,
-    model: "deepseek-v4-flash-free",
+    model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     maxTokens: strictLength ? 2600 : 4200,
     usageTracker,
     messages: [
@@ -716,13 +715,9 @@ async function requestDeepSeekJson({
 }
 
 function modelRoutes(apiKey: string | undefined, preferredModel: DeepSeekModel): Array<{ model: DeepSeekModel; url: string; apiKey?: string; isFree: boolean }> {
-  const freeRoute = { model: "deepseek-v4-flash-free" as const, url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL, isFree: true };
-  const paidRoute = apiKey?.trim() ? { model: "deepseek-v4-flash" as const, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } : undefined;
-  if (preferredModel === "deepseek-v4-flash" && paidRoute) return [paidRoute, freeRoute];
-  return [
-    freeRoute,
-    ...(paidRoute ? [paidRoute] : []),
-  ];
+  const key = apiKey?.trim();
+  if (!key) throw new DeepSeekReportError("OPENCODE_API_KEY 未配置，本次报告未完成。", "OPENCODE_API_KEY_MISSING", false);
+  return [{ model: preferredModel, url: OPENCODE_GO_CHAT_COMPLETIONS_URL, apiKey: key, isFree: false }];
 }
 
 function buildDeepSeekRequest(

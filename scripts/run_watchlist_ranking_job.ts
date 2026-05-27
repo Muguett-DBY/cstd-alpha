@@ -18,7 +18,7 @@ if (!jobId) throw new Error("WATCHLIST_RANKING_JOB_ID or --job-id is required.")
 
 const payload = await readJob(jobId);
 try {
-  const generated = await requestWatchlistRankingScore({ DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY }, payload.watchlist, payload.evidence);
+  const generated = await requestWatchlistRankingScore({ OPENCODE_API_KEY: process.env.OPENCODE_API_KEY }, payload.watchlist, payload.evidence);
   await completeJob({ jobId, generated, evidenceHash: payload.evidenceHash });
 } catch (error) {
   await completeJob({ jobId, error: error instanceof Error ? error.message : "自选排行评分失败。", evidenceHash: payload.evidenceHash });

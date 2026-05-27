@@ -24,18 +24,18 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model contract", () => {
-  test("uses only the official DeepSeek paid API when the background analyzer builds a model request", () => {
+  test("uses only the OpenCode Go DeepSeek Flash Max route when the background analyzer builds a model request", () => {
     const routes = radarModelRoutes("paid-key");
 
     expect(routes).toEqual([
       {
         model: "deepseek-v4-flash",
-        url: "https://api.deepseek.com/chat/completions",
+        url: "https://opencode.ai/zen/v1/chat/completions",
         apiKey: "paid-key",
         isFree: false,
       },
     ]);
-    expect(routes.some((route) => route.url.includes("opencode.ai"))).toBe(false);
+    expect(routes.every((route) => route.url.includes("opencode.ai"))).toBe(true);
   });
 
   test("builds a DeepSeek request from structured evidence and previous scan context", () => {
@@ -62,7 +62,7 @@ describe("radar scan model contract", () => {
     ]);
 
     const request = buildRadarRequest(
-      { model: "deepseek-v4-flash", url: "https://api.deepseek.com/chat/completions", apiKey: "paid-key", isFree: false },
+      { model: "deepseek-v4-flash", url: "https://opencode.ai/zen/v1/chat/completions", apiKey: "paid-key", isFree: false },
       digest,
       new AbortController().signal,
       previous,
@@ -165,7 +165,7 @@ describe("radar scan async job API", () => {
   test("Cloudflare fallback analysis never performs live source crawling", async () => {
     const env = {
       AUTH_SECRET: "secret",
-      DEEPSEEK_API_KEY: "paid-key",
+      OPENCODE_API_KEY: "paid-key",
       REPORT_CACHE: kvWith({}),
     };
     globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;

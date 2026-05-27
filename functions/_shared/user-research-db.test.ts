@@ -105,7 +105,7 @@ describe("user research row mapping", () => {
       company_name: "贵州茅台",
       ticker: "600519",
       market: "SH-A",
-      model: "deepseek-v4-flash-free",
+      model: "deepseek-v4-flash",
       title: "贵州茅台公司价值分析",
       score: 82,
       verdict: "持有",

@@ -9,7 +9,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", { method: "POST", headers: { cookie: "cstd_alpha_session=session-1.token" }, body: JSON.stringify({ message: "hi" }) }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "user" }),
       },
       params: {},
@@ -46,7 +46,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -89,7 +89,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -156,7 +156,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         TAVILY_API_KEY: "tvly-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -188,7 +188,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -215,7 +215,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -252,7 +252,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -282,7 +282,7 @@ describe("assistant chat endpoint", () => {
       });
     const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
-      if (String(url).includes("deepseek")) {
+      if (String(url).includes("opencode.ai")) {
         if (body.stream) return Promise.resolve(new Response(makeStream(), { status: 200 }));
         return Promise.resolve(Response.json({ choices: [{ message: { content: "无需外部搜索工具。" } }] }));
       }
@@ -298,7 +298,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -342,7 +342,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -384,7 +384,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -467,7 +467,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -516,7 +516,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -555,7 +555,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -585,7 +585,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -632,7 +632,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -693,7 +693,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -723,7 +723,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -760,7 +760,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -790,7 +790,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -830,7 +830,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: db,
       },
       params: {},
@@ -865,7 +865,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -912,7 +912,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -952,7 +952,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -985,7 +985,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1039,7 +1039,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         EXA_API_KEY: "exa-key",
         REPORT_CACHE: kv,
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
@@ -1106,7 +1106,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         ANYSEARCH_API_KEY: "any-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -1166,7 +1166,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         TAVILY_API_KEY: "tvly-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -1234,7 +1234,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1256,8 +1256,8 @@ describe("assistant chat endpoint", () => {
   test("falls back to free academic search for technical investment questions", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "https://api.deepseek.com/chat/completions") {
-        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://api.deepseek.com/chat/completions").length;
+      if (url === "https://opencode.ai/zen/v1/chat/completions") {
+        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://opencode.ai/zen/v1/chat/completions").length;
         if (callIndex === 1) return new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 });
         if (callIndex === 2) return new Response(JSON.stringify({ choices: [{ message: { content: "结论：优必选大脑小脑协同仍需看实时控制和规划系统闭环。\n证据等级：中。\n核心理由：学术线索只能证明技术路线，不证明公司已经领先。" } }], usage: { total_tokens: 120 } }), { status: 200 });
         return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 });
@@ -1280,7 +1280,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1299,8 +1299,8 @@ describe("assistant chat endpoint", () => {
   test("turns evidence-gap table requests into a usable comparison table", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "https://api.deepseek.com/chat/completions") {
-        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://api.deepseek.com/chat/completions").length;
+      if (url === "https://opencode.ai/zen/v1/chat/completions") {
+        const callIndex = fetchMock.mock.calls.filter((call) => String(call[0]) === "https://opencode.ai/zen/v1/chat/completions").length;
         if (callIndex === 1) return new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 });
         if (callIndex === 2) return new Response(JSON.stringify({ choices: [{ message: { content: "证据不足，无法回答。" } }], usage: { total_tokens: 120 } }), { status: 200 });
         return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 });
@@ -1320,7 +1320,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1352,7 +1352,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1388,7 +1388,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1420,7 +1420,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1452,7 +1452,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         EXA_API_KEY: "exa-key",
         REPORT_CACHE: mockKv(),
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
@@ -1584,7 +1584,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1613,7 +1613,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1660,7 +1660,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1690,7 +1690,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1720,7 +1720,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1767,7 +1767,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1805,7 +1805,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        DEEPSEEK_API_KEY: "key",
+        OPENCODE_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1832,7 +1832,7 @@ describe("assistant chat endpoint", () => {
         }),
         env: {
           AUTH_SECRET: "secret",
-          DEEPSEEK_API_KEY: "key",
+          OPENCODE_API_KEY: "key",
           REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
         },
         params: {},
@@ -1872,7 +1872,7 @@ describe("assistant chat endpoint", () => {
         }),
         env: {
           AUTH_SECRET: "secret",
-          DEEPSEEK_API_KEY: "key",
+          OPENCODE_API_KEY: "key",
           REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
         },
         params: {},

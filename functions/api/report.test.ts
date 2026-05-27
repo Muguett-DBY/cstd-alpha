@@ -535,7 +535,7 @@ async function postReportResponse(options: { forceRefresh?: boolean; company?: R
         company,
       }),
     }),
-    env: { AUTH_SECRET: "secret", DEEPSEEK_API_KEY: "key", ...options.env },
+    env: { AUTH_SECRET: "secret", OPENCODE_API_KEY: "key", ...options.env },
     waitUntil: options.waitUntil ?? vi.fn(),
   } as Parameters<typeof onRequestPost>[0]);
 }

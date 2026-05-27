@@ -3,7 +3,7 @@ param(
   [string]$OutputDir = "",
   [string]$RunRoot = "",
   [string]$BaseUrl = "",
-  [string]$Model = "deepseek/deepseek-v4-flash",
+  [string]$Model = "opencode/deepseek-v4-flash",
   [string]$Variant = "max",
   [string]$Agent = "build",
   [int]$Workers = 2,
@@ -77,7 +77,7 @@ for ($index = 0; $index -lt $Workers; $index += 1) {
   )
   if ($BaseUrl) { $arguments += @("-BaseUrl", $BaseUrl) }
   if ($ImportOnline) { $arguments += "-ImportOnline" }
-  if (-not $UseOpencodeForDeepSeek -and $Model -like "deepseek/*") { $arguments += "-DirectDeepSeekApi" }
+  if (-not $UseOpencodeForDeepSeek -and ($Model -like "deepseek/*" -or $Model -like "opencode/deepseek*")) { $arguments += "-DirectDeepSeekApi" }
 
   $started += [pscustomobject]@{
     Worker = $index + 1

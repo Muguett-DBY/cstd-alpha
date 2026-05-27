@@ -2,6 +2,7 @@ import { jsonrepair } from "jsonrepair";
 import { anySearchEvidenceToReportEvidence, fetchAnySearchEvidence, fetchSearxngEvidence, type AnySearchEvidence, type AnySearchQuery } from "../_shared/anysearch";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
 import { getOrCreateCompanyEvidencePackage, type CompanyEvidencePackage } from "../_shared/company-evidence";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
 import type { EvidenceBundle } from "../_shared/providers";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
@@ -26,7 +27,7 @@ import {
 
 type Env = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
@@ -38,7 +39,7 @@ type Env = {
 };
 
 type DurableTemplateEnv = {
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB?: D1Database;
@@ -64,8 +65,8 @@ type TemplateGenerationAttempt = {
   maxTokens: number;
 };
 
-const PAID_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
+const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
 const GITHUB_TEMPLATE_REPOSITORY = "Muguett-DBY/cstd-alpha";
@@ -287,7 +288,7 @@ async function requestTemplateReportOnce(
     const maxTokens = template.id === FULL_ANALYSIS_TEMPLATE_ID ? 20000 : 24000;
     const enrichedEvidence = await enrichTemplateEvidenceWithAnySearch(env, watchlist, evidence, template, controller.signal);
     let lastError: unknown;
-    for (const route of templateModelRoutes(env.DEEPSEEK_API_KEY, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
+    for (const route of templateModelRoutes(env.OPENCODE_API_KEY, template.id === FULL_ANALYSIS_TEMPLATE_ID)) {
       for (const attempt of templateGenerationAttempts(template.id, maxTokens, route.isFree ? "free" : "paid")) {
         try {
           const messages = buildTemplateMessages(
@@ -551,11 +552,8 @@ function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
 }
 
 export function templateModelRoutes(apiKey: string | undefined, preferPaid = false): Array<{ model: typeof PAID_MODEL; url: string; apiKey: string; isFree: false }> {
-  const paidRoute = apiKey?.trim()
-    ? ({ model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: apiKey.trim(), isFree: false } as const)
-    : undefined;
+  const paidRoute = { model: PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "template analysis"), isFree: false } as const;
   void preferPaid;
-  if (!paidRoute) throw new Error("DEEPSEEK_API_KEY 未配置，模板分析无法生成。");
   return [paidRoute];
 }
 
@@ -577,7 +575,8 @@ function buildTemplateRequest(
 }
 
 export function templateReasoningEffort(templateId: string): TemplateReasoningEffort {
-  return templateId === FULL_ANALYSIS_TEMPLATE_ID ? "max" : "high";
+  void templateId;
+  return "max";
 }
 
 async function fetchTemplateModel(url: string, init: RequestInit) {
@@ -966,7 +965,7 @@ function roundTemplateScore(value: number) {
 
 function normalizeTemplateAnalysisError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  if (message.includes("DEEPSEEK_API_KEY")) return "DeepSeek API Key 未配置，免费通道失败后无法启用付费兜底。";
+  if (message.includes("OPENCODE_API_KEY")) return "OpenCode Go API Key 未配置，无法调用 DeepSeek Flash Max。";
   if (message.includes("Rate limit exceeded")) return "DeepSeek Flash Max 当前触发限流，请稍后重试；任务已保存为可重试失败。";
   if (message.includes("429")) return "模板分析模型通道当前限流，请稍后重试。";
   return message || "模板分析生成失败。";

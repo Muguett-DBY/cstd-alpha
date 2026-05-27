@@ -8,12 +8,12 @@ describe("background radar analyzer", () => {
   test("workflow refuses to run DeepSeek unless a fresh queued website job exists", () => {
     const workflow = readFileSync(".github/workflows/radar-analysis.yml", "utf8");
     const validateIndex = workflow.indexOf("Validate queued radar job");
-    const deepSeekIndex = workflow.indexOf("Run DeepSeek radar analysis");
+    const deepSeekIndex = workflow.indexOf("Run OpenCode Go DeepSeek radar analysis");
 
     expect(validateIndex).toBeGreaterThanOrEqual(0);
     expect(deepSeekIndex).toBeGreaterThan(validateIndex);
     expect(workflow).toContain('job.status !== "queued"');
-    expect(workflow).toContain("refusing to run DeepSeek");
+    expect(workflow).toContain("refusing to run OpenCode Go DeepSeek");
     expect(workflow).toContain("steps.validate_job.outcome == 'success'");
   });
 

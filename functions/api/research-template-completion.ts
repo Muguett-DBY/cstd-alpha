@@ -1,18 +1,19 @@
 import { jsonrepair } from "jsonrepair";
 import { json, requireUserSession } from "../_shared/user-research-db";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
 import { normalizeTemplateSectionRequirements, type ResearchTemplate } from "../../src/shared/user-research";
 
 type Env = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
 };
 
 type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
 type TemplateCompletionRoute = { model: typeof PAID_MODEL; apiKey: string; isFree: false };
 
-const PAID_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
+const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const TEMPLATE_COMPLETION_TIMEOUT_MS = 240_000;
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -25,14 +26,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   return json({ completion });
 };
 
-export async function requestTemplateCompletion(env: Pick<Env, "DEEPSEEK_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
+export async function requestTemplateCompletion(env: Pick<Env, "OPENCODE_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
   const messages = buildTemplateCompletionMessages(draft);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("template-completion-timeout"), TEMPLATE_COMPLETION_TIMEOUT_MS);
   signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
   let lastError: unknown;
   try {
-    for (const route of templateCompletionModelRoutes(env.DEEPSEEK_API_KEY)) {
+    for (const route of templateCompletionModelRoutes(env.OPENCODE_API_KEY)) {
       try {
         const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, buildTemplateCompletionRequest(route, messages, controller.signal));
         if (!response.ok) {
@@ -155,8 +156,7 @@ function normalizeDraftInput(value: Partial<TemplateCompletionDraft> | undefined
 }
 
 function templateCompletionModelRoutes(apiKey: string | undefined): TemplateCompletionRoute[] {
-  if (!apiKey?.trim()) throw new Error("DEEPSEEK_API_KEY 未配置，模板补全无法生成。");
-  return [{ model: PAID_MODEL, apiKey: apiKey.trim(), isFree: false }];
+  return [{ model: PAID_MODEL, apiKey: requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "research template completion"), isFree: false }];
 }
 
 function stringValue(value: unknown) {

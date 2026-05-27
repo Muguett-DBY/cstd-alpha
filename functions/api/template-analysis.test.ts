@@ -66,7 +66,7 @@ describe("shouldStartFullAnalysis", () => {
 
 describe("templateReasoningEffort", () => {
   test("uses high for single templates and max only for full synthesis", () => {
-    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("high");
+    expect(templateReasoningEffort(RESEARCH_TEMPLATES[0].id)).toBe("max");
     expect(templateReasoningEffort(FULL_ANALYSIS_TEMPLATE_ID)).toBe("max");
   });
 });
@@ -142,7 +142,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -151,8 +151,8 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("DeepSeek 直接生成");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
   });
 
   test("accepts short completed template reports without expansion when fields are complete", async () => {
@@ -181,7 +181,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -190,7 +190,7 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("内容短，但关键字段完整");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
   });
 
   test("fails instead of writing an evidence fallback when high reasoning returns no final content", async () => {
@@ -209,7 +209,7 @@ describe("template model routing", () => {
 
     await expect(
       requestTemplateReport(
-        { DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+        { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
         watchlistRow(),
         evidenceBundle(),
         RESEARCH_TEMPLATES[9],
@@ -218,7 +218,7 @@ describe("template model routing", () => {
     ).rejects.toThrow("未返回完整模板分析内容");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("high");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
   });
 
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {
@@ -300,7 +300,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await requestTemplateReport(
-      { ANYSEARCH_API_KEY: "any-key", DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { ANYSEARCH_API_KEY: "any-key", OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -399,7 +399,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { ANYSEARCH_API_KEY: "any-key", DEEPSEEK_API_KEY: "paid-key" },
+      { ANYSEARCH_API_KEY: "any-key", OPENCODE_API_KEY: "paid-key" },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -409,7 +409,7 @@ describe("template model routing", () => {
     expect(generated.modelUsed).toBe("deepseek-v4-flash");
     expect(generated.markdown).not.toContain("证据包基础版");
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[3][0]).toBe("https://api.deepseek.com/chat/completions");
+    expect(fetchMock.mock.calls[3][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
   });
 
   test("adds SearXNG supplemental evidence when configured without AnySearch", async () => {
@@ -454,7 +454,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await requestTemplateReport(
-      { SEARXNG_ENDPOINTS: "https://search.example.com", DEEPSEEK_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { SEARXNG_ENDPOINTS: "https://search.example.com", OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],

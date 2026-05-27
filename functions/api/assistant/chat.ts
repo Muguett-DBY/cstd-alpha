@@ -65,7 +65,7 @@ type ExternalEvidenceResult = {
   toolSummary?: string;
 };
 
-const ASSISTANT_AUXILIARY_REASONING_EFFORT = "high" as const;
+const ASSISTANT_AUXILIARY_REASONING_EFFORT = "max" as const;
 const ASSISTANT_AGENT_MAX_ROUNDS = 6;
 const ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND = 5;
 const ASSISTANT_AGENT_MAX_MS = 90_000;
@@ -91,7 +91,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  if (!env.DEEPSEEK_API_KEY) return json({ error: "DEEPSEEK_API_KEY is not configured." }, 500);
+  if (!env.OPENCODE_API_KEY) return json({ error: "OPENCODE_API_KEY is not configured." }, 500);
 
   await ensureAssistantSchema(env.REPORT_LIBRARY_DB);
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
@@ -304,7 +304,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
 
         const upstream = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
           method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
+          headers: { "content-type": "application/json", authorization: `Bearer ${env.OPENCODE_API_KEY}` },
           body: JSON.stringify(buildAssistantDeepSeekBody(promptMessages)),
           signal: request.signal,
         });
@@ -435,13 +435,13 @@ async function retryWithSimplePrompt(env: AssistantEnv, message: string, signal:
   try {
     const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${env.OPENCODE_API_KEY}` },
       body: JSON.stringify(
         buildDeepSeekRequestBody({
           model: ASSISTANT_MODEL,
           messages,
           maxTokens: 1500,
-          reasoningEffort: "high",
+          reasoningEffort: "max",
           temperature: 0.3,
           stream: false,
           responseFormat: null,
@@ -631,7 +631,7 @@ async function askModelForAgentToolCalls(input: {
   const messages = buildAgentToolLoopMessages(input);
   const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
     signal: input.signal,
     body: JSON.stringify({
       ...buildDeepSeekRequestBody({
@@ -860,7 +860,7 @@ async function askModelForSearchToolCalls(input: {
   try {
     const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
       signal: input.signal,
       body: JSON.stringify({
         ...buildDeepSeekRequestBody({
@@ -1615,7 +1615,7 @@ async function generateReviewedResearchAnswer(input: {
   const startedAt = Date.now();
   const answerResponse = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
     body: JSON.stringify(
       buildDeepSeekRequestBody({
         model: ASSISTANT_MODEL,
@@ -2220,7 +2220,7 @@ async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: str
   try {
     const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
       body: JSON.stringify(
         buildDeepSeekRequestBody({
           model: ASSISTANT_MODEL,
@@ -2310,7 +2310,7 @@ async function askModelForClarification(input: {
   try {
     const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.DEEPSEEK_API_KEY}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${input.env.OPENCODE_API_KEY}` },
       signal: input.signal,
       body: JSON.stringify(
         buildDeepSeekRequestBody({

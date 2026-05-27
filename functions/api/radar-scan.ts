@@ -1,6 +1,7 @@
 import { jsonrepair } from "jsonrepair";
 import { readSessionCookie } from "../_shared/auth";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "../_shared/opencode-go";
 import {
   createRadarAnalysisJob,
   dispatchRadarAnalysisWorkflow,
@@ -33,7 +34,7 @@ import type {
 
 type Env = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
   GITHUB_RADAR_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
@@ -114,9 +115,9 @@ const LEGACY_RADAR_CACHE_KEYS = ["radar-scan:v1:latest"];
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
 
-const DEEPSEEK_PAID_MODEL = "deepseek-v4-flash";
+const DEEPSEEK_PAID_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 const RADAR_MODEL_REASONING: Partial<Record<RadarModel, "max">> = { "deepseek-v4-flash": "max" };
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const GITHUB_RADAR_REPOSITORY = "Muguett-DBY/cstd-alpha";
 const GITHUB_RADAR_WORKFLOW = "radar-analysis.yml";
 const RADAR_VALID_HOURS = 12;
@@ -274,8 +275,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 };
 
 export function radarModelRoutes(apiKey: string | undefined): RadarRoute[] {
-  const paidKey = apiKey?.trim();
-  return paidKey ? [{ model: DEEPSEEK_PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: paidKey, isFree: false }] : [];
+  const paidKey = requireOpenCodeGoApiKey({ OPENCODE_API_KEY: apiKey }, "radar scan");
+  return [{ model: DEEPSEEK_PAID_MODEL, url: DEEPSEEK_CHAT_COMPLETIONS_URL, apiKey: paidKey, isFree: false }];
 }
 
 export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest, signal: AbortSignal, previousScan?: RadarScan | null): RequestInit {
@@ -360,8 +361,7 @@ export async function generateRadarScan(env: Env, signal: AbortSignal, previousS
   if (digest.sourceCount < MIN_RADAR_SOURCE_COUNT) {
     throw new Error(`雷达证据包过薄：${digest.sourceCount}/${MIN_RADAR_SOURCE_COUNT}`);
   }
-  const routes = radarModelRoutes(env.DEEPSEEK_API_KEY);
-  if (!routes.length) throw new Error("未配置 DeepSeek API Key，无法生成雷达扫描。");
+  const routes = radarModelRoutes(env.OPENCODE_API_KEY);
   let lastError: unknown;
   for (const route of routes) {
     const modelTimeout = timeoutSignal(signal, RADAR_MODEL_TIMEOUT_MS);

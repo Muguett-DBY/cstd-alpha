@@ -1,10 +1,11 @@
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "./deepseek-cache";
 import { readSessionCookie, type UserSession } from "./auth";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL } from "./opencode-go";
 import type { AssistantMemory, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantUsage } from "../../src/shared/assistant";
 
 export type AssistantEnv = {
   AUTH_SECRET: string;
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   EXA_API_KEY?: string;
@@ -44,9 +45,9 @@ type MessageRow = {
 };
 
 export const ASSISTANT_DEFAULT_THREAD_ID = "default-investment-thread";
-export const ASSISTANT_MODEL = "deepseek-v4-flash";
+export const ASSISTANT_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 export const ASSISTANT_REASONING_EFFORT = "max";
-export const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+export const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 export const ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT = 100_000;
 export const ASSISTANT_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha assistant cache anchor: Chinese investment assistant, evidence first, conclusion evidence counter-evidence follow-up, conservative scoring, no hallucinated facts, admin private memory, read-only tools. ";

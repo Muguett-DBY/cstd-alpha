@@ -1,12 +1,13 @@
 import { jsonrepair } from "jsonrepair";
 import type { EvidenceBundle } from "./providers";
 import { sha256, type WatchlistRankingRow, type WatchlistRow } from "./user-research-db";
+import { OPENCODE_GO_CHAT_COMPLETIONS_URL, OPENCODE_GO_DEEPSEEK_FLASH_MODEL, requireOpenCodeGoApiKey } from "./opencode-go";
 
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_GO_CHAT_COMPLETIONS_URL;
 const WATCHLIST_RANKING_SCHEMA_VERSION = "v1";
 
 export type WatchlistRankingEnv = {
-  DEEPSEEK_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
 };
 
@@ -111,11 +112,10 @@ export async function writeCompletedWatchlistRanking(db: D1Database, userId: str
 }
 
 export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, watchlist: WatchlistRow, evidence: EvidenceBundle): Promise<GeneratedWatchlistRanking> {
-  const apiKey = env.DEEPSEEK_API_KEY?.trim();
-  if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured.");
+  const apiKey = requireOpenCodeGoApiKey(env, "watchlist ranking");
   const coverage = evidenceCoverageSummary(evidence);
   const body = {
-    model: "deepseek-v4-flash",
+    model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
     reasoning_effort: "max",
     temperature: 0.08,
     response_format: { type: "json_object" },
