@@ -22,7 +22,7 @@ import {
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
 import { executeFinancialCompute } from "../../_shared/financial-compute";
-import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchClsNews } from "../../_shared/assistant-a-stock";
+import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchClsNews, fetchDragonTigerBoard, fetchDailyDragonTiger, fetchLockupExpiry, fetchMarginTrading, fetchBlockTrades, fetchHolderCount, fetchDividendHistory, fetchFundFlow120d, fetchNorthboundFlow, fetchResearchReports, fetchCninfoFilings, fetchSinaFinancialStatements, fetchEastmoneyStockInfo, fetchIndustryRanking, fetchConceptBlocks, fetchBaiduKline, fetchStockNews, fetchGlobalNews } from "../../_shared/assistant-a-stock";
 import {
   fetchAnySearchEvidence,
   fetchArxivEvidence,
@@ -44,7 +44,7 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_cls_news";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_cls_news" | "read_market_data" | "read_capital_analysis" | "read_filings_news" | "read_financial_statements" | "read_reports_concepts";
 type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
@@ -705,7 +705,7 @@ function buildAgentToolLoopMessages(input: {
       "目标：让最终回答有足够公司、行业、价格、财报、公告、政策、风险和反证证据；不要因为站内证据少就停止。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
-      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；read_cls_news 查财联社实时快讯；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；read_cls_news 查财联社实时快讯；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表；read_reports_concepts 查研报/概念板块/K线；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
     ].join("\n"),
     "assistant-agent-tool-loop",
   );
@@ -811,6 +811,46 @@ function assistantAgentTools() {
     {
       type: "function",
       function: {
+        name: "read_market_data",
+        description: "综合市场数据查询。可查：龙虎榜(个股上榜+全市场净买排名)、限售解禁日历、行业板块涨跌排名。输入股票代码或'market'或'industry'。",
+        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'market'(全市场龙虎榜)、'industry'(行业排名)、'lockup:600519'(解禁)" }, reason: { type: "string" } } },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_capital_analysis",
+        description: "资金筹码分析。可查：融资融券余额、大宗交易、个股资金流120日、股东户数变化、分红送转历史、北向资金流向。输入股票代码或'northbound'。",
+        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'northbound'(北向)、'margin:600519'(融资融券)、'block:600519'(大宗)、'fundflow:600519'(资金流)、'holder:600519'(股东户数)、'dividend:600519'(分红)" }, reason: { type: "string" } } },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_filings_news",
+        description: "公告和新闻查询。可查：巨潮官方公告、东财个股新闻、东财全球财经资讯。输入股票代码或'global'。",
+        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'global'(全球资讯)" }, reason: { type: "string" } } },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_financial_statements",
+        description: "财务报表查询。返回新浪财经三表(资产负债表/利润表/现金流量表)和东财个股基本信息。",
+        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "6位股票代码" }, reason: { type: "string" } } },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_reports_concepts",
+        description: "研报和概念板块查询。可查：东财研报列表(含评级+预测EPS)、百度概念板块归属、百度K线(带MA5/10/20)。",
+        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位, 或 'kline:688017'(K线)" }, reason: { type: "string" } } },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "python_repl",
         description: "用 Python 执行数学计算、统计、数据分析和图表绘制。当你需要精确计算（CAGR、估值、回归、指标计算等）或画图（柱状图、折线图、散点图等）时使用。把计算逻辑写完整、自包含的 Python 代码。",
         parameters: {
@@ -879,6 +919,11 @@ function internalToolLabel(name: AssistantToolName) {
     read_ths_hot_stocks: "同花顺热点题材",
     read_ths_consensus_eps: "同花顺一致预期",
     read_cls_news: "财联社快讯",
+    read_market_data: "市场数据",
+    read_capital_analysis: "资金筹码分析",
+    read_filings_news: "公告新闻",
+    read_financial_statements: "财务报表",
+    read_reports_concepts: "研报概念",
   };
   return labels[name] || "站内证据";
 }
@@ -929,7 +974,7 @@ async function executeAssistantToolCalls(
   };
 }
 
-const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_cls_news"]);
+const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_cls_news", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts"]);
 
 async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Promise<AnySearchEvidence[]> {
   const now = new Date().toISOString();
@@ -1004,6 +1049,60 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
         publishedAt: now,
         qualityScore: 0.85,
       });
+    } else if (call.name === "read_market_data") {
+      const code = query.replace(/^lockup:/, "").trim();
+      if (query === "market") {
+        const today = new Date().toISOString().slice(0, 10);
+        const result = await fetchDailyDragonTiger(today);
+        items.push({ source: "CSTD Alpha", query, title: "全市场龙虎榜", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      } else if (query === "industry") {
+        const result = await fetchIndustryRanking();
+        items.push({ source: "CSTD Alpha", query, title: "行业板块排名", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      } else if (query.startsWith("lockup:") && code) {
+        const result = await fetchLockupExpiry(code);
+        items.push({ source: "CSTD Alpha", query, title: "限售解禁日历", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      } else if (code) {
+        const [board, lockup] = await Promise.all([fetchDragonTigerBoard(code), fetchLockupExpiry(code)]);
+        items.push({ source: "CSTD Alpha", query, title: "龙虎榜与解禁", url: "", summary: `【龙虎榜】\n${board}\n\n【限售解禁】\n${lockup}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      }
+    } else if (call.name === "read_capital_analysis") {
+      if (query === "northbound") {
+        const result = await fetchNorthboundFlow();
+        items.push({ source: "CSTD Alpha", query, title: "北向资金流向", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      } else {
+        const code = query.replace(/^(margin|block|fundflow|holder|dividend):/, "").trim();
+        if (!code) continue;
+        if (query.startsWith("margin:")) { const r = await fetchMarginTrading(code); items.push({ source: "CSTD Alpha", query, title: "融资融券", url: "", summary: r.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 }); }
+        else if (query.startsWith("block:")) { const r = await fetchBlockTrades(code); items.push({ source: "CSTD Alpha", query, title: "大宗交易", url: "", summary: r.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 }); }
+        else if (query.startsWith("fundflow:")) { const r = await fetchFundFlow120d(code); items.push({ source: "CSTD Alpha", query, title: "资金流120日", url: "", summary: r.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 }); }
+        else if (query.startsWith("holder:")) { const r = await fetchHolderCount(code); items.push({ source: "CSTD Alpha", query, title: "股东户数变化", url: "", summary: r.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 }); }
+        else if (query.startsWith("dividend:")) { const r = await fetchDividendHistory(code); items.push({ source: "CSTD Alpha", query, title: "分红送转历史", url: "", summary: r.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 }); }
+        else {
+          const [margin, trades, fundflow, holder, dividend] = await Promise.all([fetchMarginTrading(code), fetchBlockTrades(code), fetchFundFlow120d(code), fetchHolderCount(code), fetchDividendHistory(code)]);
+          items.push({ source: "CSTD Alpha", query, title: "资金筹码综合分析", url: "", summary: `【融资融券】\n${margin}\n\n【大宗交易】\n${trades}\n\n【资金流】\n${fundflow}\n\n【股东户数】\n${holder}\n\n【分红】\n${dividend}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+        }
+      }
+    } else if (call.name === "read_filings_news") {
+      if (query === "global") {
+        const result = await fetchGlobalNews();
+        items.push({ source: "CSTD Alpha", query, title: "全球资讯", url: "", summary: result.slice(0, 1800), sourceType: "news", signalType: "external_search", weight: 2, publishedAt: now, qualityScore: 0.85 });
+      } else if (query) {
+        const [filings, news] = await Promise.all([fetchCninfoFilings(query), fetchStockNews(query)]);
+        items.push({ source: "CSTD Alpha", query, title: "公告与新闻", url: "", summary: `【巨潮公告】\n${filings}\n\n【个股新闻】\n${news}`.slice(0, 1800), sourceType: "news", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      }
+    } else if (call.name === "read_financial_statements") {
+      if (!query) continue;
+      const [statements, info] = await Promise.all([fetchSinaFinancialStatements(query), fetchEastmoneyStockInfo(query)]);
+      items.push({ source: "CSTD Alpha", query, title: "财务报表", url: "", summary: `【公司信息】\n${info}\n\n【财报三表】\n${statements}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
+    } else if (call.name === "read_reports_concepts") {
+      if (query.startsWith("kline:")) {
+        const code = query.replace("kline:", "").trim();
+        const result = await fetchBaiduKline(code);
+        if (result) items.push({ source: "CSTD Alpha", query, title: "K线数据", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      } else if (query) {
+        const [reports, concepts] = await Promise.all([fetchResearchReports(query), fetchConceptBlocks(query)]);
+        items.push({ source: "CSTD Alpha", query, title: "研报与概念板块", url: "", summary: `【研报】\n${reports}\n\n【概念板块】\n${concepts}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+      }
     }
   }
   return items;
@@ -1288,7 +1387,12 @@ function isAssistantToolName(name: string): name is AssistantToolName {
     name === "read_tencent_quote" ||
     name === "read_ths_hot_stocks" ||
     name === "read_ths_consensus_eps" ||
-    name === "read_cls_news"
+    name === "read_cls_news" ||
+    name === "read_market_data" ||
+    name === "read_capital_analysis" ||
+    name === "read_filings_news" ||
+    name === "read_financial_statements" ||
+    name === "read_reports_concepts"
   );
 }
 
