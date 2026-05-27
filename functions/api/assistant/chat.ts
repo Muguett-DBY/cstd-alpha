@@ -21,6 +21,7 @@ import {
   type AssistantEnv,
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
+import { executeFinancialCompute } from "../../_shared/financial-compute";
 import {
   fetchAnySearchEvidence,
   fetchArxivEvidence,
@@ -42,7 +43,7 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial";
 type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
@@ -702,7 +703,7 @@ function buildAgentToolLoopMessages(input: {
       "目标：让最终回答有足够公司、行业、价格、财报、公告、政策、风险和反证证据；不要因为站内证据少就停止。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
-      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；search_* 用于外部补证据。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
     ].join("\n"),
     "assistant-agent-tool-loop",
   );
@@ -760,6 +761,29 @@ function assistantAgentTools() {
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "compute_financial",
+        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）。结果自动保留在上下文中。",
+        parameters: {
+          type: "object",
+          required: ["operation", "params", "reason"],
+          properties: {
+            operation: {
+              type: "string",
+              enum: ["cagr", "dcf", "stats", "ratios"],
+              description: "计算类型：cagr=复合年增长率，dcf=DCF估值，stats=描述性统计，ratios=财务比率",
+            },
+            params: {
+              type: "object",
+              description: "计算参数。cagr: { values: number[] }；dcf: { cashFlows: number[], terminalCashFlow?: number, terminalGrowthRate?: number(%), discountRate?: number(%), sharesOutstanding?: number, netDebt?: number }；stats: { values: number[] }；ratios: { price, eps, bookValue, revenue, netIncome, totalAssets, totalEquity, totalLiab }",
+            },
+            reason: { type: "string", description: "为什么需要这个计算。" },
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -774,6 +798,7 @@ function formatCollectedEvidenceForAgent(items: AnySearchEvidence[]) {
 function naturalToolStatusLabel(call: AssistantSearchToolCall) {
   if (call.name.startsWith("read_")) return `正在读取${internalToolLabel(call.name)}...`;
   if (call.name === "python_repl") return "正在用 Python 计算...";
+  if (call.name === "compute_financial") return "正在执行金融计算...";
   if (call.name === "search_arxiv" || call.name === "search_semantic_scholar") return "正在查技术和论文线索...";
   if (call.name === "search_gdelt") return "正在查全球新闻和风险线索...";
   return `正在查${(call.query ?? "").slice(0, 32)}...`;
@@ -787,6 +812,7 @@ function internalToolLabel(name: AssistantToolName) {
     read_radar_result: "行业雷达",
     read_tushare_indicators: "A股结构化指标",
     python_repl: "Python 计算",
+    compute_financial: "金融计算",
   };
   return labels[name] || "站内证据";
 }
@@ -794,6 +820,7 @@ function internalToolLabel(name: AssistantToolName) {
 function summarizeToolResult(call: AssistantSearchToolCall, evidenceCount: number) {
   if (call.name.startsWith("read_")) return `${internalToolLabel(call.name)}已读取，形成 ${evidenceCount} 条可用摘要。`;
   if (call.name === "python_repl") return "Python 计算完成，结果已并入上下文。";
+  if (call.name === "compute_financial") return "金融计算完成，结果已并入上下文。";
   return evidenceCount ? `已找到 ${evidenceCount} 条相关线索。` : "这个来源没有返回可用线索。";
 }
 
@@ -803,13 +830,35 @@ async function executeAssistantToolCalls(
   signal: AbortSignal,
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
 ) {
+  const computeCalls = toolCalls.filter((call) => call.name === "compute_financial");
+  const computeItems: AnySearchEvidence[] = [];
+  for (const call of computeCalls) {
+    const params = parseToolArguments(call.arguments ?? call.parameters ?? {});
+    const result = executeFinancialCompute({
+      operation: String(isRecord(params) ? params.operation ?? "" : ""),
+      params: isRecord(params?.params) ? params.params as Record<string, unknown> : {},
+    });
+    const now = new Date().toISOString();
+    computeItems.push({
+      source: "CSTD Alpha",
+      query: call.query ?? "",
+      title: result.label,
+      url: "",
+      summary: `${result.summary}\n${result.rows.map((r) => `${r.label}: ${r.value}`).join("\n")}`.slice(0, 1800),
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 3,
+      publishedAt: now,
+      qualityScore: 0.95,
+    });
+  }
   const internalItems = executeInternalAssistantTools(toolCalls, context);
-  const externalCalls = toolCalls.filter((call) => !call.name.startsWith("read_"));
+  const externalCalls = toolCalls.filter((call) => !call.name.startsWith("read_") && call.name !== "compute_financial");
   const external = externalCalls.length ? await executeAssistantSearchToolCalls(env, externalCalls, signal) : { items: [], exa: { used: false, count: 0 }, summary: "未调用外部搜索。" };
   return {
-    items: dedupeExternalEvidence([...internalItems, ...external.items]),
+    items: dedupeExternalEvidence([...computeItems, ...internalItems, ...external.items]),
     exa: external.exa,
-    summary: [internalItems.length ? `站内工具返回 ${internalItems.length} 条摘要。` : "", external.summary].filter(Boolean).join(" "),
+    summary: [computeItems.length ? `金融计算返回 ${computeItems.length} 条结果。` : "", internalItems.length ? `站内工具返回 ${internalItems.length} 条摘要。` : "", external.summary].filter(Boolean).join(" "),
   };
 }
 
@@ -1075,7 +1124,8 @@ function isAssistantToolName(name: string): name is AssistantToolName {
     name === "read_template_reports" ||
     name === "read_radar_result" ||
     name === "read_tushare_indicators" ||
-    name === "python_repl"
+    name === "python_repl" ||
+    name === "compute_financial"
   );
 }
 
