@@ -2089,6 +2089,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   if (!shortOrCut && !missingFollowUp && !missingCounter) return answer;
   // 纯计算/无投资结构的短答案跳过补充框架追加
   if (normalized.length < 900 && !/^结论[：:]/.test(normalized) && !/(证据等级|反证|我可能错|后续跟踪)/.test(normalized)) return answer;
+  // 如果回答是简短的非投资类回复（自我介绍、问候等），跳过补充框架
+  if (shouldTreatAsSimpleGeneralChat(userMessage, "chat") || /^(我是|你好|您好|hello|hi|可以|当然)/i.test(normalized)) return answer;
   return [
     normalized,
     "",
@@ -2112,8 +2114,8 @@ function appendMandatorySafetySections(answer: string, userMessage: string) {
 
 function shouldSkipIncompleteAnswerRepair(userMessage: string) {
   const text = userMessage.trim();
-  if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(text)) return true;
-  if (/^(你是|你是谁|你能做什么|介绍一下|谢谢|辛苦了)[？?！!。.\s]*$/i.test(text)) return true;
+  if (/^(你好|您好|哈喽|hello|hi|额|嗯|喂)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗|干嘛的))?[？?！!。.\s]*$/i.test(text)) return true;
+  if (/^(你是|你是谁|你能做什么|介绍一下|谢谢|辛苦了|额)[？?！!。.\s]*$/i.test(text)) return true;
   return shouldTreatAsSimpleGeneralChat(text, "chat");
 }
 
