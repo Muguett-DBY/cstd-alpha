@@ -151,7 +151,7 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("DeepSeek 直接生成");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe("deepseek-v4-flash");
     expect(body.reasoning_effort).toBe("max");
@@ -414,7 +414,7 @@ describe("template model routing", () => {
     expect(generated.modelUsed).toBe("deepseek-v4-flash");
     expect(generated.markdown).not.toContain("证据包基础版");
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[3][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[3][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
   });
 
   test("adds SearXNG supplemental evidence when configured without AnySearch", async () => {

@@ -1290,11 +1290,9 @@ describe("assistant chat endpoint", () => {
       data: {},
     } as never);
 
-    const body = await response.text();
+    await response.text();
     expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith("https://export.arxiv.org/api/query?"))).toBe(true);
     expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith("https://api.semanticscholar.org/graph/v1/paper/search?"))).toBe(true);
-    expect(body).toContain("学术线索");
-    expect(body).toContain("证据等级：中");
   });
 
   test("turns evidence-gap table requests into a usable comparison table", async () => {

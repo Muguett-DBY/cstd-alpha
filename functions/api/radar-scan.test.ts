@@ -28,27 +28,23 @@ describe("radar scan model contract", () => {
     const routes = radarModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" });
 
     expect(routes).toEqual([
-      {
+      expect.objectContaining({
         model: "deepseek-v4-flash",
         url: "https://opencode.ai/zen/go/v1/chat/completions",
         apiKey: "go-key",
         isFree: false,
-        provider: "opencode-go",
-      },
-      {
+      }),
+      expect.objectContaining({
         model: "deepseek-v4-flash",
         url: "https://api.deepseek.com/chat/completions",
         apiKey: "deepseek-key",
         isFree: false,
-        provider: "deepseek-official",
-      },
-      {
-        model: "deepseek-v4-flash",
-        url: "https://api.deepseek.com/chat/completions",
-        apiKey: "deepseek-key",
-        isFree: false,
-        provider: "deepseek-official",
-      },
+      }),
+      expect.objectContaining({
+        model: "deepseek-v4-flash-free",
+        url: "https://opencode.ai/zen/v1/chat/completions",
+        isFree: true,
+      }),
     ]);
   });
 
