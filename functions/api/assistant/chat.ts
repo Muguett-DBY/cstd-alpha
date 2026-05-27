@@ -272,7 +272,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
             mode: contextMode,
             signal: request.signal,
           });
-          const guardedText = guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence, {
+          const guardedText = await guardAssistantOutputLanguage(reviewed.text, researchContext.message, externalEvidence, {
             isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
           });
           if (!guardedText.trim()) throw new Error("DeepSeek 助手连接失败。");
@@ -334,7 +334,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           }
         }
         const rawAssistantText = assistantText;
-        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
+        assistantText = await guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
         if (!rawAssistantText.trim()) {
@@ -354,7 +354,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           }
           assistantText = repairedText;
         }
-        assistantText = guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
+        assistantText = await guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
         latestUsage ??= { model: answerRoute.model, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };

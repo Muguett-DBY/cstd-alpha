@@ -4,15 +4,16 @@ export type AssistantGuardExternalEvidence = {
 
 type AssistantOutputGuardOptions = {
   isSimpleGeneralChat?: (message: string) => boolean;
+  fetchImpl?: typeof fetch;
 };
 
-export function guardAssistantOutputLanguage(
+export async function guardAssistantOutputLanguage(
   text: string,
   message: string,
   externalEvidence?: AssistantGuardExternalEvidence,
   options?: AssistantOutputGuardOptions,
-) {
-  const chartFixed = guardChartRefusalLanguage(text, message);
+): Promise<string> {
+  const chartFixed = await guardChartRefusalLanguage(text, message, options?.fetchImpl);
   if (chartFixed !== text) return chartFixed;
   return cleanAssistantFormatting(
     guardWeakEvidenceSuperlatives(
@@ -42,23 +43,114 @@ export function guardAssistantOutputLanguage(
 
 const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|可视化|chart|table|表格|对比表)/i;
 
-const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|生成图片|生成图表|绘制图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图)/i;
+const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|生成图片|生成图表|绘制图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图|文字描述[^。\n]{0,10}(?:图片|图表|ASCII|趋势|走势))/i;
 
-/** 检测助手拒绝画图的回复，提取代码块/内联数据并重写为 Markdown 表格。 */
-function guardChartRefusalLanguage(text: string, message: string): string {
+/** 公司名称到 Yahoo Finance 代码的映射。 */
+const COMPANY_SYMBOL_MAP: Record<string, string> = {
+  "小米": "1810.HK",
+  "苹果": "AAPL",
+  "腾讯": "0700.HK",
+  "阿里": "9988.HK",
+  "阿里巴巴": "9988.HK",
+  "茅台": "600519.SS",
+  "贵州茅台": "600519.SS",
+  "宁德时代": "300750.SZ",
+  "比亚迪": "1211.HK",
+  "美团": "3690.HK",
+  "英伟达": "NVDA",
+  "特斯拉": "TSLA",
+  "谷歌": "GOOGL",
+  "微软": "MSFT",
+  "亚马逊": "AMZN",
+  "拼多多": "PDD",
+  "百度": "BIDU",
+  "京东": "JD",
+  "药明康德": "2359.HK",
+  "中芯国际": "0981.HK",
+  "万科": "000002.SZ",
+  "招商银行": "600036.SS",
+  "工商银行": "1398.HK",
+  "中国移动": "0941.HK",
+  "中国联通": "0762.HK",
+  "中国电信": "0728.HK",
+  "紫金矿业": "2899.HK",
+  "港交所": "0388.HK",
+  "海底捞": "6862.HK",
+  "泡泡玛特": "9992.HK",
+  "优必选": "UBXG",
+  "理想汽车": "LI",
+  "小鹏汽车": "XPEV",
+  "蔚来": "NIO",
+};
+
+/** 从用户消息中提取公司名称，返回对应的 Yahoo Symbol。 */
+function extractSymbol(message: string): string | null {
+  for (const [name, symbol] of Object.entries(COMPANY_SYMBOL_MAP)) {
+    if (message.includes(name)) return symbol;
+  }
+  return null;
+}
+
+/** 从 Yahoo Finance 获取十年月度股价数据，返回 Markdown 表格字符串。 */
+async function fetchYahooChartTable(symbol: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1mo&includeAdjustedClose=true`;
+  try {
+    const response = await fetchImpl(url);
+    if (!response.ok) return null;
+    const json: unknown = await response.json();
+    const result = Array.isArray((json as Record<string, unknown>)?.chart?.result) ? (json as Record<string, unknown>).chart.result[0] as Record<string, unknown> : null;
+    if (!result) return null;
+    const timestamps = Array.isArray(result.timestamp) ? result.timestamp as number[] : [];
+    const quote = Array.isArray(result.indicators?.quote) ? result.indicators.quote[0] as Record<string, unknown> : null;
+    const closes = Array.isArray(quote?.close) ? quote.close as (number | null)[] : [];
+    const adjResult = Array.isArray(result.indicators?.adjclose) ? result.indicators.adjclose[0] as Record<string, unknown> : null;
+    const adjCloses = Array.isArray(adjResult?.adjclose) ? adjResult.adjclose as (number | null)[] : [];
+    const rows: string[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const date = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+      const rawClose = typeof closes[i] === "number" ? closes[i] as number : undefined;
+      const adjClose = typeof adjCloses[i] === "number" ? adjCloses[i] as number : rawClose;
+      if (!date || adjClose === undefined) continue;
+      rows.push(`| ${date} | ${adjClose.toFixed(2)} |`);
+    }
+    if (rows.length < 3) return null;
+    const sampled = rows.length > 200 ? rows.filter((_, i) => i % Math.ceil(rows.length / 200) === 0) : rows;
+    return ["| 日期 | 收盘价 |", "| --- | --- |", ...sampled].join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/** 检测助手拒绝画图的回复，先尝试提取代码块/内联数据，失败则回退 Yahoo Finance 查询。 */
+async function guardChartRefusalLanguage(text: string, message: string, fetchImpl?: typeof fetch): Promise<string> {
   if (!CHART_REQUEST_RE.test(message)) return text;
   if (!CHART_REFUSAL_RE.test(text)) return text;
 
   const table = extractChartDataAsTable(text);
-  if (!table) return text;
+  if (table) {
+    const subject = message.replace(/画.*$/u, "").replace(/[了给请把的]/gu, "").trim() || "当前标的";
+    return [
+      `结论：${subject}数据已整理为下表，系统会自动渲染为折线图。`,
+      "",
+      table,
+      "",
+      "证据等级：中（基于外部搜索线索中的历史价格数据，具体数值请以交易所官方数据为准）。",
+    ].join("\n");
+  }
+
+  const symbol = extractSymbol(message);
+  if (!symbol) return text;
+
+  const yahooTable = await fetchYahooChartTable(symbol, fetchImpl);
+  if (!yahooTable) return text;
 
   const subject = message.replace(/画.*$/u, "").replace(/[了给请把的]/gu, "").trim() || "当前标的";
   return [
-    `结论：${subject}数据已整理为下表，系统会自动渲染为折线图。`,
+    `结论：${subject}股价数据已从 Yahoo Finance 获取，系统会自动渲染为折线图。`,
     "",
-    table,
+    yahooTable,
     "",
-    "证据等级：中（基于外部搜索线索中的历史价格数据，具体数值请以交易所官方数据为准）。",
+    "证据等级：高（数据来源：Yahoo Finance 公开行情 API）。",
   ].join("\n");
 }
 
