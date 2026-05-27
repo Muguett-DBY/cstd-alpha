@@ -218,5 +218,39 @@ describe("assistant output guards", () => {
       expect(guarded).toContain("| 2010-01-01 | 10.50 |");
       expect(guarded).toContain("| 2010-02-01 | 11.20 |");
     });
+
+    test("catches '证据未提供...完整...仅能...极简示意' refusal pattern", async () => {
+      const mockFetch = async () => {
+        const response = {
+          chart: {
+            result: [{
+              timestamp: [1262304000, 1264982400, 1267401600],
+              indicators: {
+                quote: [{ close: [10.5, 11.2, 12.8] }],
+                adjclose: [{ adjclose: [10.5, 11.2, 12.8] }],
+              },
+            }],
+          },
+        };
+        return new Response(JSON.stringify(response), { status: 200 });
+      };
+
+      const guarded = await guardAssistantOutputLanguage(
+        [
+          "结论：站内证据未提供小米上市以来的完整股价序列，仅能基于搜索到的部分价格点构建极简示意折线图，点过少不足以代表完整走势。",
+          "",
+          "股价数据点（HKD）",
+          "2019年末价格：16.80",
+          "2026年价格：31.88",
+        ].join("\n"),
+        "小米上市以来股价画个折线图",
+        undefined,
+        { fetchImpl: mockFetch },
+      );
+
+      expect(guarded).toContain("数据已从 Yahoo Finance 获取");
+      expect(guarded).toContain("| 日期 | 收盘价 |");
+      expect(guarded).toContain("| 2010-01-01 | 10.50 |");
+    });
   });
 });

@@ -43,7 +43,7 @@ export async function guardAssistantOutputLanguage(
 
 const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|可视化|chart|table|表格|对比表)/i;
 
-const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|绘制|生成图片|生成图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图|文字描述[^。\n]{0,10}(?:图片|图表|ASCII|趋势|走势))/i;
+const CHART_REFUSAL_RE = /(?:无法[在聊]?[^。\n]{0,30}?(?:画图|绘制|生成图片|生成图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图|文字描述[^。\n]{0,10}(?:图片|图表|ASCII|趋势|走势))|(?:证据|站内证据)[^。\n]{0,10}未提供[^。\n]{0,20}(?:完整|全部|足够)[^。\n]{0,20}(?:序列|数据|走势)|(?:仅能|只能)[^。\n]{0,30}(?:极简|简化|示意))/i;
 
 /** 公司名称到 Yahoo Finance 代码的映射。 */
 const COMPANY_SYMBOL_MAP: Record<string, string> = {
