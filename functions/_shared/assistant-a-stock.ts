@@ -213,20 +213,28 @@ export async function fetchCninfoFilings(code: string, fetchImpl = fetch): Promi
 // === 新浪三表 ===
 export async function fetchSinaFinancialStatements(code: string, fetchImpl = fetch): Promise<string> {
   const c = normalizeCode(code);
+  const types = [
+    { id: "vFD_BalanceSheet", label: "资产负债表" },
+    { id: "vFD_ProfitStatement", label: "利润表" },
+    { id: "vFD_CashFlow", label: "现金流量表" },
+  ];
   try {
-    const r = await fetchImpl(`https://vip.stock.finance.sina.com.cn/q/go.php/vFinanceBillboard/kind/main/index.phtml?s=${
-      c.startsWith("6") ? "sh" : "sz"}${c}&num=4`, { headers: { "User-Agent": UA } });
-    const html = await r.text();
-    const tables = html.match(/<table[\s\S]*?<\/table>/gi);
-    if (!tables?.length) return "无新浪财报数据。";
-    return tables.slice(0, 3).map((t, i) => {
-      const caption = t.match(/<caption[^>]*>([\s\S]*?)<\/caption>/i);
-      const rows = [...t.matchAll(/<tr[^>]*>[\s\S]*?<\/tr>/gi)].slice(1, 16).map((tr) => {
+    const results: string[] = [];
+    for (const t of types) {
+      const r = await fetchImpl(`https://money.finance.sina.com.cn/corp/go.php/${t.id}/stockid/${c}/ctrl/2019/displaytype/4.phtml`, { headers: { "User-Agent": UA } });
+      const buf = await r.arrayBuffer();
+      const html = new TextDecoder("gbk").decode(buf);
+      const tables = html.match(/<table[\s\S]*?<\/table>/gi);
+      if (!tables?.length) continue;
+      const dataTable = tables.find((tbl) => tbl.includes("报表日期"));
+      if (!dataTable) continue;
+      const rows = [...dataTable.matchAll(/<tr[^>]*>[\s\S]*?<\/tr>/gi)].slice(1, 20).map((tr) => {
         const cols = [...tr[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => c[1].replace(/<[^>]+>/g, "").trim());
         return cols.filter(Boolean).join(": ");
       }).filter(Boolean);
-      return `${caption?.[1] ?? `报表${i + 1}`}\n${rows.join("\n")}`;
-    }).join("\n\n");
+      if (rows.length) results.push(`${t.label}\n${rows.join("\n")}`);
+    }
+    return results.length ? results.join("\n\n") : "无新浪财报数据。";
   } catch { return "财务报表数据暂不可用。"; }
 }
 
