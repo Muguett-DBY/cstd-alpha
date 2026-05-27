@@ -53,6 +53,7 @@ type AssistantSearchToolCall = {
   reason?: string;
   freshness?: "day" | "week" | "month" | "year";
   maxResults?: number;
+  rawArgs?: Record<string, unknown>;
 };
 
 type ExternalEvidenceResult = {
@@ -833,10 +834,10 @@ async function executeAssistantToolCalls(
   const computeCalls = toolCalls.filter((call) => call.name === "compute_financial");
   const computeItems: AnySearchEvidence[] = [];
   for (const call of computeCalls) {
-    const params = parseToolArguments(call.arguments ?? call.parameters ?? {});
+    const args = call.rawArgs ?? {};
     const result = executeFinancialCompute({
-      operation: String(isRecord(params) ? params.operation ?? "" : ""),
-      params: isRecord(params?.params) ? params.params as Record<string, unknown> : {},
+      operation: String(args.operation ?? ""),
+      params: isRecord(args.params) ? args.params as Record<string, unknown> : {},
     });
     const now = new Date().toISOString();
     computeItems.push({
@@ -1097,6 +1098,9 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
       reason: stringOrFallback(args.reason, "").slice(0, 180) || undefined,
     };
   }
+  if (name === "compute_financial") {
+    return normalizeComputeToolCall(value, name, args);
+  }
   const query = stringOrFallback(args.query, "").slice(0, 220);
   if (!query) return null;
   return {
@@ -1106,6 +1110,15 @@ function normalizeSearchToolCall(value: unknown): AssistantSearchToolCall | null
     reason: stringOrFallback(args.reason, "").slice(0, 180) || undefined,
     freshness,
     maxResults,
+  };
+}
+
+function normalizeComputeToolCall(value: unknown, name: AssistantToolName, args: Record<string, unknown>): AssistantSearchToolCall | null {
+  return {
+    id: stringOrFallback(isRecord(value) ? value.id : undefined, crypto.randomUUID()),
+    name,
+    reason: stringOrFallback(args.reason, "").slice(0, 180) || undefined,
+    rawArgs: args,
   };
 }
 
