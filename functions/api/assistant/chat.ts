@@ -2411,6 +2411,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   if (normalized.length < 900 && !/^结论[：:]/.test(normalized) && !/(证据等级|反证|我可能错|后续跟踪)/.test(normalized)) return answer;
   // 如果回答是简短的非投资类回复（自我介绍、问候等），跳过补充框架
   if (shouldTreatAsSimpleGeneralChat(userMessage, "chat") || /^(我是|你好|您好|hello|hi|可以|当然)/i.test(normalized)) return answer;
+  // 如果回答已有一定长度（超过300字），说明模型已给出完整回答，不再追补充框架
+  if (normalized.length >= 300) return answer;
   // 如果回答已同时含证据等级和反证/风险判断，说明结构完整，跳过补充框架
   if (/(证据等级|可信度|置信度)/.test(normalized) && /(反证|我可能错|风险条件|风险提示|下行风险)/.test(normalized)) return answer;
   return [
