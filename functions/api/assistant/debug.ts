@@ -1,5 +1,5 @@
 import type { AssistantEnv } from "./assistant-db";
-import { buildDeepSeekFallbackRoutes } from "./opencode-go";
+import { buildDeepSeekFallbackRoutes } from "../../_shared/opencode-go";
 
 export const onRequestGet: PagesFunction<AssistantEnv> = async ({ env }) => {
   const routes = buildDeepSeekFallbackRoutes(env);
