@@ -1182,7 +1182,7 @@ button:not(:disabled):active,
 
 .assistant-chat-panel {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
   position: relative;
@@ -1221,7 +1221,7 @@ button:not(:disabled):active,
 
 .assistant-thread-sidebar {
   position: absolute;
-  top: 0;
+  top: 40px;
   left: 0;
   bottom: 0;
   width: 260px;
