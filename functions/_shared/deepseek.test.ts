@@ -165,7 +165,7 @@ describe("DeepSeek report client", () => {
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
     expect(body.model).toBe("deepseek-v4-flash");
     expect(body.reasoning_effort).toBe("max");
@@ -195,8 +195,8 @@ describe("DeepSeek report client", () => {
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(fetchMock.mock.calls[2][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(fetchMock.mock.calls[2][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[2][1].headers).toHaveProperty("authorization");
     expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe("deepseek-v4-flash");
   });
