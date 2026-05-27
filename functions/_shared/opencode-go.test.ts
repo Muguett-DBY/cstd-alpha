@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { buildDeepSeekFallbackRoutes } from "./opencode-go";
 
 describe("buildDeepSeekFallbackRoutes", () => {
-  test("orders free OpenCode Zen before OpenCode Go and official DeepSeek", () => {
+  test("orders OpenCode Go first, then free Zen, then official DeepSeek", () => {
     const routes = buildDeepSeekFallbackRoutes({
       OPENCODE_API_KEY: "go-key",
       DEEPSEEK_API_KEY: "official-key",
@@ -10,16 +10,16 @@ describe("buildDeepSeekFallbackRoutes", () => {
 
     expect(routes.map((route) => ({ model: route.model, url: route.url, isFree: route.isFree, provider: route.provider }))).toEqual([
       {
-        model: "deepseek-v4-flash-free",
-        url: "https://opencode.ai/zen/v1/chat/completions",
-        isFree: true,
-        provider: "opencode-zen-free",
-      },
-      {
         model: "deepseek-v4-flash",
         url: "https://opencode.ai/zen/v1/chat/completions",
         isFree: false,
         provider: "opencode-go",
+      },
+      {
+        model: "deepseek-v4-flash-free",
+        url: "https://opencode.ai/zen/v1/chat/completions",
+        isFree: true,
+        provider: "opencode-zen-free",
       },
       {
         model: "deepseek-v4-flash",

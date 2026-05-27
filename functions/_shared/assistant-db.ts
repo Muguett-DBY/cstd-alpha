@@ -1,6 +1,6 @@
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "./deepseek-cache";
 import { readSessionCookie, type UserSession } from "./auth";
-import { OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL, OPENCODE_ZEN_CHAT_COMPLETIONS_URL, type DeepSeekFallbackRoute } from "./opencode-go";
+import { OPENCODE_GO_DEEPSEEK_FLASH_MODEL, OPENCODE_ZEN_CHAT_COMPLETIONS_URL, type DeepSeekFallbackRoute } from "./opencode-go";
 import type { AssistantMemory, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantUsage } from "../../src/shared/assistant";
 
 export type AssistantEnv = {
@@ -48,7 +48,7 @@ type MessageRow = {
 };
 
 export const ASSISTANT_DEFAULT_THREAD_ID = "default-investment-thread";
-export const ASSISTANT_MODEL = OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL;
+export const ASSISTANT_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 export const ASSISTANT_REASONING_EFFORT = "max";
 export const DEEPSEEK_CHAT_COMPLETIONS_URL = OPENCODE_ZEN_CHAT_COMPLETIONS_URL;
 export const ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT = 100_000;

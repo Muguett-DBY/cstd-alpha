@@ -159,17 +159,17 @@ function mockSuccessfulReport(scoringPayload = reportPayload()) {
 }
 
 describe("DeepSeek report client", () => {
-  test("requests free OpenCode Zen DeepSeek Flash first with JSON output", async () => {
+  test("requests OpenCode Go DeepSeek Flash first with JSON output", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("authorization");
-    expect(body.model).toBe("deepseek-v4-flash-free");
+    expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
+    expect(body.model).toBe("deepseek-v4-flash");
     expect(body.reasoning_effort).toBe("max");
-    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.thinking).toBeUndefined();
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.temperature).toBe(0.1);
     expect(body.max_tokens).toBe(12000);
@@ -183,7 +183,7 @@ describe("DeepSeek report client", () => {
     expect(userPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);
   });
 
-  test("retries transient free route failures before falling through to paid routes", async () => {
+  test("retries transient paid route failures before falling through to free routes", async () => {
     const rateLimited = { ok: false, status: 429, text: async () => "rate limited" };
     const fetchMock = vi
       .fn()
@@ -197,8 +197,8 @@ describe("DeepSeek report client", () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
     expect(fetchMock.mock.calls[2][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(fetchMock.mock.calls[2][1].headers).not.toHaveProperty("authorization");
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe("deepseek-v4-flash-free");
+    expect(fetchMock.mock.calls[2][1].headers).toHaveProperty("authorization");
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe("deepseek-v4-flash");
   });
 
   test("passes an abort signal to DeepSeek fetch requests", async () => {
@@ -222,7 +222,7 @@ describe("DeepSeek report client", () => {
     expect(report.scoreItems20).toHaveLength(20);
   });
 
-  test("uses free DeepSeek Flash for scoring, detail and narrative generation", async () => {
+  test("uses OpenCode Go DeepSeek Flash for scoring, detail and narrative generation", async () => {
     const fetchMock = mockSuccessfulReport();
 
     await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
@@ -230,12 +230,12 @@ describe("DeepSeek report client", () => {
     const scoringBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     const detailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     const narrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
-    expect(scoringBody.model).toBe("deepseek-v4-flash-free");
-    expect(detailBody.model).toBe("deepseek-v4-flash-free");
-    expect(narrativeBody.model).toBe("deepseek-v4-flash-free");
+    expect(scoringBody.model).toBe("deepseek-v4-flash");
+    expect(detailBody.model).toBe("deepseek-v4-flash");
+    expect(narrativeBody.model).toBe("deepseek-v4-flash");
     for (const body of [scoringBody, detailBody, narrativeBody]) {
       expect(body.reasoning_effort).toBe("max");
-      expect(body.thinking).toEqual({ type: "enabled" });
+      expect(body.thinking).toBeUndefined();
     }
   });
 
@@ -248,7 +248,7 @@ describe("DeepSeek report client", () => {
     expect(metrics.modelCalls).toBe(11);
     expect(metrics.tokenUsage).toEqual([
       {
-        model: "deepseek-v4-flash-free",
+        model: "deepseek-v4-flash",
         calls: 11,
         promptTokens: 11000,
         promptCacheHitTokens: 1100,
