@@ -191,7 +191,7 @@ describe("assistant output guards", () => {
     });
 
     test("rewrites prose-only '无法绘制' refusal by falling back to Yahoo Finance", async () => {
-      const mockFetch = async (_url: string) => {
+      const mockFetch = async () => {
         const response = {
           chart: {
             result: [{
