@@ -12,6 +12,8 @@ export function guardAssistantOutputLanguage(
   externalEvidence?: AssistantGuardExternalEvidence,
   options?: AssistantOutputGuardOptions,
 ) {
+  const chartFixed = guardChartRefusalLanguage(text, message);
+  if (chartFixed !== text) return chartFixed;
   return cleanAssistantFormatting(
     guardWeakEvidenceSuperlatives(
       guardExternalEvidenceConsistency(
@@ -36,6 +38,102 @@ export function guardAssistantOutputLanguage(
       ),
     ),
   );
+}
+
+const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|可视化|chart|table|表格|对比表)/i;
+
+const CHART_REFUSAL_RE = /无法[在聊]?[^。\n]{0,30}?(?:画图|生成图片|生成图表|绘制图表|直接显示[^。\n]{0,10}(?:图片|图表)|在聊天框|直接生成图片|直接出图)/i;
+
+/** 检测助手拒绝画图的回复，提取代码块/内联数据并重写为 Markdown 表格。 */
+function guardChartRefusalLanguage(text: string, message: string): string {
+  if (!CHART_REQUEST_RE.test(message)) return text;
+  if (!CHART_REFUSAL_RE.test(text)) return text;
+
+  const table = extractChartDataAsTable(text);
+  if (!table) return text;
+
+  const subject = message.replace(/画.*$/u, "").replace(/[了给请把的]/gu, "").trim() || "当前标的";
+  return [
+    `结论：${subject}数据已整理为下表，系统会自动渲染为折线图。`,
+    "",
+    table,
+    "",
+    "证据等级：中（基于外部搜索线索中的历史价格数据，具体数值请以交易所官方数据为准）。",
+  ].join("\n");
+}
+
+/** 从助手的回复中提取时序数据并转换为 Markdown 表格。 */
+function extractChartDataAsTable(text: string): string | null {
+  const lines = extractDataLines(text);
+  if (lines.length < 3) return null;
+
+  const result = parseDataLines(lines);
+  if (!result || result.rows.length < 3) return null;
+
+  const sampled = result.rows.length > 200
+    ? result.rows.filter((_, i) => i % Math.ceil(result.rows.length / 200) === 0)
+    : result.rows;
+
+  const colCount = Math.max(...sampled.map((r) => r.length));
+  const headers = colCount <= 2 ? ["日期", "数值"] : Array.from({ length: colCount }, (_, i) => (i === 0 ? "日期" : `指标${i}`));
+  const separator = `| ${headers.join(" | ")} |`;
+  const divider = `| ${headers.map(() => "---").join(" | ")} |`;
+  const rows = sampled.map((parts) => `| ${parts.join(" | ")} |`);
+
+  return [separator, divider, ...rows].join("\n");
+}
+
+/** 从文本中提取数据行（先尝试代码块，再尝试内联日期行）。 */
+function extractDataLines(text: string): string[] {
+  const codeBlockData = extractCodeBlockLines(text);
+  if (codeBlockData.length >= 3) return codeBlockData;
+  return extractInlineDateLines(text);
+}
+
+/** 提取所有代码块内容，找到含日期行的那个。 */
+function extractCodeBlockLines(text: string): string[] {
+  const blocks: string[] = [];
+  const re = /```(?:\w+)?\s*\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const content = match[1].trim();
+    if (content) blocks.push(content);
+  }
+  if (blocks.length === 0) return [];
+
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const dateLines = lines.filter((l) => /^\d{4}[-/]\d{2}[-/]\d{2}/.test(l));
+    if (dateLines.length >= 3) return dateLines;
+  }
+  return blocks[0].split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+/** 提取不以 ``` 包裹的日期开头的数据行。 */
+function extractInlineDateLines(text: string): string[] {
+  const allLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return allLines.filter((l) => /^\d{4}[-/]\d{2}[-/]\d{2}/.test(l));
+}
+
+/** 解析数据行，检测分隔符，返回行列结构。 */
+function parseDataLines(lines: string[]): { rows: string[][] } | null {
+  const dateLineRE = /^\d{4}[-/]\d{2}[-/]\d{2}/;
+  const dataLines = lines.filter((l) => dateLineRE.test(l.trim()));
+  if (dataLines.length < 3) return null;
+
+  const commaCount = dataLines.filter((l) => l.includes(",")).length;
+  const tabCount = dataLines.filter((l) => l.includes("\t")).length;
+
+  let delimiter: string | RegExp = ",";
+  if (tabCount >= dataLines.length * 0.5) delimiter = "\t";
+  else if (commaCount < dataLines.length * 0.5 && /^\S+\s+\S+/.test(dataLines[0])) delimiter = /\s+/;
+
+  const rows: string[][] = [];
+  for (const line of dataLines) {
+    const parts = line.split(delimiter).map((p) => p.trim()).filter((p) => p.length > 0);
+    if (parts.length >= 2) rows.push(parts);
+  }
+  return rows.length >= 3 ? { rows } : null;
 }
 
 function guardCertaintyPromiseLanguage(text: string) {
