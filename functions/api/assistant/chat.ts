@@ -90,8 +90,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  const routes = buildDeepSeekFallbackRoutes(env);
-  if (!routes.length) return json({ error: "No DeepSeek-compatible route is configured." }, 500);
+  if (!buildDeepSeekFallbackRoutes(env).length) return json({ error: "No DeepSeek-compatible route is configured." }, 500);
 
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
   const userMessage = body?.message?.trim();
