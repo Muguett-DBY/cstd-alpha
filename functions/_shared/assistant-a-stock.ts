@@ -50,8 +50,11 @@ async function eastmoneyPush2(path: string, params: Record<string, string>, fetc
 export async function fetchTencentQuote(codes: string[], fetchImpl = fetch): Promise<AStockQuote[]> {
   const prefixed = codes.map((c) => {
     const n = normalizeCode(c);
+    const uc = c.toUpperCase();
+    if (uc.includes("HK")) return `hk${n}`;
+    // 000001→上证指数 sh, 000300→沪深300 sh, 399006→创业板指 sz
+    if (n === "000001" || n === "000300" || n === "000688" || n === "000016" || n === "000905") return `sh${n}`;
     const mk = marketPrefix(c);
-    if (c.toUpperCase().includes("HK")) return `hk${n}`;
     return `${mk}${n}`;
   });
   try {
