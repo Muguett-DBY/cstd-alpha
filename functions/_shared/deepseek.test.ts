@@ -172,7 +172,7 @@ describe("DeepSeek report client", () => {
     expect(body.thinking).toBeUndefined();
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.temperature).toBe(0.1);
-    expect(body.max_tokens).toBe(12000);
+    expect(body.max_tokens).toBe(32768);
     const userPayload = JSON.parse(body.messages[1].content);
     expect(userPayload.expectedOutputShape.scoreItems20[0]).not.toHaveProperty("question");
     expect(userPayload.expectedOutputShape.scoreItems20[0]).toEqual(
@@ -413,7 +413,7 @@ describe("DeepSeek report client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(12);
     const strictBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     const strictPayload = JSON.parse(strictBody.messages[1].content);
-    expect(strictBody.max_tokens).toBe(12000);
+    expect(strictBody.max_tokens).toBe(32768);
     expect(strictBody.messages[0].content).toContain("set financialTenYear.rows to [] and evidence to []");
     expect(strictPayload.expectedOutputShape.evidence).toEqual([]);
     expect(strictPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);

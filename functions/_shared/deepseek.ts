@@ -260,7 +260,7 @@ async function requestScoringJsonOnce({
     routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
-    maxTokens: 12000,
+    maxTokens: 32768,
     usageTracker,
     messages: [
       {
@@ -473,7 +473,7 @@ async function requestScoreItemDetailBatchOnce({
     routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
-    maxTokens: strictLength ? 2400 : 3600,
+    maxTokens: 32768,
     timeoutMs: 90_000,
     usageTracker,
     messages: [
@@ -637,7 +637,7 @@ async function requestNarrativeBatchOnce({
     routeEnv,
     fetchImpl,
     model: OPENCODE_GO_DEEPSEEK_FLASH_MODEL,
-    maxTokens: strictLength ? 2600 : 4200,
+    maxTokens: 32768,
     usageTracker,
     messages: [
       {

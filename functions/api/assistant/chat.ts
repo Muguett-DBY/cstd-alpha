@@ -1630,7 +1630,7 @@ async function generateReviewedResearchAnswer(input: {
   let answerRoute: DeepSeekFallbackRoute | undefined;
   try {
     const result = await fetchAssistantJson(input.env, input.signal, (route) =>
-      nonStreamingModelBody({ route, messages: input.messages, maxTokens: 3600, reasoningEffort: ASSISTANT_REASONING_EFFORT, temperature: 0.08 }),
+      nonStreamingModelBody({ route, messages: input.messages, maxTokens: 32768, reasoningEffort: ASSISTANT_REASONING_EFFORT, temperature: 0.08 }),
     );
     answerData = result.data;
     answerRoute = result.route;
