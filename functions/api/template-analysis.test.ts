@@ -154,8 +154,8 @@ describe("template model routing", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe("deepseek-v4-flash");
-    expect(body.reasoning_effort).toBe("max");
-    expect(body.thinking).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
   });
 
   test("accepts short completed template reports without expansion when fields are complete", async () => {
@@ -193,7 +193,7 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("内容短，但关键字段完整");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toBeUndefined();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
   });
 
   test("fails instead of writing an evidence fallback when high reasoning returns no final content", async () => {
@@ -221,8 +221,8 @@ describe("template model routing", () => {
     ).rejects.toThrow("未返回完整模板分析内容");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toBeUndefined();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBeUndefined();
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).reasoning_effort).toBeUndefined();
   });
 

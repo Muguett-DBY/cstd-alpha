@@ -8,7 +8,7 @@ export type DeepSeekRequestOptions = {
   temperature?: number;
   responseFormat?: { type: "json_object" } | null;
   stream?: boolean;
-  thinking?: { type: "enabled"; budget_tokens?: number };
+  thinking?: { type: "enabled"; budget_tokens?: number; reasoning_effort?: "high" | "max" };
 };
 
 export const DEEPSEEK_CACHE_PROTOCOL = "CSTD_ALPHA_DEEPSEEK_CACHE_PROTOCOL_V1";

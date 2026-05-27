@@ -17,11 +17,11 @@ describe("research template completion", () => {
 
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
-      reasoning_effort: "max",
+      thinking: { type: "enabled", reasoning_effort: "max" },
       response_format: { type: "json_object" },
       stream: false,
     });
-    expect(body.thinking).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
     expect(JSON.stringify(body.messages)).toContain("实体经营者思维");
     expect(JSON.stringify(body.messages)).toContain("sectionRequirements");
     expect(JSON.stringify(body.messages)).toContain("每个模板项");

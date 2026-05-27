@@ -755,8 +755,7 @@ function buildDeepSeekRequest(
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort: "max",
-    thinking: route.isFree ? { type: "enabled" } : undefined,
+    thinking: route.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: "max" },
     maxTokens,
     messages,
   });

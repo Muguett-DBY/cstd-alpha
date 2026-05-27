@@ -113,8 +113,7 @@ export function buildTemplateCompletionRequest(route: TemplateCompletionRoute, m
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort: route.isFree ? undefined : "max",
-    thinking: route.isFree ? { type: "enabled" } : undefined,
+    thinking: route.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: "max" },
     maxTokens: 8000,
     messages,
   });

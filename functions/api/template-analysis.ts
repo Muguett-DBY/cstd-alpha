@@ -572,8 +572,7 @@ function buildTemplateRequest(
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    reasoningEffort: route.isFree ? undefined : reasoningEffort,
-    thinking: route.isFree ? { type: "enabled" } : undefined,
+    thinking: route.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: reasoningEffort as "high" | "max" },
     maxTokens,
     messages,
   });

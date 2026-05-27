@@ -168,8 +168,8 @@ describe("DeepSeek report client", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
     expect(body.model).toBe("deepseek-v4-flash");
-    expect(body.reasoning_effort).toBe("max");
-    expect(body.thinking).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.temperature).toBe(0.1);
     expect(body.max_tokens).toBe(32768);
@@ -234,8 +234,8 @@ describe("DeepSeek report client", () => {
     expect(detailBody.model).toBe("deepseek-v4-flash");
     expect(narrativeBody.model).toBe("deepseek-v4-flash");
     for (const body of [scoringBody, detailBody, narrativeBody]) {
-      expect(body.reasoning_effort).toBe("max");
-      expect(body.thinking).toBeUndefined();
+      expect(body.reasoning_effort).toBeUndefined();
+      expect(body.thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
     }
   });
 

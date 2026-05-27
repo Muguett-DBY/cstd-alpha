@@ -63,10 +63,9 @@ describe("assistant prompt and memory helpers", () => {
 
     expect(body).toMatchObject({
       model: "deepseek-v4-flash",
-      reasoning_effort: "max",
       stream: true,
       stream_options: { include_usage: true },
-      thinking: { type: "enabled" },
+      thinking: { type: "enabled", reasoning_effort: "max" },
     });
   });
 

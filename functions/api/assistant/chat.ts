@@ -461,11 +461,10 @@ function nonStreamingModelBody({
     model: route.model,
     messages,
     maxTokens,
-    reasoningEffort: route.isFree ? undefined : reasoningEffort,
     temperature,
     stream: false,
     responseFormat,
-    thinking: route.isFree ? { type: "enabled" } : undefined,
+    thinking: route.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: reasoningEffort as "high" | "max" },
   });
 }
 

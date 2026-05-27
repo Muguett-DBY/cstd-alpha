@@ -568,11 +568,10 @@ export function buildAssistantDeepSeekBody(messages: DeepSeekMessage[], route?: 
     model: route?.model ?? ASSISTANT_MODEL,
     messages,
     maxTokens: 32768,
-    reasoningEffort: ASSISTANT_REASONING_EFFORT,
     temperature: 0.12,
     stream: true,
     responseFormat: null,
-    thinking: (route?.isFree ?? true) ? { type: "enabled" } : undefined,
+    thinking: route?.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: "max" },
     }),
     stream_options: { include_usage: true },
   };
