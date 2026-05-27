@@ -24,23 +24,23 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model contract", () => {
-  test("routes DeepSeek requests through free OpenCode Zen, OpenCode Go, then official DeepSeek", () => {
+  test("routes DeepSeek requests through OpenCode Go, free OpenCode Zen, then official DeepSeek", () => {
     const routes = radarModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" });
 
     expect(routes).toEqual([
-      {
-        model: "deepseek-v4-flash-free",
-        url: "https://opencode.ai/zen/v1/chat/completions",
-        apiKey: undefined,
-        isFree: true,
-        provider: "opencode-zen-free",
-      },
       {
         model: "deepseek-v4-flash",
         url: "https://opencode.ai/zen/v1/chat/completions",
         apiKey: "go-key",
         isFree: false,
         provider: "opencode-go",
+      },
+      {
+        model: "deepseek-v4-flash-free",
+        url: "https://opencode.ai/zen/v1/chat/completions",
+        apiKey: undefined,
+        isFree: true,
+        provider: "opencode-zen-free",
       },
       {
         model: "deepseek-v4-flash",
