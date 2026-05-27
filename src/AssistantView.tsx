@@ -118,8 +118,15 @@ export function AssistantView() {
   async function removeThread(threadId: string) {
     try {
       await deleteAssistantThread(threadId);
-      setThreadList((prev) => prev.filter((t) => t.id !== threadId));
-      if (thread?.id === threadId) await reloadThread();
+      const updated = threadList.filter((t) => t.id !== threadId);
+      setThreadList(updated);
+      if (thread?.id === threadId) {
+        if (updated.length) {
+          await switchThread(updated[0].id);
+        } else {
+          await newThread();
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "删除线程失败。");
     }
