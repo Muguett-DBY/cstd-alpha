@@ -324,18 +324,44 @@ export async function completeResearchTemplateDraft(draft: ResearchTemplateCompl
   return data.completion;
 }
 
-export async function fetchAssistantThread(): Promise<AssistantThread> {
-  const response = await fetch("/api/assistant/thread", { credentials: "include" });
+export async function fetchAssistantThread(threadId?: string): Promise<AssistantThread> {
+  const url = threadId ? `/api/assistant/thread?threadId=${encodeURIComponent(threadId)}` : "/api/assistant/thread";
+  const response = await fetch(url, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "助手线程读取失败。");
   const data = (await response.json()) as { thread?: AssistantThread };
   if (!data.thread) throw new Error("助手线程读取失败。");
   return data.thread;
 }
 
+export async function listAssistantThreads(): Promise<Array<{ id: string; title: string; updatedAt: string }>> {
+  const response = await fetch("/api/assistant/threads", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "线程列表读取失败。");
+  const data = (await response.json()) as { threads: Array<{ id: string; title: string; updatedAt: string }> };
+  return data.threads;
+}
+
+export async function createAssistantThread(title?: string): Promise<{ id: string; title: string }> {
+  const response = await fetch("/api/assistant/threads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "线程创建失败。");
+  const data = (await response.json()) as { thread: { id: string; title: string } };
+  return data.thread;
+}
+
+export async function deleteAssistantThread(threadId: string): Promise<void> {
+  const response = await fetch(`/api/assistant/threads/${encodeURIComponent(threadId)}`, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "线程删除失败。");
+}
+
 export async function sendAssistantMessage(
   message: string,
   modeOrEvent?: AssistantMode | ((event: AssistantChatStreamEvent) => void),
   onEventArg?: (event: AssistantChatStreamEvent) => void,
+  threadId?: string,
 ): Promise<AssistantMessage | null> {
   const mode = typeof modeOrEvent === "string" ? modeOrEvent : "chat";
   const onEvent = typeof modeOrEvent === "function" ? modeOrEvent : onEventArg;
@@ -343,7 +369,7 @@ export async function sendAssistantMessage(
     method: "POST",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ message, mode }),
+    body: JSON.stringify({ message, mode, threadId }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "助手生成失败。");
   let finalMessage: AssistantMessage | undefined;

@@ -150,9 +150,9 @@ export async function ensureAssistantSchema(db: D1Database) {
   ]);
 }
 
-export async function getOrCreateDefaultThread(db: D1Database, userKey: string, now = new Date().toISOString()) {
+export async function getOrCreateDefaultThread(db: D1Database, userKey: string, threadId?: string, now = new Date().toISOString()) {
   await ensureAssistantSchema(db);
-  const id = `${userKey}:${ASSISTANT_DEFAULT_THREAD_ID}`;
+  const id = threadId || `${userKey}:${ASSISTANT_DEFAULT_THREAD_ID}`;
   const existing = await db.prepare(`SELECT id, title, summary, updated_at FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(id, userKey).first<{
     id: string;
     title: string;
@@ -165,6 +165,33 @@ export async function getOrCreateDefaultThread(db: D1Database, userKey: string, 
     .bind(id, userKey, "长期投研助手", now)
     .run();
   return { id, title: "长期投研助手", summary: "", updated_at: now };
+}
+
+export async function listAssistantThreads(db: D1Database, userKey: string) {
+  await ensureAssistantSchema(db);
+  const result = await db
+    .prepare(`SELECT id, title, summary, updated_at FROM assistant_threads WHERE user_key = ?1 ORDER BY updated_at DESC LIMIT 50`)
+    .bind(userKey)
+    .all<{ id: string; title: string; summary: string; updated_at: string }>();
+  return result.results ?? [];
+}
+
+export async function createAssistantThread(db: D1Database, userKey: string, title: string, now = new Date().toISOString()) {
+  await ensureAssistantSchema(db);
+  const id = `${userKey}:${crypto.randomUUID()}`;
+  await db
+    .prepare(`INSERT INTO assistant_threads (id, user_key, title, summary, created_at, updated_at) VALUES (?1, ?2, ?3, '', ?4, ?4)`)
+    .bind(id, userKey, title, now)
+    .run();
+  return { id, title, summary: "", updated_at: now };
+}
+
+export async function deleteAssistantThread(db: D1Database, threadId: string, userKey: string) {
+  await ensureAssistantSchema(db);
+  await db.prepare(`DELETE FROM assistant_messages WHERE thread_id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
+  await db.prepare(`DELETE FROM assistant_tool_runs WHERE thread_id = ?1`).bind(threadId).run();
+  await db.prepare(`DELETE FROM assistant_usage_events WHERE thread_id = ?1`).bind(threadId).run();
+  await db.prepare(`DELETE FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
 }
 
 export async function readActiveMemories(db: D1Database, userKey: string): Promise<AssistantMemory[]> {
@@ -492,13 +519,10 @@ export function buildAssistantPromptMessages(input: {
     [
       ASSISTANT_CACHE_ANCHOR_SENTENCE.repeat(ASSISTANT_CACHE_ANCHOR_REPEAT),
       "你是 CSTD Alpha 的私人投研助手，只服务 admin。",
-      "你不是普通聊天机器人。回答投资问题时默认结构必须是：结论、证据、反证/我可能错在哪里、后续跟踪。",
-      "格式硬约束：除纯寒暄和记忆确认外，第一行必须以“结论：”开头，不能先写背景段落、口径说明或没有标签的判断句。",
+      "自然回答，不要套固定格式。简单问题直接回答，复杂分析时再自然分段。不需要每段加标签，也不要每句都写结论/证据/反证。",
       "研究模式：标的研究或行业研究时，必须绝对理性，结论必须是支持、反对、观察、回避之一，禁止模棱两可和迎合用户。",
-      "研究模式输出结构固定为：结论、证据等级、核心理由、反驳用户观点、我可能错在哪里、下一步跟踪。",
       "对比问题硬约束：用户问“A和B谁更稳/哪个更好/差异/对比”时，结论必须是相对判断，例如“A更稳但估值更贵 / B弹性更高但风险更大 / 暂无胜负”，不能只给单一标的的“持有/买入/观察”。正文必须分别覆盖每个比较对象，并说明为什么。",
-      "篇幅约束：除用户明确要求长报告外，默认回答控制在 600-1200 个中文字符；复杂问题最多 1500 字；表格最多 8 行。宁可信息密度高，也不要堆长篇空话。",
-      "篇幅约束：每个小节只写有增量的信息；不要重复同一句证据不足，也不要输出多张重复表格。",
+      "篇幅约束：除用户明确要求长报告外，默认回答简洁、信息密度高，不要堆长篇空话。每个小节只写有增量的信息。",
       "证据优先级：站内证据是私有上下文和历史沉淀，不是答案边界；公开市场问题必须综合站内证据、已触发的外部搜索线索和常识化估值/赔率框架，不能因为站内证据少就停止研究。",
       "证据不足必须明说，不能编造财报、价格、订单、政策或来源；但禁止把“证据不足/无法回答”作为最终答案的唯一内容。站内证据薄时，必须优先使用已触发的外部搜索线索；仍然不足时，也要给低置信情景测算、可审计假设、区间或判断框架、反证条件和下一步验证。",
       "用户问业绩预估、技术优势、行业判断、买卖持有时，不得只回答“无法判断”。你必须在不编造事实的前提下给出有用结论：低置信区间、最可能解释、关键变量、反证和跟踪清单。",
@@ -529,7 +553,7 @@ export function buildAssistantPromptMessages(input: {
       "反驳类问题约束：如果用户要求反驳观点，必须先精确拆分“观点中可能合理的部分”和“错误或过度绝对化的部分”。例如高股息策略可能合理，但“稳赚/无风险/必然赚钱”必须明确反驳。",
       "反驳类问题约束：反驳不能只堆海外案例。优先给适用于当前市场的机制拆解：总回报=股息+股价变化、净息差、信用成本、资本充足率、分红政策、估值和本金回撤。",
       "反驳类问题约束：表格里的反证条件要写成“什么情况会削弱我的反驳/让我错”，不要写“支持稳赚”的反证条件，因为投资里几乎不存在无风险稳赚。",
-      "格式约束：禁止输出空标题或空章节；如果某一节没有实质内容就删掉。Markdown 表格前必须有具体标题，例如“反驳要点表”“用户观点拆解”“反证与确认条件”“跟踪指标”，不要写“结构化表格1/2/3”。",
+      "格式约束：不要有空标题或空段落；如果某一节没有实质内容就删掉。",
       "图表规则：如果用户明确要求画图、画表、对比表、趋势图或证据矩阵，必须先给结论，再给一张 Markdown 表格，表格列名清晰且数值列可解析；不要输出 ECharts JSON 或代码块。",
       "图表规则：表格里的数值必须来自上下文证据或明确标注为打分/估计；无法给出数值时输出证据矩阵而不是编造趋势。",
       "图表规则：禁止说“无法画图”、“无法直接生成图片/图表”、“无法在聊天框里生成图表”。如果你手头有数据（如搜索到的股价），直接输出 Markdown 表格，系统会自动渲染为图表；如果没有任何可用数据，可以说“当前搜索未找到完整数据”并提议其他方式，但不许说“无法画图”或以代码块替代 Markdown 表格。禁止用“证据未提供完整数据”、“仅能构建极简示意”、“建议通过公开API获取”等话术变相拒绝；如果有部分数据就直接输出表格，如果完全没有数据就明确说“当前搜索未找到”并给出具体建议，不要输出半成品描述。",
@@ -541,7 +565,7 @@ export function buildAssistantPromptMessages(input: {
     kind: "assistant-chat-context",
     stable: {
       schemaVersion: 2,
-      outputRules: ["先结论后证据", "必须给反证条件", "证据不足时明确标注", "不修改站内业务数据"],
+      outputRules: ["必须给反证条件", "证据不足时明确标注", "不修改站内业务数据"],
     },
     volatile: {
       volatileContext: {

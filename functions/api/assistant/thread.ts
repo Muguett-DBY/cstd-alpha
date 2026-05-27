@@ -6,7 +6,11 @@ export const onRequestGet: PagesFunction<AssistantEnv> = async ({ request, env }
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   await ensureAssistantSchema(env.REPORT_LIBRARY_DB);
-  const thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId);
+  const url = new URL(request.url);
+  const threadId = url.searchParams.get("threadId");
+  const thread = threadId
+    ? await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, threadId)
+    : await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId);
   const [messages, memories, memoryCandidates, latestUsage] = await Promise.all([
     readRecentMessages(env.REPORT_LIBRARY_DB, session.userId, thread.id, 80),
     readAllMemories(env.REPORT_LIBRARY_DB, session.userId),

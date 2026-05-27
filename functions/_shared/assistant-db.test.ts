@@ -21,8 +21,8 @@ describe("assistant prompt and memory helpers", () => {
     });
 
     expect(messages[0].role).toBe("system");
-    expect(messages[0].content).toContain("结论");
-    expect(messages[0].content).toContain("第一行必须以“结论：”开头");
+    expect(messages[0].content).toContain("自然回答");
+    expect(messages[0].content).toContain("不要套固定格式");
     expect(messages[1].content).toContain("已确认长期记忆");
     expect(messages[1].content).toContain("站内证据只是私有上下文，不能作为研究边界");
     expect(messages[0].content).toContain("站内证据是私有上下文和历史沉淀，不是答案边界");
@@ -179,7 +179,7 @@ describe("assistant prompt and memory helpers", () => {
     expect(system).toContain("不能因为 Exa/AnySearch/SearXNG 返回多条新闻或海外案例就写“证据等级：高”");
     expect(system).toContain("最高只能写“中”");
     expect(system).toContain("高股息策略可能合理，但“稳赚/无风险/必然赚钱”必须明确反驳");
-    expect(system).toContain("禁止输出空标题或空章节");
+    expect(system).toContain("不要有空标题或空段落");
   });
 
   test("forbids invented quantitative thresholds in confirmation conditions", () => {

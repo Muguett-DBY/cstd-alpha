@@ -98,7 +98,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const mode = normalizeAssistantMode(body?.mode);
 
   const now = new Date().toISOString();
-  const thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, now);
+  const thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, body?.threadId, now);
   const userStoredMessage = await writeAssistantMessage(env.REPORT_LIBRARY_DB, {
     userKey: session.userId,
     threadId: thread.id,

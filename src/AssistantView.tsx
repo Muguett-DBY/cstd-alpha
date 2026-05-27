@@ -3,6 +3,9 @@ import * as echarts from "echarts";
 import {
   confirmAssistantMemoryCandidate,
   fetchAssistantThread,
+  listAssistantThreads,
+  createAssistantThread,
+  deleteAssistantThread,
   rejectAssistantMemoryCandidate,
   sendAssistantMessage,
   sendCodeResult,
@@ -43,11 +46,14 @@ export function AssistantView() {
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
+  const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
+  const [threadListOpen, setThreadListOpen] = useState(false);
   const [mode, setMode] = useState<AssistantMode>("chat");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
   const [agentStatus, setAgentStatus] = useState("");
+  const [toolCalls, setToolCalls] = useState<Map<string, { label: string; status: "running" | "completed" | "failed" }>>(new Map());
   const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
   const [speechNotice, setSpeechNotice] = useState("");
   const [pyodideReady, setPyodideReady] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -67,22 +73,56 @@ export function AssistantView() {
 
   useEffect(() => {
     void reloadThread();
+    void loadThreadList();
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [thread?.messages.length, draft, agentStatus]);
 
-  async function reloadThread() {
+  async function reloadThread(threadId?: string) {
     setPhase("loading");
     setError("");
     try {
-      const next = await fetchAssistantThread();
+      const next = await fetchAssistantThread(threadId);
       setThread(next);
       setPhase("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "助手读取失败。");
       setPhase("error");
+    }
+  }
+
+  async function loadThreadList() {
+    try {
+      const threads = await listAssistantThreads();
+      setThreadList(threads);
+    } catch { /* ignore */ }
+  }
+
+  async function switchThread(threadId: string) {
+    setThreadListOpen(false);
+    setDraft("");
+    await reloadThread(threadId);
+  }
+
+  async function newThread() {
+    try {
+      const created = await createAssistantThread();
+      setThreadList((prev) => [{ id: created.id, title: created.title, updatedAt: new Date().toISOString() }, ...prev]);
+      await switchThread(created.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建线程失败。");
+    }
+  }
+
+  async function removeThread(threadId: string) {
+    try {
+      await deleteAssistantThread(threadId);
+      setThreadList((prev) => prev.filter((t) => t.id !== threadId));
+      if (thread?.id === threadId) await reloadThread();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除线程失败。");
     }
   }
 
@@ -214,7 +254,7 @@ export function AssistantView() {
           },
     );
     try {
-      const final = await sendAssistantMessage(message, mode, handleStreamEvent);
+      const final = await sendAssistantMessage(message, mode, handleStreamEvent, thread?.id);
       if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
       setDraftBlocks([]);
@@ -243,7 +283,13 @@ export function AssistantView() {
     if (event.type === "agent_step") { setDraft(""); setAgentStatus(event.title); }
     if (event.type === "tool_status") {
       setDraft("");
-      if (event.status === "running") setAgentStatus(event.label);
+      setToolCalls((prev) => {
+        const next = new Map(prev);
+        if (event.status === "running") next.set(event.id, { label: event.label, status: "running" });
+        if (event.status === "completed") { const existing = next.get(event.id); if (existing) next.set(event.id, { ...existing, status: "completed" }); }
+        if (event.status === "failed") { const existing = next.get(event.id); if (existing) next.set(event.id, { ...existing, status: "failed" }); }
+        return next;
+      });
       if (event.status === "completed") setAgentStatus("正在整合证据...");
       if (event.status === "failed") setAgentStatus("部分来源暂时不可用，继续分析...");
     }
@@ -252,6 +298,7 @@ export function AssistantView() {
     }
     if (event.type === "delta") {
       setAgentStatus("");
+      setToolCalls(new Map());
       setDraft((current) => mergeAssistantDelta(current, event.text));
     }
     if (event.type === "block") setDraftBlocks((current) => [...current.filter((item) => item.id !== event.block.id), event.block]);
@@ -300,6 +347,28 @@ export function AssistantView() {
   return (
     <section className="assistant-workspace" aria-label="投研助手">
       <section className="assistant-chat-panel" aria-label="助手聊天">
+          <div className="assistant-chat-header">
+            <button type="button" className="assistant-thread-toggle" onClick={() => setThreadListOpen((v) => !v)} aria-label="切换会话" title="切换会话">
+              ☰
+            </button>
+            <span className="assistant-thread-title">{thread?.title || "投研助手"}</span>
+          </div>
+          {threadListOpen ? (
+            <div className="assistant-thread-sidebar">
+              <div className="assistant-thread-sidebar-header">
+                <span>会话列表</span>
+                <button type="button" className="assistant-thread-new" onClick={() => void newThread()}>＋ 新对话</button>
+              </div>
+              <div className="assistant-thread-list">
+                {threadList.map((t) => (
+                  <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
+                    <span className="assistant-thread-item-title">{t.title}</span>
+                    <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {
@@ -320,10 +389,25 @@ export function AssistantView() {
                 <AssistantBlocks blocks={draftBlocks} />
               </article>
             ) : null}
-            {!draft && (agentStatus || pyodideReady === "loading") ? (
+            {!draft && (agentStatus || toolCalls.size || pyodideReady === "loading") ? (
               <div className="assistant-agent-status" role="status" aria-live="polite">
-                <span aria-hidden="true" />
-                {pyodideReady === "loading" ? "正在加载计算环境…" : agentStatus}
+                {toolCalls.size ? (
+                  <div className="assistant-tool-list">
+                    {Array.from(toolCalls.values()).map((call, i) => (
+                      <div key={i} className={`assistant-tool-item ${call.status}`}>
+                        <span className="assistant-tool-icon">
+                          {call.status === "running" ? "●" : call.status === "completed" ? "✓" : "✗"}
+                        </span>
+                        <span className="assistant-tool-label">{call.label}</span>
+                      </div>
+                    ))}
+                    {agentStatus ? <div className="assistant-tool-summary">{agentStatus}</div> : null}
+                  </div>
+                ) : pyodideReady === "loading" ? (
+                  "正在加载计算环境…"
+                ) : (
+                  <><span aria-hidden="true" />{agentStatus}</>
+                )}
               </div>
             ) : null}
             <div ref={messagesEndRef} />
