@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { guardAssistantOutputLanguage } from "./assistant-output-guards";
 
 const noExa = { exa: { used: false, count: 0 } };
