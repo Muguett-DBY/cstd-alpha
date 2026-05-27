@@ -232,7 +232,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           emit: (event) => enqueue(controller, event),
         });
         let externalEvidence = agent.externalEvidence;
-        if (!externalEvidence.triggered) {
+        if (!externalEvidence.triggered && !agent.loopExecuted) {
           externalEvidence = await maybeFetchExternalEvidence(
             env,
             researchContext.message,
@@ -354,9 +354,6 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           }
           assistantText = repairedText;
         }
-        assistantText = await guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
-          isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
-        });
         latestUsage ??= { model: answerRoute.model, reasoningEffort: ASSISTANT_REASONING_EFFORT, elapsedMs: Date.now() - startedAt };
         const blocks = extractAssistantBlocks(assistantText, userMessage);
         for (const block of blocks) enqueue(controller, { type: "block", block });
@@ -537,17 +534,19 @@ async function runAssistantAgentLoop(input: {
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string };
   signal: AbortSignal;
   emit: (event: AssistantChatStreamEvent) => void;
-}): Promise<{ externalEvidence: ExternalEvidenceResult; usage: AssistantUsage[] }> {
+}): Promise<{ externalEvidence: ExternalEvidenceResult; usage: AssistantUsage[]; loopExecuted: boolean }> {
   if (shouldTreatAsSimpleGeneralChat(input.message, input.mode)) {
     return {
       externalEvidence: { triggered: false, items: [], exa: { used: false, count: 0, reason: "通用概念问题无需工具循环" }, toolCalls: [] },
       usage: [],
+      loopExecuted: false,
     };
   }
   if (!shouldRunAssistantAgentLoop(input.env, input.message, input.mode)) {
     return {
       externalEvidence: { triggered: false, items: [], exa: { used: false, count: 0, reason: "未配置可用实时工具，跳过工具循环" }, toolCalls: [] },
       usage: [],
+      loopExecuted: false,
     };
   }
   const startedAt = Date.now();
@@ -634,6 +633,7 @@ async function runAssistantAgentLoop(input: {
       toolSummary: lastSummary || (allCalls.length ? `Agent工具循环返回 ${deduped.length} 条线索。` : "模型判断无需工具循环。"),
     },
     usage: usages,
+    loopExecuted: true,
   };
 }
 

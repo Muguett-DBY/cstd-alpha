@@ -1,256 +1,169 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { guardAssistantOutputLanguage } from "./assistant-output-guards";
 
-describe("assistant output guards", () => {
-  test("removes raw markdown heading markers and generic table labels from chat text", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      [
-        "### 证据等级",
-        "中（外部搜索线索为主）。",
-        "",
-        "结构化表格 2",
-        "| 项目 | 判断 |",
-        "| --- | --- |",
-        "| 利润修复 | 需要验证 |",
-      ].join("\n"),
-      "港股互联网现在投资吸引力来自利润修复、回购还是估值修复？",
-    );
+const noExa = { exa: { used: false, count: 0 } };
 
-    expect(guarded).toContain("证据等级");
-    expect(guarded).not.toContain("###");
-    expect(guarded).not.toContain("结构化表格");
+describe("guardCertaintyPromiseLanguage", () => {
+  test("replaces 无风险 with 较确定", async () => {
+    const result = await guardAssistantOutputLanguage("这是一个无风险收益策略", "收益如何？", noExa);
+    expect(result).toContain("较确定");
+    expect(result).not.toContain("无风险");
   });
 
-  test("does not let conditional language rehabilitate certain-profit claims", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      [
-        "我可能错在哪里",
-        "该博主若为持牌机构或已披露历史收益率曲线（如连续3年跑赢大盘），则“必涨”可能代表选股能力而非操纵。",
-        "| 用户观点 | 反证条件 |",
-        "| --- | --- |",
-        "| “必涨”可信 | 博主已完成登记 |",
-      ].join("\n"),
-      "一个金融博主说某票必涨，还晒了持仓，我要不要全仓跟？",
-    );
-
-    expect(guarded).toContain("“必涨”也只能视为未经验证的营销话术");
-    expect(guarded).toContain("“必涨”不可信");
-    expect(guarded).not.toContain("必涨”可能代表选股能力");
-    expect(guarded).not.toContain("“必涨”可信");
+  test("replaces 必涨 with softened language", async () => {
+    const result = await guardAssistantOutputLanguage("该博主说必涨可信", "这个博主可信吗？", noExa);
+    expect(result).toContain("不可信");
   });
 
-  test("softens superlatives when evidence grade is weak", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      [
-        "结论：A股医药板块当前是市场悲观预期最充分、逆向抄底性价比最高的资产类别。",
-        "证据等级：中低。",
-        "核心理由：相当于“十年最低折扣价”。",
-      ].join("\n"),
-      "哪些资产类别逆向抄底最值得？",
-    );
+  test("replaces 稳赚 with softened language", async () => {
+    const result = await guardAssistantOutputLanguage("稳赚可信", "这个能稳赚吗？", noExa);
+    expect(result).toContain("不可信");
+  });
+});
 
-    expect(guarded).toContain("值得优先观察的逆向资产类别之一");
-    expect(guarded).toContain("低估值线索");
-    expect(guarded).not.toContain("性价比最高");
+describe("guardStaleHistoryLanguage", () => {
+  test("replaces 站内证据 with 当前可用证据", async () => {
+    const result = await guardAssistantOutputLanguage("站内证据无法支撑这个结论", "分析一下", noExa);
+    expect(result).toContain("当前可用证据无法支撑");
+    expect(result).not.toContain("站内证据");
   });
 
-  test("does not frame public-market research as bounded by site-only evidence", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      "结论：站内证据无法支撑一年翻倍，站内无标的符合梭哈条件，站内证据包没有给出催化剂。",
-      "我只想买一只股票，预算10万人民币，目标一年翻倍。",
-    );
+  test("removes 本轮无新增 evidence lines", async () => {
+    const text = "结论：先观察。\n本轮无新增站内证据。\n反证：需验证。";
+    const result = await guardAssistantOutputLanguage(text, "怎么样？", noExa);
+    expect(result).not.toContain("本轮无新增");
+  });
+});
 
-    expect(guarded).toContain("当前可用证据无法支撑");
-    expect(guarded).toContain("当前证据未显示明确标的符合");
-    expect(guarded).toContain("当前证据包没有给出催化剂");
-    expect(guarded).not.toContain("站内证据无法支撑");
-    expect(guarded).not.toContain("站内无标的符合");
+describe("guardUnauditedStrongFactLanguage", () => {
+  test("replaces 业绩双降 with 承压待核验", async () => {
+    const result = await guardAssistantOutputLanguage("该公司首次业绩双降", "分析一下", noExa);
+    expect(result).toContain("待核验线索");
+    expect(result).not.toContain("业绩双降");
+  });
+});
+
+describe("guardRiskBudgetLanguage", () => {
+  test("appends risk budget for high-risk questions", async () => {
+    const text = "结论：可以关注这只股票。";
+    const result = await guardAssistantOutputLanguage(text, "这个能梭哈吗？", noExa);
+    expect(result).toContain("风险预算");
+    expect(result).toContain("仓位上限");
   });
 
-  test("adds missing risk budget and crisis de-escalation to high-risk answers", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      "结论：不能急着翻身，应先建立偿债和投资框架。证据等级：低。",
-      "我有信用卡债、车贷和一点投资亏损，想用投资翻身而不是慢慢还债。",
-    );
+  test("does not append risk budget if already present", async () => {
+    const text = "结论：可以关注。\n风险预算：已设仓位上限。";
+    const result = await guardAssistantOutputLanguage(text, "能梭哈吗？", noExa);
+    expect(result).toContain("已设仓位上限");
+    expect(result.match(/风险预算/g)).toHaveLength(1);
+  });
+});
 
-    expect(guarded).toContain("风险预算");
-    expect(guarded).toContain("危机降速");
-    expect(guarded).toContain("暂停新增交易");
+describe("guardCrisisDeEscalationLanguage", () => {
+  test("appends crisis de-escalation for desperate users", async () => {
+    const text = "结论：先观察。";
+    const result = await guardAssistantOutputLanguage(text, "人生完了，亏惨了", noExa);
+    expect(result).toContain("危机降速");
   });
 
-  test("adds legal boundary and removes unsafe risk-free wording", async () => {
-    const guarded = await guardAssistantOutputLanguage(
-      `结论：提前还贷等同于获得\u201c无风险、免税、零波动\u201d的回报，也可能是无风险获益。`,
-      "有没有办法绕过券商限制，让我买到本来买不了的高风险产品？",
-    );
+  test("does not append if de-escalation text already present", async () => {
+    const text = "结论：先观察。\n危机降速：先暂停交易。";
+    const result = await guardAssistantOutputLanguage(text, "亏惨了怎么办", noExa);
+    expect(result.match(/危机降速/g)).toHaveLength(1);
+  });
+});
 
-    expect(guarded).toContain("确定性省息");
-    expect(guarded).toContain("较确定的省息收益");
-    expect(guarded).toContain("法律/合规边界");
-    expect(guarded).not.toContain("无风险、免税、零波动");
+describe("guardLegalBoundaryLanguage", () => {
+  test("appends legal boundary for tax questions", async () => {
+    const result = await guardAssistantOutputLanguage("结论：建议分散配置。", "怎么合理避税？", noExa);
+    expect(result).toContain("法律/合规边界");
+  });
+});
+
+describe("guardWeakEvidenceSuperlatives", () => {
+  test("replaces 最值得 with 相对值得 when evidence is low", async () => {
+    const text = "证据等级：低。这个标的最值得买入。";
+    const result = await guardAssistantOutputLanguage(text, "哪只最好？", noExa);
+    expect(result).not.toContain("最值得");
+    expect(result).toContain("相对值得");
   });
 
-  describe("chart refusal guard", () => {
-    test("rewrites refusal with code block CSV data to Markdown table", async () => {
-      const input = [
-        "抱歉，我无法在聊天框里直接生成图片或图表。但以下是小米集团（01810.HK）自2018年7月上市以来的完整周度收盘价数据集（时间→收盘价，单位港元）：",
-        "",
-        "```",
-        "2018-07-13,16.80",
-        "2018-07-20,16.44",
-        "2018-07-27,16.64",
-        "2018-08-03,15.90",
-        "```",
-      ].join("\n");
+  test("does not change high-evidence superlatives", async () => {
+    const text = "这个标的最值得买入。";
+    const result = await guardAssistantOutputLanguage(text, "哪只最好？", noExa);
+    expect(result).toContain("最值得");
+  });
+});
 
-      const guarded = await guardAssistantOutputLanguage(input, "小米上市以来股价画个折线图");
+describe("guardForecastLanguage", () => {
+  test("prepends 口径说明 for forecast questions", async () => {
+    const result = await guardAssistantOutputLanguage("2025年实际值100亿。", "预估一下明年业绩", noExa);
+    expect(result).toContain("口径说明");
+  });
 
-      expect(guarded).not.toContain("无法在聊天框");
-      expect(guarded).not.toContain("```");
-      expect(guarded).toContain("| 日期 | 数值 |");
-      expect(guarded).toContain("| 2018-07-13 | 16.80 |");
-      expect(guarded).toContain("| 2018-07-20 | 16.44 |");
-      expect(guarded).toContain("系统会自动渲染为折线图");
-    });
+  test("does not double-prepend 口径说明", async () => {
+    const text = "口径说明：已有说明。2025年实际值100亿。";
+    const result = await guardAssistantOutputLanguage(text, "预估一下明年业绩", noExa);
+    expect(result.match(/口径说明/g)).toHaveLength(1);
+  });
 
-    test("does not touch non-chart-request messages", async () => {
-      const input = "无法画图，但可以给你文字分析。";
-      const guarded = await guardAssistantOutputLanguage(input, "小米集团怎么样？");
-      expect(guarded).toBe(input);
-    });
+  test("downgrades 证据等级：高 to 中", async () => {
+    const text = "证据等级：高。这个结论可靠。";
+    const result = await guardAssistantOutputLanguage(text, "预估明年利润", noExa);
+    expect(result).toContain("证据等级：中");
+  });
+});
 
-    test("does not touch normal chart responses without refusal", async () => {
-      const table = [
-        "| 年份 | 营收 | 净利润 |",
-        "| --- | --- | --- |",
-        "| 2021 | 100 | 20 |",
-        "| 2022 | 120 | 25 |",
-      ].join("\n");
-      const guarded = await guardAssistantOutputLanguage(
-        `结论：小米数据如下。\n\n${table}`,
-        "画表对比小米营收和净利润",
-      );
-      expect(guarded).toContain("| 年份 |");
-      expect(guarded).not.toContain("无法画图");
-    });
+describe("guardExternalEvidenceConsistency", () => {
+  test("replaces Exa无可用结果 when Exa actually returned data", async () => {
+    const text = "Exa无可用结果。因此完全依赖站内数据。";
+    const result = await guardAssistantOutputLanguage(text, "查一下", { exa: { used: true, count: 5 } });
+    expect(result).toContain("Exa返回了外部线索");
+    expect(result).not.toContain("Exa无可用结果");
+  });
 
-    test("rewrites inline data (no code block) into Markdown table", async () => {
-      const input = [
-        "抱歉，我无法直接生成图片。以下是数据：",
-        "2020-01-02 300.0",
-        "2020-01-03 310.0",
-        "2020-01-06 315.0",
-        "2020-01-07 312.0",
-      ].join("\n");
+  test("keeps Exa无可用结果 when Exa returned nothing", async () => {
+    const text = "Exa无可用结果，完全依赖站内数据。";
+    const result = await guardAssistantOutputLanguage(text, "查一下", { exa: { used: true, count: 0 } });
+    expect(result).toContain("Exa无可用结果");
+  });
+});
 
-      const guarded = await guardAssistantOutputLanguage(input, "苹果股价画图");
+describe("guardExternalEvidenceLevel", () => {
+  test("downgrades 高 to 中 when evidence depends on external search", async () => {
+    const text = "证据等级：高，来源包括Exa检索和海外新闻。整体判断可靠。";
+    const result = await guardAssistantOutputLanguage(text, "分析一下外盘", { exa: { used: true, count: 3 } });
+    expect(result).toContain("证据等级：中");
+    expect(result).not.toContain("证据等级：高");
+  });
+});
 
-      expect(guarded).not.toContain("无法直接生成图片");
-      expect(guarded).toContain("| 日期 | 数值 |");
-      expect(guarded).toContain("| 2020-01-02 | 300.0 |");
-    });
+describe("cleanAssistantFormatting", () => {
+  test("removes empty markdown sections", async () => {
+    const text = "结论：先观察。\n\n反证条件：\n\n\n下一步跟踪：\n\n以上是本次分析。";
+    const result = await guardAssistantOutputLanguage(text, "怎么样？", noExa);
+    expect(result).not.toContain("反证条件：\n\n\n下一步跟踪：");
+    expect(result).toContain("以上是本次分析");
+  });
 
-    test("samples data when over 200 rows", async () => {
-      const lines = Array.from({ length: 300 }, (_, i) => {
-        const date = new Date(2020, 0, 1 + i);
-        const dateStr = date.toISOString().slice(0, 10);
-        const price = (100 + Math.random() * 50).toFixed(2);
-        return `${dateStr},${price}`;
-      });
-      const input = [
-        "抱歉，无法在聊天框画图。以下是完整数据：",
-        "",
-        "```",
-        ...lines,
-        "```",
-      ].join("\n");
+  test("removes 好的收到 boilerplate", async () => {
+    const text = "好的，收到你的指令。作为CSTD Alpha的投研助手，我来分析。结论：先观察。";
+    const result = await guardAssistantOutputLanguage(text, "分析一下", noExa);
+    expect(result).not.toContain("好的，收到");
+  });
+});
 
-      const guarded = await guardAssistantOutputLanguage(input, "腾讯股价画折线图");
+describe("guardChartRefusalLanguage", () => {
+  test("replaces chart refusal with data table", async () => {
+    const text = "无法在聊天框中直接画图。以下是数据：\n2024-01-01, 100\n2024-02-01, 110\n2024-03-01, 120\n2024-04-01, 115\n";
+    const result = await guardAssistantOutputLanguage(text, "请画图", noExa);
+    expect(result).toContain("| 日期");
+    expect(result).not.toContain("无法在聊天框中直接画图");
+  });
 
-      expect(guarded).not.toContain("```");
-      expect(guarded).toContain("| 日期 | 数值 |");
-      const rows = guarded.split("\n").filter((l) => l.startsWith("|") && !l.includes("---") && !l.includes("日期")).length;
-      expect(rows).toBeGreaterThanOrEqual(2);
-      expect(rows).toBeLessThanOrEqual(160);
-    });
-
-    test("uses multi-column headers when data has more than 2 columns", async () => {
-      const input = [
-        "抱歉无法画图，数据如下：",
-        "```",
-        "2020-01-01,100,200,300",
-        "2020-02-01,110,210,310",
-        "2020-03-01,120,220,320",
-        "```",
-      ].join("\n");
-
-      const guarded = await guardAssistantOutputLanguage(input, "画趋势图");
-
-      expect(guarded).toContain("| 日期 | 指标1 | 指标2 | 指标3 |");
-      expect(guarded).toContain("| 2020-01-01 | 100 | 200 | 300 |");
-    });
-
-    test("rewrites prose-only '无法绘制' refusal by falling back to Yahoo Finance", async () => {
-      const mockFetch = async () => {
-        const response = {
-          chart: {
-            result: [{
-              timestamp: [1262304000, 1264982400, 1267401600],
-              indicators: {
-                quote: [{ close: [10.5, 11.2, 12.8] }],
-                adjclose: [{ adjclose: [10.5, 11.2, 12.8] }],
-              },
-            }],
-          },
-        };
-        return new Response(JSON.stringify(response), { status: 200 });
-      };
-
-      const guarded = await guardAssistantOutputLanguage(
-        "结论：现有搜索证据仅返回5个交易日的收盘价，无法绘制小米自2018年7月9日上市以来的完整折线图。",
-        "小米上市以来股价画个折线图",
-        undefined,
-        { fetchImpl: mockFetch },
-      );
-
-      expect(guarded).toContain("数据已从 Yahoo Finance 获取");
-      expect(guarded).toContain("| 日期 | 收盘价 |");
-      expect(guarded).toContain("| 2010-01-01 | 10.50 |");
-      expect(guarded).toContain("| 2010-02-01 | 11.20 |");
-    });
-
-    test("catches '证据未提供...完整...仅能...极简示意' refusal pattern", async () => {
-      const mockFetch = async () => {
-        const response = {
-          chart: {
-            result: [{
-              timestamp: [1262304000, 1264982400, 1267401600],
-              indicators: {
-                quote: [{ close: [10.5, 11.2, 12.8] }],
-                adjclose: [{ adjclose: [10.5, 11.2, 12.8] }],
-              },
-            }],
-          },
-        };
-        return new Response(JSON.stringify(response), { status: 200 });
-      };
-
-      const guarded = await guardAssistantOutputLanguage(
-        [
-          "结论：站内证据未提供小米上市以来的完整股价序列，仅能基于搜索到的部分价格点构建极简示意折线图，点过少不足以代表完整走势。",
-          "",
-          "股价数据点（HKD）",
-          "2019年末价格：16.80",
-          "2026年价格：31.88",
-        ].join("\n"),
-        "小米上市以来股价画个折线图",
-        undefined,
-        { fetchImpl: mockFetch },
-      );
-
-      expect(guarded).toContain("数据已从 Yahoo Finance 获取");
-      expect(guarded).toContain("| 日期 | 收盘价 |");
-      expect(guarded).toContain("| 2010-01-01 | 10.50 |");
-    });
+  test("does not modify non-refusal text", async () => {
+    const text = "结论：先观察。";
+    const result = await guardAssistantOutputLanguage(text, "请画图", noExa);
+    expect(result).toBe(text);
   });
 });

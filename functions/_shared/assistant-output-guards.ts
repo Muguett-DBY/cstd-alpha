@@ -15,30 +15,21 @@ export async function guardAssistantOutputLanguage(
 ): Promise<string> {
   const chartFixed = await guardChartRefusalLanguage(text, message, options?.fetchImpl);
   if (chartFixed !== text) return chartFixed;
-  return cleanAssistantFormatting(
-    guardWeakEvidenceSuperlatives(
-      guardExternalEvidenceConsistency(
-        guardExternalEvidenceLevel(
-          guardCrisisDeEscalationLanguage(
-            guardRiskBudgetLanguage(
-              guardOnchainCopyTradeBoundary(
-                guardLegalBoundaryLanguage(
-                  guardUnauditedStrongFactLanguage(guardStaleHistoryLanguage(guardCertaintyPromiseLanguage(guardForecastLanguage(text, message, options)))),
-                  message,
-                ),
-                message,
-              ),
-              message,
-            ),
-            message,
-          ),
-          message,
-          externalEvidence,
-        ),
-        externalEvidence,
-      ),
-    ),
-  );
+
+  let result = text;
+  result = guardForecastLanguage(result, message, options);
+  result = guardCertaintyPromiseLanguage(result);
+  result = guardStaleHistoryLanguage(result);
+  result = guardUnauditedStrongFactLanguage(result);
+  result = guardLegalBoundaryLanguage(result, message);
+  result = guardOnchainCopyTradeBoundary(result, message);
+  result = guardRiskBudgetLanguage(result, message);
+  result = guardCrisisDeEscalationLanguage(result, message);
+  result = guardExternalEvidenceLevel(result, message, externalEvidence);
+  result = guardExternalEvidenceConsistency(result, externalEvidence);
+  result = guardWeakEvidenceSuperlatives(result);
+  result = cleanAssistantFormatting(result);
+  return result;
 }
 
 const CHART_REQUEST_RE = /(画图|图表|趋势图|柱状图|折线图|散点图|气泡图|可视化|chart|table|表格|对比表)/i;
