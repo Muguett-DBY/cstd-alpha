@@ -93,12 +93,11 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   const routes = buildDeepSeekFallbackRoutes(env);
   if (!routes.length) return json({ error: "No DeepSeek-compatible route is configured." }, 500);
-  if (userMessage === "__debug_routes") return json({ routes: routes.map((r) => ({ provider: r.provider, model: r.model, url: r.url, isFree: r.isFree, hasKey: !!r.apiKey })) });
 
-  await ensureAssistantSchema(env.REPORT_LIBRARY_DB);
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
   const userMessage = body?.message?.trim();
-  if (!userMessage) return json({ error: "请输入助手问题。" }, 400);
+  if (!userMessage) return json({ error: "请输入助手问题。", routes: routes.map((r) => ({ provider: r.provider, model: r.model, isFree: r.isFree, hasKey: !!r.apiKey })) }, 400);
+  if (userMessage === "__debug") return json({ routes: routes.map((r) => ({ provider: r.provider, model: r.model, url: r.url, isFree: r.isFree, hasKey: !!r.apiKey })) });
   const mode = normalizeAssistantMode(body?.mode);
 
   const now = new Date().toISOString();
