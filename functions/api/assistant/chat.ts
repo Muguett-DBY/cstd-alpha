@@ -2082,7 +2082,7 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   const safetyRepaired = appendMandatorySafetySections(normalized, userMessage);
   if (safetyRepaired !== normalized) return safetyRepaired;
   const asksTable = /(画表|画成表|做成表|表格|比较|对比|矩阵|上行空间|下行风险)/.test(userMessage);
-  const missingFollowUp = !/(下一步|后续跟踪|跟踪指标|必须跟踪|观察指标)/.test(normalized);
+  const missingFollowUp = !/(下一步|后续跟踪|需跟踪|跟踪指标|必须跟踪|观察指标)/.test(normalized);
   const missingCounter = !/(反证|我可能错|下行风险|风险)/.test(normalized);
   const shortOrCut = normalized.length < 900 || /[（(]$|[，,、：:]$|报告日$/.test(normalized);
   if (!asksTable && !(shortOrCut && (missingFollowUp || missingCounter))) return answer;
