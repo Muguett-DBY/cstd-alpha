@@ -364,8 +364,14 @@ export function computeTechnicalIndicators(closes: number[], highs: number[], lo
     const ema12 = calcEMA(closes, 12);
     const ema26 = calcEMA(closes, 26);
     const dif = ema12 - ema26;
-    const dea = calcEMA(ema12, 9) - calcEMA(ema26, 9);
-
+    // 用最近9个dif值近似计算DEA（信号线）
+    const recentDifs = closes.map((_, i) => {
+      if (i < 25) return 0;
+      const e12 = calcEMA(closes.slice(0, i + 1), 12);
+      const e26 = calcEMA(closes.slice(0, i + 1), 26);
+      return e12 - e26;
+    }).filter(Boolean).slice(-9);
+    const dea = recentDifs.length >= 3 ? recentDifs.reduce((a, b) => a + b, 0) / recentDifs.length : dif;
     const macd = 2 * (dif - dea);
     results.push({ label: "MACD", value: `${macd.toFixed(2)}（DIF=${dif.toFixed(2)} DEA=${dea.toFixed(2)}）` });
   }
