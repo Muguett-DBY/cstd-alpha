@@ -22,6 +22,7 @@ import {
 } from "../../_shared/assistant-db";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
 import { executeFinancialCompute } from "../../_shared/financial-compute";
+import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchClsNews } from "../../_shared/assistant-a-stock";
 import {
   fetchAnySearchEvidence,
   fetchArxivEvidence,
@@ -43,7 +44,7 @@ import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 
 type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial";
+type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_cls_news";
 type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
 type AssistantSearchToolCall = {
   id: string;
@@ -704,7 +705,7 @@ function buildAgentToolLoopMessages(input: {
       "目标：让最终回答有足够公司、行业、价格、财报、公告、政策、风险和反证证据；不要因为站内证据少就停止。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
-      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；read_cls_news 查财联社实时快讯；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
     ].join("\n"),
     "assistant-agent-tool-loop",
   );
@@ -747,6 +748,66 @@ function assistantAgentTools() {
         },
       },
     })),
+    {
+      type: "function",
+      function: {
+        name: "read_tencent_quote",
+        description: "A股实时行情数据，包括当前价、PE(TTM)、PB、总市值、换手率、涨停价、跌停价。一次最多查5只股票。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "股票代码或名称，多个用逗号分隔。例：600519,000858" },
+            reason: { type: "string", description: "为什么需要查询实时行情。" },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_ths_hot_stocks",
+        description: "同花顺当日强势股和题材归因。返回今日走强股票名单及每只股票的题材标签（reason tags，如算力租赁+AI政务）。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "固定填 today 即可。" },
+            reason: { type: "string", description: "为什么需要查热点题材。" },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_ths_consensus_eps",
+        description: "同花顺机构一致预期EPS。返回未来几年机构预测的每股收益（最小值/均值/最大值）及参与预测的机构数。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "6位股票代码，例如 600519" },
+            reason: { type: "string", description: "为什么需要一致预期数据。" },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "read_cls_news",
+        description: "财联社实时快讯，返回分钟级全市场电报，包括标题、时间和内容摘要。",
+        parameters: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "固定填 latest 即可。" },
+            reason: { type: "string", description: "为什么需要查看最新快讯。" },
+          },
+        },
+      },
+    },
     {
       type: "function",
       function: {
@@ -814,6 +875,10 @@ function internalToolLabel(name: AssistantToolName) {
     read_tushare_indicators: "A股结构化指标",
     python_repl: "Python 计算",
     compute_financial: "金融计算",
+    read_tencent_quote: "腾讯实时行情",
+    read_ths_hot_stocks: "同花顺热点题材",
+    read_ths_consensus_eps: "同花顺一致预期",
+    read_cls_news: "财联社快讯",
   };
   return labels[name] || "站内证据";
 }
@@ -853,20 +918,101 @@ async function executeAssistantToolCalls(
       qualityScore: 0.95,
     });
   }
+  const aStockItems = await executeAStockToolCalls(toolCalls);
   const internalItems = executeInternalAssistantTools(toolCalls, context);
   const externalCalls = toolCalls.filter((call) => !call.name.startsWith("read_") && call.name !== "compute_financial");
   const external = externalCalls.length ? await executeAssistantSearchToolCalls(env, externalCalls, signal) : { items: [], exa: { used: false, count: 0 }, summary: "未调用外部搜索。" };
   return {
-    items: dedupeExternalEvidence([...computeItems, ...internalItems, ...external.items]),
+    items: dedupeExternalEvidence([...computeItems, ...aStockItems, ...internalItems, ...external.items]),
     exa: external.exa,
-    summary: [computeItems.length ? `金融计算返回 ${computeItems.length} 条结果。` : "", internalItems.length ? `站内工具返回 ${internalItems.length} 条摘要。` : "", external.summary].filter(Boolean).join(" "),
+    summary: [computeItems.length ? `金融计算返回 ${computeItems.length} 条结果。` : "", aStockItems.length ? `A股数据工具返回 ${aStockItems.length} 条。` : "", internalItems.length ? `站内工具返回 ${internalItems.length} 条摘要。` : "", external.summary].filter(Boolean).join(" "),
   };
+}
+
+const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_cls_news"]);
+
+async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Promise<AnySearchEvidence[]> {
+  const now = new Date().toISOString();
+  const items: AnySearchEvidence[] = [];
+  for (const call of toolCalls) {
+    if (!A_STOCK_TOOL_NAMES.has(call.name)) continue;
+    const query = (call.query ?? "").trim();
+    if (call.name === "read_tencent_quote") {
+      const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 5);
+      if (!codes.length) continue;
+      const quotes = await fetchTencentQuote(codes);
+      const lines = quotes.map((q) => `${q.name}(${q.code}) ${q.price}元 PE=${q.peTtm} PB=${q.pb} 市值${q.mcapYi}亿`);
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: "实时行情",
+        url: "",
+        summary: lines.join("；").slice(0, 1800),
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 3,
+        publishedAt: now,
+        qualityScore: 0.95,
+      });
+    } else if (call.name === "read_ths_hot_stocks") {
+      const stocks = await fetchThsHotStocks();
+      if (!stocks.length) continue;
+      const top10 = stocks.slice(0, 10);
+      const tags = [...new Set(top10.flatMap((s) => s.reason.split("+").map((t) => t.trim()).filter(Boolean)))];
+      const summary = `今日强势股 ${stocks.length} 只。题材热度 TOP：${tags.slice(0, 8).join("、")}。涨幅前5：${top10.slice(0, 5).map((s) => `${s.name} ${s.changePct}%`).join("、")}`;
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: "当日强势股与题材归因",
+        url: "",
+        summary: summary.slice(0, 1800),
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 3,
+        publishedAt: now,
+        qualityScore: 0.9,
+      });
+    } else if (call.name === "read_ths_consensus_eps") {
+      const epsList = await fetchThsConsensusEps(query);
+      if (!epsList.length) continue;
+      const lines = epsList.map((e) => `${e.year}年：均值EPS ${e.avgEps}（${e.institutionCount}家机构，区间${e.minEps}~${e.maxEps}）`);
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: "机构一致预期EPS",
+        url: "",
+        summary: lines.join("；").slice(0, 1800),
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 4,
+        publishedAt: now,
+        qualityScore: 0.95,
+      });
+    } else if (call.name === "read_cls_news") {
+      const news = await fetchClsNews();
+      if (!news.length) continue;
+      const lines = news.slice(0, 10).map((n) => `${n.ctime} ${n.title}`);
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: "实时快讯",
+        url: "",
+        summary: lines.join("\n").slice(0, 1800),
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 2,
+        publishedAt: now,
+        qualityScore: 0.85,
+      });
+    }
+  }
+  return items;
 }
 
 function executeInternalAssistantTools(toolCalls: AssistantSearchToolCall[], context: { siteEvidenceSummary: string; modeEvidenceSummary: string }) {
   const items: AnySearchEvidence[] = [];
   const now = new Date().toISOString();
-  for (const call of toolCalls.filter((item) => item.name.startsWith("read_"))) {
+  for (const call of toolCalls.filter((item) => item.name.startsWith("read_") && !A_STOCK_TOOL_NAMES.has(item.name))) {
     const summary = call.name === "read_watchlist_ranking" || call.name === "read_template_reports" || call.name === "read_radar_result"
       ? context.siteEvidenceSummary
       : context.modeEvidenceSummary || context.siteEvidenceSummary;
@@ -1138,7 +1284,11 @@ function isAssistantToolName(name: string): name is AssistantToolName {
     name === "read_radar_result" ||
     name === "read_tushare_indicators" ||
     name === "python_repl" ||
-    name === "compute_financial"
+    name === "compute_financial" ||
+    name === "read_tencent_quote" ||
+    name === "read_ths_hot_stocks" ||
+    name === "read_ths_consensus_eps" ||
+    name === "read_cls_news"
   );
 }
 
