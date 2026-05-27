@@ -71,12 +71,12 @@ export async function fetchThsConsensusEps(code: string, fetchImpl = fetch): Pro
     const tables = html.match(/<table[\s\S]*?<\/table>/gi);
     if (!tables) return rows;
     for (const table of tables) {
-      if (!table.includes("预测机构数") || !table.includes("均值")) continue;
+      if (!table.includes("预测年报每股收益")) continue;
       const trRe = /<tr[\s>][\s\S]*?<\/tr>/gi;
       let m: RegExpExecArray | null;
       while ((m = trRe.exec(table)) !== null) {
         const tr = m[0];
-        if (tr.includes("<th")) continue;
+        if (!tr.includes("<td")) continue;
         const cells = [...tr.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => c[1].replace(/<[^>]+>/g, "").trim());
         const yr = cells[0]?.match(/(\d{4})/);
         if (!yr || cells.length < 5) continue;
