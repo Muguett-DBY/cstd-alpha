@@ -109,10 +109,10 @@ describe("isUsableTemplateAnalysisCache", () => {
 });
 
 describe("template model routing", () => {
-  test("uses OpenCode Go before free Zen and official DeepSeek", () => {
+  test("uses official DeepSeek before OpenCode Go and free Zen", () => {
     const routes = templateModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" }, true);
 
-    expect(routes.map((route) => route.provider)).toEqual(["opencode-go", "opencode-zen-free", "deepseek-official"]);
+    expect(routes.map((route) => route.provider)).toEqual(["deepseek-official", "opencode-go", "opencode-zen-free"]);
     expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
   });
 

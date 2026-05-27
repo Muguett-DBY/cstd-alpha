@@ -30,6 +30,17 @@ export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekF
   const goKey = cleanKey(env.OPENCODE_GO_API_KEY) || cleanKey(env.OPENCODE_API_KEY);
   const officialKey = cleanKey(env.DEEPSEEK_API_KEY);
   return [
+    ...(officialKey
+      ? [
+          {
+            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
+            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
+            apiKey: officialKey,
+            isFree: false,
+            provider: "deepseek-official" as const,
+          },
+        ]
+      : []),
     ...(goKey
       ? [
           {
@@ -48,17 +59,6 @@ export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekF
       isFree: true,
       provider: "opencode-zen-free",
     },
-    ...(officialKey
-      ? [
-          {
-            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
-            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
-            apiKey: officialKey,
-            isFree: false,
-            provider: "deepseek-official" as const,
-          },
-        ]
-      : []),
   ];
 }
 
