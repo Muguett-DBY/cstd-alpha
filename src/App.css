@@ -1501,6 +1501,7 @@ button:not(:disabled):active,
 
 .assistant-tool-label {
   color: var(--body);
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

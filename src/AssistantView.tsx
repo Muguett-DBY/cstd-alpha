@@ -291,9 +291,7 @@ export function AssistantView() {
       setDraft("");
       setToolCalls((prev) => {
         const next = new Map(prev);
-        if (event.status === "running") next.set(event.id, { label: event.label, status: "running" });
-        if (event.status === "completed") { const existing = next.get(event.id); if (existing) next.set(event.id, { ...existing, status: "completed" }); }
-        if (event.status === "failed") { const existing = next.get(event.id); if (existing) next.set(event.id, { ...existing, status: "failed" }); }
+        next.set(event.id, { label: event.label, status: event.status });
         return next;
       });
       if (event.status === "completed") setAgentStatus("正在整合证据...");
