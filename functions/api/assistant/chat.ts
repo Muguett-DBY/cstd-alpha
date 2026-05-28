@@ -2727,7 +2727,7 @@ function buildVagueResearchClarificationRequest(message: string): AssistantChoic
 
 function buildSubjectOnlyClarificationRequest(message: string): AssistantChoiceRequest | null {
   const normalized = message.trim().replace(/[？?。.!！\s]/g, "");
-  if (normalized.length > 8) return null;
+  if (normalized.length >= 8) return null;
   if (/(呢|怎么样|怎么看|咋样|好不好|可以吗|风险大吗|能买吗|买不买|该不该买|还能涨|还能不能涨|继续涨|会不会涨|今年|业绩|预估|预测|净利润|营收|利润|估值|现金流|财报|风险|技术|优势|竞争|订单|库存|价格|投资价值|反证|反驳)/.test(normalized)) return null;
   if (!/(茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|苹果|中芯国际|紫金矿业|药明康德|半导体|光伏|白酒|银行|地产|煤炭|电力|航运|机器人|创新药|CXO|AI|算力|储能|锂电|水泥|钢铁|铜|猪周期|港股互联网)/i.test(normalized)) return null;
   return {
