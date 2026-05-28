@@ -945,7 +945,6 @@ function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysis
       </header>
       <div className="dashboard-grid">
         <Info label="模板" value={analysis.templateTitle} />
-        <Info label="模型" value={analysis.model} />
         <Info label="状态" value={statusLabel(analysis.status)} />
         <Info label="评分" value={analysis.score === undefined ? "待验证" : analysis.score.toFixed(1)} />
         <Info label="结论" value={analysis.verdict} />
