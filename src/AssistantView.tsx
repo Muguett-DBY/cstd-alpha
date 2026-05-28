@@ -15,7 +15,7 @@ import { composeClarifiedAssistantMessage, type AssistantClarificationOption, ty
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
-import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
+import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
 type SpeechPhase = "idle" | "starting" | "listening" | "unsupported" | "error";
@@ -48,7 +48,6 @@ export function AssistantView() {
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
   const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
-  const [mode, setMode] = useState<AssistantMode>("chat");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
@@ -260,7 +259,7 @@ export function AssistantView() {
           },
     );
     try {
-      const final = await sendAssistantMessage(message, mode, handleStreamEvent, thread?.id);
+      const final = await sendAssistantMessage(message, handleStreamEvent, undefined, thread?.id);
       if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
       setDraft("");
       setDraftBlocks([]);
@@ -418,29 +417,13 @@ export function AssistantView() {
             <div ref={messagesEndRef} />
           </div>
           <form className="assistant-composer" onSubmit={(event) => void submitMessage(event)}>
-            <div className="assistant-composer-tools">
-              <span>{mode === "chat" ? "普通" : assistantModes.find((item) => item.id === mode)?.label}</span>
-              <div className="assistant-mode-switch" aria-label="助手模式">
-                {assistantModes.filter((item) => item.id !== "chat").map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={mode === item.id ? "active" : ""}
-                    aria-pressed={mode === item.id}
-                    onClick={() => setMode(mode === item.id ? "chat" : item.id)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
             <div className="assistant-input-row">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleInputKeyDown}
-                placeholder={assistantModePlaceholder[mode]}
+                placeholder={'问一个投资问题，或说\u201C记住：以后分析白酒先看批价和库存\u201D。'}
                 rows={2}
                 disabled={phase === "streaming"}
               />
@@ -704,18 +687,6 @@ function isMarkdownSeparator(line: string) {
     .filter(Boolean);
   return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
 }
-
-const assistantModes: Array<{ id: AssistantMode; label: string; description: string }> = [
-  { id: "chat", label: "普通", description: "日常投研问答" },
-  { id: "target", label: "标的研究", description: "公司/代码 + 问题" },
-  { id: "industry", label: "行业研究", description: "行业/主题 + 问题" },
-];
-
-const assistantModePlaceholder: Record<AssistantMode, string> = {
-  chat: "问一个投资问题，或说“记住：以后分析白酒先看批价和库存”。",
-  target: "输入标的 + 问题，例如：宁德时代 长期还能不能持有？",
-  industry: "输入行业/主题 + 问题，例如：光伏现在是不是接近出清？",
-};
 
 function ClarificationDialog({
   request,
