@@ -42,51 +42,22 @@ import { fetchAndStoreCompanyEvidence, getOrCreateCompanyEvidencePackage, readCo
 import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../../_shared/opencode-go";
 import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
-
-type AssistantSearchToolName = "search_anysearch" | "search_searxng" | "search_exa" | "search_tavily" | "search_brave" | "search_gdelt" | "search_arxiv" | "search_semantic_scholar";
-type AssistantInternalToolName = "read_company_evidence" | "read_watchlist_ranking" | "read_template_reports" | "read_radar_result" | "read_tushare_indicators" | "python_repl" | "compute_financial" | "compare_stocks" | "read_tencent_quote" | "read_ths_hot_stocks" | "read_ths_consensus_eps" | "read_market_data" | "read_capital_analysis" | "read_filings_news" | "read_financial_statements" | "read_reports_concepts";
-type AssistantToolName = AssistantSearchToolName | AssistantInternalToolName;
-type AssistantSearchToolCall = {
-  id: string;
-  name: AssistantToolName;
-  query?: string;
-  code?: string;
-  reason?: string;
-  freshness?: "day" | "week" | "month" | "year";
-  maxResults?: number;
-  rawArgs?: Record<string, unknown>;
-};
-
-type ExternalEvidenceResult = {
-  triggered: boolean;
-  query?: string;
-  items: AnySearchEvidence[];
-  exa: { used: boolean; count: number; reason?: string; dailyCount?: number };
-  routerUsage?: AssistantUsage;
-  toolCalls?: AssistantSearchToolCall[];
-  toolSummary?: string;
-};
-
+import {
+  ASSISTANT_AGENT_MAX_ROUNDS,
+  ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND,
+  ASSISTANT_AGENT_MAX_MS,
+  assistantAgentTools,
+  assistantToolRunSummary,
+  isExplicitMemoryOnlyMessage,
+  formatCollectedEvidenceForAgent,
+  naturalToolStatusLabel,
+  summarizeToolResult,
+  internalToolLabel,
+  type AssistantSearchToolCall,
+  type AssistantToolName,
+  type ExternalEvidenceResult,
+} from "../../_shared/assistant-tools";
 const ASSISTANT_AUXILIARY_REASONING_EFFORT = "max" as const;
-const ASSISTANT_AGENT_MAX_ROUNDS = 6;
-const ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND = 5;
-const ASSISTANT_AGENT_MAX_MS = 90_000;
-
-function assistantToolRunSummary(externalEvidence: ExternalEvidenceResult) {
-  if (!externalEvidence.triggered) return `模型工具路由判断无需外部搜索。${externalEvidence.exa.reason ? ` ${externalEvidence.exa.reason}。` : ""}`;
-  const base = externalEvidence.toolSummary || `外部搜索返回 ${externalEvidence.items.length} 条，已并入助手上下文。`;
-  if (externalEvidence.exa.used) return base;
-  if (externalEvidence.exa.reason) return `${base} Exa未用：${externalEvidence.exa.reason}。`;
-  return base;
-}
-
-function isExplicitMemoryOnlyMessage(message: string) {
-  const normalized = message.trim();
-  return (
-    /^(记住|请记住|帮我记住|以后|纠正一下|我的投资框架|我的偏好|我的规则|不要忘了)[:：]/.test(normalized) ||
-    /^(记住|请记住|帮我记住|我的投资框架是|我的偏好是|我的规则是|以后评分|以后回答|以后分析|以后遇到|纠正一下)/.test(normalized)
-  );
-}
 
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
@@ -626,14 +597,7 @@ async function runAssistantAgentLoop(input: {
 function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: AssistantMode) {
   if (shouldTreatAsSimpleGeneralChat(message, mode)) return false;
   if (env.REPORT_CACHE) return true;
-  const hasConfiguredTools = Boolean(
-    env.ANYSEARCH_API_KEY?.trim()
-      || env.SEARXNG_ENDPOINTS?.trim()
-      || env.EXA_API_KEY?.trim()
-      || env.TAVILY_API_KEY?.trim()
-      || env.BRAVE_SEARCH_API_KEY?.trim()
-      || env.TUSHARE_TOKEN?.trim(),
-  );
+  const hasConfiguredTools = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim() || env.TAVILY_API_KEY?.trim() || env.BRAVE_SEARCH_API_KEY?.trim() || env.TUSHARE_TOKEN?.trim());
   return hasConfiguredTools;
 }
 
@@ -710,222 +674,7 @@ function buildAgentToolLoopMessages(input: {
       collectedEvidence: formatCollectedEvidenceForAgent(input.collectedEvidence),
     },
   });
-  return [
-    { role: "system", content: system },
-    { role: "user", content: payload },
-  ];
-}
-
-function assistantAgentTools() {
-  return [
-    ...assistantSearchTools(),
-    ...(["read_company_evidence", "read_watchlist_ranking", "read_template_reports", "read_radar_result", "read_tushare_indicators"] as const).map((name) => ({
-      type: "function",
-      function: {
-        name,
-        description: ({
-          read_company_evidence: "读取公司站内证据包（财务数据、评分、历史分析）。当用户询问某公司基本面、自选股评分、或需要查已有投研证据时使用。",
-          read_watchlist_ranking: "读取自选股排行评分。当用户需要查看自选股列表、排名对比、评分排序时使用。",
-          read_template_reports: "读取模板分析报告。当用户需要查看已有标的/行业模板报告时使用。",
-          read_radar_result: "读取行业雷达结果。当用户需要行业全景扫描、雷达图、行业主题结论时使用。",
-          read_tushare_indicators: "读取A股结构化指标（Tushare数据）。当需要A股的PE、PB、ROE、营收、利润等结构化财务指标时使用。",
-        })[name],
-        parameters: {
-          type: "object",
-          required: ["query"],
-          properties: {
-            query: { type: "string", description: "要读取的公司、行业、主题或指标口径。" },
-            reason: { type: "string", description: "为什么需要这个站内工具。" },
-          },
-        },
-      },
-    })),
-    {
-      type: "function",
-      function: {
-        name: "read_tencent_quote",
-        description: "A股/港股/指数/ETF实时行情数据，包括当前价、PE(TTM)、PB、总市值、换手率、涨停价、跌停价。一次最多查5只。支持A股代码(600519)、港股代码(00700.HK或0700)、指数(000001上证、000300沪深300、399006创业板)、ETF(510050)。",
-        parameters: {
-          type: "object",
-          required: ["query"],
-          properties: {
-            query: { type: "string", description: "股票代码或名称，多个用逗号分隔。例：600519,000858" },
-            reason: { type: "string", description: "为什么需要查询实时行情。" },
-          },
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "compare_stocks",
-        description: "横向对比多只股票的实时估值数据。返回并排对比表，包含现价、涨跌幅、PE、PB、市值、换手率。支持A股、港股、指数。",
-        parameters: {
-          type: "object",
-          required: ["query"],
-          properties: {
-            query: { type: "string", description: "股票代码列表，逗号分隔。例：600519,000858,00700.HK" },
-            reason: { type: "string", description: "为什么需要对比。" },
-          },
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_ths_hot_stocks",
-        description: "同花顺当日强势股和题材归因。返回今日走强股票名单及每只股票的题材标签（reason tags，如算力租赁+AI政务）。",
-        parameters: {
-          type: "object",
-          required: ["query"],
-          properties: {
-            query: { type: "string", description: "固定填 today 即可。" },
-            reason: { type: "string", description: "为什么需要查热点题材。" },
-          },
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_ths_consensus_eps",
-        description: "同花顺机构一致预期EPS。返回未来几年机构预测的每股收益（最小值/均值/最大值）及参与预测的机构数。",
-        parameters: {
-          type: "object",
-          required: ["query"],
-          properties: {
-            query: { type: "string", description: "6位股票代码，例如 600519" },
-            reason: { type: "string", description: "为什么需要一致预期数据。" },
-          },
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_market_data",
-        description: "综合市场数据查询。可查：龙虎榜(个股上榜+全市场净买排名)、限售解禁日历、行业板块涨跌排名。输入股票代码或'market'或'industry'。",
-        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'market'(全市场龙虎榜)、'industry'(行业排名)、'lockup:600519'(解禁)" }, reason: { type: "string" } } },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_capital_analysis",
-        description: "资金筹码分析。可查：融资融券余额、大宗交易、个股资金流120日、股东户数变化、分红送转历史、北向资金流向。输入股票代码或'northbound'。",
-        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'northbound'(北向)、'margin:600519'(融资融券)、'block:600519'(大宗)、'fundflow:600519'(资金流)、'holder:600519'(股东户数)、'dividend:600519'(分红)" }, reason: { type: "string" } } },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_filings_news",
-        description: "公告和新闻查询。可查：巨潮官方公告、东财个股新闻、东财全球财经资讯。输入股票代码或'global'。",
-        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位、'global'(全球资讯)" }, reason: { type: "string" } } },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_financial_statements",
-        description: "财务报表查询。返回新浪财经三表(资产负债表/利润表/现金流量表)和东财个股基本信息。",
-        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "6位股票代码" }, reason: { type: "string" } } },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "read_reports_concepts",
-        description: "研报和概念板块查询。可查：东财研报列表(含评级+预测EPS)、百度概念板块归属、百度K线(带MA5/10/20)。",
-        parameters: { type: "object", required: ["query"], properties: { query: { type: "string", description: "股票代码6位, 或 'kline:688017'(K线)" }, reason: { type: "string" } } },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "python_repl",
-        description: "用 Python 执行数学计算、统计、数据分析和图表绘制。当你需要精确计算（CAGR、估值、回归、指标计算等）或画图（柱状图、折线图、散点图等）时使用。把计算逻辑写完整、自包含的 Python 代码。",
-        parameters: {
-          type: "object",
-          required: ["code", "reason"],
-          properties: {
-            code: { type: "string", description: "完整自包含的 Python 代码，使用 print() 输出结果。支持 numpy、pandas、matplotlib。" },
-            reason: { type: "string", description: "为什么需要 Python 计算。" },
-          },
-        },
-      },
-    },
-    {
-      type: "function",
-      function: {
-        name: "compute_financial",
-        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）、technical（技术指标RSI/MACD/布林带/均线）。结果自动保留在上下文中。",
-        parameters: {
-          type: "object",
-          required: ["operation", "params", "reason"],
-          properties: {
-            operation: {
-              type: "string",
-              enum: ["cagr", "dcf", "stats", "ratios", "technical"],
-              description: "计算类型：cagr=复合年增长率，dcf=DCF估值，stats=描述性统计，ratios=财务比率，technical=技术指标(RSI/MACD/布林带/均线)",
-            },
-            params: {
-              type: "object",
-              description: "计算参数。cagr: { values: number[] }；dcf: { cashFlows: number[], terminalCashFlow?: number, terminalGrowthRate?: number(%), discountRate?: number(%), sharesOutstanding?: number, netDebt?: number }；stats: { values: number[] }；ratios: { price, eps, bookValue, revenue, netIncome, totalAssets, totalEquity, totalLiab }；technical: { closes: number[], highs?: number[], lows?: number[], volumes?: number[] }",
-            },
-            reason: { type: "string", description: "为什么需要这个计算。" },
-          },
-        },
-      },
-    },
-  ];
-}
-
-function formatCollectedEvidenceForAgent(items: AnySearchEvidence[]) {
-  if (!items.length) return "尚未收集工具证据。";
-  return items
-    .slice(0, 16)
-    .map((item, index) => `E${index + 1} ${item.title}（${item.source}/${item.sourceType}）：${item.summary}`)
-    .join("\n");
-}
-
-function naturalToolStatusLabel(call: AssistantSearchToolCall) {
-  if (call.name.startsWith("read_")) return `正在读取${internalToolLabel(call.name)}...`;
-  if (call.name === "python_repl") return "正在用 Python 计算...";
-  if (call.name === "compute_financial") return "正在执行金融计算...";
-  if (call.name === "compare_stocks") return "正在横向对比...";
-  if (call.name === "search_arxiv" || call.name === "search_semantic_scholar") return "正在查技术和论文线索...";
-  if (call.name === "search_gdelt") return "正在查全球新闻和风险线索...";
-  return `正在查${(call.query ?? "").slice(0, 32)}...`;
-}
-
-function internalToolLabel(name: AssistantToolName) {
-  const labels: Record<string, string> = {
-    read_company_evidence: "公司证据包",
-    read_watchlist_ranking: "自选股排行",
-    read_template_reports: "模板报告",
-    read_radar_result: "行业雷达",
-    read_tushare_indicators: "A股结构化指标",
-    python_repl: "Python 计算",
-    compute_financial: "金融计算",
-    compare_stocks: "横向对比",
-    read_tencent_quote: "腾讯实时行情",
-    read_ths_hot_stocks: "同花顺热点题材",
-    read_ths_consensus_eps: "同花顺一致预期",
-    read_market_data: "市场数据",
-    read_capital_analysis: "资金筹码分析",
-    read_filings_news: "公告新闻",
-    read_financial_statements: "财务报表",
-    read_reports_concepts: "研报概念",
-  };
-  return labels[name] || "站内证据";
-}
-
-function summarizeToolResult(call: AssistantSearchToolCall, evidenceCount: number) {
-  if (call.name.startsWith("read_")) return `${internalToolLabel(call.name)}已读取，形成 ${evidenceCount} 条可用摘要。`;
-  if (call.name === "python_repl") return "Python 计算完成，结果已并入上下文。";
-  if (call.name === "compute_financial") return "金融计算完成，结果已并入上下文。";
-  return evidenceCount ? `已找到 ${evidenceCount} 条相关线索。` : "这个来源没有返回可用线索。";
+  return [{ role: "system", content: system }, { role: "user", content: payload }];
 }
 
 async function executeAssistantToolCalls(
