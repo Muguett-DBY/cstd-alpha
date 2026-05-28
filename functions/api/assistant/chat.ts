@@ -2851,4 +2851,5 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 export const __test__ = {
   buildConstructiveEvidenceGapAnswer,
   selectReviewedResearchText,
+  askModelForClarification,
 };
