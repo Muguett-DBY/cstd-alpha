@@ -6,7 +6,7 @@ const RADAR_CACHE_VERSION = "v2";
 const RADAR_VALID_HOURS = 12;
 const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
 const OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash-free";
-const OPENCODE_GO_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/completions";
+const OPENCODE_GO_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/go/v1/chat/completions";
 const OPENCODE_GO_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
 const DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_OFFICIAL_FLASH_MODEL = "deepseek-v4-flash";
@@ -449,13 +449,6 @@ function deepSeekFallbackRoutesFromEnv() {
   const goKey = cleanEnvKey(process.env.OPENCODE_GO_API_KEY) || cleanEnvKey(process.env.OPENCODE_API_KEY);
   const officialKey = cleanEnvKey(process.env.DEEPSEEK_API_KEY);
   return [
-    {
-      provider: "opencode-zen-free",
-      model: OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL,
-      url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
-      apiKey: zenKey,
-      isFree: true,
-    },
     ...(goKey
       ? [
           {
@@ -475,6 +468,17 @@ function deepSeekFallbackRoutesFromEnv() {
             url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
             apiKey: officialKey,
             isFree: false,
+          },
+        ]
+      : []),
+    ...(zenKey
+      ? [
+          {
+            provider: "opencode-zen-free",
+            model: OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL,
+            url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
+            apiKey: zenKey,
+            isFree: true,
           },
         ]
       : []),
