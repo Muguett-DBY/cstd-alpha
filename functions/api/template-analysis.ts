@@ -923,13 +923,18 @@ function applyTemplateScoreDiscipline(analysis: NormalizedTemplateAnalysis): Nor
 
   const cappedScore = Math.min(analysis.score, ...caps.map((cap) => cap.score));
   const addedFlags = caps.map((cap) => cap.flag).filter((flag, index, flags) => flags.indexOf(flag) === index);
-  if (!caps.length) {
-    return { ...analysis, verdict: disciplinedTemplateVerdict(analysis.verdict, cappedScore) };
+  const newVerdict = disciplinedTemplateVerdict(analysis.verdict, cappedScore);
+  const scoreChanged = cappedScore !== analysis.score;
+  const verdictChanged = newVerdict !== analysis.verdict;
+  if (!caps.length && !scoreChanged && !verdictChanged) {
+    return { ...analysis, verdict: newVerdict };
   }
   return {
     ...analysis,
     score: cappedScore,
-    verdict: disciplinedTemplateVerdict(analysis.verdict, cappedScore),
+    verdict: newVerdict,
+    summary: scoreChanged || verdictChanged ? rewriteSummaryForDiscipline(analysis.summary, analysis.score, cappedScore, newVerdict) : analysis.summary,
+    markdown: scoreChanged || verdictChanged ? rewriteMarkdownForDiscipline(analysis.markdown, analysis.score, cappedScore, analysis.verdict, newVerdict) : analysis.markdown,
     riskFlags: [...analysis.riskFlags, ...addedFlags.filter((flag) => !analysis.riskFlags.includes(flag))],
   };
 }
@@ -961,6 +966,72 @@ function disciplinedTemplateVerdict(verdict: string, score: number) {
 
 function normalizeAsciiNumber(value: string) {
   return value.replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xff10 + 48));
+}
+
+function rewriteSummaryForDiscipline(summary: string, oldScore: number | undefined, newScore: number, newVerdict: string) {
+  if (!summary) return summary;
+  let text = summary;
+  if (/买入|重配|加仓|持有/.test(text) && /回避|重新复核|观察/.test(newVerdict)) {
+    text = text.replace(/不宜追高/g, "").replace(/建议持有/g, "").replace(/可持有/g, "").replace(/持有/g, "").replace(/适合买入/g, "").replace(/建议买入/g, "");
+    text = text.replace(/；；/g, "；").replace(/。。/g, "。").replace(/，[，、，]+/g, "，").replace(/\s{2,}/g, " ").trim();
+    text = text.replace(/[。；]$/, "") + `。后端评分约束：实际评分 ${newScore}，结论调整为 ${newVerdict}。`;
+    if (text.length > summary.length * 1.5) text = `${summary.slice(0, 100)} 后端评分约束：评分 ${oldScore ?? "?"}→${newScore}，结论调整为 ${newVerdict}。`;
+  }
+  return text;
+}
+
+function rewriteMarkdownForDiscipline(markdown: string, oldScore: number | undefined, newScore: number, oldVerdict: string, newVerdict: string) {
+  if (!markdown) return markdown;
+  let text = markdown;
+
+  const scoreStr = String(newScore);
+  const isAvoidVerdict = /回避|重新复核/.test(newVerdict);
+  const corrections: string[] = [];
+
+  if (oldScore !== undefined && oldScore !== newScore) {
+    const oldScorePattern = /给\s*\d+(?:\.\d+)?\s*分/g;
+    if (oldScorePattern.test(text)) {
+      text = text.replace(oldScorePattern, `给${scoreStr}分`);
+      corrections.push(`总分从 ${oldScore} 调整为 ${newScore}`);
+    } else {
+      const scoreTextPattern = /(?:得分|评分|总分为|总评分为)\s*[为：:]\s*\d+(?:\.\d+)?/g;
+      const match = scoreTextPattern.exec(text);
+      if (match) {
+        text = text.replace(scoreTextPattern, (m) => m.replace(/\d+(?:\.\d+)?/, scoreStr));
+        corrections.push(`总分从 ${oldScore} 调整为 ${newScore}`);
+      }
+    }
+  }
+
+  if (isAvoidVerdict) {
+    const oldVerdictPatterns = [
+      /\*\*结论\*\*[：:]\s*持有/g,
+      /\*\*结论\*\*[：:]\s*买入/g,
+      /结论[：:]\s*持有/g,
+      /结论[：:]\s*买入/g,
+      /建议持有/g,
+      /建议买入/g,
+      /建议配置/g,
+    ];
+    let matched = false;
+    for (const pattern of oldVerdictPatterns) {
+      if (pattern.test(text)) {
+        text = text.replace(pattern, (m) => {
+          if (/结论/.test(m)) return `**结论**：${newVerdict}`;
+          return newVerdict;
+        });
+        matched = true;
+      }
+    }
+    if (matched) corrections.push(`结论调整为 "${newVerdict}"`);
+  }
+
+  if (corrections.length > 0) {
+    const note = `\n\n> ⚠️ **后端评分约束调整**：${corrections.join("；")}。正文中模型原始评分与后端保守评分规则存在差异，已按规则调整。\n`;
+    text = text + note;
+  }
+
+  return text;
 }
 
 function roundTemplateScore(value: number) {
