@@ -169,19 +169,8 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const preClarification = shouldConsiderPreClarification ? buildSubjectOnlyClarificationRequest(researchContext.message) ?? buildVagueResearchClarificationRequest(researchContext.message) : null;
   const promptRecentMessages = simpleGeneralChat || !shouldIncludeRecentAssistantContext(researchContext.message) ? [] : recentMessages.slice(-8);
   const answerDirectly = !preClarification && (responseMode !== "chat" || directByMessage);
-  const clarificationDecision =
-    preClarification || answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message))
-      ? { request: null }
-      : await askModelForClarification({
-          env,
-          userMessage,
-          memories: memories.map((memory) => ({ category: memory.category, content: memory.content })),
-          threadSummary: thread.summary,
-          recentMessages: promptRecentMessages,
-          signal: request.signal,
-        });
-  const forcedClarification = preClarification ?? (answerDirectly || clarificationDecision.request ? null : buildForcedClarificationRequest(researchContext.message));
-  const choiceRequest = clarificationDecision.request ?? forcedClarification;
+  const onlyUseRuleClarification = preClarification || answerDirectly || (researchContext.message !== userMessage && shouldAutoUseResearchEvidence(researchContext.message));
+  const choiceRequest = preClarification ?? (onlyUseRuleClarification ? null : buildForcedClarificationRequest(researchContext.message));
   if (choiceRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -189,10 +178,6 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         enqueue(controller, { type: "start", threadId: thread.id, messageId: userStoredMessage.id });
         if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
         enqueue(controller, { type: "choice_request", request: choiceRequest });
-        if (clarificationDecision.usage) {
-          await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: userStoredMessage.id, usage: clarificationDecision.usage });
-          enqueue(controller, { type: "usage", usage: clarificationDecision.usage });
-        }
         controller.close();
       },
     });

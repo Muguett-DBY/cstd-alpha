@@ -485,28 +485,8 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("done");
   });
 
-  test("returns a model-generated choice request without starting the final answer call", async () => {
-    const choiceRequest = {
-      id: "cr-1",
-      title: "先确认研究口径",
-      question: "你希望我优先按哪种口径回答？",
-      reason: "这个问题缺少时间维度，直接回答容易混淆。",
-      customPlaceholder: "例如：按三年持有，先看现金流和估值。",
-      options: [
-        { id: "long-term", label: "长期投资视角", description: "看商业质量、现金流、估值和反证。", recommended: true },
-        { id: "risk", label: "先排雷", description: "先找财务、行业和治理风险。" },
-        { id: "catalyst", label: "短期催化", description: "看订单、财报和资金催化。" },
-      ],
-    };
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: JSON.stringify({ needClarification: true, request: choiceRequest }) } }],
-          usage: { prompt_cache_hit_tokens: 30, prompt_cache_miss_tokens: 10, total_tokens: 80 },
-        }),
-        { status: 200 },
-      ),
-    );
+  test("forces a clarification choice for ambiguous buy/sell action questions based on rules instead of model", async () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
@@ -527,25 +507,14 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(0);
     expect(body).toContain("choice_request");
-    expect(body).toContain("先确认研究口径");
+    expect(body).toContain("先确认买卖口径");
     expect(body).not.toContain("delta");
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(requestBody.stream).toBe(false);
-    expect(requestBody.response_format).toEqual({ type: "json_object" });
   });
 
-  test("forces a clarification choice for ambiguous buy/sell action questions even if the model under-asks", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: JSON.stringify({ needClarification: false }) } }],
-          usage: { prompt_cache_hit_tokens: 30, prompt_cache_miss_tokens: 10, total_tokens: 80 },
-        }),
-        { status: 200 },
-      ),
-    );
+  test("forces a clarification choice for ambiguous buy/sell action questions even if the model under-asks (rule-based fallback)", async () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
@@ -566,10 +535,9 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     const body = await response.text();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(0);
     expect(body).toContain("choice_request");
-    expect(body).toContain("持有周期");
-    expect(body).not.toContain("delta");
+    expect(body).toContain("先确认买卖口径");
   });
 
   test("forces clarification for short subject-only industry prompts", async () => {
