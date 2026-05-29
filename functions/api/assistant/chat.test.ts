@@ -798,6 +798,16 @@ describe("assistant chat endpoint", () => {
     });
   });
 
+  test("research answers with clear judgment but no conclusion label get normalized", () => {
+    const answer = [
+      "## 贵州茅台2026年净利润区间预测",
+      "**核心判断：中性区间860-920亿元，保守820-860亿元，乐观920-980亿元。**",
+      "证据等级：中低。",
+    ].join("\n");
+    const normalized = __test__.ensureConclusionLead(answer, "根据现有信息和数据预测贵州茅台今年净利润区间。");
+    expect(normalized).toMatch(/^结论：中性区间860-920亿元/);
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",

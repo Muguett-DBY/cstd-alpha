@@ -1768,7 +1768,7 @@ function isLikelyTruncatedResearchAnswer(answer: string) {
 
 function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
   if (!shouldEnsureResearchStructure(userMessage)) return answer;
-  const parts = [answer.trim()];
+  const parts = [ensureConclusionLead(answer, userMessage).trim()];
   if (/(画表|表格|对比)/.test(userMessage) && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(answer)) {
     parts.push(buildMinimumComparisonTable(userMessage));
   }
@@ -1786,6 +1786,32 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
     parts.push("高风险交易纪律：如果仍要参与，只能作为试错仓处理；单一标的不应超过可承受亏损资金的小比例，必须预设亏损上限、止损位、退出触发条件和复盘日期。没有公告、财报、订单或成交量验证前，禁止满仓、借钱、杠杆或追涨加仓。");
   }
   return parts.join("\n\n");
+}
+
+function ensureConclusionLead(answer: string, userMessage: string) {
+  const trimmed = answer.trim();
+  if (!trimmed || !shouldEnsureResearchStructure(userMessage)) return answer;
+  if (/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?结论[：:]/.test(trimmed)) return answer;
+  const lead = extractConclusionLead(trimmed);
+  if (!lead) return answer;
+  return `结论：${lead}\n\n${trimmed}`;
+}
+
+function extractConclusionLead(answer: string) {
+  const lines = answer
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^[-*_]{3,}$/.test(line));
+  const labeled = lines.find((line) => /(核心判断|核心结论|核心观点|主要判断)[：:]/.test(line));
+  const source = labeled || lines.find((line) => !/^#{1,6}\s+/.test(line)) || lines[0] || "";
+  return source
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^\*\*/, "")
+    .replace(/\*\*$/g, "")
+    .replace(/^(核心判断|核心结论|核心观点|主要判断)[：:]\s*/, "")
+    .replace(/\*\*/g, "")
+    .trim()
+    .slice(0, 180);
 }
 
 function isHighRiskAssistantQuestion(message: string) {
@@ -2655,6 +2681,7 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 
 export const __test__ = {
   buildConstructiveEvidenceGapAnswer,
+  ensureConclusionLead,
   ensureComparisonCompleteness,
   extractComparisonItems,
   getCurrentMarketDateContext,
