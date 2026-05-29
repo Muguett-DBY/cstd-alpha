@@ -57,7 +57,7 @@ export function internalToolLabel(name: AssistantToolName) {
     python_repl: "Python 计算",
     compute_financial: "金融计算",
     compare_stocks: "横向对比",
-    read_tencent_quote: "腾讯实时行情",
+    read_tencent_quote: "实时行情",
     read_ths_hot_stocks: "同花顺热点题材",
     read_ths_consensus_eps: "同花顺一致预期",
     read_market_data: "市场数据",
