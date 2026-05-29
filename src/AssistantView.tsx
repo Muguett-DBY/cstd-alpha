@@ -48,6 +48,7 @@ export function AssistantView() {
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
   const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
+  const [threadDrawerOpen, setThreadDrawerOpen] = useState(false);
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
@@ -101,6 +102,7 @@ export function AssistantView() {
 
   async function switchThread(threadId: string) {
     setDraft("");
+    setThreadDrawerOpen(false);
     await reloadThread(threadId);
   }
 
@@ -108,6 +110,7 @@ export function AssistantView() {
     try {
       const created = await createAssistantThread();
       setThreadList((prev) => [{ id: created.id, title: created.title, updatedAt: new Date().toISOString() }, ...prev]);
+      setThreadDrawerOpen(false);
       await switchThread(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建线程失败。");
@@ -356,10 +359,14 @@ export function AssistantView() {
 
   return (
     <section className="assistant-workspace" aria-label="投研助手">
-      <div className="assistant-thread-sidebar">
+      {threadDrawerOpen ? <button type="button" className="assistant-thread-scrim" aria-label="关闭会话列表" onClick={() => setThreadDrawerOpen(false)} /> : null}
+      <div className={`assistant-thread-sidebar ${threadDrawerOpen ? "open" : ""}`}>
         <div className="assistant-thread-sidebar-header">
           <span>会话列表</span>
-          <button type="button" className="assistant-thread-new" onClick={() => void newThread()}>＋ 新对话</button>
+          <div>
+            <button type="button" className="assistant-thread-new" onClick={() => void newThread()}>＋ 新对话</button>
+            <button type="button" className="assistant-thread-close" onClick={() => setThreadDrawerOpen(false)} aria-label="收起会话列表">收起</button>
+          </div>
         </div>
         <div className="assistant-thread-list">
           {threadList.map((t) => (
@@ -371,6 +378,14 @@ export function AssistantView() {
         </div>
       </div>
       <section className="assistant-chat-panel" aria-label="助手聊天">
+          <header className="assistant-mobile-bar">
+            <button type="button" className="assistant-thread-toggle" onClick={() => setThreadDrawerOpen(true)} aria-label="展开会话列表">☰</button>
+            <div>
+              <strong>CSTD 助手</strong>
+              <span>{thread?.title || "长期投研线程"}</span>
+            </div>
+            <button type="button" className="assistant-mobile-new" onClick={() => void newThread()} aria-label="新对话">＋</button>
+          </header>
           <div className="assistant-messages">
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {

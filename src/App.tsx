@@ -20,7 +20,7 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type AppView = "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 
-export const DEFAULT_APP_VIEW: AppView = "radar";
+export const DEFAULT_APP_VIEW: AppView = "assistant";
 const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
 const WatchlistRankingView = lazy(() => import("./WatchlistRankingView").then((module) => ({ default: module.WatchlistRankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
