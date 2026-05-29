@@ -1792,6 +1792,12 @@ function ensureConclusionLead(answer: string, userMessage: string) {
   const trimmed = answer.trim();
   if (!trimmed || !shouldEnsureResearchStructure(userMessage)) return answer;
   if (/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?结论[：:]/.test(trimmed)) return answer;
+  const leadLine = findLabeledConclusionLine(trimmed);
+  if (leadLine) {
+    const lead = cleanConclusionLead(leadLine.line);
+    const lines = trimmed.split(/\r?\n/).filter((_, index) => index !== leadLine.index);
+    return [`结论：${lead}`, ...lines].join("\n").trim();
+  }
   const lead = extractConclusionLead(trimmed);
   if (!lead) return answer;
   return `结论：${lead}\n\n${trimmed}`;
@@ -1802,13 +1808,23 @@ function extractConclusionLead(answer: string) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !/^[-*_]{3,}$/.test(line));
-  const labeled = lines.find((line) => /(核心判断|核心结论|核心观点|主要判断)[：:]/.test(line));
+  const labeled = lines.find((line) => /(核心判断|核心结论|核心观点|主要判断|主判断|一句话结论)[：:]/.test(line));
   const source = labeled || lines.find((line) => !/^#{1,6}\s+/.test(line)) || lines[0] || "";
-  return source
+  return cleanConclusionLead(source);
+}
+
+function findLabeledConclusionLine(answer: string) {
+  const lines = answer.split(/\r?\n/);
+  const index = lines.findIndex((line) => /(核心判断|核心结论|核心观点|主要判断|主判断|一句话结论)[：:]/.test(line));
+  return index >= 0 ? { index, line: lines[index] } : null;
+}
+
+function cleanConclusionLead(value: string) {
+  return value
     .replace(/^#{1,6}\s*/, "")
     .replace(/^\*\*/, "")
     .replace(/\*\*$/g, "")
-    .replace(/^(核心判断|核心结论|核心观点|主要判断)[：:]\s*/, "")
+    .replace(/^(核心判断|核心结论|核心观点|主要判断|主判断|一句话结论)[：:]\s*/, "")
     .replace(/\*\*/g, "")
     .trim()
     .slice(0, 180);

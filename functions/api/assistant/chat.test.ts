@@ -806,6 +806,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const normalized = __test__.ensureConclusionLead(answer, "根据现有信息和数据预测贵州茅台今年净利润区间。");
     expect(normalized).toMatch(/^结论：中性区间860-920亿元/);
+    expect(normalized.match(/核心判断/g)).toBeNull();
   });
 
   test("streaming research answers can append a visible conclusion restatement", () => {
