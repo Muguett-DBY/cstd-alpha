@@ -157,6 +157,33 @@ describe("API client", () => {
     expect(result.content).toBe("结论：先观察");
   });
 
+  test("sends default assistant chat with thread id and abort signal", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", message: { id: "m1", threadId: "t1", role: "assistant", content: "结论：可观察", createdAt: "2026-05-24T00:00:00.000Z" } })}\n\n`));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    const result = await sendAssistantMessage("宁德时代怎么看？", () => undefined, undefined, "thread-1", controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/assistant/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ message: "宁德时代怎么看？", mode: "chat", threadId: "thread-1" }),
+        signal: controller.signal,
+      }),
+    );
+    expect(result?.content).toBe("结论：可观察");
+  });
+
+
   test("returns null when assistant stream asks for a clarification choice", async () => {
     const request = {
       id: "cr-1",

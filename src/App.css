@@ -1736,6 +1736,37 @@ button:not(:disabled):active,
   box-shadow: 0 14px 40px rgb(18 20 23 / 0.1);
 }
 
+.assistant-prompt-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.assistant-prompt-chips button {
+  min-height: 26px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: none;
+}
+
+.assistant-prompt-chips button {
+  background: color-mix(in srgb, var(--line) 38%, white);
+  color: color-mix(in srgb, var(--body) 85%, var(--muted));
+  font-size: 11px;
+}
+
+.assistant-prompt-chips button:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
+}
+
 .assistant-input-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px 70px;
@@ -1749,6 +1780,12 @@ button:not(:disabled):active,
   padding-inline: 12px;
   font-size: 13px;
   font-weight: 850;
+}
+
+.assistant-input-row .assistant-stop-button {
+  border-color: color-mix(in srgb, var(--red) 26%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, white);
+  color: var(--red);
 }
 
 .assistant-composer textarea {

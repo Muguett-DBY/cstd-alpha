@@ -372,6 +372,7 @@ export async function sendAssistantMessage(
   modeOrEvent?: AssistantMode | ((event: AssistantChatStreamEvent) => void),
   onEventArg?: (event: AssistantChatStreamEvent) => void,
   threadId?: string,
+  signal?: AbortSignal,
 ): Promise<AssistantMessage | null> {
   const mode = typeof modeOrEvent === "string" ? modeOrEvent : "chat";
   const onEvent = typeof modeOrEvent === "function" ? modeOrEvent : onEventArg;
@@ -380,6 +381,7 @@ export async function sendAssistantMessage(
     headers: { "content-type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ message, mode, threadId }),
+    signal,
   });
   if (!response.ok) throw new Error((await readError(response)) || "助手生成失败。");
   let finalMessage: AssistantMessage | undefined;
