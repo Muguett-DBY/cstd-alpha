@@ -808,6 +808,11 @@ describe("assistant chat endpoint", () => {
     expect(normalized).toMatch(/^结论：中性区间860-920亿元/);
   });
 
+  test("streaming research answers can append a visible conclusion restatement", () => {
+    const answer = "优先排雷：四方达、马应龙、优必选。\n证据：站内自选股排行显示这些标的风险较高。";
+    expect(__test__.buildVisibleConclusionTailIfNeeded(answer, "根据我的自选股，哪些需要优先排雷？")).toContain("结论重申：优先排雷");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",

@@ -2162,6 +2162,8 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   const normalized = answer.trim();
   if (!normalized) return normalized;
   if (shouldSkipIncompleteAnswerRepair(userMessage)) return answer;
+  const conclusionTail = buildVisibleConclusionTailIfNeeded(normalized, userMessage);
+  if (conclusionTail) return `${normalized}\n\n${conclusionTail}`;
   const safetyRepaired = appendMandatorySafetySections(normalized, userMessage);
   if (safetyRepaired !== normalized) return safetyRepaired;
   const asksTable = /(画表|画成表|做成表|表格|比较|对比|矩阵|上行空间|下行风险)/.test(userMessage);
@@ -2186,6 +2188,13 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
     "补充框架：",
     buildConstructiveEvidenceGapAnswer(userMessage, mode),
   ].join("\n");
+}
+
+function buildVisibleConclusionTailIfNeeded(answer: string, userMessage: string) {
+  if (!shouldEnsureResearchStructure(userMessage)) return "";
+  if (/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?结论[：:]/.test(answer)) return "";
+  const lead = extractConclusionLead(answer);
+  return lead ? `结论重申：${lead}` : "";
 }
 
 function appendMandatorySafetySections(answer: string, userMessage: string) {
@@ -2681,6 +2690,7 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 
 export const __test__ = {
   buildConstructiveEvidenceGapAnswer,
+  buildVisibleConclusionTailIfNeeded,
   ensureConclusionLead,
   ensureComparisonCompleteness,
   extractComparisonItems,
