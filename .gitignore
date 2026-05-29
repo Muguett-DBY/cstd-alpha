@@ -20,6 +20,8 @@ dist-ssr
 .env*
 TOKEN.MD
 token.md
+.opencode/
+scripts/test-100.ts
 
 # Editor directories and files
 .vscode/*
