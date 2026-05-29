@@ -669,6 +669,7 @@ function buildAgentToolLoopMessages(input: {
     },
     volatile: {
       userMessage: input.message,
+      currentMarketDate: getCurrentMarketDateContext(),
       siteEvidenceSummary: input.context.siteEvidenceSummary || "暂无站内证据。",
       modeEvidenceSummary: input.context.modeEvidenceSummary || "当前模式没有命中结构化证据。",
       collectedEvidence: formatCollectedEvidenceForAgent(input.collectedEvidence),
@@ -1010,6 +1011,7 @@ function buildSearchToolRouterMessages(message: string, mode: AssistantMode, con
       "如果用户只是解释通用概念，且站内证据不是必要条件，可以不调用工具。",
       "如果调用工具，优先用 1-4 个高质量查询；高价值研究可同时调用 AnySearch、Brave、Tavily、SearXNG、GDELT、Exa；技术类问题可加 arXiv/Semantic Scholar。Exa/Tavily 不必总用，但站内证据不足且问题有投资价值时应使用。",
       "工具 query 必须具体，包含公司/行业、年份或最新、关键指标，不要只复制用户原句。",
+      "用户说今天、最新、当前时，必须优先按 payload.currentMarketDate 的中国/香港市场日期组织查询；如果数据源只返回上一交易日，要在最终证据里注明最新可得日期。",
     ].join("\n"),
     "assistant-tool-router",
   );
@@ -1021,6 +1023,7 @@ function buildSearchToolRouterMessages(message: string, mode: AssistantMode, con
     },
     volatile: {
       userMessage: message,
+      currentMarketDate: getCurrentMarketDateContext(),
       siteEvidenceSummary: context.siteEvidenceSummary || "暂无站内证据。",
       modeEvidenceSummary: context.modeEvidenceSummary || "当前模式没有命中结构化证据。",
     },
@@ -1820,7 +1823,7 @@ function ensureComparisonCompleteness(answer: string, userMessage: string) {
   if (!isComparisonQuestion(userMessage)) return answer;
   const subjects = extractComparisonItems(userMessage);
   if (subjects.length < 2) return answer;
-  const missing = subjects.filter((subject) => !answer.includes(subject));
+  const missing = subjects.filter((subject) => !answerMentionsComparisonSubject(answer, subject));
   const conclusion = answer.match(/^结论[:：]\s*([^\n]+)/)?.[1] ?? "";
   const singleActionConclusion = /^(持有|买入|卖出|回避|观察|增持|减持)([。；;，,]|$)/.test(conclusion.trim());
   if (!missing.length && !singleActionConclusion) return answer;
@@ -2266,18 +2269,70 @@ function buildDriverComparisonGapAnswer(userMessage: string) {
 }
 
 function extractComparisonItems(message: string) {
-  const match = message.match(/(?:里|：|:)([^。？?]+?)(?:这[几四五六七八九十\d]*个|的景气|进行|$)/);
-  const segment = match?.[1] || message;
+  const segment = selectComparisonSegment(message);
   const items = segment
-    .split(/[、,，/和与]/)
-    .map((item) =>
-      item
-        .replace(/(画表|比较|对比|列表|矩阵|产业链|环节|景气度|证据强度|风险|里|长期回报|谁更稳|谁更好|哪个更好|哪一个更好|护城河差异|业务的|的|请|一下|？|\?)/g, "")
-        .trim(),
-    )
-    .filter((item) => item.length >= 2 && item.length <= 12)
+    .split(/(?:还是|或者|以及|及|、|,|，|\/|和|与)/)
+    .map(cleanComparisonItem)
+    .filter((item) => item.length >= 2 && item.length <= 16)
+    .filter((item) => !/^(给一个简表|简表|表格|列表|矩阵|最后排序|排序|最后|请|一下|进行|看看|分析)$/.test(item))
+    .filter((item, index, all) => all.indexOf(item) === index)
     .slice(0, 8);
   return items.length ? items : ["核心环节", "上游", "中游", "下游"];
+}
+
+function selectComparisonSegment(message: string) {
+  const normalized = message.replace(/\s+/g, "").replace(/[。？?！!]/g, " ");
+  const colonMatch = normalized.match(/[：:]\s*([^ ]+)/);
+  if (colonMatch?.[1]) return colonMatch[1];
+  const fromMatch = normalized.match(/来自([^ ]+)/);
+  if (fromMatch?.[1]) return fromMatch[1];
+  const directMatch = normalized.match(/(?:对比|比较)\s*([^，, ]+?)(?:的(?:投资吸引力|长期回报|护城河差异|护城河|估值|业务|技术优势|风险|质量)|，|,|并|给|谁|哪个|哪一个|$)/);
+  return directMatch?.[1] || normalized;
+}
+
+function cleanComparisonItem(item: string) {
+  return item
+    .replace(/^(请|帮我|给我|画表|画成表|做成表格|列表|矩阵|比较|对比)/, "")
+    .replace(/(的)?(投资吸引力|长期回报|护城河差异|护城河|业务质量|技术优势|质量|估值|风险|景气度|证据强度)$/g, "")
+    .replace(/(谁更稳|谁更好|哪个更好|哪一个更好|哪个更值得买|哪一个更值得买)$/g, "")
+    .trim();
+}
+
+function answerMentionsComparisonSubject(answer: string, subject: string) {
+  if (answer.includes(subject)) return true;
+  const aliases: Record<string, string[]> = {
+    阿里: ["阿里巴巴", "Alibaba", "BABA", "9988"],
+    腾讯: ["腾讯控股", "Tencent", "0700"],
+    美团: ["Meituan", "3690"],
+    茅台: ["贵州茅台", "600519"],
+  };
+  return (aliases[subject] ?? []).some((alias) => answer.includes(alias));
+}
+
+function getCurrentMarketDateContext(now = new Date()) {
+  return {
+    chinaHongKongDate: formatDateInTimeZone(now, "Asia/Shanghai"),
+    timezone: "Asia/Shanghai",
+    instruction: "用户说今天/最新/当前时按 chinaHongKongDate 组织查询；若交易所或数据源尚未更新，则说明最新可得日期。",
+  };
+}
+
+function formatDateInTimeZone(date: Date, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // Fall back to UTC if the runtime lacks the requested timezone data.
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 async function reviewResearchAnswer(input: { env: AssistantEnv; userMessage: string; mode: AssistantMode; answer: string; signal: AbortSignal }): Promise<{ revisedAnswer?: string; usage: ReturnType<typeof parseDeepSeekUsage>; raw?: unknown }> {
@@ -2600,6 +2655,9 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 
 export const __test__ = {
   buildConstructiveEvidenceGapAnswer,
+  ensureComparisonCompleteness,
+  extractComparisonItems,
+  getCurrentMarketDateContext,
   selectReviewedResearchText,
   askModelForClarification,
 };

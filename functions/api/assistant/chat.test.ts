@@ -775,6 +775,29 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("不能只给单一标的");
   });
 
+  test("comparison parser keeps Chinese brand names and avoids false repair", () => {
+    expect(__test__.extractComparisonItems("对比腾讯、阿里、美团的投资吸引力，给一个简表和最后排序。")).toEqual(["腾讯", "阿里", "美团"]);
+
+    const answer = [
+      "结论：腾讯 > 阿里巴巴 > 美团。",
+      "证据等级：中。",
+      "核心理由：腾讯现金流和回购更强，阿里云和电商修复居中，美团利润弹性更高但竞争更强。",
+      "反证：如果阿里云利润率显著上修，阿里巴巴排序会前移。",
+      "下一步跟踪：腾讯回购、阿里云利润率、美团到店竞争。",
+    ].join("\n");
+
+    const reviewed = __test__.ensureComparisonCompleteness(answer, "对比腾讯、阿里、美团的投资吸引力，给一个简表和最后排序。");
+    expect(reviewed).not.toContain("对比口径补正");
+    expect(reviewed).toBe(answer);
+  });
+
+  test("tool planning date context uses China and Hong Kong market date", () => {
+    expect(__test__.getCurrentMarketDateContext(new Date("2026-05-28T16:30:00.000Z"))).toMatchObject({
+      chinaHongKongDate: "2026-05-29",
+      timezone: "Asia/Shanghai",
+    });
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
