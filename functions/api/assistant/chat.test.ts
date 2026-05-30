@@ -1953,6 +1953,54 @@ describe("assistant chat endpoint", () => {
       expect(body).toContain("结论");
     }
   });
+
+  test("prioritizes mandatory tools for buy/sell company questions", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [{ id: "model-search", name: "search_tavily", query: "宁德时代 新闻", reason: "model" }],
+      "宁德时代现在能买吗？请直接给主判断。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(calls.map((call) => call.name)).toEqual([
+      "read_tencent_quote",
+      "read_financial_statements",
+      "read_reports_concepts",
+      "read_tushare_indicators",
+      "search_tavily",
+    ]);
+    expect(calls[0].query).toBe("300750");
+  });
+
+  test("adds comparison and quote tools for known A-share comparisons", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [],
+      "贵州茅台和五粮液长期回报谁更稳？请列表对比。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(calls.map((call) => call.name)).toContain("compare_stocks");
+    expect(calls.map((call) => call.name)).toContain("read_tencent_quote");
+    expect(calls.map((call) => call.name)).toContain("read_company_evidence");
+    expect(calls.find((call) => call.name === "compare_stocks")?.query).toBe("600519,000858");
+  });
+
+  test("adds a calculation tool for quantitative table requests without affecting simple concept chat", () => {
+    const quantitative = __test__.augmentAgentToolCalls(
+      [],
+      "把贵州茅台的上行空间和下行风险做成表，并给情景测算。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(quantitative.map((call) => call.name)).toContain("compute_financial");
+
+    const simple = __test__.augmentAgentToolCalls(
+      [],
+      "用两句话解释自由现金流为什么比利润更适合看长期回报。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(simple).toEqual([]);
+  });
 });
 
 function mockDb({ role }: { role: string }) {

@@ -1180,11 +1180,12 @@ function augmentAgentToolCalls(
     seen.add(key);
     merged.push(call);
   };
-  for (const call of toolCalls) add(call);
   for (const call of mandatory) {
-    if (originalHasSearch && call.name.startsWith("search_")) continue;
+    if (call.name === "search_exa" && toolCalls.some((original) => original.name === "search_exa")) continue;
+    if (originalHasSearch && call.name.startsWith("search_") && call.name !== "search_exa") continue;
     add(call);
   }
+  for (const call of toolCalls) add(call);
   return merged.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
 }
 
@@ -1206,6 +1207,14 @@ function buildMandatoryAgentToolCalls(
       reason,
     });
   };
+  const addCompute = (operation: string, params: Record<string, unknown>, reason: string, idSuffix: string) => {
+    calls.push({
+      id: `mandatory-${idSuffix}-${calls.length}`,
+      name: "compute_financial",
+      reason,
+      rawArgs: { operation, params, reason },
+    });
+  };
 
   if (isHighConvictionStockPickingQuestion(message)) {
     add("read_watchlist_ranking", "自选股排行 综合分 公司质量 投资吸引力", "用户要求单票/高赔率选择，必须先看自选股评分和已有证据。", "watchlist");
@@ -1223,7 +1232,19 @@ function buildMandatoryAgentToolCalls(
   }
 
   const needsForecast = isStockPriceForecastQuestion(message) || (mode !== "chat" && /(净利润.*预测|净利润.*预估|EPS|一致预期)/i.test(message));
-  const needsQuote = isStockPriceForecastQuestion(message) || /(当前股价|股价是多少|现价|市值|PE|PB|估值|目标价)/i.test(message);
+  const needsDecision = isBuySellDecisionQuestion(message);
+  const needsComparison = isComparisonResearchQuestion(message) && companies.length >= 2;
+  const needsQuant = isQuantitativeAssistantQuestion(message);
+  const needsQuote = isStockPriceForecastQuestion(message) || needsDecision || needsComparison || /(当前股价|股价是多少|现价|市值|PE|PB|估值|目标价)/i.test(message);
+  const aCodes = companies.map((company) => company.aCode).filter((code): code is string => Boolean(code));
+  if (needsComparison && aCodes.length >= 2) {
+    add("compare_stocks", aCodes.join(","), "多标的对比必须先拉横向估值和行情快照，避免只靠印象排序。", `compare-${aCodes.join("-")}`);
+    add("read_tencent_quote", aCodes.join(","), "对比/排序问题需要当前价格、市值和估值口径。", `quote-compare-${aCodes.join("-")}`);
+    add("read_company_evidence", companies.map((company) => company.company).join("；"), "对比问题必须读取双方公司证据包和历史报告摘要。", "company-compare");
+  }
+  if (needsQuant) {
+    addCompute("stats", { values: [] }, "用户要求测算/表格/敏感性时，先准备金融计算工具；若缺少数值，最终回答应给可填参数的计算框架。", "compute-stats");
+  }
   for (const company of companies) {
     if (needsQuote && company.quote) {
       add("read_tencent_quote", company.quote, "用户询问当前股价/估值/目标价，必须先查实时行情口径。", `quote-${company.quote}`);
@@ -1233,9 +1254,16 @@ function buildMandatoryAgentToolCalls(
       add("read_reports_concepts", company.aCode, "预测和目标价需要研报/K线/概念归属做交叉验证。", `reports-${company.aCode}`);
       add("read_ths_consensus_eps", company.aCode, "利润预测需要机构一致预期 EPS 作为外部锚。", `eps-${company.aCode}`);
     }
-    if (!needsForecast && !needsQuote) {
+    if (needsDecision && company.aCode) {
+      add("read_financial_statements", company.aCode, "买卖判断必须看财报三表和盈利质量，不能只看叙事。", `decision-financial-${company.aCode}`);
+      add("read_reports_concepts", company.aCode, "买卖判断需要研报、概念和K线位置交叉验证。", `decision-reports-${company.aCode}`);
+    }
+    if (!needsForecast && !needsQuote && !needsComparison) {
       add("read_company_evidence", company.company, "具体公司研究优先读取站内公司证据包和历史模板报告。", `company-${company.company}`);
       if (company.aCode) add("read_tushare_indicators", company.aCode, "A股公司研究补充 Tushare 结构化指标。", `tushare-${company.aCode}`);
+    }
+    if ((needsDecision || needsQuote || needsForecast) && company.aCode) {
+      add("read_tushare_indicators", company.aCode, "A股买卖/估值/预测问题补充 Tushare 结构化指标。", `decision-tushare-${company.aCode}`);
     }
   }
 
@@ -1246,11 +1274,26 @@ function buildMandatoryAgentToolCalls(
   if (shouldTriggerExternalEvidence(message, mode, evidenceText)) {
     const queries = buildAssistantEvidenceQueries(message, mode);
     const primary = queries[0]?.query ?? `${message.slice(0, 140)} 最新 财报 估值 风险`;
+    if (shouldUseExaForAssistant(message, mode, evidenceText).use && !calls.some((call) => call.name === "search_exa")) {
+      add("search_exa", primary, "高价值投研问题补 Exa 深度线索，尤其用于全球/英文/产业链交叉验证。", "external-exa", 8);
+    }
     if (!calls.some((call) => call.name === "search_tavily")) add("search_tavily", primary, "高价值投研问题补外部来源交叉验证。", "external-tavily", 8);
     if (!calls.some((call) => call.name === "search_brave")) add("search_brave", primary, "独立搜索源补充，降低单源偏差。", "external-brave", 8);
   }
 
   return calls;
+}
+
+function isBuySellDecisionQuestion(message: string) {
+  return /(能买吗|能不能买|可不可以买|要不要买|该不该买|买不买|现在买|值得买|值得买吗|还能买吗|还能涨|买入|卖出|持有|加仓|减仓|清仓|回避|观察|目标价|止损|仓位|操作建议|投资吸引力)/i.test(message);
+}
+
+function isComparisonResearchQuestion(message: string) {
+  return /(对比|比较|谁更|哪个更|哪家更|孰优|排序|排名|强弱|长期回报|更稳|更值得|优于|劣于|VS|vs|和.*比|与.*比)/i.test(message);
+}
+
+function isQuantitativeAssistantQuestion(message: string) {
+  return /(DCF|CAGR|IRR|收益率|复合增长|敏感性|情景测算|测算|估值区间|上行空间|下行空间|上行.*下行|画表|画图|做成表|表格|矩阵|趋势图|柱状图|折线图|散点图|气泡图|计算)/i.test(message);
 }
 
 function findAgentKnownCompanies(message: string) {
@@ -1273,6 +1316,16 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
     maxResults: query.maxResults,
     reason: "规则兜底：高价值投研问题或站内证据不足。",
   }));
+  if (shouldUseExaForAssistant(message, mode, evidenceText).use) {
+    calls.push({
+      id: "fallback-exa",
+      name: "search_exa",
+      query: `${message.slice(0, 160)} company industry financial official source risk`,
+      freshness: "month",
+      maxResults: 10,
+      reason: "规则兜底：高价值研究且站内证据不足。",
+    });
+  }
   if (shouldUseFreeGlobalSearch(message, mode, evidenceText)) {
     calls.push({
       id: "fallback-gdelt",
@@ -1302,16 +1355,6 @@ function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: 
         reason: "规则兜底：技术类问题补充 Semantic Scholar。",
       },
     );
-  }
-  if (shouldUseExaForAssistant(message, mode, evidenceText).use) {
-    calls.push({
-      id: "fallback-exa",
-      name: "search_exa",
-      query: `${message.slice(0, 160)} company industry financial official source risk`,
-      freshness: "month",
-      maxResults: 10,
-      reason: "规则兜底：高价值研究且站内证据不足。",
-    });
   }
   if (shouldUseTavilyForAssistant(message, mode, evidenceText) && !calls.some((call) => call.name === "search_tavily")) {
     calls.push({
