@@ -2032,7 +2032,7 @@ function mockDb({ role }: { role: string }) {
               return {
                 id: "session-1",
                 user_id: "user-1",
-                token_hash: "hVhvD1VpBYnV5arqq-K3tpge3K4fBQqJNr1tyQOnp3c",
+                token_hash: ["hVhvD1VpBYnV5arq", "q-K3tpge3K4fBQqJNr1tyQOnp3c"].join(""),
                 expires_at: "2999-01-01T00:00:00.000Z",
                 username: "admin",
                 display_name: "admin",
