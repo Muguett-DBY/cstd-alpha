@@ -41,13 +41,6 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-const ASSISTANT_PROMPT_CHIPS = [
-  "茅台今年业绩预估？",
-  "给我三家半导体/AI算力目前最值得买的公司",
-  "如果我认为银行股是稳赚高股息，你反驳我。",
-  "画表比较银行、电力、煤炭、电信的高股息风险。",
-];
-
 export function AssistantView() {
   const [thread, setThread] = useState<AssistantThread | null>(null);
   const [phase, setPhase] = useState<AssistantPhase>("loading");
@@ -459,22 +452,6 @@ export function AssistantView() {
             <div ref={messagesEndRef} />
           </div>
           <form className="assistant-composer" onSubmit={(event) => void submitMessage(event)}>
-            {!input.trim() && phase !== "streaming" ? (
-              <div className="assistant-prompt-chips" aria-label="快捷投研问题">
-                {ASSISTANT_PROMPT_CHIPS.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => {
-                      setInput(chip);
-                      queueMicrotask(() => inputRef.current?.focus());
-                    }}
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            ) : null}
             <div className="assistant-input-row">
               <textarea
                 ref={inputRef}
