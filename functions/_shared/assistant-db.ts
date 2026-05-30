@@ -609,7 +609,8 @@ export function buildAssistantDeepSeekBody(messages: DeepSeekMessage[], route?: 
     temperature: 0.12,
     stream: true,
     responseFormat: null,
-    thinking: route?.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: "max" },
+    reasoningEffort: "max",
+    thinking: { type: "enabled" },
     }),
     stream_options: { include_usage: true },
   };

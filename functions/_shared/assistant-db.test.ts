@@ -65,7 +65,8 @@ describe("assistant prompt and memory helpers", () => {
       model: "deepseek-v4-flash",
       stream: true,
       stream_options: { include_usage: true },
-      thinking: { type: "enabled", reasoning_effort: "max" },
+      reasoning_effort: "max",
+      thinking: { type: "enabled" },
     });
   });
 

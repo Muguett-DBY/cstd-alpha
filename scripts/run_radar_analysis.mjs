@@ -460,17 +460,6 @@ function deepSeekFallbackRoutesFromEnv() {
           },
         ]
       : []),
-    ...(officialKey
-      ? [
-          {
-            provider: "deepseek-official",
-            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
-            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
-            apiKey: officialKey,
-            isFree: false,
-          },
-        ]
-      : []),
     ...(zenKey
       ? [
           {
@@ -482,18 +471,24 @@ function deepSeekFallbackRoutesFromEnv() {
           },
         ]
       : []),
+    ...(officialKey
+      ? [
+          {
+            provider: "deepseek-official",
+            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
+            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
+            apiKey: officialKey,
+            isFree: false,
+          },
+        ]
+      : []),
   ];
 }
 
 function bodyForDeepSeekRoute(body, route) {
   const next = { ...body, model: route.model };
-  if (route.isFree) {
-    delete next.reasoning_effort;
-    next.thinking = next.thinking || { type: "enabled" };
-  } else {
-    delete next.thinking;
-    next.reasoning_effort = next.reasoning_effort || "max";
-  }
+  next.reasoning_effort = "max";
+  next.thinking = { type: "enabled" };
   return next;
 }
 

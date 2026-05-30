@@ -24,7 +24,7 @@ import {
 const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model contract", () => {
-  test("routes DeepSeek requests through OpenCode Go, official, then free Zen", () => {
+  test("routes DeepSeek requests through OpenCode Go, free Zen, then official", () => {
     const routes = radarModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" });
 
     expect(routes).toEqual([
@@ -35,15 +35,15 @@ describe("radar scan model contract", () => {
         isFree: false,
       }),
       expect.objectContaining({
+        model: "deepseek-v4-flash-free",
+        url: "https://opencode.ai/zen/v1/chat/completions",
+        isFree: true,
+      }),
+      expect.objectContaining({
         model: "deepseek-v4-flash",
         url: "https://api.deepseek.com/chat/completions",
         apiKey: "deepseek-key",
         isFree: false,
-      }),
-      expect.objectContaining({
-        model: "deepseek-v4-flash-free",
-        url: "https://opencode.ai/zen/v1/chat/completions",
-        isFree: true,
       }),
     ]);
   });
@@ -88,8 +88,8 @@ describe("radar scan model contract", () => {
       stream: false,
       temperature: 0.1,
     });
-    expect(body.reasoning_effort).toBeUndefined();
-    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+    expect(body.reasoning_effort).toBe("max");
+    expect(body.thinking).toEqual({ type: "enabled" });
     expect(JSON.stringify(stablePayload)).toContain("信息差");
     expect(JSON.stringify(stablePayload)).toContain("代表公司只能列 A 股或港股上市公司");
     expect(dynamicPayload).toMatchObject({

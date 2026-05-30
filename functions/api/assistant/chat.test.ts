@@ -62,8 +62,8 @@ describe("assistant chat endpoint", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(requestBody.model).toBe("deepseek-v4-flash");
-    expect(requestBody.reasoning_effort).toBeUndefined();
-    expect(requestBody.thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
+    expect(requestBody.reasoning_effort).toBe("max");
+    expect(requestBody.thinking).toEqual({ type: "enabled" });
     expect(requestBody.stream).toBe(true);
   });
 

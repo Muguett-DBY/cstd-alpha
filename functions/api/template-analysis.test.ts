@@ -109,10 +109,10 @@ describe("isUsableTemplateAnalysisCache", () => {
 });
 
 describe("template model routing", () => {
-  test("uses OpenCode Go before official DeepSeek and free Zen", () => {
+  test("uses OpenCode Go before free Zen and official DeepSeek", () => {
     const routes = templateModelRoutes({ OPENCODE_API_KEY: "go-key", DEEPSEEK_API_KEY: "deepseek-key" }, true);
 
-    expect(routes.map((route) => route.provider)).toEqual(["opencode-go", "deepseek-official", "opencode-zen-free"]);
+    expect(routes.map((route) => route.provider)).toEqual(["opencode-go", "opencode-zen-free", "deepseek-official"]);
     expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
   });
 
@@ -154,8 +154,8 @@ describe("template model routing", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe("deepseek-v4-flash");
-    expect(body.reasoning_effort).toBeUndefined();
-    expect(body.thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
+    expect(body.reasoning_effort).toBe("max");
+    expect(body.thinking).toEqual({ type: "enabled" });
   });
 
   test("accepts short completed template reports without expansion when fields are complete", async () => {
@@ -193,7 +193,8 @@ describe("template model routing", () => {
 
     expect(generated.markdown).toContain("内容短，但关键字段完整");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled" });
   });
 
   test("fails instead of writing an evidence fallback when high reasoning returns no final content", async () => {
@@ -221,9 +222,9 @@ describe("template model routing", () => {
     ).rejects.toThrow("未返回完整模板分析内容");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled", reasoning_effort: "max" });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBeUndefined();
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).reasoning_effort).toBeUndefined();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reasoning_effort).toBe("max");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).thinking).toEqual({ type: "enabled" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).reasoning_effort).toBe("max");
   });
 
   test("adds AnySearch supplemental evidence to template prompts when configured", async () => {

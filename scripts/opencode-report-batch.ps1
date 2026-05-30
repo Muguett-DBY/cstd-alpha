@@ -241,16 +241,17 @@ function Invoke-JsonPost {
 }
 
 function Get-OpenCodeApiKey {
+  if ($env:OPENCODE_GO_API_KEY) { return $env:OPENCODE_GO_API_KEY }
   if ($env:OPENCODE_API_KEY) { return $env:OPENCODE_API_KEY }
 
   $tokenPath = $env:CSTD_ALPHA_TOKEN_FILE
   if ($tokenPath -and (Test-Path -LiteralPath $tokenPath)) {
     $tokenText = Get-Content -LiteralPath $tokenPath -Raw -Encoding UTF8
-    $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\]\s]+([^\s]+)")
+    $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_GO_API_KEY|OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\]\s]+([^\s]+)")
     if ($match.Success) { return $match.Groups[1].Value }
   }
 
-  throw "OpenCode API key not found. Set OPENCODE_API_KEY or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_API_KEY."
+  throw "OpenCode API key not found. Set OPENCODE_GO_API_KEY, OPENCODE_API_KEY, or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_GO_API_KEY."
 }
 
 function Invoke-OpenCodeDeepSeekChatCompletion {
@@ -276,15 +277,14 @@ function Invoke-OpenCodeDeepSeekChatCompletion {
     response_format = [ordered]@{ type = "json_object" }
     max_tokens = 16000
   }
-  if ($Variant) {
-    $payload.reasoning_effort = $Variant
-  }
+  $payload.reasoning_effort = if ($Variant) { $Variant } else { "max" }
+  $payload.thinking = [ordered]@{ type = "enabled" }
 
   $requestPath = [System.IO.Path]::GetTempFileName()
   $responsePath = [System.IO.Path]::GetTempFileName()
   try {
     [System.IO.File]::WriteAllText($requestPath, ($payload | ConvertTo-Json -Depth 20 -Compress), [System.Text.UTF8Encoding]::new($false))
-    $httpCode = (curl.exe --silent --show-error --max-time 1800 -o $responsePath -w "%{http_code}" -H "Authorization: Bearer $apiKey" -H "Content-Type: application/json; charset=utf-8" --data-binary "@$requestPath" "https://opencode.ai/zen/v1/chat/completions") -join ""
+    $httpCode = (curl.exe --silent --show-error --max-time 1800 -o $responsePath -w "%{http_code}" -H "Authorization: Bearer $apiKey" -H "Content-Type: application/json; charset=utf-8" --data-binary "@$requestPath" "https://opencode.ai/zen/go/v1/chat/completions") -join ""
     $body = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
     if ($LASTEXITCODE -ne 0 -or -not ($httpCode -match '^2\d\d$')) {
       throw "OpenCode Go DeepSeek API failed with HTTP $httpCode. $body"

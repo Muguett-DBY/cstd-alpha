@@ -41,6 +41,13 @@ export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekF
           },
         ]
       : []),
+    {
+      model: OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL,
+      url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
+      apiKey: zenKey,
+      isFree: true,
+      provider: "opencode-zen-free",
+    },
     ...(officialKey
       ? [
           {
@@ -52,13 +59,6 @@ export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekF
           },
         ]
       : []),
-    {
-      model: OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL,
-      url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
-      apiKey: zenKey,
-      isFree: true,
-      provider: "opencode-zen-free",
-    },
   ];
 }
 

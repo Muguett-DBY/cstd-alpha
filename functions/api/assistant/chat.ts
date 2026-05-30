@@ -420,7 +420,8 @@ function nonStreamingModelBody({
     temperature,
     stream: false,
     responseFormat,
-    thinking: route.isFree ? { type: "enabled" } : { type: "enabled", reasoning_effort: reasoningEffort as "high" | "max" },
+    reasoningEffort: reasoningEffort as "high" | "max",
+    thinking: { type: "enabled" },
   });
 }
 

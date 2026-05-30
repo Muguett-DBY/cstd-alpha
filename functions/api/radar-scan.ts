@@ -285,7 +285,8 @@ export function buildRadarRequest(route: RadarRoute, digest: RadarEvidenceDigest
     apiKey: route.apiKey,
     signal,
     model: route.model,
-    thinking: route.isFree ? { type: "enabled", budget_tokens: 1024 } : { type: "enabled", reasoning_effort: RADAR_MODEL_REASONING[route.model] ?? "max" },
+    reasoningEffort: RADAR_MODEL_REASONING[route.model] ?? "max",
+    thinking: { type: "enabled" },
     maxTokens: 4500,
     messages: [
         {

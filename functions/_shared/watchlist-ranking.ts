@@ -143,7 +143,8 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
 function buildWatchlistRankingBody(route: DeepSeekFallbackRoute, watchlist: WatchlistRow, evidence: EvidenceBundle, coverage: ReturnType<typeof evidenceCoverageSummary>) {
   return {
     model: route.model,
-    ...(route.isFree ? { thinking: { type: "enabled" } } : { thinking: { type: "enabled", reasoning_effort: "max" } }),
+    reasoning_effort: "max",
+    thinking: { type: "enabled" },
     temperature: 0.08,
     response_format: { type: "json_object" },
     messages: [
