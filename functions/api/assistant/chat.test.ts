@@ -1984,6 +1984,23 @@ describe("assistant chat endpoint", () => {
     expect(calls.find((call) => call.name === "compare_stocks")?.query).toBe("600519,000858");
   });
 
+  test("keeps mandatory external search for semiconductor candidate lists even when the model chose other tools", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [
+        { id: "model-radar", name: "read_radar_result", query: "AI算力", reason: "model" },
+        { id: "model-template", name: "read_template_reports", query: "半导体", reason: "model" },
+        { id: "model-search", name: "search_anysearch", query: "AI算力 公司", reason: "model" },
+      ],
+      "给我三家半导体/AI算力目前最值得买的公司",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(calls.map((call) => call.name)).toContain("search_tavily");
+    expect(calls.map((call) => call.name)).toContain("search_brave");
+    expect(calls.findIndex((call) => call.name === "search_tavily")).toBeLessThan(5);
+    expect(calls.findIndex((call) => call.name === "search_brave")).toBeLessThan(5);
+  });
+
   test("adds a calculation tool for quantitative table requests without affecting simple concept chat", () => {
     const quantitative = __test__.augmentAgentToolCalls(
       [],

@@ -1172,6 +1172,7 @@ function augmentAgentToolCalls(
   if (shouldTreatAsSimpleGeneralChat(message, mode)) return toolCalls.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
   const mandatory = buildMandatoryAgentToolCalls(message, mode, context);
   const originalHasSearch = toolCalls.some((call) => call.name.startsWith("search_"));
+  const keepMandatorySearch = isHighConvictionStockPickingQuestion(message) || isSemiconductorAiCandidateListQuestion(message);
   const merged: AssistantSearchToolCall[] = [];
   const seen = new Set<string>();
   const add = (call: AssistantSearchToolCall) => {
@@ -1182,7 +1183,7 @@ function augmentAgentToolCalls(
   };
   for (const call of mandatory) {
     if (call.name === "search_exa" && toolCalls.some((original) => original.name === "search_exa")) continue;
-    if (originalHasSearch && call.name.startsWith("search_") && call.name !== "search_exa") continue;
+    if (originalHasSearch && !keepMandatorySearch && call.name.startsWith("search_") && call.name !== "search_exa") continue;
     add(call);
   }
   for (const call of toolCalls) add(call);
