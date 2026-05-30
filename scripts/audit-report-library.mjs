@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const defaultAccessPath = "E:\\DEV\\codex-tools\\cstd-alpha-access.txt";
-const defaultOutputDir = "E:\\DEV\\测试\\cstd-alpha-report-audit";
+const defaultAccessPath = process.env.CSTD_ALPHA_ACCESS_FILE || process.env.CSTD_ALPHA_ACCESS_PATH || "";
+const defaultOutputDir = path.join(".tmp", "report-library-audit");
 
 const args = parseArgs(process.argv.slice(2));
 const accessPath = args.access || defaultAccessPath;
@@ -11,12 +11,12 @@ const detailLimit = Number(args.detailLimit || 0);
 const detailOffset = Math.max(0, Number(args.detailOffset || 0));
 const detailConcurrency = Math.max(1, Math.min(20, Number(args.detailConcurrency || 8)));
 
-const access = parseAccessFile(await readFile(accessPath, "utf8"));
-const baseUrl = args.baseUrl || access.URL;
-const password = args.password || access.REPORT_PASSWORD;
-const username = args.username || access.REPORT_USERNAME || access.USERNAME || access.ADMIN_USERNAME || "admin";
-if (!baseUrl) throw new Error("Missing URL in access file or --base-url.");
-if (!password) throw new Error("Missing REPORT_PASSWORD in access file or --password.");
+const access = accessPath ? parseAccessFile(await readFile(accessPath, "utf8")) : {};
+const baseUrl = args.baseUrl || process.env.CSTD_ALPHA_BASE_URL || access.URL;
+const password = args.password || process.env.REPORT_PASSWORD || access.REPORT_PASSWORD;
+const username = args.username || process.env.REPORT_USERNAME || access.REPORT_USERNAME || access.USERNAME || access.ADMIN_USERNAME || "admin";
+if (!baseUrl) throw new Error("Missing URL. Pass --base-url or set CSTD_ALPHA_BASE_URL.");
+if (!password) throw new Error("Missing REPORT_PASSWORD. Pass --password, set REPORT_PASSWORD, or set CSTD_ALPHA_ACCESS_FILE.");
 
 await mkdir(outputDir, { recursive: true });
 

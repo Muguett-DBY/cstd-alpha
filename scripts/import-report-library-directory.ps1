@@ -1,5 +1,5 @@
 param(
-  [string]$InputDir = "E:\DEV\测试\cstd-alpha-opencode-batch\production",
+  [string]$InputDir = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch\production"),
   [string]$BaseUrl,
   [string]$Password,
   [int]$DelayMilliseconds = 200,
@@ -9,8 +9,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $BaseUrl -or -not $Password) {
-  $accessPath = "E:\DEV\codex-tools\cstd-alpha-access.txt"
-  if (Test-Path $accessPath) {
+  $accessPath = $env:CSTD_ALPHA_ACCESS_FILE
+  if ($accessPath -and (Test-Path $accessPath)) {
     $access = Get-Content $accessPath
     if (-not $BaseUrl) {
       $BaseUrl = (($access | Where-Object { $_ -match '^URL[:=]' } | Select-Object -First 1) -replace '^[^:=]+[:=]\s*','').Trim()
@@ -22,7 +22,7 @@ if (-not $BaseUrl -or -not $Password) {
 }
 
 if (-not $BaseUrl) { throw "BaseUrl is required." }
-if (-not $Password) { throw "Password is required." }
+if (-not $Password) { throw "Password is required. Pass -Password or set CSTD_ALPHA_ACCESS_FILE." }
 if (-not (Test-Path $InputDir)) { throw "InputDir not found: $InputDir" }
 
 function Invoke-JsonPost {

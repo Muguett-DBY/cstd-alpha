@@ -1,9 +1,9 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const defaultBatchRoot = "E:\\DEV\\测试\\cstd-alpha-opencode-batch";
+const defaultBatchRoot = process.env.CSTD_ALPHA_BATCH_ROOT || path.join(".tmp", "cstd-alpha-opencode-batch");
 const defaultUniversePath = path.join(defaultBatchRoot, "ashare-universe-test.json");
-const defaultAuditDir = "E:\\DEV\\测试\\cstd-alpha-report-audit";
+const defaultAuditDir = process.env.CSTD_ALPHA_AUDIT_DIR || path.join(".tmp", "report-library-audit");
 
 const args = parseArgs(process.argv.slice(2));
 const batchRoot = args.batchRoot || defaultBatchRoot;

@@ -286,12 +286,13 @@ export async function fetchAnySearchEvidence({
         body: JSON.stringify(buildAnySearchRequestBody(query)),
       });
       if (!response.ok) {
-        await response.text().catch(() => "");
+        await logSearchProviderFailure("AnySearch", query, `HTTP ${response.status}`);
         continue;
       }
       const payload = (await response.json().catch(() => null)) as AnySearchResponse | null;
       evidence.push(...normalizeAnySearchResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("AnySearch", query, error);
       continue;
     }
   }
@@ -319,14 +320,18 @@ export async function fetchSearxngEvidence({
           headers: { accept: "application/json", "user-agent": "CSTD Alpha/1.0" },
           signal,
         });
-        if (!response.ok) continue;
+        if (!response.ok) {
+          await logSearchProviderFailure("SearXNG", query, `HTTP ${response.status}`);
+          continue;
+        }
         const payload = (await response.json().catch(() => null)) as SearxngResponse | null;
         const items = normalizeSearxngResults(payload, query);
         if (items.length) {
           evidence.push(...items);
           break;
         }
-      } catch {
+      } catch (error) {
+        logSearchProviderFailure("SearXNG", query, error);
         continue;
       }
     }
@@ -357,12 +362,13 @@ export async function fetchExaEvidence({
         body: JSON.stringify(buildExaSearchRequestBody(query)),
       });
       if (!response.ok) {
-        await response.text().catch(() => "");
+        await logSearchProviderFailure("Exa", query, `HTTP ${response.status}`);
         continue;
       }
       const payload = (await response.json().catch(() => null)) as ExaSearchResponse | null;
       evidence.push(...normalizeExaResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("Exa", query, error);
       continue;
     }
   }
@@ -392,12 +398,13 @@ export async function fetchTavilyEvidence({
         body: JSON.stringify(buildTavilySearchRequestBody(query)),
       });
       if (!response.ok) {
-        await response.text().catch(() => "");
+        await logSearchProviderFailure("Tavily", query, `HTTP ${response.status}`);
         continue;
       }
       const payload = (await response.json().catch(() => null)) as TavilySearchResponse | null;
       evidence.push(...normalizeTavilyResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("Tavily", query, error);
       continue;
     }
   }
@@ -425,12 +432,13 @@ export async function fetchBraveEvidence({
         signal,
       });
       if (!response.ok) {
-        await response.text().catch(() => "");
+        await logSearchProviderFailure("Brave", query, `HTTP ${response.status}`);
         continue;
       }
       const payload = (await response.json().catch(() => null)) as BraveSearchResponse | null;
       evidence.push(...normalizeBraveResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("Brave", query, error);
       continue;
     }
   }
@@ -454,12 +462,13 @@ export async function fetchGdeltEvidence({
         signal,
       });
       if (!response.ok) {
-        await response.text().catch(() => "");
+        await logSearchProviderFailure("GDELT", query, `HTTP ${response.status}`);
         continue;
       }
       const payload = (await response.json().catch(() => null)) as GdeltResponse | null;
       evidence.push(...normalizeGdeltResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("GDELT", query, error);
       continue;
     }
   }
@@ -482,10 +491,14 @@ export async function fetchArxivEvidence({
         headers: { accept: "application/atom+xml, application/xml, text/xml", "user-agent": "CSTD Alpha/1.0" },
         signal,
       });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        await logSearchProviderFailure("arXiv", query, `HTTP ${response.status}`);
+        continue;
+      }
       const payload = await response.text().catch(() => "");
       evidence.push(...normalizeArxivResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("arXiv", query, error);
       continue;
     }
   }
@@ -508,14 +521,23 @@ export async function fetchSemanticScholarEvidence({
         headers: { accept: "application/json", "user-agent": "CSTD Alpha/1.0" },
         signal,
       });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        await logSearchProviderFailure("SemanticScholar", query, `HTTP ${response.status}`);
+        continue;
+      }
       const payload = (await response.json().catch(() => null)) as SemanticScholarResponse | null;
       evidence.push(...normalizeSemanticScholarResults(payload, query));
-    } catch {
+    } catch (error) {
+      logSearchProviderFailure("SemanticScholar", query, error);
       continue;
     }
   }
   return dedupeAnySearchEvidence(evidence);
+}
+
+function logSearchProviderFailure(provider: string, query: AnySearchQuery, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`[assistant-search] ${provider} failed: ${message.slice(0, 180)} query="${query.query.slice(0, 120)}"`);
 }
 
 export function normalizeAnySearchResults(payload: unknown, context: AnySearchQuery): AnySearchEvidence[] {

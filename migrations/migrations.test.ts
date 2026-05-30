@@ -10,6 +10,10 @@ function tableColumns(db: DatabaseSync, table: string) {
   return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((row) => String(row.name)));
 }
 
+function indexNames(db: DatabaseSync, table: string) {
+  return new Set(db.prepare(`PRAGMA index_list(${table})`).all().map((row) => String(row.name)));
+}
+
 function addRuntimeResearchColumns(db: DatabaseSync) {
   db.exec(`
     ALTER TABLE user_watchlist ADD COLUMN user_id TEXT;
@@ -67,5 +71,15 @@ describe("D1 migrations", () => {
     expect(usageColumns).toContain("prompt_cache_hit_tokens");
     expect(usageColumns).toContain("prompt_cache_miss_tokens");
     expect(usageColumns).toContain("reasoning_effort");
+  });
+
+  test("assistant index migration adds user-key lookup indexes", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(readMigration("0008_assistant.sql"));
+    expect(() => db.exec(readMigration("0009_assistant_indexes.sql"))).not.toThrow();
+
+    expect(indexNames(db, "assistant_messages")).toContain("idx_assistant_messages_user");
+    expect(indexNames(db, "assistant_usage_events")).toContain("idx_assistant_usage_user");
+    expect(indexNames(db, "assistant_tool_runs")).toContain("idx_assistant_tool_runs_user");
   });
 });

@@ -1,5 +1,5 @@
 param(
-  [string]$OutputPath = "E:\DEV\测试\cstd-alpha-opencode-batch\ashare-universe.json",
+  [string]$OutputPath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch\ashare-universe.json"),
   [int]$PageSize = 100
 )
 

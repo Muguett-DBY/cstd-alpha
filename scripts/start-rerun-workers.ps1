@@ -18,7 +18,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$testRoot = "E:\DEV\$([char]0x6D4B)$([char]0x8BD5)\cstd-alpha-opencode-batch"
+$testRoot = if ($env:CSTD_ALPHA_BATCH_ROOT) { $env:CSTD_ALPHA_BATCH_ROOT } else { Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch" }
 if (-not $UniversePath) {
   $latestUniverse = Get-ChildItem -LiteralPath $testRoot -Filter "ashare-universe-next-pass-quality-and-missing-*.json" -File -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending |

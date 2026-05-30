@@ -1,6 +1,6 @@
 param(
-  [string]$AccessFile = 'E:\DEV\codex-tools\cstd-alpha-access.txt',
-  [string]$OutputDir = 'E:\DEV\测试\cstd-alpha-online-regression',
+  [string]$AccessFile = $(if ($env:CSTD_ALPHA_ACCESS_FILE) { $env:CSTD_ALPHA_ACCESS_FILE } else { "" }),
+  [string]$OutputDir = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-online-regression"),
   [int]$ReportTimeoutSeconds = 2400
 )
 
@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 function Read-AccessConfig {
   param([string]$Path)
+  if (-not $Path) { throw "Access file is required. Pass -AccessFile or set CSTD_ALPHA_ACCESS_FILE." }
   $text = Get-Content -Raw -LiteralPath $Path
   $url = (($text -split "`r?`n") | Where-Object { $_ -match '^URL:' } | Select-Object -First 1) -replace '^URL:\s*',''
   $username = (($text -split "`r?`n") | Where-Object { $_ -match '^(USERNAME|REPORT_USERNAME):' } | Select-Object -First 1) -replace '^(USERNAME|REPORT_USERNAME):\s*',''

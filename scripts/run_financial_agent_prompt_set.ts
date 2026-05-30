@@ -21,7 +21,7 @@ type FinancialPromptResult = FinancialPromptCase & {
 
 const args = parseArgs(process.argv.slice(2));
 const isCliRun = process.argv[1]?.replaceAll("\\", "/").endsWith("run_financial_agent_prompt_set.ts") ?? false;
-const promptFile = args.file || "C:\\Users\\12031\\Desktop\\financial_agent_100_chinese_bold_prompts.md";
+const promptFile = args.file || process.env.FINANCIAL_AGENT_PROMPT_FILE || ".tmp/financial_agent_100_chinese_bold_prompts.md";
 const baseUrl = args["base-url"] || "https://alpha.custard.top";
 const cookie = args.cookie || process.env.ASSISTANT_REGRESSION_COOKIE || "";
 const concurrency = Math.max(1, Math.min(8, Number(args.concurrency || 3)));

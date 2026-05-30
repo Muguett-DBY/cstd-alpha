@@ -1,6 +1,6 @@
-﻿param(
-  [string]$UniversePath = "E:\DEV\测试\cstd-alpha-opencode-batch\ashare-universe.json",
-  [string]$OutputDir = "E:\DEV\测试\cstd-alpha-opencode-batch",
+param(
+  [string]$UniversePath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch\ashare-universe.json"),
+  [string]$OutputDir = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch"),
   [string]$BaseUrl = "http://127.0.0.1:8789",
   [string]$Username,
   [string]$Password,
@@ -20,8 +20,8 @@
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force $OutputDir | Out-Null
 
-$accessPath = "E:\DEV\codex-tools\cstd-alpha-access.txt"
-$accessLines = if (Test-Path $accessPath) { @(Get-Content $accessPath) } else { @() }
+$accessPath = $env:CSTD_ALPHA_ACCESS_FILE
+$accessLines = if ($accessPath -and (Test-Path $accessPath)) { @(Get-Content $accessPath) } else { @() }
 if (-not $PSBoundParameters.ContainsKey("BaseUrl")) {
   $urlLine = $accessLines | Where-Object { $_ -match "^(URL|BASE_URL)[:=]" } | Select-Object -First 1
   if ($urlLine) { $BaseUrl = ($urlLine -replace "^[^:=]+[:=]\s*", "").Trim() }
@@ -38,7 +38,7 @@ if (-not $Password) {
     if ($line) { $Password = ($line -replace "^[^:=]+[:=]\s*", "").Trim() }
   }
 }
-if (-not $Password) { throw "Password is required. Pass -Password or provide E:\DEV\codex-tools\cstd-alpha-access.txt." }
+if (-not $Password) { throw "Password is required. Pass -Password or set CSTD_ALPHA_ACCESS_FILE." }
 if (-not $Username) {
   if ($env:REPORT_USERNAME) {
     $Username = $env:REPORT_USERNAME
@@ -50,7 +50,7 @@ if (-not $Username -and $accessLines.Count) {
   $line = $accessLines | Where-Object { $_ -match "^(REPORT_USERNAME|USERNAME)[:=]" } | Select-Object -First 1
   if ($line) { $Username = ($line -replace "^[^:=]+[:=]\s*", "").Trim() }
 }
-if (-not $Username) { throw "Username is required. Pass -Username or add REPORT_USERNAME to E:\DEV\codex-tools\cstd-alpha-access.txt." }
+if (-not $Username) { throw "Username is required. Pass -Username or add REPORT_USERNAME to CSTD_ALPHA_ACCESS_FILE." }
 if (-not (Test-Path $UniversePath)) { throw "Universe file not found: $UniversePath" }
 
 function Format-ProviderNumber {
@@ -243,14 +243,14 @@ function Invoke-JsonPost {
 function Get-OpenCodeApiKey {
   if ($env:OPENCODE_API_KEY) { return $env:OPENCODE_API_KEY }
 
-  $tokenPath = "E:\DEV\codex-tools\TOKEN.md"
-  if (Test-Path -LiteralPath $tokenPath) {
+  $tokenPath = $env:CSTD_ALPHA_TOKEN_FILE
+  if ($tokenPath -and (Test-Path -LiteralPath $tokenPath)) {
     $tokenText = Get-Content -LiteralPath $tokenPath -Raw -Encoding UTF8
     $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\]\s]+([^\s]+)")
     if ($match.Success) { return $match.Groups[1].Value }
   }
 
-  throw "OpenCode API key not found. Set OPENCODE_API_KEY or add OPENCODE_API_KEY to E:\DEV\codex-tools\TOKEN.md."
+  throw "OpenCode API key not found. Set OPENCODE_API_KEY or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_API_KEY."
 }
 
 function Invoke-OpenCodeDeepSeekChatCompletion {
