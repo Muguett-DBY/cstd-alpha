@@ -2325,7 +2325,9 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
 function buildVisibleConclusionTailIfNeeded(answer: string, userMessage: string) {
   if (!shouldEnsureResearchStructure(userMessage)) return "";
   if (/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?结论[：:]/.test(answer)) return "";
+  if (/^\s*口径说明[：:]/.test(answer) && /(?:当前股价|目标价|情景测算|预测区间|排序|候选)/.test(answer.slice(0, 260))) return "";
   const lead = extractConclusionLead(answer);
+  if (/^\s*口径说明[：:]/.test(lead)) return "";
   return lead ? `结论重申：${lead}` : "";
 }
 

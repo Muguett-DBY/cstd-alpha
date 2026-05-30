@@ -863,6 +863,19 @@ describe("assistant chat endpoint", () => {
     expect(__test__.buildVisibleConclusionTailIfNeeded(answer, "根据我的自选股，哪些需要优先排雷？")).toContain("结论重申：优先排雷");
   });
 
+  test("does not restate risk-disclosure boilerplate as the conclusion", () => {
+    const answer = [
+      "口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。",
+      "",
+      "当前股价：1326元。",
+      "",
+      "| 情景 | 目标价 |",
+      "| --- | --- |",
+      "| 中性 | 1300~1600 |",
+    ].join("\n");
+    expect(__test__.buildVisibleConclusionTailIfNeeded(answer, "茅台当前股价是多少，预测明年股价")).toBe("");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
