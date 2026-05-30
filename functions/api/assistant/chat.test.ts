@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { __test__, buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { detectMemoryCandidate } from "../../_shared/assistant-db";
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -415,6 +416,54 @@ describe("assistant chat endpoint", () => {
     expect(body).toContain("澜起科技");
     expect(body).toContain("买入前必须验证");
     expect(body).not.toContain("可以先给低置信研究框架");
+  });
+
+  test("adds mandatory hard-data tools for explicit stock price forecasts", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [{ id: "model-search", name: "search_tavily", query: "贵州茅台 2026 股价 预测", freshness: "month", maxResults: 5 }],
+      "茅台当前股价是多少，预测明年股价",
+      "target",
+      { siteEvidenceSummary: "暂无站内证据。", modeEvidenceSummary: "当前模式没有命中结构化证据。" },
+    );
+    const names = calls.map((call) => call.name);
+    expect(names).toContain("read_tencent_quote");
+    expect(names).toContain("read_financial_statements");
+    expect(names).toContain("read_reports_concepts");
+    expect(names).toContain("read_ths_consensus_eps");
+    expect(calls.some((call) => call.name === "read_tencent_quote" && call.query?.includes("600519"))).toBe(true);
+    expect(calls.length).toBeLessThanOrEqual(5);
+  });
+
+  test("adds radar and external evidence for clear semiconductor candidate requests", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [],
+      "给我三家半导体/AI算力目前最值得买的公司",
+      "industry",
+      { siteEvidenceSummary: "雷达证据不足。", modeEvidenceSummary: "行业证据不足。" },
+    );
+    const names = calls.map((call) => call.name);
+    expect(names).toContain("read_radar_result");
+    expect(names.some((name) => name.startsWith("search_"))).toBe(true);
+    expect(calls.length).toBeLessThanOrEqual(5);
+  });
+
+  test("adds watchlist ranking and external evidence for one-stock high-conviction requests", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [],
+      "我只想买一只股票，预算10万人民币，目标一年翻倍。请直接给一个最值得梭哈的标的。",
+      "chat",
+      { siteEvidenceSummary: "自选股排行可用。", modeEvidenceSummary: "当前模式没有命中结构化证据。" },
+    );
+    const names = calls.map((call) => call.name);
+    expect(names).toContain("read_watchlist_ranking");
+    expect(names.some((name) => name.startsWith("search_"))).toBe(true);
+    expect(calls.length).toBeLessThanOrEqual(5);
+  });
+
+  test("classifies memory candidates into durable investment categories", () => {
+    expect(detectMemoryCandidate("记住：我的投资框架是先排雷，再看现金流，最后看估值。")?.category).toBe("framework");
+    expect(detectMemoryCandidate("以后不要把单一新闻当成硬数据。")?.category).toBe("taboo");
+    expect(detectMemoryCandidate("纠正一下：我关注的标的是腾讯和宁德时代。")?.category).toBe("watchlist");
   });
 
   test("does not let rational review replace requested stock candidates with a generic framework", () => {

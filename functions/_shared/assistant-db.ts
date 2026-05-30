@@ -337,14 +337,22 @@ export function estimateAssistantContextTokens(content: string) {
 
 export function detectMemoryCandidate(message: string): Omit<AssistantMemoryCandidate, "id" | "createdAt"> | null {
   const normalized = message.trim();
-  if (!/(记住|以后|我的偏好|我的规则|投资框架|不要再|别再|纠正一下|这条规则)/.test(normalized)) return null;
+  if (!/(记住|以后|我的偏好|我的规则|投资框架|不要再|别再|纠正一下|这条规则|关注的标的|重点跟踪|禁忌|不要把)/.test(normalized)) return null;
   const content = normalized.replace(/^记住[:：]?\s*/, "").slice(0, 500);
   return {
     content,
-    category: /不要再|别再|纠正/.test(normalized) ? "correction" : "preference",
+    category: classifyMemoryCandidateCategory(normalized),
     reason: "用户语句包含明确的长期偏好、规则或纠错信号。",
     status: "pending",
   };
+}
+
+function classifyMemoryCandidateCategory(message: string) {
+  if (/(关注的标的|重点跟踪|盯住|自选|加入观察|观察池)/.test(message)) return "watchlist";
+  if (/(投资框架|分析框架|评分框架|方法论|先.+再|第一.+第二|原则是)/.test(message)) return "framework";
+  if (/(禁忌|不要|别|禁止|避免|不要碰|排除)/.test(message)) return "taboo";
+  if (/(不要再|别再|纠正一下|更正|不是.+而是|以后不要把)/.test(message)) return "correction";
+  return "preference";
 }
 
 export async function writeMemoryCandidate(db: D1Database, input: { userKey: string; messageId: string; candidate: Omit<AssistantMemoryCandidate, "id" | "createdAt">; now?: string }) {

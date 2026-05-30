@@ -636,6 +636,7 @@ async function askModelForAgentToolCalls(input: {
     toolCalls = fallbackSearchToolCalls(input.message, input.mode, input.context, content || "工具规划未选择工具").toolCalls
       .slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
   }
+  toolCalls = augmentAgentToolCalls(toolCalls, input.message, input.mode, input.context);
   const finalReady = !toolCalls.length || /final_ready|证据足够|可以回答|停止|无需继续/i.test(content);
   return { toolCalls, finalReady, reason: content.slice(0, 180), usage };
 }
@@ -1147,6 +1148,119 @@ function parseToolArguments(value: unknown): Record<string, unknown> {
   }
 }
 
+const AGENT_KNOWN_COMPANIES: Array<{ names: string[]; aCode?: string; quote?: string; company: string }> = [
+  { names: ["贵州茅台", "茅台"], aCode: "600519", quote: "600519", company: "贵州茅台 600519" },
+  { names: ["五粮液"], aCode: "000858", quote: "000858", company: "五粮液 000858" },
+  { names: ["宁德时代"], aCode: "300750", quote: "300750", company: "宁德时代 300750" },
+  { names: ["比亚迪"], aCode: "002594", quote: "002594", company: "比亚迪 002594" },
+  { names: ["万科A", "万科"], aCode: "000002", quote: "000002", company: "万科A 000002" },
+  { names: ["隆基绿能", "隆基"], aCode: "601012", quote: "601012", company: "隆基绿能 601012" },
+  { names: ["中芯国际"], aCode: "688981", quote: "688981", company: "中芯国际 688981" },
+  { names: ["腾讯控股", "腾讯"], quote: "00700.HK", company: "腾讯控股 00700.HK" },
+  { names: ["小米集团", "小米"], quote: "01810.HK", company: "小米集团 01810.HK" },
+  { names: ["优必选"], quote: "09880.HK", company: "优必选 09880.HK" },
+  { names: ["阿里巴巴", "阿里"], quote: "09988.HK", company: "阿里巴巴 09988.HK" },
+  { names: ["英伟达", "NVIDIA", "NVDA"], company: "英伟达 NVDA" },
+];
+
+function augmentAgentToolCalls(
+  toolCalls: AssistantSearchToolCall[],
+  message: string,
+  mode: AssistantMode,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+): AssistantSearchToolCall[] {
+  if (shouldTreatAsSimpleGeneralChat(message, mode)) return toolCalls.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+  const mandatory = buildMandatoryAgentToolCalls(message, mode, context);
+  const originalHasSearch = toolCalls.some((call) => call.name.startsWith("search_"));
+  const merged: AssistantSearchToolCall[] = [];
+  const seen = new Set<string>();
+  const add = (call: AssistantSearchToolCall) => {
+    const key = `${call.name}:${call.query ?? call.code ?? JSON.stringify(call.rawArgs ?? {})}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(call);
+  };
+  for (const call of toolCalls) add(call);
+  for (const call of mandatory) {
+    if (originalHasSearch && call.name.startsWith("search_")) continue;
+    add(call);
+  }
+  return merged.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+}
+
+function buildMandatoryAgentToolCalls(
+  message: string,
+  mode: AssistantMode,
+  context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
+): AssistantSearchToolCall[] {
+  const calls: AssistantSearchToolCall[] = [];
+  const companies = findAgentKnownCompanies(message);
+  const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
+  const add = (name: AssistantToolName, query: string, reason: string, idSuffix: string, maxResults?: number) => {
+    calls.push({
+      id: `mandatory-${idSuffix}-${calls.length}`,
+      name,
+      query: query.slice(0, 220),
+      freshness: "month",
+      maxResults,
+      reason,
+    });
+  };
+
+  if (isHighConvictionStockPickingQuestion(message)) {
+    add("read_watchlist_ranking", "自选股排行 综合分 公司质量 投资吸引力", "用户要求单票/高赔率选择，必须先看自选股评分和已有证据。", "watchlist");
+    add("read_radar_result", "高景气行业 强信号 泡沫风险 衰退风险", "高赔率标的需要结合行业雷达筛掉弱景气方向。", "radar");
+    add("search_tavily", `${message.slice(0, 140)} 最新 催化剂 财报 风险 估值`, "高赔率问题必须补外部最新线索，避免只依赖站内证据。", "tavily", 8);
+    add("search_brave", `${message.slice(0, 140)} 最新 订单 财报 风险`, "用独立网页索引交叉验证高风险选股线索。", "brave", 8);
+    return calls;
+  }
+
+  if (isSemiconductorAiCandidateListQuestion(message)) {
+    add("read_radar_result", "半导体 AI算力 光模块 PCB 存储芯片 HBM 行业雷达", "行业选股必须先读站内行业雷达和强信号。", "radar");
+    add("search_tavily", `${message.slice(0, 140)} A股 港股 公司 财报 订单 估值`, "补充半导体/AI算力最新公司线索和财务验证。", "tavily", 8);
+    add("search_brave", `${message.slice(0, 140)} AI compute semiconductor companies valuation earnings`, "补充独立搜索来源，避免单一搜索源偏差。", "brave", 8);
+    return calls;
+  }
+
+  const needsForecast = isStockPriceForecastQuestion(message) || (mode !== "chat" && /(净利润.*预测|净利润.*预估|EPS|一致预期)/i.test(message));
+  const needsQuote = isStockPriceForecastQuestion(message) || /(当前股价|股价是多少|现价|市值|PE|PB|估值|目标价)/i.test(message);
+  for (const company of companies) {
+    if (needsQuote && company.quote) {
+      add("read_tencent_quote", company.quote, "用户询问当前股价/估值/目标价，必须先查实时行情口径。", `quote-${company.quote}`);
+    }
+    if (needsForecast && company.aCode) {
+      add("read_financial_statements", company.aCode, "业绩/股价预测必须读取公司财务报表作为硬数据基准。", `financial-${company.aCode}`);
+      add("read_reports_concepts", company.aCode, "预测和目标价需要研报/K线/概念归属做交叉验证。", `reports-${company.aCode}`);
+      add("read_ths_consensus_eps", company.aCode, "利润预测需要机构一致预期 EPS 作为外部锚。", `eps-${company.aCode}`);
+    }
+    if (!needsForecast && !needsQuote) {
+      add("read_company_evidence", company.company, "具体公司研究优先读取站内公司证据包和历史模板报告。", `company-${company.company}`);
+      if (company.aCode) add("read_tushare_indicators", company.aCode, "A股公司研究补充 Tushare 结构化指标。", `tushare-${company.aCode}`);
+    }
+  }
+
+  if (mode === "industry" || /(行业|产业|赛道|板块|产业链|半导体|AI算力|光伏|白酒|航运|银行|机器人|CXO|创新药|电网|储能|锂电|港股互联网)/i.test(message)) {
+    add("read_radar_result", message.slice(0, 160), "行业研究必须读取站内雷达结果作为全局背景。", "industry-radar");
+  }
+
+  if (shouldTriggerExternalEvidence(message, mode, evidenceText)) {
+    const queries = buildAssistantEvidenceQueries(message, mode);
+    const primary = queries[0]?.query ?? `${message.slice(0, 140)} 最新 财报 估值 风险`;
+    if (!calls.some((call) => call.name === "search_tavily")) add("search_tavily", primary, "高价值投研问题补外部来源交叉验证。", "external-tavily", 8);
+    if (!calls.some((call) => call.name === "search_brave")) add("search_brave", primary, "独立搜索源补充，降低单源偏差。", "external-brave", 8);
+  }
+
+  return calls;
+}
+
+function findAgentKnownCompanies(message: string) {
+  return AGENT_KNOWN_COMPANIES.filter((company) => company.names.some((name) => new RegExp(escapeRegex(name), "i").test(message)));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }, reason: string): { toolCalls: AssistantSearchToolCall[]; reason: string } {
   const evidenceText = `${context.siteEvidenceSummary}\n${context.modeEvidenceSummary}`;
   if (!shouldTriggerExternalEvidence(message, mode, evidenceText)) return { toolCalls: [], reason };
@@ -1365,6 +1479,8 @@ export function shouldTriggerExternalEvidence(message: string, mode: AssistantMo
 
 export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantMode) {
   if (mode !== "chat") return false;
+  if (/(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message) && !containsLikelyResearchSubject(message)) return true;
+  if (isHighConvictionStockPickingQuestion(message) || isHighValueResearchQuestion(message)) return false;
   if (containsLikelyResearchSubject(message)) return false;
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
   if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(message.trim())) return true;
@@ -2705,6 +2821,7 @@ function normalizeAssistantMode(value: unknown): AssistantMode {
 }
 
 export const __test__ = {
+  augmentAgentToolCalls,
   buildConstructiveEvidenceGapAnswer,
   buildVisibleConclusionTailIfNeeded,
   ensureConclusionLead,
