@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { __test__, buildAssistantEvidenceQueries, onRequestPost as productionOnRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { __test__, augmentAgentToolCalls, buildAssistantEvidenceQueries, buildMandatoryAgentToolCalls, onRequestPost as productionOnRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 import { detectMemoryCandidate } from "../../_shared/assistant-db";
 
 const onRequestPost = __test__.onRequestPostRealtime;
@@ -1681,6 +1681,32 @@ describe("assistant chat endpoint", () => {
     expect(shouldTreatAsSimpleGeneralChat("用两句话解释ROIC为什么比ROE更不容易被杠杆误导。", "chat")).toBe(true);
     expect(shouldTreatAsSimpleGeneralChat("茅台今年业绩预估？", "target")).toBe(false);
     expect(shouldTreatAsSimpleGeneralChat("请联网查一下自由现金流最新研究", "chat")).toBe(false);
+    expect(shouldTreatAsSimpleGeneralChat("用Python算一下：本金10万，年化8%，3年后是多少钱？", "chat")).toBe(false);
+  });
+
+  test("routes explicit compound-interest requests through Python", () => {
+    const calls = buildMandatoryAgentToolCalls("用Python算一下：本金10万，年化8%，3年后是多少钱？", "chat", {
+      siteEvidenceSummary: "",
+      modeEvidenceSummary: "",
+    });
+    const python = calls.find((call) => call.name === "python_repl");
+
+    expect(python?.code).toContain("principal = 100000");
+    expect(python?.code).toContain("annual_rate = 0.08");
+    expect(python?.code).toContain("future_value");
+  });
+
+  test("does not duplicate python tool calls when the model already selected python", () => {
+    const calls = augmentAgentToolCalls(
+      [{ id: "model-python", name: "python_repl", code: "print('model')", reason: "模型选择 Python" }],
+      "用Python算一下：本金10万，年化8%，3年后是多少钱？",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+
+    expect(calls.filter((call) => call.name === "python_repl")).toHaveLength(1);
+    expect(calls[0]?.name).toBe("python_repl");
+    expect(calls[0]?.code).toContain("future_value");
   });
 
   test("builds layered evidence queries instead of one mixed search query", () => {

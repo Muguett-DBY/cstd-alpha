@@ -1354,7 +1354,7 @@ const AGENT_KNOWN_COMPANIES: Array<{ names: string[]; aCode?: string; quote?: st
   { names: ["苹果", "Apple", "AAPL"], company: "苹果 AAPL" },
 ];
 
-function augmentAgentToolCalls(
+export function augmentAgentToolCalls(
   toolCalls: AssistantSearchToolCall[],
   message: string,
   mode: AssistantMode,
@@ -1367,6 +1367,7 @@ function augmentAgentToolCalls(
   const merged: AssistantSearchToolCall[] = [];
   const seen = new Set<string>();
   const add = (call: AssistantSearchToolCall) => {
+    if (call.name === "python_repl" && merged.some((item) => item.name === "python_repl")) return;
     const key = `${call.name}:${call.query ?? call.code ?? JSON.stringify(call.rawArgs ?? {})}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1407,6 +1408,14 @@ export function buildMandatoryAgentToolCalls(
       rawArgs: { operation, params, reason },
     });
   };
+  const addPython = (code: string, reason: string, idSuffix: string) => {
+    calls.push({
+      id: `mandatory-${idSuffix}-${calls.length}`,
+      name: "python_repl",
+      code,
+      reason,
+    });
+  };
 
   if (isHighConvictionStockPickingQuestion(message)) {
     add("read_watchlist_ranking", "自选股排行 综合分 公司质量 投资吸引力", "用户要求单票/高赔率选择，必须先看自选股评分和已有证据。", "watchlist");
@@ -1427,6 +1436,7 @@ export function buildMandatoryAgentToolCalls(
   const needsDecision = isBuySellDecisionQuestion(message);
   const needsComparison = isComparisonResearchQuestion(message) && companies.length >= 2;
   const needsQuant = isQuantitativeAssistantQuestion(message);
+  const deterministicPythonCode = buildDeterministicPythonCodeForAssistant(message);
   const needsQuote = isStockPriceForecastQuestion(message) || needsDecision || needsComparison || /(当前股价|股价是多少|现价|市值|PE|PB|估值|目标价)/i.test(message);
   const aCodes = companies.map((company) => company.aCode).filter((code): code is string => Boolean(code));
   if (needsComparison && aCodes.length >= 2) {
@@ -1438,6 +1448,9 @@ export function buildMandatoryAgentToolCalls(
   }
   if (needsQuant) {
     addCompute("stats", { values: [] }, "用户要求测算/表格/敏感性时，先准备金融计算工具；若缺少数值，最终回答应给可填参数的计算框架。", "compute-stats");
+  }
+  if (deterministicPythonCode) {
+    addPython(deterministicPythonCode, "用户明确要求 Python/复利计算，必须执行一次可审计计算，而不是只靠模型心算。", "python-deterministic");
   }
   for (const company of companies) {
     if (needsQuote && company.quote) {
@@ -1488,6 +1501,26 @@ function isComparisonResearchQuestion(message: string) {
 
 function isQuantitativeAssistantQuestion(message: string) {
   return /(DCF|CAGR|IRR|收益率|复合增长|敏感性|情景测算|测算|估值区间|上行空间|下行空间|上行.*下行|画表|画图|做成表|表格|矩阵|趋势图|柱状图|折线图|散点图|气泡图|计算)/i.test(message);
+}
+
+function buildDeterministicPythonCodeForAssistant(message: string) {
+  if (!/(Python|python|算一下|计算一下|复利|年化)/.test(message)) return null;
+  const principalMatch = message.match(/本金\s*([0-9]+(?:\.[0-9]+)?)\s*(万|万元|元)?/);
+  const rateMatch = message.match(/年化\s*([0-9]+(?:\.[0-9]+)?)\s*%/);
+  const yearsMatch = message.match(/([0-9]+(?:\.[0-9]+)?)\s*年后/);
+  if (!principalMatch || !rateMatch || !yearsMatch) return null;
+  const principalUnit = principalMatch[2] ?? "";
+  const principal = Number(principalMatch[1]) * (principalUnit.includes("万") ? 10_000 : 1);
+  const rate = Number(rateMatch[1]) / 100;
+  const years = Number(yearsMatch[1]);
+  if (!Number.isFinite(principal) || !Number.isFinite(rate) || !Number.isFinite(years)) return null;
+  return [
+    `principal = ${JSON.stringify(principal)}`,
+    `annual_rate = ${JSON.stringify(rate)}`,
+    `years = ${JSON.stringify(years)}`,
+    "future_value = principal * (1 + annual_rate) ** years",
+    "f\"本金{principal:,.2f}元，年化{annual_rate:.2%}，{years:g}年后本息合计{future_value:,.2f}元\"",
+  ].join("\n");
 }
 
 function findAgentKnownCompanies(message: string) {
@@ -1819,6 +1852,7 @@ export function shouldTriggerExternalEvidence(message: string, mode: AssistantMo
 
 export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantMode) {
   if (mode !== "chat") return false;
+  if (/(Python|python|用\s*Python|算一下|计算一下|敏感性|DCF|IRR|CAGR|标准差|相关性|回归|复利|年化.*(计算|算))/i.test(message)) return false;
   if (/(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message) && !containsLikelyResearchSubject(message)) return true;
   if (isHighConvictionStockPickingQuestion(message) || isHighValueResearchQuestion(message)) return false;
   if (containsLikelyResearchSubject(message)) return false;
