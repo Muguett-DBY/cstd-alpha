@@ -1351,7 +1351,7 @@ function isBuySellDecisionQuestion(message: string) {
 }
 
 function isComparisonResearchQuestion(message: string) {
-  return /(对比|比较|谁更|哪个更|哪家更|孰优|排序|排名|强弱|长期回报|更稳|更值得|优于|劣于|VS|vs|和.*比|与.*比)/i.test(message);
+  return /(对比|比较|谁更|哪个更|哪家更|孰优|排序|排名|强弱|长期回报|更稳|更值得|优于|劣于|VS|vs|compare|comparison|versus|rank|ranking|和.*比|与.*比)/i.test(message);
 }
 
 function isQuantitativeAssistantQuestion(message: string) {
@@ -1359,7 +1359,12 @@ function isQuantitativeAssistantQuestion(message: string) {
 }
 
 function findAgentKnownCompanies(message: string) {
-  return AGENT_KNOWN_COMPANIES.filter((company) => company.names.some((name) => new RegExp(escapeRegex(name), "i").test(message)));
+  return AGENT_KNOWN_COMPANIES.filter((company) => {
+    if (company.names.some((name) => new RegExp(escapeRegex(name), "i").test(message))) return true;
+    if (company.aCode && new RegExp(`(^|\\D)${escapeRegex(company.aCode)}(\\D|$)`).test(message)) return true;
+    if (company.quote && new RegExp(`(^|\\s|[,，、;])${escapeRegex(company.quote)}($|\\s|[,，、;])`, "i").test(message)) return true;
+    return false;
+  });
 }
 
 function escapeRegex(value: string) {

@@ -2006,6 +2006,18 @@ describe("assistant chat endpoint", () => {
     expect(calls.find((call) => call.name === "read_reports_concepts")?.query).toBe("600519,000858");
   });
 
+  test("adds symmetric evidence tools for code-only A-share comparisons", () => {
+    const calls = __test__.augmentAgentToolCalls(
+      [],
+      "Compare 600519 and 000858 and give the final main judgement.",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    expect(calls.find((call) => call.name === "compare_stocks")?.query).toBe("600519,000858");
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("600519,000858");
+    expect(calls.find((call) => call.name === "read_reports_concepts")?.query).toBe("600519,000858");
+  });
+
   test("splits multi-code assistant stock tool queries for symmetric evidence fetch", () => {
     expect(__test__.splitAssistantToolCodes("600519, 000858，000568", 4)).toEqual(["600519", "000858", "000568"]);
     expect(__test__.splitAssistantToolCodes(" 600519 ", 4)).toEqual(["600519"]);
