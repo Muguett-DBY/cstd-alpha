@@ -2928,6 +2928,7 @@ function buildSubjectOnlyClarificationRequest(message: string): AssistantChoiceR
   // 如果消息长度>=7且包含明确分析意图的关键词，跳过澄清
   if (normalized.length >= 7 && /(股价|多少|走势|PE|PB|ROE|EPS|市值|分析|对比|表现|技术|指标|行情|今天|最新|新闻|公告|财报|增长|分红|融资|资金|流入|流出|热点|题材|板块|排名|龙虎榜|解禁|K线|RSI|MACD|均线|趋势|前景|空间)/.test(normalized)) return null;
   if (!/(茅台|宁德时代|优必选|腾讯|阿里|美团|小米|比亚迪|万科|英伟达|NVIDIA|NVDA|苹果|Apple|AAPL|中芯国际|紫金矿业|药明康德|半导体|光伏|白酒|银行|地产|煤炭|电力|航运|机器人|创新药|CXO|AI|算力|储能|锂电|水泥|钢铁|铜|猪周期|港股互联网)/i.test(normalized)) return null;
+  const singleCompany = findAgentKnownCompanies(message).length === 1;
   return {
     id: "research_scope",
     title: "先确认研究口径",
@@ -2937,7 +2938,9 @@ function buildSubjectOnlyClarificationRequest(message: string): AssistantChoiceR
     options: [
       { id: "risk_opportunity", label: "机会与风险", description: `${normalized}的主要机会、风险和反证。`, recommended: true },
       { id: "valuation", label: "估值与位置", description: `${normalized}当前是否便宜，是否有泡沫。` },
-      { id: "stocks", label: "代表公司", description: `${normalized}里哪些A/H标的更值得跟踪。` },
+      singleCompany
+        ? { id: "fundamental", label: "基本面证据", description: `${normalized}的财报、现金流、竞争和催化。` }
+        : { id: "stocks", label: "代表公司", description: `${normalized}里哪些A/H标的更值得跟踪。` },
     ],
   };
 }

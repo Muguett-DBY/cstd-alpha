@@ -2035,6 +2035,8 @@ describe("assistant chat endpoint", () => {
       title: "先确认研究口径",
       options: expect.arrayContaining([expect.objectContaining({ id: "risk_opportunity" })]),
     });
+    expect(request?.options.map((option) => option.label)).toContain("基本面证据");
+    expect(request?.options.map((option) => option.label)).not.toContain("代表公司");
   });
 
   test("keeps mandatory external search for semiconductor candidate lists even when the model chose other tools", () => {
