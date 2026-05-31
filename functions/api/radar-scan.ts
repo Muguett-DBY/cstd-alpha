@@ -537,13 +537,20 @@ function selectRadarCitationSources(sources: ScoredRadarSource[], limit: number)
   const reservedNews = nonNewsSources.length >= MIN_RADAR_SOURCE_COUNT ? Math.min(newsSources.length, RADAR_DIGEST_NEWS_FLOOR, Math.floor(limit * RADAR_DIGEST_MAX_NEWS_SHARE)) : 0;
   const nonNewsLimit = limit - reservedNews;
   const maxPerSource = Math.max(1, Math.floor(limit * RADAR_DIGEST_MAX_SINGLE_SOURCE_SHARE));
-  const minimumByType: Partial<Record<RadarEvidenceType, number>> = {
+  const desiredMinimumByType: Partial<Record<RadarEvidenceType, number>> = {
     hard_data: 24,
     announcement: 12,
     official: 18,
     market: 24,
     research: 4,
   };
+  const desiredMinimumTotal = Object.values(desiredMinimumByType).reduce((sum, value) => sum + (value ?? 0), 0);
+  const minimumByType = Object.fromEntries(
+    Object.entries(desiredMinimumByType).map(([sourceType, desired]) => [
+      sourceType,
+      Math.max(1, Math.floor(((desired ?? 0) / Math.max(1, desiredMinimumTotal)) * Math.max(1, nonNewsLimit))),
+    ]),
+  ) as Partial<Record<RadarEvidenceType, number>>;
 
   for (const [sourceType, minimum] of Object.entries(minimumByType) as Array<[RadarEvidenceType, number]>) {
     for (const source of nonNewsSources.filter((item) => item.sourceType === sourceType).slice(0, minimum)) {

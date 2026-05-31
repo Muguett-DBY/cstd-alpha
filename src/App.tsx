@@ -654,7 +654,9 @@ function CandidateModal({
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop" role="presentation" onKeyDown={(event) => {
+      if (event.key === "Escape") onClose();
+    }}>
       <section className="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-title">
         <header>
           <div>
@@ -1514,7 +1516,7 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
             ))}
           </div>
         ))}
-        <div ref={tableScrollRef} className="radar-industry-scroll">
+        <div ref={tableScrollRef} className="radar-industry-scroll" tabIndex={0} aria-label="全行业扫描表，可滚动浏览">
           <div className="radar-industry-virtual-space" style={{ height: rowVirtualizer.getTotalSize() }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const row = tableRows[virtualRow.index];

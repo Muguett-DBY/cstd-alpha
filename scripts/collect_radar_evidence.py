@@ -36,7 +36,7 @@ ANYSEARCH_CONCURRENCY = max(1, int(os.environ.get("ANYSEARCH_CONCURRENCY", "10")
 SEARXNG_ENDPOINTS = [endpoint.strip().rstrip("/") for endpoint in re.split(r"[\n,]", os.environ.get("SEARXNG_ENDPOINTS", "")) if endpoint.strip().startswith(("http://", "https://"))]
 SEARXNG_MAX_QUERIES = int(os.environ.get("SEARXNG_MAX_QUERIES", "120"))
 SEARXNG_CONCURRENCY = max(1, int(os.environ.get("SEARXNG_CONCURRENCY", "6")))
-TUSHARE_API_URL = "http://api.tushare.pro"
+TUSHARE_API_URL = "https://api.tushare.pro"
 TUSHARE_MAX_COMPANIES = int(os.environ.get("TUSHARE_MAX_COMPANIES", "1"))
 TUSHARE_BATCH_ENABLED = os.environ.get("TUSHARE_BATCH_ENABLED", "1") != "0"
 TUSHARE_COMPANY_FALLBACK_ENABLED = os.environ.get("TUSHARE_COMPANY_FALLBACK_ENABLED", "0") == "1"

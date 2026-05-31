@@ -111,7 +111,7 @@ function LineChart({ series, stroke, suffix = "" }: { series: Array<{ label: str
   const last = series.at(-1);
 
   return (
-    <svg className="chart-svg" viewBox={`0 0 ${width} ${height}`} role="img">
+    <svg className="chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="财务指标趋势图">
       <line x1={padding.left} y1={padding.top + plotHeight} x2={width - padding.right} y2={padding.top + plotHeight} />
       <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + plotHeight} />
       <polyline points={points.join(" ")} fill="none" stroke={stroke} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />

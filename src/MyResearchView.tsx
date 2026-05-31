@@ -590,6 +590,7 @@ function TemplateManager({
             <label className="template-toggle template-list-toggle">
               <input
                 type="checkbox"
+                aria-label={`${template.title || "未命名模板"}：${template.enabled === false ? "启用模板" : "停用模板"}`}
                 checked={template.enabled !== false}
                 disabled={disabled}
                 onChange={(event) => updateTemplate(template.id, { enabled: event.target.checked })}
@@ -687,6 +688,7 @@ function TemplateManager({
             <label className="template-toggle">
               <input
                 type="checkbox"
+                aria-label={`${editingTemplate.title || "未命名模板"}：${editingTemplate.enabled === false ? "启用模板" : "停用模板"}`}
                 checked={editingTemplate.enabled !== false}
                 disabled={disabled}
                 onChange={(event) => updateTemplate(editingTemplate.id, { enabled: event.target.checked })}

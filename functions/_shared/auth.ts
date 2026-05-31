@@ -1,6 +1,6 @@
 const COOKIE_NAME = "cstd_alpha_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
-const PASSWORD_ITERATIONS = 100_000;
+const PASSWORD_ITERATIONS = 600_000;
 
 export type AuthEnv = {
   AUTH_SECRET: string;

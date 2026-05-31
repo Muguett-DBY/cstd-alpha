@@ -17,7 +17,7 @@ const displayName = String(args.displayName || args.username || "").trim();
 const role = String(args.role || "user");
 const database = String(args.database || "cstd-alpha-report-library");
 const remote = args.remote !== "false";
-const passwordIterations = 100000;
+const passwordIterations = 600000;
 
 if (!username || !password) {
   console.error("Usage: node scripts/create-fixed-user.mjs --username=alice --password=secret --displayName=Alice [--role=admin] [--remote=false]");

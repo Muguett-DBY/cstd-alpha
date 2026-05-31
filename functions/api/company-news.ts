@@ -330,15 +330,20 @@ function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
   const controller = new AbortController();
   let timedOut = false;
   const abortFromParent = () => controller.abort(parent.reason);
-  if (parent.aborted) {
-    controller.abort(parent.reason);
-  } else {
-    parent.addEventListener("abort", abortFromParent, { once: true });
-  }
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort(new Error("新闻源读取超时。"));
   }, timeoutMs);
+  if (parent.aborted) {
+    clearTimeout(timeout);
+    controller.abort(parent.reason);
+    return {
+      signal: controller.signal,
+      timedOut: () => timedOut,
+      cleanup: () => undefined,
+    };
+  }
+  parent.addEventListener("abort", abortFromParent, { once: true });
   return {
     signal: controller.signal,
     timedOut: () => timedOut,

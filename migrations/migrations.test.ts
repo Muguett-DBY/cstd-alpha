@@ -98,4 +98,18 @@ describe("D1 migrations", () => {
     expect(indexNames(db, "evidence_items")).toContain("idx_evidence_theme_published");
     expect(indexNames(db, "watchlist_items")).toContain("idx_watchlist_items_entity");
   });
+
+  test("retention and history index migration adds cleanup and lookup indexes", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(readMigration("0001_report_library.sql"));
+    db.exec(readMigration("0003_fixed_accounts_and_template_tasks.sql"));
+    db.exec(readMigration("0005_radar_entities.sql"));
+
+    expect(() => db.exec(readMigration("0011_retention_and_history_indexes.sql"))).not.toThrow();
+
+    expect(indexNames(db, "auth_sessions")).toContain("idx_auth_sessions_expires");
+    expect(indexNames(db, "radar_runs")).toContain("idx_radar_runs_time");
+    expect(indexNames(db, "radar_runs")).toContain("idx_radar_runs_status_time");
+    expect(indexNames(db, "report_library")).toContain("idx_report_library_ticker");
+  });
 });
