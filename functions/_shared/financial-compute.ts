@@ -68,7 +68,8 @@ function computeCAGR(params: Record<string, unknown>): ComputeResult {
 
 function computeDCF(params: Record<string, unknown>): ComputeResult {
   const cashFlows = parseNumArray(params.cashFlows);
-  const terminalCashFlow = Number(params.terminalCashFlow) || 0;
+  const terminalCashFlowRaw = Number(params.terminalCashFlow);
+  const terminalCashFlow = Number.isFinite(terminalCashFlowRaw) ? terminalCashFlowRaw : 0;
   const terminalGrowthRate = rateRatio(params.terminalGrowthRate, 0);
   const discountRate = rateRatio(params.discountRate, 0.1);
   const sharesOutstanding = Number(params.sharesOutstanding) || 1;
@@ -79,6 +80,14 @@ function computeDCF(params: Record<string, unknown>): ComputeResult {
       operation: "dcf",
       label: "DCF 估值",
       summary: "至少需要 3 期自由现金流。",
+      rows: [],
+    };
+  }
+  if (terminalCashFlow < 0) {
+    return {
+      operation: "dcf",
+      label: "DCF 估值",
+      summary: "DCF 参数无效：永续终值现金流不能为负。若企业长期自由现金流仍为负，应改用显式多年现金流情景或先设定转正年份。",
       rows: [],
     };
   }

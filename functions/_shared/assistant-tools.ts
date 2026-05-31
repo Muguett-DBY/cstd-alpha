@@ -362,6 +362,8 @@ export function shouldAnswerDirectlyWithoutClarification(message: string) {
 
 export function shouldTreatAsSimpleGeneralChat(message: string, mode: AssistantMode) {
   if (mode !== "chat") return false;
+  if (/(解释|什么是|为什么|区别|用.*句话|一句话|两句话|概念|定义|怎么算|含义)/.test(message) && !containsLikelyResearchSubject(message)) return true;
+  if (isHighConvictionStockPickingQuestion(message) || isHighValueResearchQuestion(message)) return false;
   if (containsLikelyResearchSubject(message)) return false;
   if (/(最新|联网|查一下|搜索|新闻|今天|刚刚|实时|全球|海外|英文|Exa|深搜)/i.test(message)) return false;
   if (/^(你好|您好|哈喽|hello|hi)([，,。.!！?\s]*(你是|你是谁|你能做什么|介绍一下|是谁|在吗))?[？?！!。.\s]*$/i.test(message.trim())) return true;

@@ -41,6 +41,23 @@ describe("assistant structured blocks", () => {
     ]);
   });
 
+  test("extracts adjacent markdown tables without swallowing the second header", () => {
+    const text = [
+      "| 公司 | 结论 |",
+      "| --- | --- |",
+      "| 茅台 | 观察 |",
+      "| 指标 | 数值 |",
+      "| --- | --- |",
+      "| PE | 20 |",
+    ].join("\n");
+
+    const blocks = extractAssistantBlocks(text, "整理成表");
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "table", columns: ["公司", "结论"], rows: [["茅台", "观察"]] });
+    expect(blocks[1]).toMatchObject({ type: "table", columns: ["指标", "数值"], rows: [["PE", "20"]] });
+  });
+
   test("strips rendered markdown tables from chat text", () => {
     const text = "前文\n| 项目 | 分数 |\n| --- | --- |\n| 证据 | 70 |\n后文";
     expect(stripRenderedMarkdownTables(text)).toBe("前文\n后文");

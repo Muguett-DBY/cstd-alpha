@@ -76,6 +76,7 @@ const TEMPLATE_REPORT_PREFIX = "user-research/v1";
 const MODEL_REQUEST_TIMEOUT_MS = 540_000;
 const GITHUB_TEMPLATE_REPOSITORY = "Muguett-DBY/cstd-alpha";
 const GITHUB_TEMPLATE_WORKFLOW = "template-analysis.yml";
+const GITHUB_DISPATCH_TIMEOUT_MS = 15_000;
 const TEMPLATE_CACHE_ANCHOR_SENTENCE =
   "CSTD Alpha user-template DeepSeek Flash Max cache anchor. Use the same long-term owner perspective, conservative evidence rules, strict anti-fabrication policy, Markdown report structure, risk/reward framing, valuation discipline and Chinese writing style for every company. ";
 const FREE_TEMPLATE_CACHE_REPEAT = 180;
@@ -186,18 +187,32 @@ async function dispatchTemplateAnalysisWorkflow(env: Env, jobId: string) {
   if (!token) throw new Error("missing GitHub template dispatch token");
   const repository = env.GITHUB_TEMPLATE_REPOSITORY?.trim() || GITHUB_TEMPLATE_REPOSITORY;
   const workflow = env.GITHUB_TEMPLATE_WORKFLOW?.trim() || GITHUB_TEMPLATE_WORKFLOW;
-  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "user-agent": "CSTDAlphaTemplate/1.0",
-      "x-github-api-version": "2022-11-28",
+  const response = await fetchWithTimeout(
+    `https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        "user-agent": "CSTDAlphaTemplate/1.0",
+        "x-github-api-version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
     },
-    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
-  });
+    GITHUB_DISPATCH_TIMEOUT_MS,
+  );
   if (!response.ok) throw new Error(`GitHub template dispatch failed: ${response.status}`);
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 type TemplateEvidencePackage = CompanyEvidencePackage;

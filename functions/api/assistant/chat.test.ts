@@ -67,6 +67,16 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.stream).toBe(true);
   });
 
+  test("tolerates malformed SSE events and multiline data framing", () => {
+    const payload = JSON.stringify({ choices: [{ delta: { content: "第一段" } }] });
+    const parsed = __test__.consumeSseBuffer(`: keepalive\r\ndata: ${payload}\r\n\r\ndata: {bad-json}\n\npartial`);
+
+    expect(parsed.items).toEqual([payload, "{bad-json}"]);
+    expect(parsed.remainder).toBe("partial");
+    expect(__test__.parseSseJsonItem(parsed.items[0])).toMatchObject({ choices: expect.any(Array) });
+    expect(__test__.parseSseJsonItem(parsed.items[1])).toBeNull();
+  });
+
   test("keeps normal chat research prompts on the streaming path", async () => {
     const chunks = [
       `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：" } }] })}\n\n`,

@@ -46,6 +46,16 @@ describe("report API stream", () => {
     vi.clearAllMocks();
   });
 
+  test("returns NDJSON content type for progress streams", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "缓存报告" };
+    const cache = mockKvCache({ report: cachedReport, evidence, cachedAt: "2026-05-10T00:00:00.000Z", expiresAt: "2099-05-11T00:00:00.000Z" });
+
+    const response = await postReportResponse({ env: { REPORT_CACHE: cache } });
+
+    expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+  });
+
   test("returns a shared server cached report without fetching providers or calling DeepSeek", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "缓存报告" };

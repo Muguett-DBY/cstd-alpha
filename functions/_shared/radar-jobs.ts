@@ -23,6 +23,8 @@ type RadarCacheForDiagnostics = {
   };
 };
 
+const GITHUB_DISPATCH_TIMEOUT_MS = 15_000;
+
 export function createRadarAnalysisJob(evidenceHash?: string): RadarAnalysisJob {
   const now = new Date().toISOString();
   return {
@@ -102,20 +104,24 @@ export async function dispatchRadarAnalysisWorkflow(
   if (!token) throw new Error("missing GitHub radar dispatch token");
   const repository = env.GITHUB_RADAR_REPOSITORY?.trim() || defaults.repository;
   const workflow = env.GITHUB_RADAR_WORKFLOW?.trim() || defaults.workflow;
-  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "user-agent": "CSTDAlphaRadar/1.0",
-      "x-github-api-version": "2022-11-28",
+  const response = await fetchWithTimeout(
+    `https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        "user-agent": "CSTDAlphaRadar/1.0",
+        "x-github-api-version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        ref: "main",
+        inputs: { job_id: jobId },
+      }),
     },
-    body: JSON.stringify({
-      ref: "main",
-      inputs: { job_id: jobId },
-    }),
-  });
+    GITHUB_DISPATCH_TIMEOUT_MS,
+  );
   if (!response.ok) throw new Error(`GitHub radar dispatch failed: ${response.status}`);
 }
 
@@ -166,4 +172,14 @@ function stringValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }

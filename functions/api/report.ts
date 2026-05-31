@@ -373,7 +373,7 @@ function streamNdjson(
   return new Response(stream, {
     status: 200,
     headers: {
-      "content-type": "application/json; charset=utf-8",
+      "content-type": "application/x-ndjson; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
     },

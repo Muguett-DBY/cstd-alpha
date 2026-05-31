@@ -14,8 +14,9 @@ const detailConcurrency = Math.max(1, Math.min(20, Number(args.detailConcurrency
 const access = accessPath ? parseAccessFile(await readFile(accessPath, "utf8")) : {};
 const baseUrl = args.baseUrl || process.env.CSTD_ALPHA_BASE_URL || access.URL;
 const password = args.password || process.env.REPORT_PASSWORD || access.REPORT_PASSWORD;
-const username = args.username || process.env.REPORT_USERNAME || access.REPORT_USERNAME || access.USERNAME || access.ADMIN_USERNAME || "admin";
+const username = args.username || process.env.REPORT_USERNAME || access.REPORT_USERNAME || access.USERNAME || access.ADMIN_USERNAME;
 if (!baseUrl) throw new Error("Missing URL. Pass --base-url or set CSTD_ALPHA_BASE_URL.");
+if (!username) throw new Error("Missing REPORT_USERNAME. Pass --username, set REPORT_USERNAME, or set CSTD_ALPHA_ACCESS_FILE.");
 if (!password) throw new Error("Missing REPORT_PASSWORD. Pass --password, set REPORT_PASSWORD, or set CSTD_ALPHA_ACCESS_FILE.");
 
 await mkdir(outputDir, { recursive: true });

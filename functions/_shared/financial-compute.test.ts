@@ -53,6 +53,21 @@ describe("financial compute", () => {
     expect(result.rows).toEqual([]);
   });
 
+  test("rejects negative terminal cash flow instead of silently dropping terminal value", () => {
+    const result = executeFinancialCompute({
+      operation: "dcf",
+      params: {
+        cashFlows: [100, 110, 120],
+        terminalCashFlow: -20,
+        discountRate: 10,
+        terminalGrowthRate: 2,
+      },
+    });
+
+    expect(result.summary).toContain("永续终值现金流不能为负");
+    expect(result.rows).toEqual([]);
+  });
+
   test("rejects CAGR calculations with a zero starting value", () => {
     const result = executeFinancialCompute({
       operation: "cagr",

@@ -41,14 +41,14 @@ function extractMarkdownTables(text: string): Array<Omit<AssistantTableBlock, "i
     if (columns.length < 2) continue;
     const rows: string[][] = [];
     let cursor = index + 2;
-    while (cursor < lines.length && lines[cursor].includes("|") && !isMarkdownSeparator(lines[cursor])) {
+    while (cursor < lines.length && lines[cursor].includes("|") && !isMarkdownSeparator(lines[cursor]) && !isMarkdownSeparator(lines[cursor + 1] ?? "")) {
       const row = splitMarkdownRow(lines[cursor]);
       if (row.length >= 2) rows.push(normalizeRow(row, columns.length));
       cursor += 1;
     }
     if (rows.length) {
       tables.push({ type: "table", columns, rows });
-      index = cursor;
+      index = cursor - 1;
     }
   }
   return tables;

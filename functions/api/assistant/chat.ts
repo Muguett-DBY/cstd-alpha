@@ -292,7 +292,8 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
               buffer = parsed.remainder;
               for (const item of parsed.items) {
                 if (item === "[DONE]") continue;
-                const data = JSON.parse(item) as Record<string, unknown>;
+                const data = parseSseJsonItem(item);
+                if (!data) continue;
                 const text = extractDeltaText(data);
                 if (text) {
                   assistantText += text;
@@ -1860,15 +1861,27 @@ async function buildIndustryEvidenceSummary(db: D1Database, message: string) {
 }
 
 function consumeSseBuffer(buffer: string) {
-  const parts = buffer.split("\n\n");
+  const parts = buffer.replace(/\r\n/g, "\n").split("\n\n");
   const remainder = parts.pop() ?? "";
   const items: string[] = [];
   for (const part of parts) {
+    const dataLines: string[] = [];
     for (const line of part.split(/\r?\n/)) {
-      if (line.startsWith("data:")) items.push(line.slice(5).trim());
+      if (!line || line.startsWith(":")) continue;
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
     }
+    const item = dataLines.join("\n").trim();
+    if (item) items.push(item);
   }
   return { items, remainder };
+}
+
+function parseSseJsonItem(item: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(item) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function extractDeltaText(data: Record<string, unknown>) {
@@ -2915,10 +2928,12 @@ export const __test__ = {
   augmentAgentToolCalls,
   buildConstructiveEvidenceGapAnswer,
   buildVisibleConclusionTailIfNeeded,
+  consumeSseBuffer,
   ensureConclusionLead,
   ensureComparisonCompleteness,
   extractComparisonItems,
   getCurrentMarketDateContext,
+  parseSseJsonItem,
   selectReviewedResearchText,
   askModelForClarification,
 };

@@ -107,6 +107,15 @@ Cloudflare Pages secrets：
 - `BRAVE_SEARCH_API_KEY`（助手外部搜索增强，可选）
 - `TUSHARE_TOKEN`（A 股结构化数据增强）
 
+常用本地/运维脚本环境变量：
+
+- `CSTD_ALPHA_ACCESS_FILE` / `CSTD_ALPHA_ACCESS_PATH`：本地脚本读取账号、密码、URL 等访问配置的文件路径。
+- `CSTD_ALPHA_BASE_URL`：覆盖本地审计和回归脚本访问的站点地址。
+- `CSTD_ALPHA_AUDIT_DIR`：报告库复核或重跑候选输出目录。
+- `FINANCIAL_AGENT_PROMPT_FILE`：助手投研 Prompt 回归测试集路径。
+- `ASSISTANT_REGRESSION_COOKIE`：线上助手回归测试使用的已登录 cookie。
+- `RADAR_DEBUG_SUSTAIN`：雷达后台分析调试开关，仅用于本地或一次性排查。
+
 项目：
 
 - GitHub: `Muguett-DBY/cstd-alpha`
