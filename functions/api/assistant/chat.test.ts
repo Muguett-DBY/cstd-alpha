@@ -2029,6 +2029,14 @@ describe("assistant chat endpoint", () => {
     expect(note).toContain("不得直接用");
   });
 
+  test("asks for scope on terse English company prompts", () => {
+    const request = __test__.buildSubjectOnlyClarificationRequest("Apple?");
+    expect(request).toMatchObject({
+      title: "先确认研究口径",
+      options: expect.arrayContaining([expect.objectContaining({ id: "risk_opportunity" })]),
+    });
+  });
+
   test("keeps mandatory external search for semiconductor candidate lists even when the model chose other tools", () => {
     const calls = __test__.augmentAgentToolCalls(
       [
