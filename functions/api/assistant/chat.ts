@@ -1415,11 +1415,41 @@ function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
     `【${bundle.company.name} ${bundle.company.ticker ?? ""} 同口径财务证据】retrieved_at=${bundle.retrievedAt}`,
     quote ? `行情：价格=${formatPkgValue(quote.regularMarketPrice)}，市值=${formatPkgValue(quote.marketCap)}，PE=${formatPkgValue(quote.trailingPE)}，PB=${formatPkgValue(quote.priceToBook)}` : "",
     incomeRows.length ? `利润表：${incomeRows.map(formatEastmoneyIncomeRow).join("；")}` : "利润表：未取得东方财富最新利润表。",
+    buildAssistantFinancialAnomalyNote(incomeRows),
     cashflowRows.length ? `现金流：${cashflowRows.map(formatEastmoneyCashflowRow).join("；")}` : "",
     balanceRows.length ? `资产负债：${balanceRows.map(formatEastmoneyBalanceRow).join("；")}` : "",
     tenYearRows.length ? `多年摘要：${tenYearRows.map(formatTenYearMetricRow).join("；")}` : "",
     tushareLines.length ? `Tushare补强：${tushareLines.join("；")}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function buildAssistantFinancialAnomalyNote(incomeRows: Array<Record<string, unknown>>) {
+  if (!incomeRows.length) return "";
+  const anomalyItems: string[] = [];
+  for (const row of incomeRows.slice(0, 3)) {
+    const period = stringOrFallback(row.REPORT_DATE_NAME, stringOrFallback(row.REPORT_TYPE, "最新期"));
+    const revenueYoy = finiteNumberOrNull(row.TOTAL_OPERATE_INCOME_YOY);
+    const profitYoy = finiteNumberOrNull(row.PARENT_NETPROFIT_YOY);
+    const rowItems = [
+      revenueYoy !== null && Math.abs(revenueYoy) >= 40 ? `营收同比=${formatPkgPercent(revenueYoy)}` : "",
+      profitYoy !== null && Math.abs(profitYoy) >= 40 ? `归母净利同比=${formatPkgPercent(profitYoy)}` : "",
+    ].filter(Boolean);
+    if (rowItems.length) anomalyItems.push(`${period}/${rowItems.join("/")}`);
+  }
+  const latest = incomeRows[0];
+  const previous = incomeRows[1];
+  const latestProfitYoy = latest ? finiteNumberOrNull(latest.PARENT_NETPROFIT_YOY) : null;
+  const previousProfitYoy = previous ? finiteNumberOrNull(previous.PARENT_NETPROFIT_YOY) : null;
+  const latestRevenueYoy = latest ? finiteNumberOrNull(latest.TOTAL_OPERATE_INCOME_YOY) : null;
+  const previousRevenueYoy = previous ? finiteNumberOrNull(previous.TOTAL_OPERATE_INCOME_YOY) : null;
+  const directionReversal =
+    (latestProfitYoy !== null && previousProfitYoy !== null && Math.sign(latestProfitYoy) !== Math.sign(previousProfitYoy) && Math.abs(latestProfitYoy - previousProfitYoy) >= 60) ||
+    (latestRevenueYoy !== null && previousRevenueYoy !== null && Math.sign(latestRevenueYoy) !== Math.sign(previousRevenueYoy) && Math.abs(latestRevenueYoy - previousRevenueYoy) >= 60);
+  if (!anomalyItems.length && !directionReversal) return "";
+  return [
+    `财务口径提醒：结构化源出现异常同比或相邻期剧烈反转（${anomalyItems.join("；") || "相邻期方向剧烈反转"}）。`,
+    "回答时必须写成“数据源显示/待核验”，不得直接用“断崖、失血、崩盘”等词当作确定经营事实；必须优先给出二次核验条件。",
+  ].join("");
 }
 
 function formatEastmoneyBalanceRow(row: Record<string, unknown>) {
@@ -3000,6 +3030,10 @@ function formatPkgPercent(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : "NA";
 }
 
+function finiteNumberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function formatPkgValue(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return Number.isInteger(value) ? String(value) : value.toFixed(2);
   return typeof value === "string" && value.trim() ? value.trim() : "NA";
@@ -3025,5 +3059,6 @@ export const __test__ = {
   parseSseJsonItem,
   selectReviewedResearchText,
   askModelForClarification,
+  buildAssistantFinancialAnomalyNote,
   splitAssistantToolCodes,
 };

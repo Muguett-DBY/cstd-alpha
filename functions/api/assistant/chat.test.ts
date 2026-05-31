@@ -2011,6 +2011,24 @@ describe("assistant chat endpoint", () => {
     expect(__test__.splitAssistantToolCodes(" 600519 ", 4)).toEqual(["600519"]);
   });
 
+  test("marks extreme structured financial yoy as a verification caution", () => {
+    const note = __test__.buildAssistantFinancialAnomalyNote([
+      {
+        REPORT_DATE_NAME: "2026一季报",
+        TOTAL_OPERATE_INCOME_YOY: 33.67,
+        PARENT_NETPROFIT_YOY: 82.57,
+      },
+      {
+        REPORT_DATE_NAME: "2025年报",
+        TOTAL_OPERATE_INCOME_YOY: -54.55,
+        PARENT_NETPROFIT_YOY: -71.89,
+      },
+    ]);
+    expect(note).toContain("财务口径提醒");
+    expect(note).toContain("待核验");
+    expect(note).toContain("不得直接用");
+  });
+
   test("keeps mandatory external search for semiconductor candidate lists even when the model chose other tools", () => {
     const calls = __test__.augmentAgentToolCalls(
       [
