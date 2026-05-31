@@ -176,6 +176,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: radar-analysis-${{ inputs.job_id }}
+          retention-days: 3
           path: |
             dist-radar/radar-cache.json
             dist-radar/job-completed.json

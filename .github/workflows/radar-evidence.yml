@@ -77,6 +77,7 @@ jobs:
 
           for attempt in $(seq 1 30); do
             if curl -fsS "http://127.0.0.1:8080/search?q=test&format=json" >/dev/null; then
+              SEARXNG_ENDPOINTS="$(printf '%s' "$SEARXNG_ENDPOINTS" | tr '\r\n' ',,' | sed 's/,,*/,/g; s/^,//; s/,$//')"
               if [ -n "$SEARXNG_ENDPOINTS" ]; then
                 echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080,$SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
               else
@@ -117,6 +118,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: radar-evidence
+          retention-days: 3
           path: |
             dist-radar/radar-evidence.json
             dist-radar/radar-evidence.json.gz

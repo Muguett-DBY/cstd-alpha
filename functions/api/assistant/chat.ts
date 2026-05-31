@@ -60,6 +60,7 @@ import {
   type ExternalEvidenceResult,
 } from "../../_shared/assistant-tools";
 const ASSISTANT_AUXILIARY_REASONING_EFFORT = "max" as const;
+const MAX_ASSISTANT_MESSAGE_CHARS = 12_000;
 
 export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
@@ -71,6 +72,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
   const userMessage = body?.message?.trim();
   if (!userMessage) return json({ error: "请输入助手问题。" }, 400);
+  if (userMessage.length > MAX_ASSISTANT_MESSAGE_CHARS) {
+    return json({ error: `单次问题过长，请控制在 ${MAX_ASSISTANT_MESSAGE_CHARS} 个字符以内，或拆成多轮提问。` }, 413);
+  }
   const mode = normalizeAssistantMode(body?.mode);
 
   const now = new Date().toISOString();
@@ -538,6 +542,7 @@ async function runAssistantAgentLoop(input: {
   const startedAt = Date.now();
   const allItems: AnySearchEvidence[] = [];
   const allCalls: AssistantSearchToolCall[] = [];
+  const executedToolKeys = new Set<string>();
   const usages: AssistantUsage[] = [];
   let latestExa: ExternalEvidenceResult["exa"] = { used: false, count: 0 };
   let lastSummary = "";
@@ -562,7 +567,18 @@ async function runAssistantAgentLoop(input: {
       lastSummary = decision.reason || lastSummary || "模型判断当前证据足够，进入最终回答。";
       break;
     }
-    const calls = decision.toolCalls.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+    const calls = decision.toolCalls
+      .filter((call) => {
+        const key = assistantToolCallKey(call);
+        if (executedToolKeys.has(key)) return false;
+        executedToolKeys.add(key);
+        return true;
+      })
+      .slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
+    if (!calls.length) {
+      lastSummary = decision.reason || "模型选择的工具本轮已覆盖，停止继续检索。";
+      break;
+    }
     for (const call of calls) {
       allCalls.push(call);
       input.emit({ type: "tool_status", id: call.id, label: naturalToolStatusLabel(call), status: "running" });
@@ -571,6 +587,7 @@ async function runAssistantAgentLoop(input: {
     const pyCalls = calls.filter((call) => call.name === "python_repl");
     const otherCalls = calls.filter((call) => call.name !== "python_repl");
     try {
+      const itemsBeforeRound = allItems.length;
       for (const call of pyCalls) {
         const pyResult = await executePythonRepl(input.env, call, input.emit, input.signal);
         allItems.push({
@@ -599,7 +616,13 @@ async function runAssistantAgentLoop(input: {
           input.emit({ type: "tool_result", id: call.id, status: "completed", summary: summarizeToolResult(call, executed.items.length), evidenceCount: executed.items.length });
         }
       }
-      break;
+      if (allItems.length > itemsBeforeRound) {
+        lastSummary = lastSummary ? `${lastSummary} 已取得可用证据，进入最终回答。` : "已取得可用证据，进入最终回答。";
+        break;
+      }
+      if (round === ASSISTANT_AGENT_MAX_ROUNDS) {
+        lastSummary = lastSummary ? `${lastSummary}；已达到最大检索轮数。` : "已达到最大检索轮数。";
+      }
     } catch (error) {
       lastSummary = error instanceof Error ? error.message : "工具执行失败。";
       for (const call of calls) {
@@ -628,6 +651,10 @@ function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: A
   if (env.REPORT_CACHE) return true;
   const hasConfiguredTools = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim() || env.TAVILY_API_KEY?.trim() || env.BRAVE_SEARCH_API_KEY?.trim() || env.TUSHARE_TOKEN?.trim());
   return hasConfiguredTools;
+}
+
+function assistantToolCallKey(call: AssistantSearchToolCall) {
+  return `${call.name}:${call.query ?? call.code ?? JSON.stringify(call.rawArgs ?? {})}`.slice(0, 360);
 }
 
 async function askModelForAgentToolCalls(input: {
@@ -747,7 +774,7 @@ async function executeAssistantToolCalls(
   };
 }
 
-const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts", "compare_stocks"]);
+const A_STOCK_TOOL_NAMES = new Set(["read_tushare_indicators", "read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts", "compare_stocks"]);
 
 async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal): Promise<AnySearchEvidence[]> {
   const now = new Date().toISOString();
@@ -756,7 +783,45 @@ async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSea
     if (!A_STOCK_TOOL_NAMES.has(call.name)) continue;
     const query = (call.query ?? "").trim();
     try {
-      if (call.name === "read_tencent_quote") {
+      if (call.name === "read_tushare_indicators") {
+        const codes = splitAssistantToolCodes(query, 5);
+        if (!codes.length) continue;
+        if (!env.TUSHARE_TOKEN?.trim()) {
+          items.push({
+            source: "CSTD Alpha",
+            query,
+            title: "A股结构化指标未配置",
+            url: "",
+            summary: "当前环境未配置 Tushare token，本轮跳过 Tushare 结构化指标读取。",
+            sourceType: "official",
+            signalType: "external_search",
+            weight: 0.1,
+            publishedAt: now,
+            qualityScore: 0.2,
+          });
+          continue;
+        }
+        const chunks = await Promise.all(codes.map(async (code) => {
+          const bundle = await fetchAssistantAStockEvidenceBundle(env, code, signal).catch(() => null);
+          if (!bundle) return `【${code}】未取得结构化指标。`;
+          const facts = isRecord(bundle.facts) ? bundle.facts : {};
+          const tushare = isRecord(facts.tushare) ? formatTushareFactsForAssistant(facts.tushare) : [];
+          const base = formatAssistantAStockEvidenceBundle(bundle);
+          return tushare.length ? base : `${base}\nTushare补强：未取得或未配置 Tushare 指标，本轮使用东方财富/行情结构化数据兜底。`;
+        }));
+        items.push({
+          source: "CSTD Alpha",
+          query,
+          title: codes.length > 1 ? "多标的A股结构化指标" : "A股结构化指标",
+          url: "",
+          summary: chunks.join("\n\n---\n\n").slice(0, 4200),
+          sourceType: "official",
+          signalType: "external_search",
+          weight: 4,
+          publishedAt: now,
+          qualityScore: 0.95,
+        });
+      } else if (call.name === "read_tencent_quote") {
       const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 5);
       if (!codes.length) continue;
       const quotes = await fetchTencentQuote(codes);

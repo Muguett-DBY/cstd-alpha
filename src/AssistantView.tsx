@@ -62,6 +62,7 @@ export function AssistantView() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantAbortRef = useRef<AbortController | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
 
   useEffect(
     () => () => {
@@ -75,6 +76,10 @@ export function AssistantView() {
     void reloadThread();
     void loadThreadList();
   }, []);
+
+  useEffect(() => {
+    activeThreadIdRef.current = thread?.id ?? null;
+  }, [thread?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
@@ -101,7 +106,11 @@ export function AssistantView() {
   }
 
   async function switchThread(threadId: string) {
+    assistantAbortRef.current?.abort();
     setDraft("");
+    setDraftBlocks([]);
+    setAgentStatus("");
+    setToolCalls(new Map());
     setThreadDrawerOpen(false);
     await reloadThread(threadId);
   }
@@ -253,6 +262,7 @@ export function AssistantView() {
     assistantAbortRef.current?.abort();
     const controller = new AbortController();
     assistantAbortRef.current = controller;
+    const requestThreadId = thread?.id ?? null;
     setInput("");
     setDraft("正在分析…");
     setDraftBlocks([]);
@@ -281,18 +291,23 @@ export function AssistantView() {
           },
     );
     try {
-      const final = await sendAssistantMessage(message, handleStreamEvent, undefined, thread?.id, controller.signal);
-      if (final) setThread((current) => (current ? { ...current, messages: [...current.messages.filter((item) => item.id !== final.id), final] } : current));
+      const final = await sendAssistantMessage(message, handleStreamEvent, undefined, requestThreadId ?? undefined, controller.signal);
+      if (final) {
+        setThread((current) => {
+          if (!current || !isSameAssistantResponseThread(current.id, requestThreadId, final.threadId)) return current;
+          return { ...current, id: final.threadId || current.id, messages: [...current.messages.filter((item) => item.id !== final.id), final] };
+        });
+      }
       setDraft("");
       setDraftBlocks([]);
       setAgentStatus("");
       setPhase("ready");
       if (final) {
-        if (thread?.title === "新对话" && final.content) {
+        if (isSameAssistantResponseThread(activeThreadIdRef.current, requestThreadId, final.threadId) && thread?.title === "新对话" && final.content) {
           const title = final.content.replace(/^[：:]\s*/, "").slice(0, 40).replace(/\n.*$/s, "") || message.slice(0, 40);
-          try { await renameAssistantThread(thread.id, title); } catch { /* ignore */ }
+          try { await renameAssistantThread(final.threadId || requestThreadId || thread.id, title); } catch { /* ignore */ }
         }
-        void reloadThread(thread?.id);
+        if (isSameAssistantResponseThread(activeThreadIdRef.current, requestThreadId, final.threadId)) void reloadThread(final.threadId || requestThreadId || undefined);
         void loadThreadList();
       }
     } catch (err) {
@@ -530,6 +545,13 @@ export function AssistantView() {
       ) : null}
     </section>
   );
+}
+
+function isSameAssistantResponseThread(currentThreadId: string | null, requestThreadId: string | null, responseThreadId?: string) {
+  if (!currentThreadId) return false;
+  if (responseThreadId && currentThreadId === responseThreadId) return true;
+  if (requestThreadId && currentThreadId === requestThreadId) return true;
+  return !requestThreadId && currentThreadId === "local";
 }
 
 function AssistantText({ text }: { text: string }) {

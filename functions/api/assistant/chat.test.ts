@@ -67,6 +67,31 @@ describe("assistant chat endpoint", () => {
     expect(requestBody.stream).toBe(true);
   });
 
+  test("rejects oversized assistant messages before model calls", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "x".repeat(12_001) }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        OPENCODE_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("tolerates malformed SSE events and multiline data framing", () => {
     const payload = JSON.stringify({ choices: [{ delta: { content: "第一段" } }] });
     const parsed = __test__.consumeSseBuffer(`: keepalive\r\ndata: ${payload}\r\n\r\ndata: {bad-json}\n\npartial`);

@@ -65,8 +65,11 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
   const [savingTemplates, setSavingTemplates] = useState(false);
   const selectedWatchlistIdRef = useRef(selectedWatchlistId);
+  const initialDataLoadedRef = useRef(false);
 
   useEffect(() => {
+    if (initialDataLoadedRef.current) return;
+    initialDataLoadedRef.current = true;
     let cancelled = false;
     Promise.all([fetchWatchlist(), fetchTemplateAnalyses(), fetchResearchTemplates()])
       .then(([watchlist, analysisData, templateData]) => {
