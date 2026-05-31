@@ -1998,8 +1998,17 @@ describe("assistant chat endpoint", () => {
     );
     expect(calls.map((call) => call.name)).toContain("compare_stocks");
     expect(calls.map((call) => call.name)).toContain("read_tencent_quote");
+    expect(calls.map((call) => call.name)).toContain("read_financial_statements");
+    expect(calls.map((call) => call.name)).toContain("read_reports_concepts");
     expect(calls.map((call) => call.name)).toContain("read_company_evidence");
     expect(calls.find((call) => call.name === "compare_stocks")?.query).toBe("600519,000858");
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("600519,000858");
+    expect(calls.find((call) => call.name === "read_reports_concepts")?.query).toBe("600519,000858");
+  });
+
+  test("splits multi-code assistant stock tool queries for symmetric evidence fetch", () => {
+    expect(__test__.splitAssistantToolCodes("600519, 000858，000568", 4)).toEqual(["600519", "000858", "000568"]);
+    expect(__test__.splitAssistantToolCodes(" 600519 ", 4)).toEqual(["600519"]);
   });
 
   test("keeps mandatory external search for semiconductor candidate lists even when the model chose other tools", () => {

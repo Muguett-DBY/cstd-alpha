@@ -187,15 +187,15 @@ export function assistantAgentTools() {
     {
       type: "function" as const, function: {
         name: "read_financial_statements" as const,
-        description: "财务报表查询。返回新浪财经三表(资产负债表/利润表/现金流量表)和东财个股基本信息。",
-        parameters: { type: "object" as const, required: ["query"], properties: { query: { type: "string" as const, description: "6位股票代码" }, reason: { type: "string" as const } } },
+        description: "财务报表查询。返回新浪财经三表(资产负债表/利润表/现金流量表)和东财个股基本信息。支持多个A股代码逗号分隔，用于多标的同口径对比。",
+        parameters: { type: "object" as const, required: ["query"], properties: { query: { type: "string" as const, description: "6位股票代码，多个用逗号分隔，例如 600519,000858" }, reason: { type: "string" as const } } },
       },
     },
     {
       type: "function" as const, function: {
         name: "read_reports_concepts" as const,
-        description: "研报和概念板块查询。可查：东财研报列表(含评级+预测EPS)、百度概念板块归属、百度K线(带MA5/10/20)。",
-        parameters: { type: "object" as const, required: ["query"], properties: { query: { type: "string" as const, description: "股票代码6位, 或 'kline:688017'(K线)" }, reason: { type: "string" as const } } },
+        description: "研报和概念板块查询。可查：东财研报列表(含评级+预测EPS)、百度概念板块归属、百度K线(带MA5/10/20)。支持多个A股代码逗号分隔。",
+        parameters: { type: "object" as const, required: ["query"], properties: { query: { type: "string" as const, description: "股票代码6位，多个用逗号分隔；或 'kline:688017'(K线)" }, reason: { type: "string" as const } } },
       },
     },
     {

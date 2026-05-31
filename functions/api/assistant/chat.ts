@@ -683,7 +683,7 @@ function buildAgentToolLoopMessages(input: {
       "主动调用规则：只要问题涉及具体公司、行业、估值、业绩、热点、新闻、资金流向、概念板块、公告、研报，就应主动调用合适的工具收集证据，不要等用户说'查一下'或'联网搜索'。",
       "如果问题已经足够清楚，优先并行调用站内工具和外部搜索工具；如果已有证据足够回答，输出 JSON：{\"final_ready\":true,\"reason\":\"...\"}。",
       "每轮最多调用 5 个工具。工具 query 要具体，包含公司/行业、年份或最新、关键指标。不要重复调用已经覆盖过的同类查询。",
-      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股/港股/指数/ETF实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；compare_stocks 横向对比多只股票估值；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表；read_reports_concepts 查东财研报/K线；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率、技术指标）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
+      "工具选择：read_company_evidence 查公司证据包；read_watchlist_ranking 查自选股排行；read_template_reports 查模板报告；read_radar_result 查行业雷达；read_tushare_indicators 查A股结构化指标；read_tencent_quote 查A股/港股/指数/ETF实时行情(PE/PB/市值)；read_ths_hot_stocks 查当日强势股题材归因；read_ths_consensus_eps 查机构一致预期EPS；compare_stocks 横向对比多只股票估值；read_market_data 查龙虎榜/解禁/行业排名；read_capital_analysis 查融资融券/大宗交易/资金流/股东/分红/北向；read_filings_news 查巨潮公告/个股新闻/全球资讯；read_financial_statements 查财报三表，支持多个A股代码逗号分隔；read_reports_concepts 查东财研报/K线，支持多个A股代码逗号分隔；compute_financial 用于金融计算（CAGR、DCF、统计、财务比率、技术指标）；python_repl 用于复杂自定义计算或画图；search_* 用于外部补证据。",
     ].join("\n"),
     "assistant-agent-tool-loop",
   );
@@ -848,16 +848,24 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
       }
     } else if (call.name === "read_financial_statements") {
       if (!query) continue;
-      const [statements, info] = await Promise.all([fetchSinaFinancialStatements(query), fetchEastmoneyStockInfo(query)]);
-      items.push({ source: "CSTD Alpha", query, title: "财务报表", url: "", summary: `【公司信息】\n${info}\n\n【财报三表】\n${statements}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
+      const codes = splitAssistantToolCodes(query, 5);
+      const chunks = await Promise.all(codes.map(async (code) => {
+        const [statements, info] = await Promise.all([fetchSinaFinancialStatements(code), fetchEastmoneyStockInfo(code)]);
+        return `【${code} 公司信息】\n${info}\n\n【${code} 财报三表】\n${statements}`;
+      }));
+      items.push({ source: "CSTD Alpha", query, title: codes.length > 1 ? "多标的同口径财务报表" : "财务报表", url: "", summary: chunks.join("\n\n---\n\n").slice(0, 3600), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
     } else if (call.name === "read_reports_concepts") {
       if (query.startsWith("kline:")) {
         const code = query.replace("kline:", "").trim();
         const result = await fetchBaiduKline(code);
         if (result) items.push({ source: "CSTD Alpha", query, title: "K线数据", url: "", summary: result.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
       } else if (query) {
-        const reports = await fetchResearchReports(query);
-        items.push({ source: "CSTD Alpha", query, title: "研报与概念板块", url: "", summary: `【研报】\n${reports}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
+        const codes = splitAssistantToolCodes(query, 5);
+        const chunks = await Promise.all(codes.map(async (code) => {
+          const reports = await fetchResearchReports(code);
+          return `【${code} 研报】\n${reports}`;
+        }));
+        items.push({ source: "CSTD Alpha", query, title: codes.length > 1 ? "多标的研报与概念板块" : "研报与概念板块", url: "", summary: chunks.join("\n\n---\n\n").slice(0, 2400), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
       }
       } else if (call.name === "compare_stocks") {
       const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 10);
@@ -1287,6 +1295,8 @@ function buildMandatoryAgentToolCalls(
   if (needsComparison && aCodes.length >= 2) {
     add("compare_stocks", aCodes.join(","), "多标的对比必须先拉横向估值和行情快照，避免只靠印象排序。", `compare-${aCodes.join("-")}`);
     add("read_tencent_quote", aCodes.join(","), "对比/排序问题需要当前价格、市值和估值口径。", `quote-compare-${aCodes.join("-")}`);
+    add("read_financial_statements", aCodes.join(","), "多标的对比必须补同口径财报三表，避免一方证据完整、一方只剩待核验。", `financial-compare-${aCodes.join("-")}`);
+    add("read_reports_concepts", aCodes.join(","), "多标的对比补研报和概念归属，帮助校准增长预期与估值口径。", `reports-compare-${aCodes.join("-")}`);
     add("read_company_evidence", companies.map((company) => company.company).join("；"), "对比问题必须读取双方公司证据包和历史报告摘要。", "company-compare");
   }
   if (needsQuant) {
@@ -1349,6 +1359,14 @@ function findAgentKnownCompanies(message: string) {
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function splitAssistantToolCodes(query: string, max = 5) {
+  return query
+    .split(/[,，、;\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, max);
 }
 
 function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }, reason: string): { toolCalls: AssistantSearchToolCall[]; reason: string } {
@@ -2943,4 +2961,5 @@ export const __test__ = {
   parseSseJsonItem,
   selectReviewedResearchText,
   askModelForClarification,
+  splitAssistantToolCodes,
 };
