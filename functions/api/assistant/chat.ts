@@ -174,6 +174,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   const startedAt = Date.now();
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+  let streamClosed = false;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -255,7 +256,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           });
           enqueue(controller, { type: "usage", usage: reviewed.usage });
           enqueue(controller, { type: "done", message });
-          controller.close();
+          close(controller);
           return;
         }
 
@@ -263,38 +264,61 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         let assistantText = "";
         let latestUsage: AssistantUsage | undefined;
         let buffer = "";
-      const reader = upstream.body!.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parsed = consumeSseBuffer(buffer);
-          buffer = parsed.remainder;
-          for (const item of parsed.items) {
-            if (item === "[DONE]") continue;
-            const data = JSON.parse(item) as Record<string, unknown>;
-            const text = extractDeltaText(data);
-            if (text) {
-              assistantText += text;
-              enqueue(controller, { type: "delta", text });
+        const contentType = upstream.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const data = (await upstream.json()) as Record<string, unknown>;
+          const text = extractMessageContent(data) || extractDeltaText(data);
+          if (text) {
+            assistantText += text;
+            enqueue(controller, { type: "delta", text });
+          }
+          if (data.usage) {
+            latestUsage = {
+              model: answerRoute.model,
+              reasoningEffort: ASSISTANT_REASONING_EFFORT,
+              ...parseDeepSeekUsage(data.usage),
+              elapsedMs: Date.now() - startedAt,
+            };
+            enqueue(controller, { type: "usage", usage: latestUsage });
+          }
+        } else {
+          const reader = upstream.body!.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const parsed = consumeSseBuffer(buffer);
+              buffer = parsed.remainder;
+              for (const item of parsed.items) {
+                if (item === "[DONE]") continue;
+                const data = JSON.parse(item) as Record<string, unknown>;
+                const text = extractDeltaText(data);
+                if (text) {
+                  assistantText += text;
+                  enqueue(controller, { type: "delta", text });
+                }
+                if (data.usage) {
+                  latestUsage = {
+                    model: answerRoute.model,
+                    reasoningEffort: ASSISTANT_REASONING_EFFORT,
+                    ...parseDeepSeekUsage(data.usage),
+                    elapsedMs: Date.now() - startedAt,
+                  };
+                  enqueue(controller, { type: "usage", usage: latestUsage });
+                }
+              }
             }
-            if (data.usage) {
-              latestUsage = {
-                model: answerRoute.model,
-                reasoningEffort: ASSISTANT_REASONING_EFFORT,
-                ...parseDeepSeekUsage(data.usage),
-                elapsedMs: Date.now() - startedAt,
-              };
-              enqueue(controller, { type: "usage", usage: latestUsage });
-            }
+          } finally {
+            reader.releaseLock();
           }
         }
         const rawAssistantText = assistantText;
-        assistantText = await guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
+        const guardedAssistantText = await guardAssistantOutputLanguage(assistantText, researchContext.message, externalEvidence, {
           isSimpleGeneralChat: (value) => shouldTreatAsSimpleGeneralChat(value, "chat"),
         });
-        if (!rawAssistantText.trim()) {
+        assistantText = guardedAssistantText.trim() ? guardedAssistantText : rawAssistantText.trim() ? rawAssistantText : "";
+        if (!assistantText.trim()) {
           const retryText = await retryWithSimplePrompt(env, researchContext.message, request.signal);
           if (retryText.trim()) {
             assistantText = retryText;
@@ -339,16 +363,10 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
           );
         }
         enqueue(controller, { type: "done", message });
-        controller.close();
+        close(controller);
       } catch (error) {
         enqueue(controller, { type: "error", error: error instanceof Error ? error.message : "助手生成失败。" });
-        controller.close();
-      } finally {
-        reader.releaseLock();
-      }
-      } catch (error) {
-        enqueue(controller, { type: "error", error: error instanceof Error ? error.message : "助手生成失败。" });
-        controller.close();
+        close(controller);
       }
     },
   });
@@ -362,7 +380,14 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   });
 
   function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: AssistantChatStreamEvent) {
+    if (streamClosed) return;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  }
+
+  function close(controller: ReadableStreamDefaultController<Uint8Array>) {
+    if (streamClosed) return;
+    streamClosed = true;
+    controller.close();
   }
 };
 

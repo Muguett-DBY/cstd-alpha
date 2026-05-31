@@ -247,7 +247,7 @@ function Get-OpenCodeApiKey {
   $tokenPath = $env:CSTD_ALPHA_TOKEN_FILE
   if ($tokenPath -and (Test-Path -LiteralPath $tokenPath)) {
     $tokenText = Get-Content -LiteralPath $tokenPath -Raw -Encoding UTF8
-    $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_GO_API_KEY|OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\]\s]+([^\s]+)")
+    $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_GO_API_KEY|OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\s]+([^\s]+)")
     if ($match.Success) { return $match.Groups[1].Value }
   }
 

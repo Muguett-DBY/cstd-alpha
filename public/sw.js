@@ -1,5 +1,6 @@
 const STATIC_CACHE = "cstd-alpha-static-v1";
 const CORE_ASSETS = ["/", "/manifest.webmanifest", "/favicon.svg", "/app-icon.svg", "/app-icon-192.png", "/app-icon-512.png", "/app-icon-maskable-512.png"];
+const MAX_DYNAMIC_CACHE_ENTRIES = 80;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(CORE_ASSETS)).catch(() => undefined));
@@ -33,10 +34,21 @@ self.addEventListener("fetch", (event) => {
       return fetch(request).then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone)));
+          event.waitUntil(
+            caches.open(STATIC_CACHE).then(async (cache) => {
+              await cache.put(request, clone);
+              await trimCache(cache, MAX_DYNAMIC_CACHE_ENTRIES);
+            }),
+          );
         }
         return response;
       });
     }),
   );
 });
+
+async function trimCache(cache, maxEntries) {
+  const keys = await cache.keys();
+  const removable = keys.filter((request) => !CORE_ASSETS.includes(new URL(request.url).pathname));
+  await Promise.all(removable.slice(0, Math.max(0, removable.length - maxEntries)).map((request) => cache.delete(request)));
+}

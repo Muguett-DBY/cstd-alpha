@@ -464,10 +464,6 @@ function TemplateManager({
   const editorPanelRef = useRef<HTMLElement | null>(null);
   const previousEditorNavigationRef = useRef<{ view: TemplateManagerView; editingTemplateId: string }>({ view: "summary", editingTemplateId: "" });
 
-  if (draftState.source !== templates) {
-    setDraftState({ source: templates, drafts: templates });
-  }
-
   const drafts = draftState.source === templates ? draftState.drafts : templates;
   const resolvedNavigation = resolveTemplateManagerView(view, editingTemplateId, drafts);
   const currentView = resolvedNavigation.view;

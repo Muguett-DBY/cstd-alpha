@@ -82,4 +82,20 @@ describe("D1 migrations", () => {
     expect(indexNames(db, "assistant_usage_events")).toContain("idx_assistant_usage_user");
     expect(indexNames(db, "assistant_tool_runs")).toContain("idx_assistant_tool_runs_user");
   });
+
+  test("lookup index migration adds hot-path query indexes without changing schema", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(readMigration("0002_user_research.sql"));
+    db.exec(readMigration("0003_fixed_accounts_and_template_tasks.sql"));
+    db.exec(readMigration("0005_radar_entities.sql"));
+
+    expect(() => db.exec(readMigration("0010_lookup_indexes.sql"))).not.toThrow();
+
+    expect(indexNames(db, "template_analysis")).toContain("idx_template_analysis_watchlist");
+    expect(indexNames(db, "auth_sessions")).toContain("idx_auth_sessions_token_hash");
+    expect(indexNames(db, "securities")).toContain("idx_securities_company");
+    expect(indexNames(db, "evidence_items")).toContain("idx_evidence_company_published");
+    expect(indexNames(db, "evidence_items")).toContain("idx_evidence_theme_published");
+    expect(indexNames(db, "watchlist_items")).toContain("idx_watchlist_items_entity");
+  });
 });

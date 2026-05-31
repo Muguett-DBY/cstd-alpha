@@ -1267,6 +1267,14 @@ function timeoutSignal(parent: AbortSignal, timeoutMs: number) {
   const controller = new AbortController();
   const abort = () => controller.abort(parent.reason);
   const timeout = setTimeout(() => controller.abort("radar-source-timeout"), timeoutMs);
+  if (parent.aborted) {
+    abort();
+    clearTimeout(timeout);
+    return {
+      signal: controller.signal,
+      cleanup: () => undefined,
+    };
+  }
   parent.addEventListener("abort", abort, { once: true });
   return {
     signal: controller.signal,

@@ -136,6 +136,7 @@ function watchlistItem(id: string, name: string, code: string, listingPlace: str
 }
 
 function analysis(id: string, watchlistId: string, status: TemplateAnalysisResult["status"]): TemplateAnalysisResult {
+  const company = watchlistItem(watchlistId, "英伟达", "NVDA", "美股", "NASDAQ").company;
   return {
     id,
     userId: "admin",
@@ -143,17 +144,19 @@ function analysis(id: string, watchlistId: string, status: TemplateAnalysisResul
     templateId: "template-1",
     templateTitle: "模板",
     templateShortTitle: "模板",
-    company: watchlistItem(watchlistId, "英伟达", "NVDA", "美股", "NASDAQ").company,
+    companyName: company.name,
+    ticker: company.code,
+    market: company.listingPlace,
     status,
     model: "deepseek-v4-flash",
-    score: null,
-    conclusion: "",
+    title: "英伟达模板分析",
+    verdict: "",
     summary: "",
     markdown: "",
-    strengths: [],
-    risks: [],
+    keyPoints: [],
+    riskFlags: [],
     followUps: [],
-    evidenceIds: [],
+    sections: [],
     createdAt: "2026-05-24T00:00:00.000Z",
     updatedAt: "2026-05-24T00:00:00.000Z",
   };
