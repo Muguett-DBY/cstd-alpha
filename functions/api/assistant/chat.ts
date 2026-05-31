@@ -40,6 +40,8 @@ import { isUnsatisfactoryEvidenceOnlyAnswer } from "../../_shared/assistant-qual
 import { guardAssistantOutputLanguage } from "../../_shared/assistant-output-guards";
 import { fetchAndStoreCompanyEvidence, getOrCreateCompanyEvidencePackage, readCompanyEvidencePackage, type CompanyEvidencePackage } from "../../_shared/company-evidence";
 import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../../_shared/opencode-go";
+import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../../_shared/providers";
+import type { CompanyCandidate } from "../../../src/shared/report";
 import type { WatchlistRow } from "../../_shared/user-research-db";
 import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 import {
@@ -734,7 +736,7 @@ async function executeAssistantToolCalls(
       qualityScore: 0.95,
     });
   }
-  const aStockItems = await executeAStockToolCalls(toolCalls);
+  const aStockItems = await executeAStockToolCalls(env, toolCalls, signal);
   const internalItems = executeInternalAssistantTools(toolCalls, context);
   const externalCalls = toolCalls.filter((call) => !call.name.startsWith("read_") && call.name !== "compute_financial");
   const external = externalCalls.length ? await executeAssistantSearchToolCalls(env, externalCalls, signal) : { items: [], exa: { used: false, count: 0 }, summary: "未调用外部搜索。" };
@@ -747,7 +749,7 @@ async function executeAssistantToolCalls(
 
 const A_STOCK_TOOL_NAMES = new Set(["read_tencent_quote", "read_ths_hot_stocks", "read_ths_consensus_eps", "read_market_data", "read_capital_analysis", "read_filings_news", "read_financial_statements", "read_reports_concepts", "compare_stocks"]);
 
-async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Promise<AnySearchEvidence[]> {
+async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSearchToolCall[], signal: AbortSignal): Promise<AnySearchEvidence[]> {
   const now = new Date().toISOString();
   const items: AnySearchEvidence[] = [];
   for (const call of toolCalls) {
@@ -850,6 +852,8 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
       if (!query) continue;
       const codes = splitAssistantToolCodes(query, 5);
       const chunks = await Promise.all(codes.map(async (code) => {
+        const bundle = await fetchAssistantAStockEvidenceBundle(env, code, signal).catch(() => null);
+        if (bundle) return formatAssistantAStockEvidenceBundle(bundle);
         const [statements, info] = await Promise.all([fetchSinaFinancialStatements(code), fetchEastmoneyStockInfo(code)]);
         return `【${code} 公司信息】\n${info}\n\n【${code} 财报三表】\n${statements}`;
       }));
@@ -1367,6 +1371,66 @@ function splitAssistantToolCodes(query: string, max = 5) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, max);
+}
+
+async function fetchAssistantAStockEvidenceBundle(env: AssistantEnv, code: string, signal: AbortSignal) {
+  const company = makeAssistantAStockCandidate(code);
+  return fetchPublicCompanyEvidence({
+    companyName: company.name,
+    ticker: company.code,
+    company,
+    tushareToken: env.TUSHARE_TOKEN,
+    signal,
+  });
+}
+
+function makeAssistantAStockCandidate(code: string): CompanyCandidate {
+  const normalized = code.trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, "");
+  const known = AGENT_KNOWN_COMPANIES.find((company) => company.aCode === normalized);
+  const name = known?.names[0] ?? normalized;
+  const isShanghai = normalized.startsWith("6") || normalized.startsWith("9");
+  return {
+    id: normalized,
+    name,
+    code: normalized,
+    exchange: isShanghai ? "SSE" : "SZSE",
+    listingPlace: isShanghai ? "沪A" : "深A",
+    marketType: "AStock",
+    source: "eastmoney",
+  };
+}
+
+function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
+  const facts = isRecord(bundle.facts) ? bundle.facts : {};
+  const quote = isRecord(facts.quote) ? facts.quote : undefined;
+  const eastmoney = isRecord(facts.eastmoney) ? facts.eastmoney : undefined;
+  const incomeRows = Array.isArray(eastmoney?.incomeRows) ? eastmoney.incomeRows.filter(isRecord).slice(0, 2) : [];
+  const cashflowRows = Array.isArray(eastmoney?.cashflowRows) ? eastmoney.cashflowRows.filter(isRecord).slice(0, 1) : [];
+  const balanceRows = Array.isArray(eastmoney?.balanceRows) ? eastmoney.balanceRows.filter(isRecord).slice(0, 1) : [];
+  const tenYear = isRecord(facts.financialTenYear) ? facts.financialTenYear : undefined;
+  const tenYearRows = Array.isArray(tenYear?.rows) ? tenYear.rows.filter(isRecord).slice(0, 4) : [];
+  const tushare = isRecord(facts.tushare) ? facts.tushare : undefined;
+  const tushareLines = formatTushareFactsForAssistant(tushare);
+  return [
+    `【${bundle.company.name} ${bundle.company.ticker ?? ""} 同口径财务证据】retrieved_at=${bundle.retrievedAt}`,
+    quote ? `行情：价格=${formatPkgValue(quote.regularMarketPrice)}，市值=${formatPkgValue(quote.marketCap)}，PE=${formatPkgValue(quote.trailingPE)}，PB=${formatPkgValue(quote.priceToBook)}` : "",
+    incomeRows.length ? `利润表：${incomeRows.map(formatEastmoneyIncomeRow).join("；")}` : "利润表：未取得东方财富最新利润表。",
+    cashflowRows.length ? `现金流：${cashflowRows.map(formatEastmoneyCashflowRow).join("；")}` : "",
+    balanceRows.length ? `资产负债：${balanceRows.map(formatEastmoneyBalanceRow).join("；")}` : "",
+    tenYearRows.length ? `多年摘要：${tenYearRows.map(formatTenYearMetricRow).join("；")}` : "",
+    tushareLines.length ? `Tushare补强：${tushareLines.join("；")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function formatEastmoneyBalanceRow(row: Record<string, unknown>) {
+  return [
+    stringOrFallback(row.REPORT_DATE_NAME, stringOrFallback(row.REPORT_TYPE, "最新期")),
+    `总资产=${formatPkgNumber(row.TOTAL_ASSETS)}`,
+    `总负债=${formatPkgNumber(row.TOTAL_LIABILITIES)}`,
+    `货币资金=${formatPkgNumber(row.MONETARYFUNDS)}`,
+    `合同负债=${formatPkgNumber(row.CONTRACT_LIAB)}`,
+    `存货=${formatPkgNumber(row.INVENTORY)}`,
+  ].join("/");
 }
 
 function fallbackSearchToolCalls(message: string, mode: AssistantMode, context: { siteEvidenceSummary: string; modeEvidenceSummary: string }, reason: string): { toolCalls: AssistantSearchToolCall[]; reason: string } {
