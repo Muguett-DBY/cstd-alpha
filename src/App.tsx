@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, searchCompanies, type ReportProgress } from "./api";
+import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RadarVisualCharts } from "./RadarVisualCharts";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
@@ -693,7 +693,7 @@ function displayExchange(candidate: CompanyCandidate) {
 }
 
 function isReportCancelled(error: unknown) {
-  return error instanceof Error && error.message === "已停止等待，后台仍会继续生成。";
+  return error instanceof Error && error.message === REPORT_CANCELLED_MESSAGE;
 }
 
 function ProgressPanel({

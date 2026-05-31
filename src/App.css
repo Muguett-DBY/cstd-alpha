@@ -5523,3 +5523,29 @@ button:not(:disabled):active,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.app-crash-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f4f7f5;
+  color: #101418;
+}
+
+.app-crash-card {
+  width: min(520px, 100%);
+  padding: 28px;
+  border: 1px solid #d7dfda;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgb(17 24 39 / 8%);
+}
+
+.app-crash-card h1 {
+  margin: 6px 0 10px;
+  font-size: 28px;
+}
+
+.app-crash-card button {
+  margin-top: 18px;
+}

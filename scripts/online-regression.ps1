@@ -9,10 +9,23 @@ $ErrorActionPreference = 'Stop'
 function Read-AccessConfig {
   param([string]$Path)
   if (-not $Path) { throw "Access file is required. Pass -AccessFile or set CSTD_ALPHA_ACCESS_FILE." }
-  $text = Get-Content -Raw -LiteralPath $Path
-  $url = (($text -split "`r?`n") | Where-Object { $_ -match '^URL:' } | Select-Object -First 1) -replace '^URL:\s*',''
-  $username = (($text -split "`r?`n") | Where-Object { $_ -match '^(USERNAME|REPORT_USERNAME):' } | Select-Object -First 1) -replace '^(USERNAME|REPORT_USERNAME):\s*',''
-  $password = (($text -split "`r?`n") | Where-Object { $_ -match '^REPORT_PASSWORD:' } | Select-Object -First 1) -replace '^REPORT_PASSWORD:\s*',''
+  $values = @{}
+  foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+    if ($line -match '^\s*(#|$)') { continue }
+    if ($line -match '^\s*([^:=\s]+)\s*[:=]\s*(.*?)\s*$') {
+      $key = $Matches[1].Trim()
+      $value = $Matches[2].Trim()
+      if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+      $values[$key] = $value
+    }
+  }
+  $url = $values["URL"]
+  $username = $values["REPORT_USERNAME"]
+  if (-not $username) { $username = $values["USERNAME"] }
+  if (-not $username) { $username = $values["ADMIN_USERNAME"] }
+  $password = $values["REPORT_PASSWORD"]
   if (-not $url -or -not $username -or -not $password) { throw "Access file is missing URL, USERNAME/REPORT_USERNAME, or REPORT_PASSWORD." }
   [pscustomobject]@{ Url = $url.TrimEnd('/'); Username = $username; Password = $password }
 }

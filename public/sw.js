@@ -1,4 +1,5 @@
-const STATIC_CACHE = "cstd-alpha-static-v1";
+const STATIC_CACHE = "cstd-alpha-static-v2";
+const DYNAMIC_CACHE = "cstd-alpha-dynamic-v1";
 const CORE_ASSETS = ["/", "/manifest.webmanifest", "/favicon.svg", "/app-icon.svg", "/app-icon-192.png", "/app-icon-512.png", "/app-icon-maskable-512.png"];
 const MAX_DYNAMIC_CACHE_ENTRIES = 80;
 
@@ -11,7 +12,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -35,7 +36,7 @@ self.addEventListener("fetch", (event) => {
         if (response.ok) {
           const clone = response.clone();
           event.waitUntil(
-            caches.open(STATIC_CACHE).then(async (cache) => {
+            caches.open(DYNAMIC_CACHE).then(async (cache) => {
               await cache.put(request, clone);
               await trimCache(cache, MAX_DYNAMIC_CACHE_ENTRIES);
             }),

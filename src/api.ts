@@ -13,6 +13,8 @@ export type GenerateReportInput = {
   signal?: AbortSignal;
 };
 
+export const REPORT_CANCELLED_MESSAGE = "已停止等待，后台仍会继续生成。";
+
 export type FetchChartDataInput = {
   company: CompanyCandidate;
   priceMode: PriceMode;
@@ -541,7 +543,7 @@ function reportConnectionError(cause?: unknown) {
 }
 
 function reportCancelledError(cause?: unknown) {
-  return new Error("已停止等待，后台仍会继续生成。", { cause });
+  return new Error(REPORT_CANCELLED_MESSAGE, { cause });
 }
 
 function isAbortLikeError(error: unknown) {

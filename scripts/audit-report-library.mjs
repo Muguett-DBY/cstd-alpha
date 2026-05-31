@@ -87,8 +87,14 @@ function parseArgs(values) {
 function parseAccessFile(raw) {
   const result = {};
   for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^([^:=]+)[:=]\s*(.*)$/);
-    if (match) result[match[1].trim()] = match[2].trim();
+    if (/^\s*(#|$)/.test(line)) continue;
+    const match = line.match(/^\s*([^:=\s]+)\s*[:=]\s*(.*?)\s*$/);
+    if (!match) continue;
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    result[match[1].trim()] = value;
   }
   return result;
 }

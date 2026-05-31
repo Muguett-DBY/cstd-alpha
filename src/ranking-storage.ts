@@ -1,6 +1,6 @@
 import { parseReportLibraryReportsJson, validateLibraryReport, type ImportedLibraryReport } from "./shared/report-library";
 import type { InvestmentReport } from "./shared/report";
-import { reportIdentityKey } from "./shared/ranking";
+import { reportIdentityKey } from "./shared/report-identity";
 
 const IMPORTED_REPORTS_KEY = "cstd-alpha:ranking-imported-reports:v1";
 
