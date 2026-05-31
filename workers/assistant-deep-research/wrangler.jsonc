@@ -1,8 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
-  "name": "cstd-alpha",
+  "name": "cstd-alpha-assistant-deep-research",
+  "main": "index.ts",
   "compatibility_date": "2026-05-10",
-  "pages_build_output_dir": "dist",
+  "workers_dev": false,
+  "preview_urls": false,
+  "limits": {
+    "cpu_ms": 300000
+  },
   "observability": {
     "enabled": true
   },
@@ -26,10 +31,14 @@
     }
   ],
   "queues": {
-    "producers": [
+    "consumers": [
       {
-        "binding": "ASSISTANT_DEEP_RESEARCH_QUEUE",
-        "queue": "cstd-alpha-assistant-deep-research"
+        "queue": "cstd-alpha-assistant-deep-research",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 2,
+        "retry_delay": 30,
+        "max_concurrency": 2
       }
     ]
   }

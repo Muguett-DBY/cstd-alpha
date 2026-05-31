@@ -20,6 +20,7 @@ import {
   writeUsageEvent,
   type AssistantEnv,
 } from "../../_shared/assistant-db";
+import { classifyAssistantDeepResearch, createAssistantDeepResearchJob, writeAssistantDeepResearchProgress } from "../../_shared/assistant-deep-research";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
 import { executeFinancialCompute } from "../../_shared/financial-compute";
 import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchDragonTigerBoard, fetchDailyDragonTiger, fetchLockupExpiry, fetchMarginTrading, fetchBlockTrades, fetchHolderCount, fetchDividendHistory, fetchFundFlow120d, fetchNorthboundFlow, fetchResearchReports, fetchCninfoFilings, fetchSinaFinancialStatements, fetchEastmoneyStockInfo, fetchIndustryRanking, fetchBaiduKline, fetchStockNews, fetchGlobalNews, formatComparisonTable } from "../../_shared/assistant-a-stock";
@@ -62,7 +63,11 @@ import {
 const ASSISTANT_AUXILIARY_REASONING_EFFORT = "max" as const;
 const MAX_ASSISTANT_MESSAGE_CHARS = 12_000;
 
-export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env }) => {
+type AssistantChatPostContext = Parameters<PagesFunction<AssistantEnv>>[0];
+
+export const onRequestPost: PagesFunction<AssistantEnv> = (context) => handleAssistantChatPost(context);
+
+async function handleAssistantChatPost({ request, env }: AssistantChatPostContext, options: { skipDeepResearch?: boolean } = {}) {
   const { response, session } = await requireAdminSession(request, env);
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
@@ -155,6 +160,68 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
         enqueue(controller, { type: "start", threadId: thread.id, messageId: userStoredMessage.id });
         if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
         enqueue(controller, { type: "choice_request", request: choiceRequest });
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        "x-accel-buffering": "no",
+      },
+    });
+
+    function enqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: AssistantChatStreamEvent) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    }
+  }
+
+  const deepResearchKind = classifyAssistantDeepResearch(researchContext.message, contextMode);
+  if (deepResearchKind && !options.skipDeepResearch) {
+    if (!env.ASSISTANT_DEEP_RESEARCH_QUEUE) {
+      return json({ error: "深度研究队列暂未配置，请稍后再试。" }, 503);
+    }
+    const assistantMessageId = crypto.randomUUID();
+    const job = await createAssistantDeepResearchJob(env.REPORT_LIBRARY_DB, {
+      userKey: session.userId,
+      threadId: thread.id,
+      userMessageId: userStoredMessage.id,
+      assistantMessageId,
+      query: researchContext.promptMessage,
+      mode: contextMode,
+      researchKind: deepResearchKind,
+      now,
+    });
+    const content = "已进入深度研究。后台正在补齐行情、财报、公告和外部交叉证据，完成后会自动追加最终判断。";
+    const placeholder = await writeAssistantMessage(env.REPORT_LIBRARY_DB, {
+      id: assistantMessageId,
+      userKey: session.userId,
+      threadId: thread.id,
+      role: "assistant",
+      content,
+      metadata: { deepResearchJob: job },
+      now,
+    });
+    try {
+      await env.ASSISTANT_DEEP_RESEARCH_QUEUE.send({ jobId: job.id });
+    } catch {
+      await writeAssistantDeepResearchProgress(env.REPORT_LIBRARY_DB, env.REPORT_CACHE, {
+        id: job.id,
+        status: "failed",
+        title: "深度研究排队失败，请稍后重试。",
+        stage: "enqueue_failed",
+        current: 0,
+        errorMessage: "queue_send_failed",
+      });
+      return json({ error: "深度研究排队失败，请稍后重试。" }, 503);
+    }
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        enqueue(controller, { type: "start", threadId: thread.id, messageId: assistantMessageId });
+        if (storedCandidate) enqueue(controller, { type: "memory_candidate", candidate: storedCandidate });
+        enqueue(controller, { type: "deep_research_job", job });
+        enqueue(controller, { type: "done", message: placeholder });
         controller.close();
       },
     });
@@ -396,7 +463,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
     streamClosed = true;
     controller.close();
   }
-};
+}
 
 async function fetchAssistantModel(
   env: AssistantEnv,
@@ -735,7 +802,7 @@ function buildAgentToolLoopMessages(input: {
   return [{ role: "system", content: system }, { role: "user", content: payload }];
 }
 
-async function executeAssistantToolCalls(
+export async function executeAssistantToolCalls(
   env: AssistantEnv,
   toolCalls: AssistantSearchToolCall[],
   signal: AbortSignal,
@@ -829,9 +896,9 @@ async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSea
       items.push({
         source: "CSTD Alpha",
         query,
-        title: "实时行情",
+        title: `实时行情快照（retrieved_at=${now}）`,
         url: "",
-        summary: lines.join("；").slice(0, 1800),
+        summary: `retrieved_at=${now}；${lines.join("；")}`.slice(0, 1800),
         sourceType: "official",
         signalType: "external_search",
         weight: 3,
@@ -1314,7 +1381,7 @@ function augmentAgentToolCalls(
   return merged.slice(0, ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND);
 }
 
-function buildMandatoryAgentToolCalls(
+export function buildMandatoryAgentToolCalls(
   message: string,
   mode: AssistantMode,
   context: { siteEvidenceSummary: string; modeEvidenceSummary: string },
@@ -3136,4 +3203,5 @@ export const __test__ = {
   buildAssistantFinancialAnomalyNote,
   buildSubjectOnlyClarificationRequest,
   splitAssistantToolCodes,
+  onRequestPostRealtime: (context: AssistantChatPostContext) => handleAssistantChatPost(context, { skipDeepResearch: true }),
 };

@@ -1399,6 +1399,79 @@ button:not(:disabled):active,
   color: color-mix(in srgb, var(--ink) 88%, var(--muted));
 }
 
+.assistant-deep-research-card {
+  display: grid;
+  gap: 9px;
+  width: min(620px, 100%);
+  border: 1px solid color-mix(in srgb, var(--teal) 22%, var(--line));
+  border-radius: 12px;
+  padding: 12px 13px;
+  background: color-mix(in srgb, var(--teal) 4%, white);
+}
+
+.assistant-deep-research-card.completed {
+  border-color: color-mix(in srgb, var(--teal) 34%, var(--line));
+  background: color-mix(in srgb, var(--teal) 7%, white);
+}
+
+.assistant-deep-research-card.failed {
+  border-color: color-mix(in srgb, var(--red) 26%, var(--line));
+  background: color-mix(in srgb, var(--red) 5%, white);
+}
+
+.assistant-deep-research-head,
+.assistant-deep-research-head > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.assistant-deep-research-head {
+  justify-content: space-between;
+}
+
+.assistant-deep-research-head > div {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.assistant-deep-research-head strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.assistant-deep-research-head span,
+.assistant-deep-research-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.assistant-deep-research-head button {
+  min-height: 30px;
+  flex: 0 0 auto;
+  border-color: color-mix(in srgb, var(--red) 22%, var(--line));
+  padding: 0 10px;
+  background: white;
+  color: var(--red);
+  font-size: 12px;
+}
+
+.assistant-deep-research-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 12%, var(--line));
+}
+
+.assistant-deep-research-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 240ms ease;
+}
+
 .assistant-role-label {
   color: var(--muted);
   font-size: 11px;

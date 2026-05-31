@@ -13,6 +13,8 @@ import {
   searchCompanies,
   refreshRadarScan,
   sendAssistantMessage,
+  fetchAssistantDeepResearchJob,
+  stopAssistantDeepResearchJob,
 } from "./api";
 
 describe("API client", () => {
@@ -212,6 +214,33 @@ describe("API client", () => {
 
     expect(result).toBeNull();
     expect(events).toEqual(["start", "choice_request"]);
+  });
+
+  test("reads and stops assistant deep research jobs", async () => {
+    const job = {
+      id: "deep-1",
+      threadId: "t1",
+      query: "茅台明年利润预测",
+      mode: "target",
+      researchKind: "forecast",
+      status: "running",
+      progressTitle: "正在查财报...",
+      progressStage: "collect",
+      progressCurrent: 2,
+      progressTotal: 4,
+      stopRequested: false,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ job }))
+      .mockResolvedValueOnce(Response.json({ job: { ...job, status: "stopping", stopRequested: true } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchAssistantDeepResearchJob("deep-1")).resolves.toMatchObject({ id: "deep-1", status: "running" });
+    await expect(stopAssistantDeepResearchJob("deep-1")).resolves.toMatchObject({ id: "deep-1", status: "stopping", stopRequested: true });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/assistant/deep-research/deep-1", { credentials: "include", cache: "no-store" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/assistant/deep-research/deep-1/stop", { method: "POST", credentials: "include" });
   });
 
   test("rejects login responses that omit the user payload", async () => {

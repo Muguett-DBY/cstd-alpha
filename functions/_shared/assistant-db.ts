@@ -2,6 +2,7 @@ import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, ty
 import { readSessionCookie, type UserSession } from "./auth";
 import { OPENCODE_GO_DEEPSEEK_FLASH_MODEL, OPENCODE_ZEN_CHAT_COMPLETIONS_URL, type DeepSeekFallbackRoute } from "./opencode-go";
 import type { AssistantMemory, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantUsage } from "../../src/shared/assistant";
+import type { AssistantDeepResearchQueueMessage } from "./assistant-deep-research";
 
 export type AssistantEnv = {
   AUTH_SECRET: string;
@@ -18,6 +19,7 @@ export type AssistantEnv = {
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
   REPORT_CACHE?: KVNamespace;
+  ASSISTANT_DEEP_RESEARCH_QUEUE?: Queue<AssistantDeepResearchQueueMessage>;
 };
 
 type MemoryRow = {

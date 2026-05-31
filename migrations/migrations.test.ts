@@ -100,6 +100,18 @@ describe("D1 migrations", () => {
     expect(indexNames(db, "assistant_tool_runs")).toContain("idx_assistant_tool_runs_user");
   });
 
+  test("assistant deep research migration stores queued jobs and progress history", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0012_assistant_deep_research.sql"))).not.toThrow();
+
+    const jobs = tableColumns(db, "assistant_deep_research_jobs");
+    for (const column of ["user_key", "thread_id", "research_kind", "status", "progress_stage", "stop_requested", "evidence_object_key", "result_message_id"]) {
+      expect(jobs).toContain(column);
+    }
+    expect(indexNames(db, "assistant_deep_research_jobs")).toContain("idx_assistant_deep_research_status");
+    expect(indexNames(db, "assistant_deep_research_steps")).toContain("idx_assistant_deep_research_steps_job");
+  });
+
   test("lookup index migration adds hot-path query indexes without changing schema", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(readMigration("0002_user_research.sql"));

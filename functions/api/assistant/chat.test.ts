@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import { __test__, buildAssistantEvidenceQueries, onRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { __test__, buildAssistantEvidenceQueries, onRequestPost as productionOnRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 import { detectMemoryCandidate } from "../../_shared/assistant-db";
+
+const onRequestPost = __test__.onRequestPostRealtime;
 
 describe("assistant chat endpoint", () => {
   test("rejects non-admin users before calling DeepSeek", async () => {
@@ -71,7 +73,7 @@ describe("assistant chat endpoint", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await onRequestPost({
+    const response = await productionOnRequestPost({
       request: new Request("https://example.com/api/assistant/chat", {
         method: "POST",
         headers: { cookie: "cstd_alpha_session=session-1.token" },
@@ -89,6 +91,37 @@ describe("assistant chat endpoint", () => {
     } as never);
 
     expect(response.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("queues high-value research without blocking on DeepSeek", async () => {
+    const fetchMock = vi.fn();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await productionOnRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: "贵州茅台明年净利润和股价区间怎么预测？" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        OPENCODE_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+        ASSISTANT_DEEP_RESEARCH_QUEUE: queue,
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).toContain('"type":"deep_research_job"');
+    expect(body).toContain('"researchKind":"forecast"');
+    expect(body).toContain("已进入深度研究");
+    expect(queue.send).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

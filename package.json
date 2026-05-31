@@ -15,7 +15,9 @@
     "test": "vitest run",
     "typecheck:functions": "tsc -p tsconfig.functions.json",
     "pages:dev": "wrangler pages dev dist",
-    "pages:deploy": "wrangler pages deploy dist --project-name=cstd-alpha --branch=main"
+    "pages:deploy": "wrangler pages deploy dist --project-name=cstd-alpha --branch=main",
+    "queue:create:assistant": "wrangler queues create cstd-alpha-assistant-deep-research",
+    "worker:deploy:assistant": "wrangler deploy --config workers/assistant-deep-research/wrangler.jsonc"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

@@ -9,6 +9,6 @@
     "moduleResolution": "bundler",
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["functions/api/**/*.ts", "functions/_shared/**/*.ts", "src/shared/**/*.ts"],
+  "include": ["functions/api/**/*.ts", "functions/_shared/**/*.ts", "src/shared/**/*.ts", "workers/**/*.ts"],
   "exclude": ["**/*.test.ts"]
 }

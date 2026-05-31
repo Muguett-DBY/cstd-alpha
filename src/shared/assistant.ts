@@ -14,6 +14,7 @@ export type AssistantMessageMetadata = {
   usage?: AssistantUsage;
   toolRuns?: AssistantToolRun[];
   blocks?: AssistantBlock[];
+  deepResearchJob?: AssistantDeepResearchJob;
 };
 
 export type AssistantEvidenceRef = {
@@ -117,6 +118,30 @@ export type AssistantThread = {
 
 export type AssistantMode = "chat" | "target" | "industry";
 
+export type AssistantDeepResearchKind = "forecast" | "selection" | "comparison" | "industry" | "contrarian" | "risk";
+
+export type AssistantDeepResearchStatus = "queued" | "running" | "stopping" | "completed" | "failed";
+
+export type AssistantDeepResearchJob = {
+  id: string;
+  threadId: string;
+  query: string;
+  mode: AssistantMode;
+  researchKind: AssistantDeepResearchKind;
+  status: AssistantDeepResearchStatus;
+  progressTitle: string;
+  progressStage: string;
+  progressCurrent: number;
+  progressTotal: number;
+  stopRequested: boolean;
+  resultMessageId?: string;
+  errorMessage?: string;
+  createdAt: string;
+  startedAt?: string;
+  updatedAt: string;
+  completedAt?: string;
+};
+
 export type AssistantChatRequest = {
   message: string;
   threadId?: string;
@@ -132,6 +157,7 @@ export type AssistantChatStreamEvent =
   | { type: "block"; block: AssistantBlock }
   | { type: "choice_request"; request: AssistantChoiceRequest }
   | { type: "memory_candidate"; candidate: AssistantMemoryCandidate }
+  | { type: "deep_research_job"; job: AssistantDeepResearchJob }
   | { type: "usage"; usage: AssistantUsage }
   | { type: "code_exec"; id: string; code: string }
   | { type: "code_result"; id: string; output: string; error?: string }

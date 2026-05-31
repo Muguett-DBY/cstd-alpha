@@ -3,7 +3,7 @@ import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
-import type { AssistantChatStreamEvent, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
+import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -398,6 +398,22 @@ export async function sendAssistantMessage(
   if (requestedClarification) return null;
   if (!finalMessage) throw new Error("助手连接提前结束，请重试。");
   return finalMessage;
+}
+
+export async function fetchAssistantDeepResearchJob(id: string): Promise<AssistantDeepResearchJob> {
+  const response = await fetch(`/api/assistant/deep-research/${encodeURIComponent(id)}`, { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error((await readError(response)) || "深度研究状态读取失败。");
+  const data = (await response.json()) as { job?: AssistantDeepResearchJob };
+  if (!data.job) throw new Error("深度研究状态读取失败。");
+  return data.job;
+}
+
+export async function stopAssistantDeepResearchJob(id: string): Promise<AssistantDeepResearchJob> {
+  const response = await fetch(`/api/assistant/deep-research/${encodeURIComponent(id)}/stop`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "深度研究停止失败。");
+  const data = (await response.json()) as { job?: AssistantDeepResearchJob };
+  if (!data.job) throw new Error("深度研究停止失败。");
+  return data.job;
 }
 
 export async function confirmAssistantMemoryCandidate(id: string): Promise<void> {

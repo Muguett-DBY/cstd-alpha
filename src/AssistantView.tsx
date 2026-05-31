@@ -5,16 +5,18 @@ import {
   listAssistantThreads,
   createAssistantThread,
   deleteAssistantThread,
+  fetchAssistantDeepResearchJob,
   renameAssistantThread,
   rejectAssistantMemoryCandidate,
   sendAssistantMessage,
   sendCodeResult,
+  stopAssistantDeepResearchJob,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
-import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
+import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
 type SpeechPhase = "idle" | "starting" | "listening" | "unsupported" | "error";
@@ -53,6 +55,7 @@ export function AssistantView() {
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
   const [agentStatus, setAgentStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<Map<string, { label: string; status: "running" | "completed" | "failed" }>>(new Map());
+  const [deepResearchJobs, setDeepResearchJobs] = useState<Record<string, AssistantDeepResearchJob>>({});
   const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
   const [speechNotice, setSpeechNotice] = useState("");
   const [pyodideReady, setPyodideReady] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -83,7 +86,38 @@ export function AssistantView() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [thread?.messages.length, draft, agentStatus]);
+  }, [thread?.messages.length, draft, agentStatus, deepResearchJobs]);
+
+  const activeDeepResearchIds = useMemo(
+    () => Object.values(deepResearchJobs).filter((job) => job.status === "queued" || job.status === "running" || job.status === "stopping").map((job) => job.id).sort().join(","),
+    [deepResearchJobs],
+  );
+
+  useEffect(() => {
+    if (!activeDeepResearchIds) return;
+    let cancelled = false;
+    const poll = async () => {
+      const ids = activeDeepResearchIds.split(",").filter(Boolean);
+      const results = await Promise.all(ids.map((id) => fetchAssistantDeepResearchJob(id).catch(() => null)));
+      if (cancelled) return;
+      const completed = results.some((job) => job?.status === "completed" || job?.status === "failed");
+      setDeepResearchJobs((current) => {
+        const next = { ...current };
+        for (const job of results) if (job) next[job.id] = job;
+        return next;
+      });
+      if (completed) {
+        await reloadThread(activeThreadIdRef.current ?? undefined);
+        void loadThreadList();
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeDeepResearchIds]);
 
   async function reloadThread(threadId?: string) {
     setPhase("loading");
@@ -91,6 +125,7 @@ export function AssistantView() {
     try {
       const next = await fetchAssistantThread(threadId);
       setThread(next);
+      setDeepResearchJobs((current) => ({ ...current, ...collectDeepResearchJobs(next.messages) }));
       setPhase("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "助手读取失败。");
@@ -378,6 +413,10 @@ export function AssistantView() {
     if (event.type === "memory_candidate") {
       setPendingMemory(event.candidate);
     }
+    if (event.type === "deep_research_job") {
+      setDeepResearchJobs((current) => ({ ...current, [event.job.id]: event.job }));
+      setAgentStatus("");
+    }
     if (event.type === "code_exec") {
       setAgentStatus("正在用 Python 计算...");
       void executePyodideCode(event.id, event.code);
@@ -446,6 +485,12 @@ export function AssistantView() {
                   <span className="assistant-role-label">{message.role === "user" ? "你" : "助手"}</span>
                   <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(cleanContent) : cleanContent} />
                   <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
+                  {message.metadata?.deepResearchJob ? (
+                    <AssistantDeepResearchCard
+                      job={deepResearchJobs[message.metadata.deepResearchJob.id] ?? message.metadata.deepResearchJob}
+                      onStop={stopDeepResearch}
+                    />
+                  ) : null}
                 </article>
               );
             })}
@@ -545,6 +590,49 @@ export function AssistantView() {
       ) : null}
     </section>
   );
+
+  async function stopDeepResearch(job: AssistantDeepResearchJob) {
+    if (job.status !== "queued" && job.status !== "running") return;
+    setDeepResearchJobs((current) => ({ ...current, [job.id]: { ...job, status: "stopping", progressTitle: "正在整理阶段性总结..." } }));
+    try {
+      const next = await stopAssistantDeepResearchJob(job.id);
+      setDeepResearchJobs((current) => ({ ...current, [next.id]: next }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "深度研究停止失败。");
+    }
+  }
+}
+
+function collectDeepResearchJobs(messages: AssistantMessage[]) {
+  return Object.fromEntries(messages.flatMap((message) => message.metadata?.deepResearchJob ? [[message.metadata.deepResearchJob.id, message.metadata.deepResearchJob]] : []));
+}
+
+function AssistantDeepResearchCard({ job, onStop }: { job: AssistantDeepResearchJob; onStop: (job: AssistantDeepResearchJob) => void }) {
+  const canStop = job.status === "queued" || job.status === "running";
+  const progress = Math.max(0, Math.min(100, Math.round((job.progressCurrent / Math.max(job.progressTotal, 1)) * 100)));
+  return (
+    <section className={`assistant-deep-research-card ${job.status}`} aria-label="深度研究进度">
+      <div className="assistant-deep-research-head">
+        <div>
+          <strong>{deepResearchStatusLabel(job.status)}</strong>
+          <span>{job.progressTitle}</span>
+        </div>
+        {canStop ? <button type="button" onClick={() => onStop(job)}>停止并总结</button> : null}
+      </div>
+      <div className="assistant-deep-research-progress" aria-label={`深度研究进度 ${progress}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <small>{job.status === "completed" ? "最终答案已追加到当前会话。" : job.status === "failed" ? "本次后台研究未完成，可稍后重试。" : "可以离开页面，后台会继续研究。"}</small>
+    </section>
+  );
+}
+
+function deepResearchStatusLabel(status: AssistantDeepResearchJob["status"]) {
+  if (status === "queued") return "深度研究排队中";
+  if (status === "running") return "深度研究进行中";
+  if (status === "stopping") return "正在停止并总结";
+  if (status === "completed") return "深度研究完成";
+  return "深度研究失败";
 }
 
 function isSameAssistantResponseThread(currentThreadId: string | null, requestThreadId: string | null, responseThreadId?: string) {
