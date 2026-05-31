@@ -1,6 +1,7 @@
 param(
   [string]$InputDir = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-opencode-batch\production"),
   [string]$BaseUrl,
+  [string]$Username,
   [string]$Password,
   [int]$DelayMilliseconds = 200,
   [switch]$ContinueOnError
@@ -8,20 +9,43 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $BaseUrl -or -not $Password) {
+function Read-AccessFile {
+  param([string]$Path)
+  $result = @{}
+  foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+    if ($line -match '^\s*(#|$)') { continue }
+    if ($line -match '^\s*([^:=\s]+)\s*[:=]\s*(.*?)\s*$') {
+      $key = $Matches[1].Trim()
+      $value = $Matches[2].Trim()
+      if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+      $result[$key] = $value
+    }
+  }
+  return $result
+}
+
+if (-not $BaseUrl -or -not $Username -or -not $Password) {
   $accessPath = $env:CSTD_ALPHA_ACCESS_FILE
   if ($accessPath -and (Test-Path $accessPath)) {
-    $access = Get-Content $accessPath
+    $access = Read-AccessFile -Path $accessPath
     if (-not $BaseUrl) {
-      $BaseUrl = (($access | Where-Object { $_ -match '^URL[:=]' } | Select-Object -First 1) -replace '^[^:=]+[:=]\s*','').Trim()
+      $BaseUrl = $access["URL"]
+    }
+    if (-not $Username) {
+      $Username = $access["REPORT_USERNAME"]
+      if (-not $Username) { $Username = $access["USERNAME"] }
+      if (-not $Username) { $Username = $access["ADMIN_USERNAME"] }
     }
     if (-not $Password) {
-      $Password = (($access | Where-Object { $_ -match '^REPORT_PASSWORD[:=]' } | Select-Object -First 1) -replace '^[^:=]+[:=]\s*','').Trim()
+      $Password = $access["REPORT_PASSWORD"]
     }
   }
 }
 
 if (-not $BaseUrl) { throw "BaseUrl is required." }
+if (-not $Username) { throw "Username is required. Pass -Username or set REPORT_USERNAME in CSTD_ALPHA_ACCESS_FILE." }
 if (-not $Password) { throw "Password is required. Pass -Password or set CSTD_ALPHA_ACCESS_FILE." }
 if (-not (Test-Path $InputDir)) { throw "InputDir not found: $InputDir" }
 
@@ -45,7 +69,7 @@ function Invoke-JsonPost {
   }
 }
 
-$loginBody = @{ password = $Password } | ConvertTo-Json -Compress
+$loginBody = @{ username = $Username; password = $Password } | ConvertTo-Json -Compress
   $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
   $loginResponse = Invoke-WebRequest -Uri "$BaseUrl/api/session" -Method Post -ContentType "application/json" -Body $loginBody -WebSession $session -UseBasicParsing -TimeoutSec 60
   if ($loginResponse.Content -and $loginResponse.Content.TrimStart().StartsWith("{")) {

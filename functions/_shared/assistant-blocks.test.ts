@@ -54,8 +54,8 @@ describe("assistant structured blocks", () => {
     const blocks = extractAssistantBlocks(text, "整理成表");
 
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toMatchObject({ type: "table", columns: ["公司", "结论"], rows: [["茅台", "观察"]] });
-    expect(blocks[1]).toMatchObject({ type: "table", columns: ["指标", "数值"], rows: [["PE", "20"]] });
+    expect(blocks[0]).toEqual({ id: "table-1", title: "标的对比表", type: "table", columns: ["公司", "结论"], rows: [["茅台", "观察"]] });
+    expect(blocks[1]).toEqual({ id: "table-2", title: "跟踪指标表 2", type: "table", columns: ["指标", "数值"], rows: [["PE", "20"]] });
   });
 
   test("strips rendered markdown tables from chat text", () => {

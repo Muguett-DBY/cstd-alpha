@@ -1880,6 +1880,13 @@ function parseSseJsonItem(item: string): Record<string, unknown> | null {
   try {
     return JSON.parse(item) as Record<string, unknown>;
   } catch {
+    if (item.includes("\n")) {
+      try {
+        return JSON.parse(item.replace(/\n/g, "")) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }

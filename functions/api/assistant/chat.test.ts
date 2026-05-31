@@ -77,6 +77,14 @@ describe("assistant chat endpoint", () => {
     expect(__test__.parseSseJsonItem(parsed.items[1])).toBeNull();
   });
 
+  test("parses JSON split across multiline SSE data fields when possible", () => {
+    const parsed = __test__.consumeSseBuffer('data: {"choices":[{"delta":\n' + 'data: {"content":"跨行"}}]}\n\n');
+
+    expect(__test__.parseSseJsonItem(parsed.items[0])).toMatchObject({
+      choices: [{ delta: { content: "跨行" } }],
+    });
+  });
+
   test("keeps normal chat research prompts on the streaming path", async () => {
     const chunks = [
       `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：" } }] })}\n\n`,

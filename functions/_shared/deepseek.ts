@@ -741,7 +741,6 @@ async function requestDeepSeekJson({
 }
 
 function modelRoutes(routeEnv: DeepSeekRouteEnv, preferredModel: DeepSeekModel): Array<{ model: DeepSeekModel; url: string; apiKey?: string; isFree: boolean }> {
-  void preferredModel;
   const routes = buildDeepSeekFallbackRoutes({
     OPENCODE_ZEN_API_KEY: routeEnv.opencodeZenApiKey,
     OPENCODE_GO_API_KEY: routeEnv.opencodeGoApiKey,
@@ -749,7 +748,10 @@ function modelRoutes(routeEnv: DeepSeekRouteEnv, preferredModel: DeepSeekModel):
     DEEPSEEK_API_KEY: routeEnv.deepseekApiKey,
   });
   if (!routes.length) throw new DeepSeekReportError("DeepSeek 路由未配置，本次报告未完成。", "DEEPSEEK_ROUTE_MISSING", false);
-  return routes;
+  const preferredIndex = routes.findIndex((route) => route.model === preferredModel);
+  if (preferredIndex <= 0) return routes;
+  const preferredRoute = routes[preferredIndex];
+  return [preferredRoute, ...routes.slice(0, preferredIndex), ...routes.slice(preferredIndex + 1)];
 }
 
 function buildDeepSeekRequest(

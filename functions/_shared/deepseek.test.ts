@@ -183,6 +183,16 @@ describe("DeepSeek report client", () => {
     expect(userPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);
   });
 
+  test("promotes the requested paid DeepSeek model ahead of anonymous free fallback when Go is not configured", async () => {
+    const fetchMock = mockSuccessfulReport();
+
+    await callDeepSeekReport({ deepseekApiKey: "official-key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
+    expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe("deepseek-v4-flash");
+  });
+
   test("retries transient paid route failures before falling through to free routes", async () => {
     const rateLimited = { ok: false, status: 429, text: async () => "rate limited" };
     const fetchMock = vi

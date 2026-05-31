@@ -2,6 +2,8 @@ import type { CompanyCandidate, InvestmentReport } from "./report";
 import { normalizeEntryConclusion, normalizeEntryPositionAdvice, type ReportLibraryEntry } from "./report-library";
 import { formatLocalizedIndustry, localizedCompanyName, localizedIndustry } from "./market-display";
 import { crossMarketAnchorForListing } from "./cross-market";
+export { reportIdentityKey } from "./report-identity";
+import { normalizeIdentity, reportIdentityKey, stockCodeIdentity } from "./report-identity";
 
 export type RankingSource = "deep-report" | "seed";
 
@@ -186,13 +188,6 @@ export function companyCandidateFromRanking(entry: RankingEntry): CompanyCandida
   return entry.candidate;
 }
 
-export function reportIdentityKey(report: InvestmentReport) {
-  const ticker = normalizeIdentity(report.company.ticker);
-  const market = normalizeIdentity(report.company.market);
-  const name = normalizeIdentity(report.company.name);
-  return ticker ? `${market}:${ticker}` : `${market}:${name}`;
-}
-
 function seedIdentityKey(seed: RankingSeed) {
   return `${normalizeIdentity(seed.listingPlace)}:${normalizeIdentity(seed.code)}`;
 }
@@ -369,14 +364,4 @@ function shareClassCompanyKey(row: RankingEntry) {
 function isUsListing(value: unknown) {
   const text = normalizeIdentity(value);
   return /美|US|USA|NASDAQ|NYSE|AMEX/.test(text);
-}
-
-function normalizeIdentity(value: unknown) {
-  return typeof value === "string" ? value.trim().toUpperCase() : "";
-}
-
-function stockCodeIdentity(value: unknown) {
-  if (typeof value !== "string") return "";
-  const match = value.trim().toUpperCase().match(/\b(\d{6})\b/);
-  return match ? `CN:${match[1]}` : "";
 }

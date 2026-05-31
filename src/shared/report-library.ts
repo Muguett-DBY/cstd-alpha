@@ -1,5 +1,5 @@
 import { validateReportPayload, type InvestmentReport } from "./report";
-import { reportIdentityKey } from "./ranking";
+import { reportIdentityKey } from "./report-identity";
 import { normalizeIndustryLabel } from "./industry";
 
 export type ReportLibraryEntry = {
