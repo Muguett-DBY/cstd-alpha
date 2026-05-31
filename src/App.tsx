@@ -1400,7 +1400,10 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
   }, [packets, query, stage]);
   const defaultVisibleCount = 10;
   const hasActiveFilter = stage !== "all" || Boolean(query.trim());
-  const visibleRows = radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }).visibleRows;
+  const visibleRows = useMemo(
+    () => radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }).visibleRows,
+    [expanded, packets, query, stage],
+  );
   const columns = useMemo(
     () => [
       radarIndustryColumnHelper.accessor("industry", {

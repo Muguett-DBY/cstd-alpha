@@ -31,6 +31,33 @@ describe("chart helpers", () => {
     expect(result.marketSnapshot.maxDrawdown).toBeUndefined();
   });
 
+  test("filters non-positive adjusted prices before recalculating drawdown", () => {
+    const result = normalizeChartBundle({
+      company: { name: "Dividend-heavy Co." },
+      asOf: "2026-05-10T00:00:00.000Z",
+      priceMode: "adjusted",
+      priceSeries: [
+        { date: "2016-05-31", close: -5.26, adjustedClose: -5.26, volume: 100 },
+        { date: "2016-06-14", close: 10, adjustedClose: 10, volume: 110 },
+        { date: "2016-06-15", close: 8, adjustedClose: 8, volume: 120 },
+      ],
+      drawdownSeries: [
+        { date: "2016-05-31", price: -5.26, peak: 0, drawdown: 0 },
+        { date: "2016-06-14", price: 10, peak: 10, drawdown: 0 },
+        { date: "2016-06-15", price: 8, peak: 10, drawdown: -20 },
+      ],
+      marketSnapshot: {},
+      evidence: [],
+    });
+
+    expect(result.priceSeries.map((point) => point.close)).toEqual([10, 8]);
+    expect(result.drawdownSeries).toEqual([
+      { date: "2016-06-14", price: 10, peak: 10, drawdown: 0 },
+      { date: "2016-06-15", price: 8, peak: 10, drawdown: -20 },
+    ]);
+    expect(result.marketSnapshot.maxDrawdown).toBe(-20);
+  });
+
   test("extracts financial chart series from report ten-year table", () => {
     const report = validateReportPayload({
       company: { name: "Example" },

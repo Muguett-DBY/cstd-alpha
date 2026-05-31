@@ -48,8 +48,8 @@ export type ChartSeries = {
 };
 
 export function normalizeChartBundle(value: ChartBundle): ChartBundle {
-  const priceSeries = value.priceSeries.filter((point) => Number.isFinite(point.close));
-  const drawdownSeries = value.drawdownSeries.length ? value.drawdownSeries : buildDrawdownSeries(priceSeries);
+  const priceSeries = value.priceSeries.filter((point) => Number.isFinite(point.close) && point.close > 0);
+  const drawdownSeries = buildDrawdownSeries(priceSeries);
   const worstDrawdown = drawdownSeries.reduce<DrawdownPoint | undefined>((worst, point) => (!worst || point.drawdown < worst.drawdown ? point : worst), undefined);
   return {
     ...value,
