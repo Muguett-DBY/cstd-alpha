@@ -201,6 +201,26 @@ describe("DeepSeek report client", () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe("deepseek-v4-flash");
   });
 
+  test("falls back when a provider returns a non-JSON success response", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON");
+        },
+      })
+      .mockResolvedValueOnce(modelResponse(reportPayload()));
+    mockDetailBatches(fetchMock);
+    mockNarrativeBatches(fetchMock);
+
+    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(fetchMock.mock.calls[1][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(report.company.name).toBe("Example Inc.");
+  });
+
   test("passes an abort signal to DeepSeek fetch requests", async () => {
     const fetchMock = mockSuccessfulReport();
     const controller = new AbortController();

@@ -129,13 +129,24 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
       lastError = new Error(`DeepSeek watchlist ranking failed: ${route.model} ${response.status} ${text.slice(0, 300)}`);
       continue;
     }
-    const payload = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
+    let payload: { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      payload = JSON.parse(text) as typeof payload;
+    } catch (error) {
+      lastError = new Error(`DeepSeek watchlist ranking returned invalid JSON: ${route.model}`, { cause: error });
+      continue;
+    }
     const content = payload.choices?.[0]?.message?.content?.trim();
     if (!content) {
       lastError = new Error(`${route.model} 未返回自选排行评分。`);
       continue;
     }
-    return applyEvidenceCoverageCaps({ ...normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), modelUsed: route.model }, coverage);
+    try {
+      return applyEvidenceCoverageCaps({ ...normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), modelUsed: route.model }, coverage);
+    } catch (error) {
+      lastError = new Error(`${route.model} 返回的自选排行内容不是可解析 JSON。`, { cause: error });
+      continue;
+    }
   }
   throw lastError instanceof Error ? lastError : new Error("DeepSeek 未返回自选排行评分。");
 }

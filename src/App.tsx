@@ -653,8 +653,13 @@ function CandidateModal({
   onSelect: (candidate: CompanyCandidate) => void;
   onClose: () => void;
 }) {
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    backdropRef.current?.focus();
+  }, []);
+
   return (
-    <div className="modal-backdrop" role="presentation" onKeyDown={(event) => {
+    <div ref={backdropRef} className="modal-backdrop" role="presentation" tabIndex={-1} onKeyDown={(event) => {
       if (event.key === "Escape") onClose();
     }}>
       <section className="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-title">

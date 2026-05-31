@@ -568,7 +568,14 @@ async function readReportLibraryCache(env: Env, ids: string[]): Promise<ReportCa
     if (!row?.object_key) continue;
     const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
     if (!object) continue;
-    const report = validateLibraryReport(await object.json());
+    const payload = await object.json().catch(() => null);
+    if (!payload) continue;
+    let report: InvestmentReport;
+    try {
+      report = validateLibraryReport(payload);
+    } catch {
+      continue;
+    }
     return {
       version: SERVER_REPORT_CACHE_VERSION,
       report,

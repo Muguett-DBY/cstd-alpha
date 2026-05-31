@@ -158,6 +158,39 @@ describe("user research template persistence", () => {
     expect(batchedStatementCounts).toEqual([1]);
     expect(preparedSql.some((sql) => sql.includes("id NOT IN"))).toBe(true);
   });
+
+  test("chunks template upserts to stay under the D1 batch statement limit", async () => {
+    const existingRows = RESEARCH_TEMPLATES.map((template, index) => templateRow(template, index + 1));
+    const batchedStatementCounts: number[] = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind: () => ({
+            all: async () => ({ results: sql.includes("deleted_at IS NULL") ? existingRows : existingRows }),
+            run: async () => undefined,
+            first: async () => null,
+          }),
+          run: async () => undefined,
+        };
+      },
+      batch: async (statements: unknown[]) => {
+        batchedStatementCounts.push(statements.length);
+        return [];
+      },
+    } as unknown as D1Database;
+    const manyTemplates = Array.from({ length: 105 }, (_, index) => ({
+      ...RESEARCH_TEMPLATES[0],
+      id: `custom-template-${index}`,
+      title: `自定义模板 ${index}`,
+      shortTitle: `模板${index}`,
+      sortOrder: index + 1,
+      isSystem: false,
+    }));
+
+    await saveUserResearchTemplates(db, "admin", manyTemplates);
+
+    expect(batchedStatementCounts).toEqual([100, 5]);
+  });
 });
 
 function templateRow(template: ResearchTemplate, sortOrder: number): ResearchTemplateRow {

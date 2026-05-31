@@ -120,3 +120,8 @@ jobs:
           path: |
             dist-radar/radar-evidence.json
             dist-radar/radar-evidence.json.gz
+
+      - name: Stop local SearXNG
+        if: always()
+        run: |
+          docker rm -f cstd-searxng >/dev/null 2>&1 || true

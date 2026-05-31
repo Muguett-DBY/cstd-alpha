@@ -461,7 +461,7 @@ async function readBestReport(env: Env, watchlist: WatchlistRow): Promise<Invest
           .first<{ object_key: string }>();
     if (!row?.object_key) return null;
     const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
-    return object ? ((await object.json()) as InvestmentReport) : null;
+    return object ? ((await object.json().catch(() => null)) as InvestmentReport | null) : null;
   } catch (error) {
     if (error instanceof Error && error.message.includes("no such table")) return null;
     throw error;

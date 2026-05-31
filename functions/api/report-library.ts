@@ -151,7 +151,14 @@ async function readDurableReportRecord(env: Env, id: string): Promise<ReportLibr
   if (!row) return null;
   const object = await env.REPORT_LIBRARY_BUCKET.get(row.object_key);
   if (!object) return null;
-  const report = validateLibraryReport(await object.json());
+  const payload = await object.json().catch(() => null);
+  if (!payload) return null;
+  let report: InvestmentReport;
+  try {
+    report = validateLibraryReport(payload);
+  } catch {
+    return null;
+  }
   return {
     entry: rowToEntry(row),
     report,

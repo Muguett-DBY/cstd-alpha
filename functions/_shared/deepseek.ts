@@ -706,10 +706,17 @@ async function requestDeepSeekJson({
         continue;
       }
 
-      const json = (await response.json()) as {
+      type DeepSeekJsonResponse = {
         choices?: Array<{ finish_reason?: string; message?: { content?: string; reasoning_content?: string } }>;
         usage?: Record<string, unknown>;
       };
+      let json: DeepSeekJsonResponse;
+      try {
+        json = (await response.json()) as DeepSeekJsonResponse;
+      } catch (error) {
+        lastFailure = new Error(`${route.model} returned invalid JSON response`, { cause: error });
+        continue;
+      }
       recordTokenUsage(usageTracker, route.model, json.usage);
       const choice = json.choices?.[0];
       const content = choice?.message?.content;

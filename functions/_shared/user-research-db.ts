@@ -226,7 +226,9 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
         now,
       );
   });
-  if (upserts.length) await db.batch(upserts);
+  for (let index = 0; index < upserts.length; index += D1_BATCH_STATEMENT_LIMIT) {
+    await db.batch(upserts.slice(index, index + D1_BATCH_STATEMENT_LIMIT));
+  }
 
   const keepIds = new Set(normalized.map((template) => template.id));
   if (keepIds.size) {
@@ -240,6 +242,8 @@ export async function saveUserResearchTemplates(db: D1Database, userId: string, 
   }
   return readUserResearchTemplates(db, userId);
 }
+
+const D1_BATCH_STATEMENT_LIMIT = 100;
 
 export async function saveCurrentTemplatesAsDefault(db: D1Database, userId: string) {
   await ensureDefaultResearchTemplates(db, userId);

@@ -22,11 +22,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as EvidenceRequest | null;
   const companyName = body?.company?.name?.trim() || body?.companyName?.trim();
   if (!companyName) return json({ error: "请先提供公司名称。" }, 400);
+  if (companyName.length > 120) return json({ error: "公司名称过长，请重新选择上市主体。" }, 400);
+  const ticker = body?.company?.code || body?.ticker;
+  const market = body?.company?.listingPlace || body?.market;
+  if (typeof ticker === "string" && ticker.length > 40) return json({ error: "股票代码过长，请重新选择上市主体。" }, 400);
+  if (typeof market === "string" && market.length > 40) return json({ error: "市场信息过长，请重新选择上市主体。" }, 400);
 
   const evidence = await fetchPublicCompanyEvidence({
     companyName,
-    ticker: body?.company?.code || body?.ticker,
-    market: body?.company?.listingPlace || body?.market,
+    ticker,
+    market,
     company: body?.company,
     tushareToken: env.TUSHARE_TOKEN,
     signal: request.signal,

@@ -14,6 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim();
   if (!query) return json({ candidates: [] });
+  if (query.length > 80) return json({ error: "搜索词过长，请缩短后重试。" }, 400);
 
   const localCandidates = await searchLocalCompanyUniverse(env.REPORT_LIBRARY_DB, query);
   if (localCandidates.length >= 5) return json({ candidates: localCandidates });

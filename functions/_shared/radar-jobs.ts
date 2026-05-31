@@ -45,7 +45,9 @@ export function updateRadarJob(job: RadarAnalysisJob, status: RadarAnalysisJobSt
 }
 
 export async function readLatestRadarJob(env: RadarJobEnv, latestJobKey: string): Promise<RadarAnalysisJob | null> {
-  const value = await env.REPORT_CACHE?.get<RadarAnalysisJob>(latestJobKey, "json").catch(() => null);
+  const cache = env.REPORT_CACHE;
+  if (!cache) return null;
+  const value = await cache.get<RadarAnalysisJob>(latestJobKey, "json").catch(() => null);
   return normalizeRadarJob(value);
 }
 
@@ -58,20 +60,26 @@ export async function readActiveRadarJob(env: RadarJobEnv, latestJobKey: string)
 }
 
 export async function writeRadarJob(env: RadarJobEnv, job: RadarAnalysisJob, jobPrefix: string, latestJobKey: string) {
+  const cache = env.REPORT_CACHE;
+  if (!cache) return;
   const payload = JSON.stringify(job);
   await Promise.all([
-    env.REPORT_CACHE?.put(`${jobPrefix}${job.id}`, payload, { expirationTtl: 24 * 60 * 60 }),
-    env.REPORT_CACHE?.put(latestJobKey, payload, { expirationTtl: 24 * 60 * 60 }),
+    cache.put(`${jobPrefix}${job.id}`, payload, { expirationTtl: 24 * 60 * 60 }),
+    cache.put(latestJobKey, payload, { expirationTtl: 24 * 60 * 60 }),
   ]);
 }
 
 export async function readRadarEvidenceHash(env: RadarJobEnv, snapshotKey: string): Promise<string | undefined> {
-  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotForFreshness>(snapshotKey, "json").catch(() => null);
+  const cache = env.REPORT_CACHE;
+  if (!cache) return undefined;
+  const value = await cache.get<RadarEvidenceSnapshotForFreshness>(snapshotKey, "json").catch(() => null);
   return stringValue(value?.evidenceHash) || undefined;
 }
 
 export async function readRadarEvidenceFreshness(env: RadarJobEnv, snapshotKey: string, expectedVersion: string): Promise<RadarEvidenceFreshness | null> {
-  const value = await env.REPORT_CACHE?.get<RadarEvidenceSnapshotForFreshness>(snapshotKey, "json").catch(() => null);
+  const cache = env.REPORT_CACHE;
+  if (!cache) return null;
+  const value = await cache.get<RadarEvidenceSnapshotForFreshness>(snapshotKey, "json").catch(() => null);
   if (!value || value.version !== expectedVersion) return null;
   const generatedAt = stringValue(value.generatedAt) || undefined;
   const ageHours = generatedAt ? Math.max(0, Math.round(((Date.now() - Date.parse(generatedAt)) / 3_600_000) * 10) / 10) : undefined;

@@ -45,10 +45,8 @@ function Invoke-JsonPost {
   }
 }
 
-$loginPath = Join-Path ([System.IO.Path]::GetTempPath()) ("cstd-login-" + [guid]::NewGuid().ToString("N") + ".json")
-@{ password = $Password } | ConvertTo-Json | Set-Content -LiteralPath $loginPath -Encoding UTF8
 try {
-  $loginBody = Get-Content -LiteralPath $loginPath -Raw -Encoding UTF8
+  $loginBody = @{ password = $Password } | ConvertTo-Json -Compress
   $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
   $loginResponse = Invoke-WebRequest -Uri "$BaseUrl/api/session" -Method Post -ContentType "application/json" -Body $loginBody -WebSession $session -UseBasicParsing -TimeoutSec 60
   if ($loginResponse.Content -and $loginResponse.Content.TrimStart().StartsWith("{")) {
@@ -98,6 +96,4 @@ try {
     imported = $imported
     failed = $failed
   } | ConvertTo-Json
-} finally {
-  Remove-Item -LiteralPath $loginPath -Force -ErrorAction SilentlyContinue
-}
+} finally {}

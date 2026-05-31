@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest";
-import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable, sanitizeRankingNarrative } from "./watchlist-ranking";
+import { describe, expect, test, vi } from "vitest";
+import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable, requestWatchlistRankingScore, sanitizeRankingNarrative } from "./watchlist-ranking";
 import type { EvidenceBundle } from "./providers";
+import type { WatchlistRow } from "./user-research-db";
 
 describe("watchlist ranking score helpers", () => {
   test("normalizes independent model scores and derives overall score when omitted", () => {
@@ -245,5 +246,70 @@ describe("watchlist ranking score helpers", () => {
     expect(capped.companyQualityScore).toBe(72);
     expect(capped.investmentAttractivenessScore).toBe(55);
     expect(capped.overallScore).toBe(64.4);
+  });
+
+  test("falls through to the next route when an upstream response is not JSON", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("<html>bad gateway</html>", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    companyQualityScore: 82,
+                    investmentAttractivenessScore: 58,
+                    overallScore: 72,
+                    verdict: "观察",
+                    summary: "财务质量较好，但估值吸引力一般。",
+                    keyPoints: ["E1 财报可用"],
+                    riskFlags: ["估值偏高"],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const watchlist: WatchlistRow = {
+        id: "watch-1",
+        user_key: "admin",
+        company_name: "样本公司",
+        ticker: "000001",
+        market: "深A",
+        exchange_name: "深圳证券交易所",
+        listing_place: "深A",
+        market_type: "AStock",
+        source: "eastmoney",
+        report_library_id: null,
+        added_at: "2026-05-25T00:00:00.000Z",
+      };
+      const evidence: EvidenceBundle = {
+        retrievedAt: "2026-05-25T00:00:00.000Z",
+        company: { name: "样本公司", ticker: "000001", market: "深A" },
+        facts: {},
+        evidence: [
+          {
+            title: "000001 Eastmoney financial statements",
+            source: "Eastmoney public financial statement endpoints",
+            freshness: "latest-public",
+            notes: "Normalized named financial metrics from Eastmoney statements.",
+          },
+        ],
+      };
+
+      const ranking = await requestWatchlistRankingScore({ OPENCODE_GO_API_KEY: "go-key" }, watchlist, evidence);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(ranking.companyQualityScore).toBeGreaterThan(0);
+      expect(ranking.modelUsed).toBe("deepseek-v4-flash-free");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

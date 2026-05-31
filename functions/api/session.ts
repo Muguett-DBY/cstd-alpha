@@ -18,6 +18,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const username = body?.username?.trim();
   const password = body?.password ?? "";
   if (!username || !password) return json({ error: "请输入账号和密码。" }, 400);
+  if (username.length > 80 || password.length > 256) return json({ error: "账号或密码格式不正确。" }, 400);
 
   let user = await authenticateUser(env.REPORT_LIBRARY_DB, username, password);
   if (!user && env.REPORT_PASSWORD && password === env.REPORT_PASSWORD && (await userCount(env.REPORT_LIBRARY_DB)) === 0) {
