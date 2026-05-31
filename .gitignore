@@ -22,8 +22,6 @@ TOKEN.MD
 token.md
 .opencode/
 .reasonix/
-scripts/test-100.ts
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

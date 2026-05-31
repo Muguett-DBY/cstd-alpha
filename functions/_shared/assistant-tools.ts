@@ -208,7 +208,7 @@ export function assistantAgentTools() {
     {
       type: "function" as const, function: {
         name: "compute_financial" as const,
-        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）、technical（技术指标RSI/MACD/布林带/均线）。结果自动保留在上下文中。",
+        description: "用服务端 TypeScript 直接执行金融计算，无需客户端 Python。支持：cagr（复合年增长率）、dcf（估值）、stats（描述性统计）、ratios（财务比率）、technical（技术指标RSI/MACD/布林带/均线）。DCF 的 discountRate 和 terminalGrowthRate 可使用 10 或 0.10 表示 10%。结果自动保留在上下文中。",
         parameters: { type: "object" as const, required: ["operation", "params", "reason"], properties: { operation: { type: "string" as const, enum: ["cagr", "dcf", "stats", "ratios", "technical"], description: "计算类型" }, params: { type: "object" as const, description: "计算参数" }, reason: { type: "string" as const, description: "为什么需要这个计算。" } } },
       },
     },

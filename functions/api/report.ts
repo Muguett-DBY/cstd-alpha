@@ -784,8 +784,8 @@ async function acquireReportGenerationLock(env: Env, cacheKey: string, companyNa
         await releaseReportGenerationLock(cache, lockKey, owner);
       },
     };
-  } catch {
-    return { acquired: true, release: async () => undefined };
+  } catch (error) {
+    throw new Error("共享生成锁暂时不可用，请稍后重试。", { cause: error });
   }
 }
 

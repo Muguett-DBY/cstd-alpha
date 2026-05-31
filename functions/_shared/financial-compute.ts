@@ -45,11 +45,11 @@ function parseNumArray(value: unknown): number[] {
 
 function computeCAGR(params: Record<string, unknown>): ComputeResult {
   const values = parseNumArray(params.values);
-  if (values.length < 2) {
+  if (values.length < 2 || values[0] <= 0) {
     return {
       operation: "cagr",
       label: "CAGR 复合年增长率",
-      summary: "至少需要 2 个数值。",
+      summary: values.length < 2 ? "至少需要 2 个数值。" : "起始值必须大于 0，无法计算 CAGR。",
       rows: [],
     };
   }
@@ -69,8 +69,8 @@ function computeCAGR(params: Record<string, unknown>): ComputeResult {
 function computeDCF(params: Record<string, unknown>): ComputeResult {
   const cashFlows = parseNumArray(params.cashFlows);
   const terminalCashFlow = Number(params.terminalCashFlow) || 0;
-  const terminalGrowthRate = (Number(params.terminalGrowthRate) || 0) / 100;
-  const discountRate = (Number(params.discountRate) || 0.1) / 100;
+  const terminalGrowthRate = rateRatio(params.terminalGrowthRate, 0);
+  const discountRate = rateRatio(params.discountRate, 0.1);
   const sharesOutstanding = Number(params.sharesOutstanding) || 1;
   const netDebt = Number(params.netDebt) || 0;
 
@@ -79,6 +79,14 @@ function computeDCF(params: Record<string, unknown>): ComputeResult {
       operation: "dcf",
       label: "DCF 估值",
       summary: "至少需要 3 期自由现金流。",
+      rows: [],
+    };
+  }
+  if (!Number.isFinite(discountRate) || !Number.isFinite(terminalGrowthRate) || discountRate <= terminalGrowthRate || discountRate <= -1 || terminalGrowthRate <= -1) {
+    return {
+      operation: "dcf",
+      label: "DCF 估值",
+      summary: "DCF 参数无效：贴现率必须高于永续增长率，且两者可使用 10 或 0.10 表示 10%。",
       rows: [],
     };
   }
@@ -109,6 +117,12 @@ function computeDCF(params: Record<string, unknown>): ComputeResult {
     summary: `企业价值 ${enterpriseValue.toFixed(0)}，股权价值 ${equityValue.toFixed(0)}，每股公允价值 ${fairPrice.toFixed(2)}（股本 ${sharesOutstanding}，净债务 ${netDebt}）`,
     rows,
   };
+}
+
+function rateRatio(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
 }
 
 function computeStats(params: Record<string, unknown>): ComputeResult {

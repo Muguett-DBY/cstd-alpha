@@ -7,11 +7,11 @@
 1. 固定账号登录保护网页和 API；账号保存在 D1，密码只保存哈希，session token 只保存哈希。
 2. 用户输入公司名或代码，系统返回候选公司：公司名、代码、上市地、交易所。
 3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
-4. 在线公司报告使用 DeepSeek Direct API `deepseek-v4-flash`；行业雷达由 GitHub Actions 定时滚动生成公开证据库，用户手动点击刷新时再触发后台 Action 调用 DeepSeek 做深度综合。
+4. 在线公司报告、模板报告、自选排行和雷达分析统一按 OpenCode Go、OpenCode Zen Free、DeepSeek 官方 API 的顺序调用 DeepSeek Flash Max；行业雷达由 GitHub Actions 定时滚动生成公开证据库，用户手动点击刷新时再触发后台 Action 调用模型做深度综合。
 5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
 6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
 
-批量导入报告库仍可使用 OpenCode CLI 或 Direct API 生成报告，再导入 D1/R2 报告库；在线功能不再接 OpenCode Zen 免费模型。
+批量导入报告库仍可使用 OpenCode CLI 或 Direct API 生成报告，再导入 D1/R2 报告库。线上模型调用保留多级 fallback，避免单一路由限流时直接失败。
 
 ## API
 
@@ -32,6 +32,8 @@
 REPORT_PASSWORD="..."
 AUTH_SECRET="..."
 DEEPSEEK_API_KEY="..."
+OPENCODE_GO_API_KEY="..."
+OPENCODE_ZEN_API_KEY="..."
 GITHUB_RADAR_DISPATCH_TOKEN="..."
 ```
 
@@ -58,7 +60,7 @@ CSTD_USER_PASSWORD="..." node scripts/create-fixed-user.mjs --username=alice --d
 
 行业雷达证据库由 `.github/workflows/radar-evidence.yml` 每 6 小时运行一次：Python 脚本 `scripts/collect_radar_evidence.py` 抓取 AKShare、BaoStock、东方财富财报/业绩预告、商品价格、行业统计、板块行情和公开新闻线索，生成 `radar-evidence.json` 与压缩产物，再写入现有 `REPORT_CACHE` KV 的 `radar-evidence:v1:latest`。这个步骤不读取也不调用 `DEEPSEEK_API_KEY`。
 
-“我的”模板分析使用公司级证据包：加入自选股时会尽力预抓一次，`.github/workflows/company-evidence.yml` 每日调用线上刷新入口，把公司财报、行情、公告、公开搜索线索归一化为 D1/R2 证据包。模板报告按“模板版本 + 公司证据指纹”复用缓存；证据无实质变化时不会重复调用 DeepSeek。模板分析和模板补全都走 DeepSeek 官方 API，正式模板报告使用 `reasoning_effort: "max"`。
+“我的”模板分析使用公司级证据包：加入自选股时会尽力预抓一次，`.github/workflows/company-evidence.yml` 每日调用线上刷新入口，把公司财报、行情、公告、公开搜索线索归一化为 D1/R2 证据包。模板报告按“模板版本 + 公司证据指纹”复用缓存；证据无实质变化时不会重复调用模型。模板分析和模板补全沿用统一 fallback 路由，正式模板报告使用 `reasoning_effort: "max"`。
 
 模板深度报告由 `.github/workflows/template-analysis.yml` 在用户点击模板生成时触发：Pages Function 只创建/复用 running 任务并触发 GitHub workflow dispatch；Action 读取受保护任务接口，调用 DeepSeek，完成后通过同一接口写回 D1/R2。定时公司证据刷新不会调用 DeepSeek。
 
@@ -68,24 +70,42 @@ GitHub 仓库 secrets：
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
+- `CHECKOUT_PAT`（可选；私有仓库 checkout 或跨仓库场景需要）
+- `OPENCODE_GO_API_KEY`
+- `OPENCODE_ZEN_API_KEY`
+- `OPENCODE_API_KEY`（兼容旧配置，可选）
 - `DEEPSEEK_API_KEY`
 - `ANYSEARCH_API_KEY`（外部搜索增强，可选但建议配置）
 - `SEARXNG_ENDPOINTS`（逗号或换行分隔的 SearXNG base URL；需实例启用 JSON 输出）
 - `EXA_API_KEY`（助手高价值外部检索增强，可选）
+- `TUSHARE_TOKEN`（A 股结构化公开数据增强）
+- `RADAR_EVIDENCE_R2_BUCKET`（可选；归档雷达证据压缩包）
+- `COMPANY_EVIDENCE_REFRESH_URL`
+- `COMPANY_EVIDENCE_REFRESH_TOKEN`
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`
 - `TEMPLATE_ANALYSIS_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/template-analysis-job`）
+- `WATCHLIST_RANKING_WORKER_TOKEN`（可选；缺省复用 `TEMPLATE_ANALYSIS_WORKER_TOKEN`）
+- `WATCHLIST_RANKING_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/watchlist-ranking-job`）
 
 Cloudflare Pages secrets：
 
 - `REPORT_PASSWORD`
 - `AUTH_SECRET`
-- `DEEPSEEK_API_KEY`（公司报告仍在 Pages Function 中使用）
+- `OPENCODE_GO_API_KEY`
+- `OPENCODE_ZEN_API_KEY`
+- `OPENCODE_API_KEY`（兼容旧配置，可选）
+- `DEEPSEEK_API_KEY`（最终 fallback）
 - `GITHUB_RADAR_DISPATCH_TOKEN`（fine-grained token，允许触发本仓库 Actions workflow）
 - `GITHUB_TEMPLATE_DISPATCH_TOKEN`（可选；缺省复用 `GITHUB_RADAR_DISPATCH_TOKEN`）
+- `GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN`（可选；缺省复用模板或雷达 dispatch token）
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`（和 GitHub secret 保持一致，仅供后台模板 Action 读写任务）
+- `COMPANY_EVIDENCE_REFRESH_TOKEN`（和 GitHub secret 保持一致，仅供后台公司证据刷新）
 - `ANYSEARCH_API_KEY`（模板分析和助手的外部搜索增强）
 - `SEARXNG_ENDPOINTS`（助手、模板分析的免费元搜索增强；SearXNG API 使用 `/search?q=...&format=json`）
 - `EXA_API_KEY`（助手在高价值、最新或全球/英文证据场景的增强搜索）
+- `TAVILY_API_KEY`（助手外部搜索增强，可选）
+- `BRAVE_SEARCH_API_KEY`（助手外部搜索增强，可选）
+- `TUSHARE_TOKEN`（A 股结构化数据增强）
 
 项目：
 

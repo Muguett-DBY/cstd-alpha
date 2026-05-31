@@ -752,7 +752,8 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
   for (const call of toolCalls) {
     if (!A_STOCK_TOOL_NAMES.has(call.name)) continue;
     const query = (call.query ?? "").trim();
-    if (call.name === "read_tencent_quote") {
+    try {
+      if (call.name === "read_tencent_quote") {
       const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 5);
       if (!codes.length) continue;
       const quotes = await fetchTencentQuote(codes);
@@ -857,7 +858,7 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
         const reports = await fetchResearchReports(query);
         items.push({ source: "CSTD Alpha", query, title: "研报与概念板块", url: "", summary: `【研报】\n${reports}`.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 3, publishedAt: now, qualityScore: 0.9 });
       }
-    } else if (call.name === "compare_stocks") {
+      } else if (call.name === "compare_stocks") {
       const codes = query.split(/[,，\s]+/).filter(Boolean).slice(0, 10);
       if (codes.length < 2) {
         items.push({ source: "CSTD Alpha", query, title: "横向对比", url: "", summary: "请提供至少2只股票代码。", sourceType: "official", signalType: "external_search", weight: 1, publishedAt: now, qualityScore: 1 });
@@ -868,9 +869,27 @@ async function executeAStockToolCalls(toolCalls: AssistantSearchToolCall[]): Pro
           items.push({ source: "CSTD Alpha", query, title: "横向对比表", url: "", summary: table.slice(0, 1800), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
         }
       }
+      }
+    } catch (error) {
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: `${internalToolLabel(call.name)}暂时不可用`,
+        url: "",
+        summary: `本轮未取得 ${internalToolLabel(call.name)} 数据：${assistantToolFailureMessage(error)}`,
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 0.1,
+        publishedAt: now,
+        qualityScore: 0.1,
+      });
     }
   }
   return items;
+}
+
+function assistantToolFailureMessage(error: unknown) {
+  return error instanceof Error && error.message.trim() ? error.message.trim().slice(0, 180) : "上游数据源暂时不可用";
 }
 
 function executeInternalAssistantTools(toolCalls: AssistantSearchToolCall[], context: { siteEvidenceSummary: string; modeEvidenceSummary: string }) {

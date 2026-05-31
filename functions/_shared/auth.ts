@@ -1,6 +1,7 @@
 const COOKIE_NAME = "cstd_alpha_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const PASSWORD_ITERATIONS = 600_000;
+const MAX_PASSWORD_VERIFY_ITERATIONS = 2_000_000;
 
 export type AuthEnv = {
   AUTH_SECRET: string;
@@ -69,8 +70,8 @@ export async function createPasswordHash(password: string, salt = randomBase64Ur
 export async function verifyPasswordHash(password: string, stored: string) {
   const [algorithm, iterationsText, salt, expected] = stored.split("$");
   const iterations = Number(iterationsText);
-  if (algorithm !== "pbkdf2-sha256" || !Number.isFinite(iterations) || !salt || !expected) return false;
-  if (iterations > PASSWORD_ITERATIONS) return false;
+  if (algorithm !== "pbkdf2-sha256" || !Number.isInteger(iterations) || iterations <= 0 || !salt || !expected) return false;
+  if (iterations > MAX_PASSWORD_VERIFY_ITERATIONS) return false;
   const actual = base64UrlEncodeBytes(await pbkdf2(password, salt, iterations));
   return timingSafeEqual(actual, expected);
 }

@@ -60,6 +60,23 @@ describe("D1 migrations", () => {
     for (const column of ["user_key", "watchlist_id", "evidence_hash", "material_hash", "stable_hash", "fresh_hash", "object_key", "status", "fetched_at"]) expect(columns).toContain(column);
   });
 
+  test("research template migrations create editable templates and section requirements", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0004_user_research_templates.sql"))).not.toThrow();
+    expect(() => db.exec(readMigration("0007_template_section_requirements.sql"))).not.toThrow();
+
+    const columns = tableColumns(db, "user_research_templates");
+    for (const column of ["title", "full_prompt", "default_full_prompt", "section_requirements_json", "default_section_requirements_json"]) expect(columns).toContain(column);
+  });
+
+  test("watchlist ranking score migration adds both ranking dimensions", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0008_watchlist_ranking_score.sql"))).not.toThrow();
+
+    const columns = tableColumns(db, "watchlist_ranking_score");
+    for (const column of ["company_quality_score", "investment_attractiveness_score", "overall_score", "model", "updated_at"]) expect(columns).toContain(column);
+  });
+
   test("assistant migration stores chat, memory, tools, and usage history", () => {
     const db = new DatabaseSync(":memory:");
     expect(() => db.exec(readMigration("0008_assistant.sql"))).not.toThrow();

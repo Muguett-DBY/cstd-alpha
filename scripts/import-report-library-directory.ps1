@@ -45,8 +45,7 @@ function Invoke-JsonPost {
   }
 }
 
-try {
-  $loginBody = @{ password = $Password } | ConvertTo-Json -Compress
+$loginBody = @{ password = $Password } | ConvertTo-Json -Compress
   $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
   $loginResponse = Invoke-WebRequest -Uri "$BaseUrl/api/session" -Method Post -ContentType "application/json" -Body $loginBody -WebSession $session -UseBasicParsing -TimeoutSec 60
   if ($loginResponse.Content -and $loginResponse.Content.TrimStart().StartsWith("{")) {
@@ -70,14 +69,14 @@ try {
     $bodyPath = Join-Path $reportPath.DirectoryName "import-request.json"
     $reportRaw = Get-Content -LiteralPath $reportPath.FullName -Raw -Encoding UTF8
     try {
-      $null = $reportRaw | ConvertFrom-Json
+      $report = $reportRaw | ConvertFrom-Json
     } catch {
       $failed += 1
       Write-Output "FAILED $($reportPath.FullName): invalid local report JSON: $($_.Exception.Message)"
       if (-not $ContinueOnError) { throw }
       continue
     }
-    ('{"reports":[' + $reportRaw + ']}') | Set-Content -LiteralPath $bodyPath -Encoding UTF8
+    @{ reports = @($report) } | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $bodyPath -Encoding UTF8
     try {
       Invoke-JsonPost -Uri "$BaseUrl/api/report-library" -Body $bodyPath -CookieHeader $cookieHeader | Out-Null
       $imported += 1
@@ -96,4 +95,3 @@ try {
     imported = $imported
     failed = $failed
   } | ConvertTo-Json
-} finally {}

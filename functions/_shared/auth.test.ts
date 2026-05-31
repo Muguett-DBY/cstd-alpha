@@ -12,6 +12,11 @@ describe("fixed-account auth primitives", () => {
     await expect(verifyPasswordHash("wrong password", first)).resolves.toBe(false);
   });
 
+  test("rejects malformed or excessive password hash work factors without deriving a key", async () => {
+    await expect(verifyPasswordHash("password", "pbkdf2-sha256$0$salt$digest")).resolves.toBe(false);
+    await expect(verifyPasswordHash("password", "pbkdf2-sha256$2000001$salt$digest")).resolves.toBe(false);
+  });
+
   test("stores only a hash of the session token", async () => {
     const token = "session-secret-token";
     const hash = await hashSessionToken(token);

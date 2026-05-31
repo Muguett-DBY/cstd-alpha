@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const defaultBatchRoot = process.env.CSTD_ALPHA_BATCH_ROOT || path.join(".tmp", "cstd-alpha-opencode-batch");
@@ -124,8 +124,8 @@ async function latestFile(dir, pattern) {
       .filter((file) => file.isFile() && pattern.test(file.name))
       .map(async (file) => {
         const filePath = path.join(dir, file.name);
-        const stat = await import("node:fs/promises").then(({ stat }) => stat(filePath));
-        return { filePath, mtimeMs: stat.mtimeMs };
+        const fileStat = await stat(filePath);
+        return { filePath, mtimeMs: fileStat.mtimeMs };
       }),
   );
   matches.sort((left, right) => right.mtimeMs - left.mtimeMs);
