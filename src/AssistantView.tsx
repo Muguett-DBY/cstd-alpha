@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as echarts from "echarts";
 import {
   confirmAssistantMemoryCandidate,
   fetchAssistantThread,
@@ -664,46 +663,21 @@ function AssistantChart({ block }: { block: AssistantChartBlock }) {
 
   useEffect(() => {
     if (!ref.current) return undefined;
-    const chart = echarts.init(ref.current);
-    if (block.chartType === "pie") {
-      chart.setOption({
-        animation: false,
-        tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
-        legend: { orient: "vertical", left: "left", textStyle: { fontWeight: 700 } },
-        series: [
-          {
-            type: "pie",
-            radius: ["30%", "60%"],
-            center: ["50%", "55%"],
-            data: block.labels.map((label, i) => ({ name: label, value: block.series[0]?.data[i] ?? 0 })),
-            emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: "rgba(0, 0, 0, 0.5)" } },
-          },
-        ],
-      });
-    } else {
-      const isArea = block.chartType === "area";
-      const isLine = block.chartType === "line" || isArea;
-      chart.setOption({
-        animation: false,
-        tooltip: { trigger: "axis" },
-        legend: { top: 0, textStyle: { fontWeight: 700 } },
-        grid: { left: 44, right: 16, top: 42, bottom: 42 },
-        xAxis: { type: "category", data: block.labels, axisLabel: { interval: 0, rotate: block.labels.length > 6 ? 24 : 0 } },
-        yAxis: { type: "value" },
-        series: block.series.map((series) => ({
-          name: series.name,
-          type: isLine ? "line" : block.chartType === "scatter" ? "scatter" : "bar",
-          data: series.data,
-          smooth: isLine,
-          ...(isArea ? { areaStyle: {} } : {}),
-        })),
-      });
-    }
-    const resize = () => chart.resize();
-    window.addEventListener("resize", resize);
+    let disposed = false;
+    let chart: import("echarts").ECharts | undefined;
+    const resize = () => chart?.resize();
+    void import("echarts")
+      .then((echarts) => {
+        if (!ref.current || disposed) return;
+        chart = echarts.init(ref.current);
+        applyAssistantChartOptions(chart, block);
+        window.addEventListener("resize", resize);
+      })
+      .catch(() => undefined);
     return () => {
+      disposed = true;
       window.removeEventListener("resize", resize);
-      chart.dispose();
+      chart?.dispose();
     };
   }, [block]);
 
@@ -713,6 +687,43 @@ function AssistantChart({ block }: { block: AssistantChartBlock }) {
       <div ref={ref} role="img" aria-label={block.title || "助手图表"} />
     </div>
   );
+}
+
+function applyAssistantChartOptions(chart: import("echarts").ECharts, block: AssistantChartBlock) {
+  if (block.chartType === "pie") {
+    chart.setOption({
+      animation: false,
+      tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+      legend: { orient: "vertical", left: "left", textStyle: { fontWeight: 700 } },
+      series: [
+        {
+          type: "pie",
+          radius: ["30%", "60%"],
+          center: ["50%", "55%"],
+          data: block.labels.map((label, i) => ({ name: label, value: block.series[0]?.data[i] ?? 0 })),
+          emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: "rgba(0, 0, 0, 0.5)" } },
+        },
+      ],
+    });
+    return;
+  }
+  const isArea = block.chartType === "area";
+  const isLine = block.chartType === "line" || isArea;
+  chart.setOption({
+    animation: false,
+    tooltip: { trigger: "axis" },
+    legend: { top: 0, textStyle: { fontWeight: 700 } },
+    grid: { left: 44, right: 16, top: 42, bottom: 42 },
+    xAxis: { type: "category", data: block.labels, axisLabel: { interval: 0, rotate: block.labels.length > 6 ? 24 : 0 } },
+    yAxis: { type: "value" },
+    series: block.series.map((series) => ({
+      name: series.name,
+      type: isLine ? "line" : block.chartType === "scatter" ? "scatter" : "bar",
+      data: series.data,
+      smooth: isLine,
+      ...(isArea ? { areaStyle: {} } : {}),
+    })),
+  });
 }
 
 function stripRenderedTables(text: string) {

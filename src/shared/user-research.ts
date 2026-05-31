@@ -332,7 +332,7 @@ function deriveTemplateSectionRequirements(fullPrompt: string) {
 
 function normalizeRequiredPoints(value: unknown) {
   const points = Array.isArray(value) ? value.map((item) => stringValue(item)).filter(Boolean) : [];
-  return [...DEFAULT_TEMPLATE_REQUIRED_POINTS, ...points].filter((point, index, all) => all.indexOf(point) === index).slice(0, 8);
+  return Array.from(new Set([...DEFAULT_TEMPLATE_REQUIRED_POINTS, ...points])).slice(0, 8);
 }
 
 function normalizeTemplateRequirementId(value: unknown) {

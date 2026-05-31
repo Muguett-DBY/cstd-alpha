@@ -1215,8 +1215,8 @@ function MarkdownReport({ markdown }: { markdown: string }) {
                 .split(/\n/)
                 .map((line) => line.replace(/^[-*]\s+/, "").trim())
                 .filter(Boolean)
-                .map((line) => (
-                  <li key={line}>{line}</li>
+                .map((line, lineIndex) => (
+                  <li key={`${lineIndex}:${line}`}>{line}</li>
               ))}
             </ul>
           );
@@ -1352,7 +1352,7 @@ function companyLogoColor(company: CompanyCandidate) {
 }
 
 function listItems(items: string[]) {
-  return (items.length ? items : ["模型未提供，需要复核。"]).map((item) => <li key={item}>{item}</li>);
+  return (items.length ? items : ["模型未提供，需要复核。"]).map((item, index) => <li key={`${index}:${item}`}>{item}</li>);
 }
 
 function formatDateTime(value: string) {
