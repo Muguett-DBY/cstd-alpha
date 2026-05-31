@@ -12,7 +12,7 @@ import {
   sendCodeResult,
 } from "./api";
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
-import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
@@ -182,16 +182,25 @@ export function AssistantView() {
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
+    let startTimeoutId: number | undefined;
+    const clearStartTimeout = () => {
+      if (startTimeoutId === undefined) return;
+      window.clearTimeout(startTimeoutId);
+      startTimeoutId = undefined;
+    };
     recognition.onstart = () => {
+      clearStartTimeout();
       setSpeechPhase("listening");
       setSpeechNotice("正在识别，可以直接说出你的问题。");
     };
     recognition.onend = () => {
+      clearStartTimeout();
       if (recognitionRef.current === recognition) recognitionRef.current = null;
       setSpeechPhase((current) => (current === "listening" ? "idle" : current));
       setSpeechNotice((current) => (current === "正在识别，可以直接说出你的问题。" ? "" : current));
     };
     recognition.onerror = (event) => {
+      clearStartTimeout();
       if (recognitionRef.current === recognition) recognitionRef.current = null;
       setSpeechPhase("error");
       setSpeechNotice(speechErrorMessage(event.error));
@@ -220,6 +229,13 @@ export function AssistantView() {
     recognitionRef.current = recognition;
     try {
       recognition.start();
+      startTimeoutId = window.setTimeout(() => {
+        if (recognitionRef.current !== recognition) return;
+        recognition.abort?.();
+        recognitionRef.current = null;
+        setSpeechPhase("error");
+        setSpeechNotice("语音识别启动超时，请检查浏览器麦克风权限或使用系统听写。");
+      }, 5_000);
     } catch {
       recognitionRef.current = null;
       setSpeechPhase("error");
@@ -802,15 +818,11 @@ function MemoryCandidateDialog({ candidate, onConfirm, onReject }: { candidate: 
 }
 
 async function ensureMicrophoneReady(): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    const permission = await navigator.permissions?.query?.({ name: "microphone" as PermissionName });
-    const blocked = shouldBlockSpeechForPermissionState(permission?.state);
-    if (blocked.blocked) return { ok: false, message: blocked.message };
-  } catch (error) {
-    // Some browsers do not expose microphone permission through the Permissions API.
-    // Let SpeechRecognition.start() request/check the device instead of pre-opening the mic.
-    void error;
-  }
+  const state = await resolveSpeechPermissionState(
+    navigator.permissions?.query ? () => navigator.permissions.query({ name: "microphone" as PermissionName }) : undefined,
+  );
+  const blocked = shouldBlockSpeechForPermissionState(state);
+  if (blocked.blocked) return { ok: false, message: blocked.message };
   return { ok: true };
 }
 

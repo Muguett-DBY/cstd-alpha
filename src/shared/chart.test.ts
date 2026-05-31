@@ -15,6 +15,18 @@ describe("chart helpers", () => {
     expect(result.at(-1)).toMatchObject({ date: "2024-01-04", peak: 12, price: 9 });
   });
 
+  test("prefers raw closing prices when calculating drawdown for adjusted charts", () => {
+    const result = buildDrawdownSeries([
+      { date: "2024-01-01", close: 1, adjustedClose: 1, rawClose: 10, volume: 100 },
+      { date: "2024-01-02", close: 8, adjustedClose: 8, rawClose: 8, volume: 120 },
+    ]);
+
+    expect(result).toEqual([
+      { date: "2024-01-01", price: 10, peak: 10, drawdown: 0 },
+      { date: "2024-01-02", price: 8, peak: 10, drawdown: -20 },
+    ]);
+  });
+
   test("empty price series normalizes without crashing", () => {
     const result = normalizeChartBundle({
       company: { name: "No Data Co." },

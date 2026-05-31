@@ -436,6 +436,44 @@ describe("public data providers", () => {
     expect(result.evidence[0]).toMatchObject({ freshness: "latest-public" });
   });
 
+  test("uses raw Eastmoney closing prices for drawdown when displaying adjusted charts", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          name: "贵州茅台",
+          code: "600519",
+          klines: url.includes("fqt=0")
+            ? ["2024-01-01,10,10,10,10,100,1000,0,0,0,0", "2024-01-02,8,8,8,8,100,800,0,-20,0,0"]
+            : ["2024-01-01,1,1,1,1,100,1000,0,0,0,0", "2024-01-02,8,8,8,8,100,800,0,700,0,0"],
+        },
+      }),
+    }));
+
+    const result = await fetchChartBundle({
+      company: {
+        id: "eastmoney:1.600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "上海证券交易所",
+        listingPlace: "沪A",
+        marketType: "AStock",
+        quoteId: "1.600519",
+        source: "eastmoney",
+      },
+      priceMode: "adjusted",
+      fetchImpl: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("fqt=1"), expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("fqt=0"), expect.any(Object));
+    expect(result.priceSeries).toEqual([
+      expect.objectContaining({ close: 1, rawClose: 10 }),
+      expect.objectContaining({ close: 8, rawClose: 8 }),
+    ]);
+    expect(result.marketSnapshot.maxDrawdown).toBe(-20);
+  });
+
   test("fetches Yahoo ten-year monthly price points for overseas companies", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

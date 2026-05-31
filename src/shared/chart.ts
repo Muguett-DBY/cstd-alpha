@@ -68,9 +68,10 @@ export function normalizeChartBundle(value: ChartBundle): ChartBundle {
 export function buildDrawdownSeries(priceSeries: PricePoint[]): DrawdownPoint[] {
   let peak = 0;
   return priceSeries.map((point) => {
-    peak = Math.max(peak, point.close);
-    const drawdown = peak > 0 ? round(((point.close - peak) / peak) * 100, 2) : 0;
-    return { date: point.date, price: point.close, peak, drawdown };
+    const price = point.rawClose ?? point.close;
+    peak = Math.max(peak, price);
+    const drawdown = peak > 0 ? round(((price - peak) / peak) * 100, 2) : 0;
+    return { date: point.date, price, peak, drawdown };
   });
 }
 

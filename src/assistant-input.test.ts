@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
+import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 
 describe("assistant input helpers", () => {
   test("submits on plain Enter and keeps Shift+Enter as newline", () => {
@@ -33,5 +33,10 @@ describe("assistant input helpers", () => {
       blocked: true,
       message: "麦克风权限被拒绝，请允许浏览器使用麦克风。",
     });
+  });
+
+  test("does not hang when the browser microphone permission query stalls", async () => {
+    await expect(resolveSpeechPermissionState(() => new Promise(() => undefined), 5)).resolves.toBeUndefined();
+    await expect(resolveSpeechPermissionState(async () => ({ state: "denied" }), 5)).resolves.toBe("denied");
   });
 });

@@ -569,6 +569,12 @@ export async function fetchChartBundle({ company, priceMode, fetchImpl = fetch, 
   let json = await fetchJson(url, fetchImpl);
   let priceSeries = useEastmoney ? normalizeEastmoneyKlines(json, priceMode) : normalizeYahooChart(json, priceMode);
 
+  if (useEastmoney && priceMode === "adjusted" && priceSeries.length) {
+    const rawJson = await fetchJson(eastmoneyKlineUrl(company.quoteId || company.secid || company.code, "raw"), fetchImpl);
+    const rawCloseByDate = new Map(normalizeEastmoneyKlines(rawJson, "raw").map((point) => [point.date, point.close]));
+    priceSeries = priceSeries.map((point) => ({ ...point, rawClose: rawCloseByDate.get(point.date) }));
+  }
+
   if (useEastmoney && priceSeries.length === 0 && company.yahooSymbol) {
     url = yahooTenYearChartUrl(company.yahooSymbol);
     sourceName = "Yahoo Finance fallback";

@@ -46,3 +46,24 @@ export function shouldBlockSpeechForPermissionState(state?: PermissionState | st
   }
   return { blocked: false } as const;
 }
+
+export async function resolveSpeechPermissionState(
+  queryPermission: (() => Promise<{ state?: PermissionState | string }>) | undefined,
+  timeoutMs = 1_500,
+) {
+  if (!queryPermission) return undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const permission = await Promise.race([
+      queryPermission(),
+      new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(() => resolve(undefined), timeoutMs);
+      }),
+    ]);
+    return permission?.state;
+  } catch {
+    return undefined;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
