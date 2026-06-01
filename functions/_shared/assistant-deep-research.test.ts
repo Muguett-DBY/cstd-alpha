@@ -69,7 +69,7 @@ describe("assistant deep research contract", () => {
 
     const directLists = [
       "主判断：看好",
-      "A股Top10推荐：",
+      "A 股 Top10推荐：",
       "| 排名 | 公司 | 代码 | 核心理由 |",
       "| --- | --- | --- | --- |",
       "| 1 | 中际旭创 | 300308 | 全球光模块 |",
@@ -82,7 +82,7 @@ describe("assistant deep research contract", () => {
       "| 8 | 中微公司 | 688012 | 刻蚀设备 |",
       "| 9 | 科大讯飞 | 002230 | AI应用 |",
       "| 10 | 韦尔股份 | 603501 | AI视觉 |",
-      "美股Top10推荐：",
+      "美 股 Top10推荐：",
       "| 排名 | 公司 | 代码 | 核心理由 |",
       "| --- | --- | --- | --- |",
       "| 1 | NVIDIA | NVDA | GPU龙头 |",

@@ -110,8 +110,8 @@ function asksForAShareAndUsShareLists(query: string) {
 }
 
 function hasDirectMarketRecommendationSection(text: string, market: "A股" | "美股") {
-  const escapedMarket = market === "A股" ? "A股" : "美股";
-  const header = new RegExp(`(?:^|\\n)\\s*(?:#{1,4}\\s*)?(?:\\*{1,2})?${escapedMarket}\\s*(?:Top\\s*10|10\\s*支|推荐|名单|清单|按推荐序|排序)`, "i");
+  const marketPattern = market === "A股" ? "A\\s*股" : "美\\s*股";
+  const header = new RegExp(`(?:^|\\n)\\s*(?:#{1,4}\\s*)?(?:\\*{1,2})?${marketPattern}\\s*(?:Top\\s*10|10\\s*支|推荐|名单|清单|按推荐序|排序)`, "i");
   return header.test(text);
 }
 
