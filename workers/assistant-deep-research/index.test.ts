@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildDeepResearchCandidateEnrichmentToolCalls, buildDeepResearchExecutionToolCalls, ensureDeepResearchAnswerCompleteness } from "./index";
+import { buildDeepResearchCandidateEnrichmentToolCalls, buildDeepResearchExecutionToolCalls, ensureDeepResearchAnswerCompleteness, sanitizeAssistantAStockTickerPairs } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
 
 describe("assistant deep research worker", () => {
@@ -75,6 +75,58 @@ describe("assistant deep research worker", () => {
 
     expect(calls.map((call) => call.name)).toEqual(["read_tencent_quote", "read_financial_statements", "read_reports_concepts"]);
     expect(calls[0]?.query).toBe("300308,601138,688041");
+  });
+
+  test("splits candidate enrichment into batches accepted by the internal data tools", () => {
+    const calls = buildDeepResearchCandidateEnrichmentToolCalls({
+      ...mockJob(),
+      query: "推荐八家A股AI公司",
+      researchKind: "selection",
+    }, [{
+      source: "Tavily",
+      query: "AI算力",
+      title: "候选公司",
+      summary: "候选代码 300308、601138、688041、688256、688008、002371、688012、603986。",
+      url: "https://example.com/ai",
+      content: "",
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 1,
+      score: 1,
+      freshness: "month",
+    }]);
+
+    expect(calls).toHaveLength(6);
+    expect(calls.map((call) => call.query)).toEqual([
+      "300308,601138,688041,688256,688008",
+      "300308,601138,688041,688256,688008",
+      "300308,601138,688041,688256,688008",
+      "002371,688012,603986",
+      "002371,688012,603986",
+      "002371,688012,603986",
+    ]);
+  });
+
+  test("corrects mismatched A-share tickers using verified quote evidence", () => {
+    const text = sanitizeAssistantAStockTickerPairs(
+      "1. 中际旭创 (002463.SZ)\n2. 工业富联 (601138.SH)",
+      [{
+        source: "CSTD Alpha",
+        query: "300308,601138",
+        title: "实时行情快照",
+        summary: "中际旭创(300308) 价格123元；工业富联(601138) 价格45元",
+        url: "",
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 3,
+        score: 3,
+        freshness: "today",
+      }],
+    );
+
+    expect(text).toContain("中际旭创 (300308)");
+    expect(text).toContain("工业富联 (601138)");
+    expect(text).not.toContain("002463");
   });
 });
 

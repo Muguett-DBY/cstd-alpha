@@ -131,7 +131,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const repaired = !stopped && !validation.valid
     ? await repairAssistantDeepResearchAnswer(env, job, generated.text, validation.missing, calls, context.siteEvidenceSummary, evidenceResult.items)
     : generated.text;
-  const content = ensureDeepResearchAnswerCompleteness(repaired, job, stopped, evidenceResult.items.length);
+  const normalized = sanitizeAssistantAStockTickerPairs(repaired, evidenceResult.items);
+  const content = ensureDeepResearchAnswerCompleteness(normalized, job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -367,14 +368,40 @@ export function buildDeepResearchCandidateEnrichmentToolCalls(
   const text = evidence.map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`).join("\n");
   const codes = [...new Set(text.match(/\b[0368]\d{5}\b/g) ?? [])].slice(0, 8);
   if (!codes.length) return [];
-  const query = codes.join(",");
   const existing = new Set(previousCalls.map((call) => `${call.name}:${call.query ?? ""}`));
-  const calls: AssistantSearchToolCall[] = [
-    { id: "deep:enrich:quote", name: "read_tencent_quote", query, reason: "候选公司发现后批量核验行情和估值" },
-    { id: "deep:enrich:financials", name: "read_financial_statements", query, reason: "候选公司发现后批量核验财报和现金流" },
-    { id: "deep:enrich:reports", name: "read_reports_concepts", query, reason: "候选公司发现后补研报与行业归属" },
-  ];
+  const calls: AssistantSearchToolCall[] = [];
+  for (let index = 0; index < codes.length; index += 5) {
+    const query = codes.slice(index, index + 5).join(",");
+    const batch = Math.floor(index / 5) + 1;
+    calls.push(
+      { id: `deep:enrich:quote:${batch}`, name: "read_tencent_quote", query, reason: "候选公司发现后批量核验行情和估值" },
+      { id: `deep:enrich:financials:${batch}`, name: "read_financial_statements", query, reason: "候选公司发现后批量核验财报和现金流" },
+      { id: `deep:enrich:reports:${batch}`, name: "read_reports_concepts", query, reason: "候选公司发现后补研报与行业归属" },
+    );
+  }
   return calls.filter((call) => !existing.has(`${call.name}:${call.query}`));
+}
+
+export function sanitizeAssistantAStockTickerPairs(
+  text: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const verifiedPairs = new Map<string, string>();
+  const evidenceText = evidence.map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`).join("\n");
+  for (const match of evidenceText.matchAll(/([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·]{1,20})\s*[（(]\s*([0368]\d{5})\s*[)）]/g)) {
+    verifiedPairs.set(match[1], match[2]);
+  }
+  for (const match of evidenceText.matchAll(/【([A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff·]{1,20})\s+([0368]\d{5})\s+/g)) {
+    verifiedPairs.set(match[1], match[2]);
+  }
+  let normalized = text;
+  for (const [name, code] of verifiedPairs) {
+    normalized = normalized.replace(
+      new RegExp(`${escapeRegExp(name)}\\s*[（(]\\s*[0368]\\d{5}(?:\\.(?:SH|SZ|BJ))?\\s*[)）]`, "gi"),
+      `${name} (${code})`,
+    );
+  }
+  return normalized;
 }
 
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
@@ -385,6 +412,10 @@ function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
     seen.add(key);
     return true;
   });
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function ensureDeepResearchAnswerCompleteness(text: string, job: AssistantDeepResearchWorkerJob, stopped: boolean, evidenceCount: number) {
