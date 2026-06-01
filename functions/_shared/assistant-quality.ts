@@ -274,6 +274,10 @@ export const ASSISTANT_QUALITY_PROMPTS: AssistantQualityPrompt[] = Object.entrie
   prompts.map((prompt) => ({ ...prompt, category: category as AssistantQualityPrompt["category"] })),
 );
 
+export const ASSISTANT_REGRESSION_100_PROMPTS: AssistantQualityPrompt[] = Object.entries(promptBank).flatMap(([category, prompts]) =>
+  prompts.slice(0, 5).map((prompt) => ({ ...prompt, category: category as AssistantQualityPrompt["category"] })),
+);
+
 export function isUnsatisfactoryEvidenceOnlyAnswer(answer: string) {
   const normalized = answer.replace(/\s+/g, "");
   if (!normalized) return true;

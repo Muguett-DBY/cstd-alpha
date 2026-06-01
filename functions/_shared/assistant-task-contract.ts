@@ -72,6 +72,12 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
       const required = contract.requestedTotalCount ?? 1;
       if (countAllRecommendations(text) < required) missing.push(`推荐名单至少 ${required} 家`);
     }
+  } else if (contract.kind === "comparison") {
+    if (!/(主判断|结论)[：:]/.test(text)) missing.push("对比主判断");
+    const conclusionLine = text.split(/\n/).find((line) => /(主判断|结论)[：:]/.test(line)) ?? "";
+    if (!/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|第一|第二|>|＞)/.test(conclusionLine + "\n" + text.slice(0, 500))) {
+      missing.push("对比相对结论");
+    }
   } else if (!/(主判断|结论)[：:]\s*(?:\*{1,2})?\s*(看好|中性观察|谨慎回避|反对)/.test(text)) {
     missing.push("四档主判断");
   }
@@ -81,7 +87,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
   for (const subject of contract.comparedSubjects) {
     if (!text.includes(subject)) missing.push(`覆盖对比对象：${subject}`);
   }
-  if (contract.kind === "comparison" && !/(排序|排名|优先级|更稳|更优|优于|胜负|主判断)/.test(text)) missing.push("对比结论");
+  if (contract.kind === "comparison" && !/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|主判断)/.test(text)) missing.push("对比结论");
   if (!/(反证|我可能错在哪里|证伪|主要风险)/.test(text)) missing.push("反证条件");
   if (!/(下一步跟踪|跟踪指标|后续跟踪)/.test(text)) missing.push("下一步跟踪");
   if (!hasEvidenceTable(text)) missing.push("关键证据表");

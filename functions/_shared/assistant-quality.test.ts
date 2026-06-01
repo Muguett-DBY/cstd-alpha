@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ASSISTANT_QUALITY_PROMPTS, assistantQualityPromptStats, isUnsatisfactoryEvidenceOnlyAnswer } from "./assistant-quality";
+import { ASSISTANT_QUALITY_PROMPTS, ASSISTANT_REGRESSION_100_PROMPTS, assistantQualityPromptStats, isUnsatisfactoryEvidenceOnlyAnswer } from "./assistant-quality";
 
 describe("assistant quality prompt suite", () => {
   test("covers 200 realistic investment assistant prompts across modes and categories", () => {
@@ -12,6 +12,18 @@ describe("assistant quality prompt suite", () => {
     expect(ASSISTANT_QUALITY_PROMPTS.some((prompt) => prompt.prompt.includes("优必选人形机器人，大脑与小脑"))).toBe(true);
     expect(ASSISTANT_QUALITY_PROMPTS.some((prompt) => prompt.prompt.includes("港股互联网现在投资吸引力"))).toBe(true);
     expect(ASSISTANT_QUALITY_PROMPTS.some((prompt) => prompt.prompt.includes("如果我认为银行股是稳赚高股息"))).toBe(true);
+  });
+
+  test("exports a fixed 100-prompt regression subset across all categories", () => {
+    const stats = assistantQualityPromptStats(ASSISTANT_REGRESSION_100_PROMPTS);
+    expect(stats.count).toBe(100);
+    expect(stats.categories).toBe(20);
+    expect(stats.modes).toBe(3);
+    expect(ASSISTANT_REGRESSION_100_PROMPTS.filter((prompt) => prompt.mustUseEvidence).length).toBeGreaterThanOrEqual(85);
+    expect(ASSISTANT_REGRESSION_100_PROMPTS.some((prompt) => prompt.prompt.includes("茅台今年业绩预估"))).toBe(true);
+    expect(ASSISTANT_REGRESSION_100_PROMPTS.some((prompt) => prompt.prompt.includes("优必选人形机器人，大脑与小脑"))).toBe(true);
+    expect(ASSISTANT_REGRESSION_100_PROMPTS.some((prompt) => prompt.prompt.includes("贵州茅台和五粮液长期回报谁更稳"))).toBe(true);
+    expect(ASSISTANT_REGRESSION_100_PROMPTS.some((prompt) => prompt.prompt.includes("银行高股息安全"))).toBe(true);
   });
 
   test("flags answers that stop at evidence insufficiency without doing useful work", () => {

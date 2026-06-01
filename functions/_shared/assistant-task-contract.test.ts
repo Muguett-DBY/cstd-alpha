@@ -47,15 +47,47 @@ describe("assistant task contracts", () => {
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
-      "主判断：中性观察",
+      "主判断：贵州茅台相对更稳。",
       "| 公司 | 判断 |",
       "| --- | --- |",
       "| 贵州茅台 | 稳健 |",
+      "两者相比，贵州茅台优势更明确。",
       "反证条件：渠道继续走弱。",
       "下一步跟踪：跟踪批价。",
     ].join("\n"), contract);
 
     expect(result.valid).toBe(false);
     expect(result.missing).toContain("覆盖对比对象：五粮液");
+  });
+
+  test("accepts comparison answers with relative judgment instead of four-grade verdict", () => {
+    const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
+    const result = validateAssistantTaskAnswer([
+      "主判断：贵州茅台相对更稳，五粮液弹性更高但验证压力更大；排序为贵州茅台 > 五粮液。",
+      "| 公司 | 核心证据 | 风险 |",
+      "| --- | --- | --- |",
+      "| 贵州茅台 | 品牌和现金流更强 | 批价下行 |",
+      "| 五粮液 | 弹性更高 | 渠道和库存验证不足 |",
+      "反证条件：若五粮液现金流和批价显著改善，对比结论需要重算。",
+      "下一步跟踪：跟踪批价、合同负债、经营现金流和渠道库存。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
+  test("rejects comparison answers that only give a four-grade label without relative conclusion", () => {
+    const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
+    const result = validateAssistantTaskAnswer([
+      "主判断：看好",
+      "| 公司 | 证据 | 判断 |",
+      "| --- | --- | --- |",
+      "| 贵州茅台 | 品牌 | 稳健 |",
+      "| 五粮液 | 渠道 | 弹性 |",
+      "反证条件：批价继续走弱。",
+      "下一步跟踪：跟踪批价。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(false);
+    expect(result.missing).toContain("对比相对结论");
   });
 });

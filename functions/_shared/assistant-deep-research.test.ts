@@ -51,6 +51,21 @@ describe("assistant deep research contract", () => {
     expect(hasRequiredDeepResearchAnswerSections("结论：看好", "forecast")).toBe(false);
   });
 
+  test("comparison answers use relative conclusions rather than mandatory four-grade verdicts", () => {
+    const comparison = [
+      "主判断：贵州茅台相对更稳，五粮液弹性更高但渠道和库存验证压力更大；排序为贵州茅台 > 五粮液。",
+      "| 公司 | 核心证据 | 风险 |",
+      "| --- | --- | --- |",
+      "| 贵州茅台 | 品牌和现金流更强 | 批价下行 |",
+      "| 五粮液 | 弹性更高 | 渠道库存压力 |",
+      "反证条件：若五粮液现金流和批价显著改善，对比结论需要重算。",
+      "下一步跟踪：跟踪批价、合同负债、经营现金流和渠道库存。",
+    ].join("\n");
+
+    expect(hasRequiredDeepResearchAnswerSections(comparison, "comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断")).toBe(true);
+    expect(hasRequiredDeepResearchAnswerSections("主判断：看好\n| 公司 | 证据 | 判断 |\n| --- | --- | --- |\n| 贵州茅台 | 品牌 | 稳健 |\n| 五粮液 | 渠道 | 弹性 |\n反证条件：批价继续走弱。\n下一步跟踪：跟踪批价。", "comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断")).toBe(false);
+  });
+
   test("selection answers must include direct A-share and US-stock recommendation lists", () => {
     const buriedScenarioOnly = [
       "推荐口径：AI产业链只按证据强度和赔率排序，不等同于无脑买入。",

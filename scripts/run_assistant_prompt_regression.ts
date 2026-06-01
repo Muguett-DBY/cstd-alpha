@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { ASSISTANT_QUALITY_PROMPTS, isUnsatisfactoryEvidenceOnlyAnswer, type AssistantQualityPrompt } from "../functions/_shared/assistant-quality";
+import { ASSISTANT_QUALITY_PROMPTS, ASSISTANT_REGRESSION_100_PROMPTS, isUnsatisfactoryEvidenceOnlyAnswer, type AssistantQualityPrompt } from "../functions/_shared/assistant-quality";
 
 type RunResult = {
   id: string;
@@ -22,7 +22,8 @@ const args = parseArgs(process.argv.slice(2));
 const isCliRun = process.argv[1]?.replaceAll("\\", "/").endsWith("run_assistant_prompt_regression.ts") ?? false;
 const baseUrl = args["base-url"] || "https://alpha.custard.top";
 const cookie = args.cookie || process.env.ASSISTANT_REGRESSION_COOKIE || "";
-const promptsPerCategory = Number(args["prompts-per-category"] || 1);
+const suite = args.suite || "default";
+const promptsPerCategory = Number(args["prompts-per-category"] || (suite === "100" ? 5 : 1));
 const limit = Number(args.limit || 0);
 const onlyCategory = args.category;
 const onlyIds = new Set((args.ids || "").split(",").map((value) => value.trim()).filter(Boolean));
@@ -38,7 +39,7 @@ async function main() {
     throw new Error("Missing cookie. Pass --cookie \"cstd_alpha_session=...\" or set ASSISTANT_REGRESSION_COOKIE.");
   }
 
-  const selectedPrompts = selectPrompts(ASSISTANT_QUALITY_PROMPTS);
+  const selectedPrompts = selectPrompts(suite === "100" ? ASSISTANT_REGRESSION_100_PROMPTS : ASSISTANT_QUALITY_PROMPTS);
   const results: RunResult[] = [];
 
   for (const prompt of selectedPrompts) {
