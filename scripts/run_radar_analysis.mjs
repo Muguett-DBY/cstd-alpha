@@ -8,8 +8,6 @@ const OPENCODE_ZEN_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/v1/chat/compl
 const OPENCODE_ZEN_FREE_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash-free";
 const OPENCODE_GO_CHAT_COMPLETIONS_URL = "https://opencode.ai/zen/go/v1/chat/completions";
 const OPENCODE_GO_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
-const DEEPSEEK_OFFICIAL_FLASH_MODEL = "deepseek-v4-flash";
 const DEEPSEEK_MODEL = OPENCODE_GO_DEEPSEEK_FLASH_MODEL;
 const DEEPSEEK_CACHE_PROTOCOL = "CSTD_ALPHA_DEEPSEEK_CACHE_PROTOCOL_V1";
 const EVIDENCE_WEIGHTS = {
@@ -447,7 +445,6 @@ async function repairDeepSeekJsonContent(content) {
 function deepSeekFallbackRoutesFromEnv() {
   const zenKey = cleanEnvKey(process.env.OPENCODE_ZEN_API_KEY);
   const goKey = cleanEnvKey(process.env.OPENCODE_GO_API_KEY) || cleanEnvKey(process.env.OPENCODE_API_KEY);
-  const officialKey = cleanEnvKey(process.env.DEEPSEEK_API_KEY);
   return [
     ...(goKey
       ? [
@@ -468,17 +465,6 @@ function deepSeekFallbackRoutesFromEnv() {
             url: OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
             apiKey: zenKey,
             isFree: true,
-          },
-        ]
-      : []),
-    ...(officialKey
-      ? [
-          {
-            provider: "deepseek-official",
-            model: DEEPSEEK_OFFICIAL_FLASH_MODEL,
-            url: DEEPSEEK_OFFICIAL_CHAT_COMPLETIONS_URL,
-            apiKey: officialKey,
-            isFree: false,
           },
         ]
       : []),

@@ -37,7 +37,6 @@ type Env = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
   GITHUB_RADAR_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
@@ -275,7 +274,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }, 202);
 };
 
-export function radarModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">): RadarRoute[] {
+export function radarModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY">): RadarRoute[] {
   return buildDeepSeekFallbackRoutes(env);
 }
 

@@ -183,12 +183,12 @@ describe("DeepSeek report client", () => {
     expect(userPayload.expectedOutputShape.financialTenYear.rows).toEqual([]);
   });
 
-  test("promotes the requested paid DeepSeek model ahead of anonymous free fallback when Go is not configured", async () => {
+  test("routes report generation through OpenCode Go before the free fallback", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ deepseekApiKey: "official-key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ apiKey: "go-key", evidence, fetchImpl: fetchMock });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe("deepseek-v4-flash");
   });

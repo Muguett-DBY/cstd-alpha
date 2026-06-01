@@ -9,7 +9,6 @@ type Env = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
 };
 
 type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
@@ -27,7 +26,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   return json({ completion });
 };
 
-export async function requestTemplateCompletion(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
+export async function requestTemplateCompletion(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY">, draft: TemplateCompletionDraft, signal: AbortSignal) {
   const messages = buildTemplateCompletionMessages(draft);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("template-completion-timeout"), TEMPLATE_COMPLETION_TIMEOUT_MS);
@@ -157,7 +156,7 @@ function normalizeDraftInput(value: Partial<TemplateCompletionDraft> | undefined
   };
 }
 
-function templateCompletionModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">): TemplateCompletionRoute[] {
+function templateCompletionModelRoutes(env: Pick<Env, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY">): TemplateCompletionRoute[] {
   return buildDeepSeekFallbackRoutes(env);
 }
 

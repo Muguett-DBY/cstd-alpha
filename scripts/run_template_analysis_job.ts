@@ -113,7 +113,6 @@ function modelEnv() {
     OPENCODE_ZEN_API_KEY: process.env.OPENCODE_ZEN_API_KEY,
     OPENCODE_GO_API_KEY: process.env.OPENCODE_GO_API_KEY,
     OPENCODE_API_KEY: process.env.OPENCODE_API_KEY,
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     ANYSEARCH_API_KEY: process.env.ANYSEARCH_API_KEY,
     SEARXNG_ENDPOINTS: process.env.SEARXNG_ENDPOINTS,
   } as never;

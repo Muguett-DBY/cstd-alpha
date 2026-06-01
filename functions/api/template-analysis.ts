@@ -30,7 +30,6 @@ type Env = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
@@ -45,7 +44,6 @@ type DurableTemplateEnv = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB?: D1Database;
@@ -571,7 +569,7 @@ function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
   return `${normalized.slice(0, Math.max(0, maxChars - 60)).trim()}\n\n（后文因上下文长度限制截断，汇总时以已提供正文和结构化要点交叉验证。）`;
 }
 
-export function templateModelRoutes(env: Pick<DurableTemplateEnv, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY" | "DEEPSEEK_API_KEY">, preferPaid = false): DeepSeekFallbackRoute[] {
+export function templateModelRoutes(env: Pick<DurableTemplateEnv, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY">, preferPaid = false): DeepSeekFallbackRoute[] {
   void preferPaid;
   return buildDeepSeekFallbackRoutes(env);
 }

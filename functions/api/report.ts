@@ -9,7 +9,6 @@ type Env = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
   OPENCODE_API_KEY?: string;
-  DEEPSEEK_API_KEY?: string;
   REPORT_CACHE?: KVNamespace;
   REPORT_LIBRARY_DB?: D1Database;
   REPORT_LIBRARY_BUCKET?: R2Bucket;
@@ -183,7 +182,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       apiKey: env.OPENCODE_API_KEY,
       opencodeZenApiKey: env.OPENCODE_ZEN_API_KEY,
       opencodeGoApiKey: env.OPENCODE_GO_API_KEY,
-      deepseekApiKey: env.DEEPSEEK_API_KEY,
       evidence,
       language: "zh-CN",
       signal,
