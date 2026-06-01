@@ -60,7 +60,9 @@ export function AssistantView() {
   const [speechNotice, setSpeechNotice] = useState("");
   const [pyodideReady, setPyodideReady] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const pyodideRef = useRef<{ runPythonAsync: (code: string) => Promise<unknown> } | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
   const lastSentMessageRef = useRef("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -82,11 +84,28 @@ export function AssistantView() {
 
   useEffect(() => {
     activeThreadIdRef.current = thread?.id ?? null;
+    shouldStickToBottomRef.current = true;
   }, [thread?.id]);
 
   useEffect(() => {
+    if (!shouldStickToBottomRef.current) return;
+    const scrollEl = messagesScrollRef.current;
+    if (scrollEl) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: "smooth" });
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [thread?.messages.length, draft, agentStatus, deepResearchJobs]);
+
+  function updateMessageScrollStickiness() {
+    const scrollEl = messagesScrollRef.current;
+    if (!scrollEl) {
+      shouldStickToBottomRef.current = true;
+      return;
+    }
+    const distanceToBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    shouldStickToBottomRef.current = distanceToBottom < 96;
+  }
 
   const activeDeepResearchIds = useMemo(
     () => Object.values(deepResearchJobs).filter((job) => job.status === "queued" || job.status === "running" || job.status === "stopping").map((job) => job.id).sort().join(","),
@@ -298,6 +317,7 @@ export function AssistantView() {
     const controller = new AbortController();
     assistantAbortRef.current = controller;
     const requestThreadId = thread?.id ?? null;
+    shouldStickToBottomRef.current = true;
     setInput("");
     setDraft("正在分析…");
     setDraftBlocks([]);
@@ -475,7 +495,7 @@ export function AssistantView() {
             </div>
             <button type="button" className="assistant-mobile-new" onClick={() => void newThread()} aria-label="新对话">＋</button>
           </header>
-          <div className="assistant-messages">
+          <div ref={messagesScrollRef} className="assistant-messages" onScroll={updateMessageScrollStickiness}>
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {
               const cleanContent = stripInternalAssistantCompletion(message.content);
