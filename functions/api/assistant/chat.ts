@@ -3171,9 +3171,9 @@ function formatEastmoneyIncomeRow(row: Record<string, unknown>) {
   return [
     stringOrFallback(row.REPORT_DATE_NAME, stringOrFallback(row.REPORT_TYPE, "最新期")),
     `营收=${formatPkgNumber(row.TOTAL_OPERATE_INCOME)}`,
-    `营收同比=${formatPkgPercent(row.TOTAL_OPERATE_INCOME_YOY)}`,
+    `营收同比=${formatFinancialYoyPercent(row.TOTAL_OPERATE_INCOME_YOY)}`,
     `归母净利=${formatPkgNumber(row.PARENT_NETPROFIT)}`,
-    `归母净利同比=${formatPkgPercent(row.PARENT_NETPROFIT_YOY)}`,
+    `归母净利同比=${formatFinancialYoyPercent(row.PARENT_NETPROFIT_YOY)}`,
     `扣非净利=${formatPkgNumber(row.DEDUCT_PARENT_NETPROFIT)}`,
   ].join("/");
 }
@@ -3203,6 +3203,12 @@ function formatPkgNumber(value: unknown) {
 
 function formatPkgPercent(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : "NA";
+}
+
+function formatFinancialYoyPercent(value: unknown) {
+  const formatted = formatPkgPercent(value);
+  const numberValue = finiteNumberOrNull(value);
+  return numberValue !== null && Math.abs(numberValue) >= 40 ? `${formatted}(异常波动待核验)` : formatted;
 }
 
 function finiteNumberOrNull(value: unknown) {
@@ -3236,6 +3242,7 @@ export const __test__ = {
   askModelForClarification,
   buildAssistantFinancialAnomalyNote,
   buildSubjectOnlyClarificationRequest,
+  formatEastmoneyIncomeRow,
   splitAssistantToolCodes,
   onRequestPostRealtime: (context: AssistantChatPostContext) => handleAssistantChatPost(context, { skipDeepResearch: true }),
 };

@@ -2108,6 +2108,17 @@ describe("assistant chat endpoint", () => {
   });
 
   test("marks extreme structured financial yoy as a verification caution", () => {
+    const row = __test__.formatEastmoneyIncomeRow({
+      REPORT_DATE_NAME: "2025年报",
+      TOTAL_OPERATE_INCOME: 100,
+      TOTAL_OPERATE_INCOME_YOY: -54.55,
+      PARENT_NETPROFIT: 20,
+      PARENT_NETPROFIT_YOY: -71.89,
+      DEDUCT_PARENT_NETPROFIT: 18,
+    });
+    expect(row).toContain("营收同比=-54.55%(异常波动待核验)");
+    expect(row).toContain("归母净利同比=-71.89%(异常波动待核验)");
+
     const note = __test__.buildAssistantFinancialAnomalyNote([
       {
         REPORT_DATE_NAME: "2026一季报",
