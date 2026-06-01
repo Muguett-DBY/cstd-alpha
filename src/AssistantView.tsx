@@ -419,6 +419,7 @@ export function AssistantView() {
     if (event.type === "choice_request") {
       setDraft("");
       setAgentStatus("");
+      setToolCalls(new Map());
       setPendingClarification({
         original: lastSentMessageRef.current,
         request: event.request,
@@ -432,6 +433,7 @@ export function AssistantView() {
     if (event.type === "deep_research_job") {
       setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, [event.job]));
       setAgentStatus("");
+      setToolCalls(new Map());
     }
     if (event.type === "code_exec") {
       setAgentStatus("正在用 Python 计算...");
@@ -609,10 +611,10 @@ export function AssistantView() {
 
   async function stopDeepResearch(job: AssistantDeepResearchJob) {
     if (job.status !== "queued" && job.status !== "running") return;
-    setDeepResearchJobs((current) => ({ ...current, [job.id]: { ...job, status: "stopping", progressTitle: "正在整理阶段性总结..." } }));
+    setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, [{ ...job, status: "stopping", progressTitle: "正在整理阶段性总结..." }]));
     try {
       const next = await stopAssistantDeepResearchJob(job.id);
-      setDeepResearchJobs((current) => ({ ...current, [next.id]: next }));
+      setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, [next]));
     } catch (err) {
       setError(err instanceof Error ? err.message : "深度研究停止失败。");
     }

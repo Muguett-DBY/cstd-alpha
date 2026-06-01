@@ -32,10 +32,13 @@ export function mergeAssistantDeepResearchJobs(
   current: Record<string, AssistantDeepResearchJob>,
   incoming: Iterable<AssistantDeepResearchJob | null | undefined>,
 ) {
-  const next = { ...current };
+  let next = current;
   for (const job of incoming) {
     if (!job) continue;
-    next[job.id] = pickAssistantDeepResearchJob(next[job.id], job);
+    const picked = pickAssistantDeepResearchJob(next[job.id], job);
+    if (next[job.id] === picked || isSameAssistantDeepResearchJob(next[job.id], picked)) continue;
+    if (next === current) next = { ...current };
+    next[job.id] = picked;
   }
   return next;
 }
@@ -47,6 +50,23 @@ function pickAssistantDeepResearchJob(current: AssistantDeepResearchJob | undefi
   if (incomingRank > currentRank) return incoming;
   if (incomingRank < currentRank) return current;
   return Date.parse(incoming.updatedAt || "") >= Date.parse(current.updatedAt || "") ? incoming : current;
+}
+
+function isSameAssistantDeepResearchJob(left: AssistantDeepResearchJob | undefined, right: AssistantDeepResearchJob | undefined) {
+  if (!left || !right) return left === right;
+  return (
+    left.id === right.id
+    && left.threadId === right.threadId
+    && left.status === right.status
+    && left.progressTitle === right.progressTitle
+    && left.progressStage === right.progressStage
+    && left.progressCurrent === right.progressCurrent
+    && left.progressTotal === right.progressTotal
+    && left.stopRequested === right.stopRequested
+    && left.resultMessageId === right.resultMessageId
+    && left.errorMessage === right.errorMessage
+    && left.updatedAt === right.updatedAt
+  );
 }
 
 function assistantDeepResearchStatusRank(status: AssistantDeepResearchJob["status"]) {

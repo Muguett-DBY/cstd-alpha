@@ -42,6 +42,15 @@ describe("assistant view state", () => {
     expect(merged.job1.status).toBe("completed");
   });
 
+  test("does not let a late stop response regress a completed deep research job", () => {
+    const completed = deepResearchJob({ status: "completed", updatedAt: "2026-06-01T08:00:00.000Z" });
+    const stopping = deepResearchJob({ status: "stopping", updatedAt: "2026-06-01T08:01:00.000Z" });
+
+    const merged = mergeAssistantDeepResearchJobs({ job1: completed }, [stopping]);
+
+    expect(merged.job1.status).toBe("completed");
+  });
+
   test("keeps deep research status moving forward during polling", () => {
     const queued = deepResearchJob({ status: "queued", updatedAt: "2026-06-01T07:50:00.000Z" });
     const running = deepResearchJob({ status: "running", updatedAt: "2026-06-01T07:51:00.000Z" });
@@ -49,6 +58,15 @@ describe("assistant view state", () => {
     const merged = mergeAssistantDeepResearchJobs({ job1: queued }, [running]);
 
     expect(merged.job1.status).toBe("running");
+  });
+
+  test("keeps the same deep research state object when polling returns no material change", () => {
+    const running = deepResearchJob({ status: "running", updatedAt: "2026-06-01T07:51:00.000Z" });
+    const current = { job1: running };
+
+    const merged = mergeAssistantDeepResearchJobs(current, [deepResearchJob({ status: "running", updatedAt: "2026-06-01T07:51:00.000Z" })]);
+
+    expect(merged).toBe(current);
   });
 
   test("keeps extracted markdown tables inline and only renders charts as supplementary blocks", () => {
