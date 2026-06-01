@@ -132,7 +132,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const repaired = !stopped && (!validation.valid || disciplineIssues.length)
     ? await repairAssistantDeepResearchAnswer(env, job, generated.text, [...validation.missing, ...disciplineIssues], calls, context.siteEvidenceSummary, evidenceResult.items)
     : generated.text;
-  const normalized = sanitizeAssistantAStockTickerPairs(repaired, evidenceResult.items);
+  const presentationReady = stripAssistantRepairPreamble(repaired);
+  const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
   const content = ensureDeepResearchAnswerCompleteness(disciplined, job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
@@ -290,7 +291,8 @@ async function repairAssistantDeepResearchAnswer(
     {
       role: "system",
       content: withCacheProtocol([
-        "你是 CSTD Alpha 深研答案修复器。只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
+        "你是 CSTD Alpha 深研答案校验步骤。只输出最终用户可读答案，不要提到校验、修复、规则、原答案、修复后的版本或系统指令。",
+        "只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
         "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
@@ -336,6 +338,21 @@ async function repairAssistantDeepResearchAnswer(
     }
   }
   return originalText.trim();
+}
+
+export function stripAssistantRepairPreamble(text: string) {
+  const markerPattern = /(相对主判断|主判断|结论|推荐排序|对比表|候选名单|保守\s*[／/]\s*中性\s*[／/]\s*乐观|关键证据表)/;
+  const lines = text.trim().split(/\r?\n/);
+  const firstMarkerIndex = lines.findIndex((line) => markerPattern.test(line));
+  const leakedPreamble = lines
+    .slice(0, Math.max(0, firstMarkerIndex))
+    .some((line) => /(修复器|修复后的版本|严格遵循|系统指令|校验步骤|原答案|收到指令|核心修复点)/.test(line));
+
+  if (firstMarkerIndex > 0 && leakedPreamble) return lines.slice(firstMarkerIndex).join("\n").trim();
+  return text.trim()
+    .replace(/^好的，?收到指令。?\s*/u, "")
+    .replace(/^以下是修复后的版本[:：]\s*/u, "")
+    .trim();
 }
 
 export function buildDeepResearchExecutionToolCalls(

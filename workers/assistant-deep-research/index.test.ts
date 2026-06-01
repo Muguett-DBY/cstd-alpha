@@ -8,6 +8,7 @@ import {
   findAssistantEvidenceDisciplineIssues,
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
+  stripAssistantRepairPreamble,
 } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
 
@@ -181,6 +182,23 @@ describe("assistant deep research worker", () => {
     expect(text).not.toContain("高置信");
     expect(text).not.toContain("中高置信");
     expect(text).toContain("中等（待核验原始来源）");
+  });
+
+  test("strips internal repair preambles before saving final answers", () => {
+    const text = stripAssistantRepairPreamble([
+      "好的，收到指令。我将严格遵循“CSTD Alpha深研答案修复器”的规则，对原答案进行修复。",
+      "核心修复点是：擦除所有未绑定证据的精确数字。",
+      "",
+      "相对主判断：贵州茅台相对更稳健，五粮液弹性更大但需要核验。",
+      "对比表",
+      "| 维度 | 贵州茅台 | 五粮液 |",
+      "| --- | --- | --- |",
+      "| 护城河 | 更强 | 次强 |",
+    ].join("\n"));
+
+    expect(text).toMatch(/^相对主判断/);
+    expect(text).not.toContain("修复器");
+    expect(text).not.toContain("核心修复点");
   });
 });
 
