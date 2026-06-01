@@ -128,11 +128,13 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const generated = await generateAssistantDeepResearchAnswer(env, job, calls, context.siteEvidenceSummary, evidenceResult.items, stopped);
   const contract = buildAssistantTaskContract(job.researchKind, job.query);
   const validation = validateAssistantTaskAnswer(generated.text, contract);
-  const repaired = !stopped && !validation.valid
-    ? await repairAssistantDeepResearchAnswer(env, job, generated.text, validation.missing, calls, context.siteEvidenceSummary, evidenceResult.items)
+  const disciplineIssues = findAssistantEvidenceDisciplineIssues(generated.text, evidenceResult.items);
+  const repaired = !stopped && (!validation.valid || disciplineIssues.length)
+    ? await repairAssistantDeepResearchAnswer(env, job, generated.text, [...validation.missing, ...disciplineIssues], calls, context.siteEvidenceSummary, evidenceResult.items)
     : generated.text;
   const normalized = sanitizeAssistantAStockTickerPairs(repaired, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(normalized, job, stopped, evidenceResult.items.length);
+  const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
+  const content = ensureDeepResearchAnswerCompleteness(disciplined, job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -246,6 +248,8 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
+    "任何精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻本轮证据编号（例如 E3）。如果本轮证据没有提供该数字，删除精确数字，改写成定性判断或“待核验线索”；禁止凭常识补数字。",
+    "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
@@ -287,6 +291,8 @@ async function repairAssistantDeepResearchAnswer(
       content: withCacheProtocol([
         "你是 CSTD Alpha 深研答案修复器。只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
         "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
+        "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
+        "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
       ].join("\n"), "assistant-deep-research-repair"),
     },
     {
@@ -404,6 +410,36 @@ export function sanitizeAssistantAStockTickerPairs(
   return normalized;
 }
 
+export function findAssistantEvidenceDisciplineIssues(
+  text: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const issues: string[] = [];
+  const uncitedPreciseClaims = lines.filter((line) => (
+    hasAssistantPreciseInvestmentMetric(line)
+    && !hasAssistantEvidenceCitation(line)
+    && !isAssistantScenarioLine(line)
+  ));
+  if (uncitedPreciseClaims.length >= 2) {
+    issues.push("精确数字必须引用本轮 E 编号，否则删除精确数字并改写为定性判断");
+  }
+  if (lines.some((line) => /(中高置信|高置信)/.test(line) && !hasStructuredAssistantEvidenceCitation(line, evidence))) {
+    issues.push("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
+  }
+  return issues;
+}
+
+export function sanitizeAssistantEvidenceConfidenceLabels(
+  text: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  return text.split(/\r?\n/).map((line) => {
+    if (!/(中高置信|高置信)/.test(line) || hasStructuredAssistantEvidenceCitation(line, evidence)) return line;
+    return line.replace(/中高置信|高置信/g, "中等（待核验原始来源）");
+  }).join("\n");
+}
+
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
   const seen = new Set<string>();
   return calls.filter((call) => {
@@ -416,6 +452,41 @@ function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasAssistantPreciseInvestmentMetric(line: string) {
+  return /(?:\d+(?:\.\d+)?\s*(?:%|倍|x|X|亿元|万元|元|亿|万|bps|BP|PB|PE|P\/E)|(?:市占率|份额|增速|增长|收入|净利|毛利率|估值|产能|订单)[^\n]{0,18}\d)/.test(line);
+}
+
+function hasAssistantEvidenceCitation(line: string) {
+  return /\bE\d+\b/.test(line);
+}
+
+function isAssistantScenarioLine(line: string) {
+  return /(情景|假设|若|如果|预计|目标|触发|跟踪|风险|下修|上修|低于|高于|至多|至少)/.test(line);
+}
+
+function hasStructuredAssistantEvidenceCitation(
+  line: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const sorted = [...evidence]
+    .sort((left, right) => assistantEvidencePriority(right) - assistantEvidencePriority(left))
+    .slice(0, 24);
+  for (const match of line.matchAll(/\bE(\d+)\b/g)) {
+    const item = sorted[Number(match[1]) - 1];
+    if (item?.source === "CSTD Alpha" && item.sourceType === "official" && (item.qualityScore ?? 1) >= 0.5) return true;
+  }
+  return false;
+}
+
+function assistantEvidencePriority(item: Parameters<typeof formatCollectedEvidenceForAgent>[0][number]) {
+  return (
+    (item.source === "CSTD Alpha" ? 100 : 0)
+    + (item.sourceType === "official" ? 30 : 0)
+    + Math.max(0, item.weight || 0)
+    + Math.max(0, item.qualityScore || 0)
+  );
 }
 
 export function ensureDeepResearchAnswerCompleteness(text: string, job: AssistantDeepResearchWorkerJob, stopped: boolean, evidenceCount: number) {

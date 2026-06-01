@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildDeepResearchCandidateEnrichmentToolCalls, buildDeepResearchExecutionToolCalls, ensureDeepResearchAnswerCompleteness, sanitizeAssistantAStockTickerPairs } from "./index";
+import {
+  buildDeepResearchCandidateEnrichmentToolCalls,
+  buildDeepResearchExecutionToolCalls,
+  ensureDeepResearchAnswerCompleteness,
+  findAssistantEvidenceDisciplineIssues,
+  sanitizeAssistantAStockTickerPairs,
+  sanitizeAssistantEvidenceConfidenceLabels,
+} from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
 
 describe("assistant deep research worker", () => {
@@ -127,6 +134,53 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("中际旭创 (300308)");
     expect(text).toContain("工业富联 (601138)");
     expect(text).not.toContain("002463");
+  });
+
+  test("flags uncited precise claims and ungrounded high-confidence labels for repair", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      [
+        "工业富联全球AI服务器代工市占率42%，2026Q1净利增长102.6%。",
+        "浪潮信息全球市场份额47%，2026Q1净利增长65%。",
+        "高置信：多个搜索摘要一致。",
+      ].join("\n"),
+      [{
+        source: "Tavily",
+        query: "AI 算力",
+        title: "搜索摘要",
+        summary: "行业新闻线索，具体口径待核验。",
+        url: "https://example.com/ai",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 1,
+        score: 1,
+        freshness: "month",
+      }],
+    );
+
+    expect(issues).toContain("精确数字必须引用本轮 E 编号，否则删除精确数字并改写为定性判断");
+    expect(issues).toContain("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
+  });
+
+  test("downgrades high-confidence labels that are not tied to structured evidence", () => {
+    const text = sanitizeAssistantEvidenceConfidenceLabels(
+      "高置信：高盛研报和多个搜索摘要一致。\n中高置信：行业新闻汇总。",
+      [{
+        source: "Tavily",
+        query: "AI 算力",
+        title: "搜索摘要",
+        summary: "行业新闻线索。",
+        url: "https://example.com/ai",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 1,
+        score: 1,
+        freshness: "month",
+      }],
+    );
+
+    expect(text).not.toContain("高置信");
+    expect(text).not.toContain("中高置信");
+    expect(text).toContain("中等（待核验原始来源）");
   });
 });
 

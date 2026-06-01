@@ -217,7 +217,20 @@ export function assistantAgentTools() {
 
 export function formatCollectedEvidenceForAgent(items: AnySearchEvidence[]) {
   if (!items.length) return "尚未收集工具证据。";
-  return items.slice(0, 16).map((item, index) => `E${index + 1} ${item.title}（${item.source}/${item.sourceType}）：${item.summary}`).join("\n");
+  return [...items]
+    .sort((left, right) => assistantEvidencePriority(right) - assistantEvidencePriority(left))
+    .slice(0, 24)
+    .map((item, index) => `E${index + 1} ${item.title}（${item.source}/${item.sourceType}，日期=${item.publishedAt || "unknown"}）：${item.summary}`)
+    .join("\n");
+}
+
+function assistantEvidencePriority(item: AnySearchEvidence) {
+  return (
+    (item.source === "CSTD Alpha" ? 100 : 0)
+    + (item.sourceType === "official" ? 30 : 0)
+    + Math.max(0, item.weight || 0)
+    + Math.max(0, item.qualityScore || 0)
+  );
 }
 
 export function dedupeExternalEvidence(items: AnySearchEvidence[]) {
