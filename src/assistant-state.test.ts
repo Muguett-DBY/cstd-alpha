@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { assistantCacheHitRate, mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
-import type { AssistantDeepResearchJob } from "./shared/assistant";
+import { assistantCacheHitRate, assistantSupplementaryBlocks, mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import type { AssistantBlock, AssistantDeepResearchJob } from "./shared/assistant";
 
 describe("assistant view state", () => {
   test("merges streamed deltas into one assistant draft", () => {
@@ -49,6 +49,15 @@ describe("assistant view state", () => {
     const merged = mergeAssistantDeepResearchJobs({ job1: queued }, [running]);
 
     expect(merged.job1.status).toBe("running");
+  });
+
+  test("keeps extracted markdown tables inline and only renders charts as supplementary blocks", () => {
+    const blocks: AssistantBlock[] = [
+      { id: "table-1", type: "table", title: "推荐表", columns: ["公司", "理由"], rows: [["中际旭创", "光模块"]] },
+      { id: "chart-1", type: "chart", title: "评分对比", chartType: "bar", labels: ["A", "B"], series: [{ name: "分数", data: [80, 70] }] },
+    ];
+
+    expect(assistantSupplementaryBlocks(blocks)).toEqual([blocks[1]]);
   });
 });
 

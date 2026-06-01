@@ -15,7 +15,7 @@ import {
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import { assistantSupplementaryBlocks, mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
@@ -499,8 +499,8 @@ export function AssistantView() {
               return (
                 <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
                   <span className="assistant-role-label">{message.role === "user" ? "你" : "助手"}</span>
-                  <AssistantText text={message.metadata?.blocks?.length ? stripRenderedTables(cleanContent) : cleanContent} />
-                  <AssistantBlocks blocks={message.metadata?.blocks ?? []} />
+                  <AssistantText text={cleanContent} />
+                  <AssistantBlocks blocks={assistantSupplementaryBlocks(message.metadata?.blocks)} />
                   {message.metadata?.deepResearchJob ? (
                     <AssistantDeepResearchCard
                       job={deepResearchJobs[message.metadata.deepResearchJob.id] ?? message.metadata.deepResearchJob}
@@ -513,8 +513,8 @@ export function AssistantView() {
             {draft ? (
               <article className="assistant-message assistant streaming">
                 <span className="assistant-role-label">助手</span>
-                <AssistantText text={draftBlocks.length ? stripRenderedTables(stripInternalAssistantCompletion(draft)) : stripInternalAssistantCompletion(draft)} />
-                <AssistantBlocks blocks={draftBlocks} />
+                <AssistantText text={stripInternalAssistantCompletion(draft)} />
+                <AssistantBlocks blocks={assistantSupplementaryBlocks(draftBlocks)} />
               </article>
             ) : null}
             {!draft && (agentStatus || toolCalls.size || pyodideReady === "loading") ? (
@@ -850,35 +850,6 @@ function applyAssistantChartOptions(chart: import("echarts").ECharts, block: Ass
       ...(isArea ? { areaStyle: {} } : {}),
     })),
   });
-}
-
-function stripRenderedTables(text: string) {
-  const lines = text.split(/\r?\n/);
-  const kept: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index].includes("|") && isMarkdownSeparator(lines[index + 1] ?? "")) {
-      index += 2;
-      while (index < lines.length && lines[index].includes("|")) index += 1;
-      index -= 1;
-      continue;
-    }
-    kept.push(lines[index]);
-  }
-  return kept
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function isMarkdownSeparator(line: string) {
-  const cells = line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim())
-    .filter(Boolean);
-  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
 }
 
 function ClarificationDialog({

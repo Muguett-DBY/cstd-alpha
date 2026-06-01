@@ -1,4 +1,4 @@
-import type { AssistantDeepResearchJob, AssistantUsage } from "./shared/assistant";
+import type { AssistantBlock, AssistantDeepResearchJob, AssistantUsage } from "./shared/assistant";
 
 export function mergeAssistantDelta(current: string, delta: string) {
   return `${current}${delta}`;
@@ -11,6 +11,10 @@ export function assistantCacheHitRate(usage: AssistantUsage | undefined | null) 
   const total = hit + miss;
   if (total <= 0) return null;
   return Math.round((hit / total) * 100);
+}
+
+export function assistantSupplementaryBlocks(blocks: AssistantBlock[] | undefined | null) {
+  return (blocks ?? []).filter((block) => block.type === "chart");
 }
 
 export function stripInternalAssistantCompletion(text: string) {

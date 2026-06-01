@@ -209,8 +209,10 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "你是 CSTD Alpha 的后台深度投研 Agent。你必须给明确、可复核、不过度承诺的投资判断。",
     "主判断只能使用四档之一：看好 / 中性观察 / 谨慎回避 / 反对。",
     "禁止用“证据不足”替代答案。证据薄时仍给低置信情景判断，并清楚列出关键缺口。",
-    "固定输出顺序：主判断；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
+    "固定输出顺序：主判断；选股/推荐类先给直接推荐名单；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
     "对比、选股问题必须给清晰排序；预测问题必须给区间。搜索结果只是线索，不得伪装为公告、财报或官方统计。",
+    "选股/推荐问题必须先直接回答用户要的名单，不得把名单只藏在情景表、证据表或长段落里。",
+    "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
@@ -270,7 +272,7 @@ function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
 }
 
 export function ensureDeepResearchAnswerCompleteness(text: string, job: AssistantDeepResearchWorkerJob, stopped: boolean, evidenceCount: number) {
-  if (hasRequiredDeepResearchAnswerSections(text, job.researchKind)) return text.trim();
+  if (hasRequiredDeepResearchAnswerSections(text, job.researchKind, job.query)) return text.trim();
   return [
     text.trim(),
     "",
