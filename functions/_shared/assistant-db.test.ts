@@ -121,6 +121,44 @@ describe("assistant prompt and memory helpers", () => {
     expect(summary).toContain("低分/优先排雷=万科A(000002/深A) 综合15");
   });
 
+  test("does not inject unrelated watchlist rankings into a scoped company question", async () => {
+    const fakeDb = {
+      prepare(sql: string) {
+        return {
+          bind() {
+            return {
+              async all() {
+                if (sql.includes("FROM user_watchlist")) {
+                  return { results: [{ company_name: "宁德时代", ticker: "300750", market: "深A" }] };
+                }
+                if (sql.includes("FROM watchlist_ranking_score")) {
+                  return {
+                    results: [{
+                      company_name: "宁德时代",
+                      ticker: "300750",
+                      market: "深A",
+                      company_quality_score: 88,
+                      investment_attractiveness_score: 82,
+                      overall_score: 85,
+                      verdict: "龙头质量高但估值需审慎",
+                      summary: "证据包评分摘要",
+                    }],
+                  };
+                }
+                return { results: [] };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const summary = await buildSiteEvidenceSummary(fakeDb, "admin", "贵州茅台当前股价是多少，预测明年股价");
+
+    expect(summary).not.toContain("宁德时代");
+    expect(summary).toContain("当前问题未命中相关自选股");
+  });
+
   test("includes a long stable cache anchor before volatile chat data", () => {
     const messages = buildAssistantPromptMessages({
       memories: [],

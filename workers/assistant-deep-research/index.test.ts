@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildDeepResearchExecutionToolCalls, ensureDeepResearchAnswerCompleteness } from "./index";
+import { buildDeepResearchCandidateEnrichmentToolCalls, buildDeepResearchExecutionToolCalls, ensureDeepResearchAnswerCompleteness } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
 
 describe("assistant deep research worker", () => {
@@ -29,6 +29,19 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("下一步跟踪");
   });
 
+  test("does not append generic boilerplate to a normal incomplete recommendation answer", () => {
+    const text = ensureDeepResearchAnswerCompleteness("推荐口径：优先选择AI产业链龙头。", {
+      ...mockJob(),
+      query: "从AI相关产业中推荐10支A股股票，10支美股股票",
+      researchKind: "selection",
+      status: "running",
+      stopRequested: false,
+    }, false, 8);
+
+    expect(text).toBe("推荐口径：优先选择AI产业链龙头。");
+    expect(text).not.toContain("若关键硬数据恶化，按保守情景处理");
+  });
+
   test("normalizes a known company before collecting forecast evidence", () => {
     const calls = buildDeepResearchExecutionToolCalls(mockJob(), {
       siteEvidenceSummary: "",
@@ -39,6 +52,29 @@ describe("assistant deep research worker", () => {
     expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("600519");
     expect(calls.find((call) => call.name === "read_filings_news")?.query).toBe("600519");
     expect(calls.find((call) => call.name === "read_tencent_quote")?.query).not.toContain("预测");
+  });
+
+  test("enriches discovered A-share selection candidates with quotes and financial statements", () => {
+    const calls = buildDeepResearchCandidateEnrichmentToolCalls({
+      ...mockJob(),
+      query: "给我三家半导体/AI算力目前最值得买的公司",
+      researchKind: "selection",
+    }, [{
+      source: "Tavily",
+      query: "AI算力",
+      title: "候选公司",
+      summary: "中际旭创 300308、工业富联 601138、海光信息 688041 值得进一步核验。",
+      url: "https://example.com/ai",
+      content: "",
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 1,
+      score: 1,
+      freshness: "month",
+    }]);
+
+    expect(calls.map((call) => call.name)).toEqual(["read_tencent_quote", "read_financial_statements", "read_reports_concepts"]);
+    expect(calls[0]?.query).toBe("300308,601138,688041");
   });
 });
 

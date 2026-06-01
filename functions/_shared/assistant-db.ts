@@ -446,14 +446,21 @@ export async function writeToolRun(db: D1Database, input: { userKey: string; thr
   return { id, toolName: input.toolName, status: input.status, summary: input.summary, createdAt: now };
 }
 
-export async function buildSiteEvidenceSummary(db: D1Database, userKey: string) {
+export async function buildSiteEvidenceSummary(db: D1Database, userKey: string, query = "") {
   const lines: string[] = [];
   const watchlist = await db
     .prepare(`SELECT company_name, ticker, market FROM user_watchlist WHERE user_key = ?1 ORDER BY added_at DESC LIMIT 12`)
     .bind(userKey)
     .all<{ company_name: string; ticker: string; market: string }>()
     .catch(() => ({ results: [] }));
-  if (watchlist.results?.length) lines.push(`自选股：${watchlist.results.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`);
+  const allWatchlist = watchlist.results ?? [];
+  const portfolioQuestion = !query.trim() || /(自选股|持仓|组合|排行|排雷)/.test(query);
+  const matchedWatchlist = portfolioQuestion
+    ? allWatchlist
+    : allWatchlist.filter((item) => query.includes(item.company_name) || query.includes(item.ticker));
+  const scopedCompanyKeys = new Set(matchedWatchlist.flatMap((item) => [item.company_name, item.ticker]));
+  if (matchedWatchlist.length) lines.push(`自选股：${matchedWatchlist.map((item) => `${item.company_name}(${item.ticker}/${item.market})`).join("、")}`);
+  else if (query.trim()) lines.push("站内私有证据：当前问题未命中相关自选股；不要引入无关自选股排行或模板报告。");
 
   const ranking = await db
     .prepare(
@@ -476,7 +483,9 @@ export async function buildSiteEvidenceSummary(db: D1Database, userKey: string) 
     }>()
     .catch(() => ({ results: [] }));
   if (ranking.results?.length) {
-    const rows = ranking.results;
+    const rows = portfolioQuestion
+      ? ranking.results
+      : ranking.results.filter((item) => scopedCompanyKeys.has(item.company_name) || scopedCompanyKeys.has(item.ticker));
     const high = rows
       .slice(0, 8)
       .map(
@@ -490,7 +499,7 @@ export async function buildSiteEvidenceSummary(db: D1Database, userKey: string) 
         (item) =>
           `${item.company_name}(${item.ticker}/${item.market}) 综合${item.overall_score ?? "NA"} 质量${item.company_quality_score ?? "NA"} 吸引力${item.investment_attractiveness_score ?? "NA"}：${item.verdict}`,
       );
-    lines.push(`自选股排行（DeepSeek基于公司证据包重评分，不等同模板评分）：高分=${high.join("；")}；低分/优先排雷=${low.join("；")}`);
+    if (rows.length) lines.push(`自选股排行（DeepSeek基于公司证据包重评分，不等同模板评分）：高分=${high.join("；")}；低分/优先排雷=${low.join("；")}`);
   }
 
   const analyses = await db
@@ -499,8 +508,11 @@ export async function buildSiteEvidenceSummary(db: D1Database, userKey: string) 
     .all<{ company_name: string; template_title: string; score: number | null; verdict: string; summary: string }>()
     .catch(() => ({ results: [] }));
   if (analyses.results?.length) {
-    lines.push(
-      `最近模板报告：${analyses.results
+    const rows = portfolioQuestion
+      ? analyses.results
+      : analyses.results.filter((item) => scopedCompanyKeys.has(item.company_name));
+    if (rows.length) lines.push(
+      `最近模板报告：${rows
         .map((item) => `${item.company_name}/${item.template_title}/评分${item.score ?? "NA"}/${item.verdict}：${item.summary.slice(0, 80)}`)
         .join("；")}`,
     );

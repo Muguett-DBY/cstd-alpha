@@ -239,7 +239,7 @@ async function handleAssistantChatPost({ request, env }: AssistantChatPostContex
   }
 
   const [siteEvidenceSummary, modeEvidenceSummary] = await Promise.all([
-    buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId),
+    buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, session.userId, researchContext.message),
     buildModeEvidenceSummary(env, session.userId, researchContext.message, contextMode, { strictTargetMatch: mode === "chat", signal: request.signal }),
   ]);
 
@@ -683,6 +683,10 @@ async function runAssistantAgentLoop(input: {
           input.emit({ type: "tool_result", id: call.id, status: "completed", summary: summarizeToolResult(call, executed.items.length), evidenceCount: executed.items.length });
         }
       }
+      if (shouldReplanAssistantAgentLoopAfterEvidence(itemsBeforeRound, allItems.length, round, ASSISTANT_AGENT_MAX_ROUNDS)) {
+        lastSummary = lastSummary ? `${lastSummary} 已取得可用证据，继续判断是否需要补充。` : "已取得可用证据，继续判断是否需要补充。";
+        continue;
+      }
       if (allItems.length > itemsBeforeRound) {
         lastSummary = lastSummary ? `${lastSummary} 已取得可用证据，进入最终回答。` : "已取得可用证据，进入最终回答。";
         break;
@@ -718,6 +722,10 @@ function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: A
   if (env.REPORT_CACHE) return true;
   const hasConfiguredTools = Boolean(env.ANYSEARCH_API_KEY?.trim() || env.SEARXNG_ENDPOINTS?.trim() || env.EXA_API_KEY?.trim() || env.TAVILY_API_KEY?.trim() || env.BRAVE_SEARCH_API_KEY?.trim() || env.TUSHARE_TOKEN?.trim());
   return hasConfiguredTools;
+}
+
+export function shouldReplanAssistantAgentLoopAfterEvidence(itemsBeforeRound: number, itemsAfterRound: number, round: number, maxRounds: number) {
+  return itemsAfterRound > itemsBeforeRound && itemsAfterRound < 2 && round < maxRounds;
 }
 
 function assistantToolCallKey(call: AssistantSearchToolCall) {

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { __test__, augmentAgentToolCalls, buildAssistantEvidenceQueries, buildMandatoryAgentToolCalls, onRequestPost as productionOnRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
+import { __test__, augmentAgentToolCalls, buildAssistantEvidenceQueries, buildMandatoryAgentToolCalls, onRequestPost as productionOnRequestPost, resolveAssistantResearchContext, shouldAnswerDirectlyWithoutClarification, shouldAutoUseResearchEvidence, shouldIncludeRecentAssistantContext, shouldReplanAssistantAgentLoopAfterEvidence, shouldTreatAsSimpleGeneralChat, shouldTriggerExternalEvidence, shouldUseExaForAssistant } from "./chat";
 import { detectMemoryCandidate } from "../../_shared/assistant-db";
 
 const onRequestPost = __test__.onRequestPostRealtime;
@@ -1682,6 +1682,13 @@ describe("assistant chat endpoint", () => {
     expect(shouldTreatAsSimpleGeneralChat("茅台今年业绩预估？", "target")).toBe(false);
     expect(shouldTreatAsSimpleGeneralChat("请联网查一下自由现金流最新研究", "chat")).toBe(false);
     expect(shouldTreatAsSimpleGeneralChat("用Python算一下：本金10万，年化8%，3年后是多少钱？", "chat")).toBe(false);
+  });
+
+  test("replans after collecting evidence instead of stopping after the first successful tool", () => {
+    expect(shouldReplanAssistantAgentLoopAfterEvidence(0, 1, 1, 6)).toBe(true);
+    expect(shouldReplanAssistantAgentLoopAfterEvidence(1, 2, 1, 6)).toBe(false);
+    expect(shouldReplanAssistantAgentLoopAfterEvidence(4, 4, 1, 6)).toBe(false);
+    expect(shouldReplanAssistantAgentLoopAfterEvidence(4, 5, 6, 6)).toBe(false);
   });
 
   test("routes explicit compound-interest requests through Python", () => {

@@ -1,5 +1,6 @@
 import type { AssistantDeepResearchJob, AssistantDeepResearchKind, AssistantDeepResearchStatus, AssistantMode } from "../../src/shared/assistant";
 import type { AssistantSearchToolCall } from "./assistant-tools";
+import { buildAssistantTaskContract, validateAssistantTaskAnswer } from "./assistant-task-contract";
 
 export const ASSISTANT_DEEP_RESEARCH_QUEUE_BINDING = "ASSISTANT_DEEP_RESEARCH_QUEUE";
 export const ASSISTANT_DEEP_RESEARCH_QUEUE_NAME = "cstd-alpha-assistant-deep-research";
@@ -88,33 +89,7 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
 }
 
 export function hasRequiredDeepResearchAnswerSections(text: string, kind: AssistantDeepResearchKind, query = "") {
-  const hasVerdict = kind === "selection"
-    ? /(推荐口径|筛选口径|推荐结论|排序结论|名单口径)[：:]/.test(text)
-    : /(主判断|结论)[：:]\s*(?:\*{1,2})?\s*(看好|中性观察|谨慎回避|反对)/.test(text);
-  const hasScenarios = /(保守|中性|乐观).*(情景|场景)/s.test(text);
-  const hasEvidenceTable = /\|[^\n]+\|/.test(text) && /(证据|来源|依据)/.test(text);
-  const hasCounterEvidence = /(反证|我可能错在哪里|证伪)/.test(text);
-  const hasTracking = /(下一步跟踪|跟踪指标|后续跟踪)/.test(text);
-  const hasRequiredDecision = kind === "selection" || kind === "comparison" ? /(排序|排名|优先级|第一|第1|更优)/.test(text) : true;
-  const hasRequiredRange = kind === "forecast" ? /(区间|保守|中性|乐观)/.test(text) : true;
-  const hasRequiredSelectionLists = kind === "selection" && asksForAShareAndUsShareLists(query)
-    ? hasDirectMarketRecommendationSections(text)
-    : true;
-  return hasVerdict && hasScenarios && hasEvidenceTable && hasCounterEvidence && hasTracking && hasRequiredDecision && hasRequiredRange && hasRequiredSelectionLists;
-}
-
-export function hasDirectMarketRecommendationSections(text: string) {
-  return hasDirectMarketRecommendationSection(text, "A股") && hasDirectMarketRecommendationSection(text, "美股");
-}
-
-function asksForAShareAndUsShareLists(query: string) {
-  return /A股/i.test(query) && /美股/i.test(query) && /(推荐|名单|股票|标的|选股|最值得)/.test(query);
-}
-
-function hasDirectMarketRecommendationSection(text: string, market: "A股" | "美股") {
-  const marketPattern = market === "A股" ? "A\\s*股" : "美\\s*股";
-  const header = new RegExp(`(?:^|\\n)\\s*(?:#{1,4}\\s*)?(?:\\*{1,2})?${marketPattern}\\s*(?:Top\\s*10|10\\s*支|推荐|名单|清单|按推荐序|排序)`, "i");
-  return header.test(text);
+  return validateAssistantTaskAnswer(text, buildAssistantTaskContract(kind, query)).valid;
 }
 
 export async function ensureAssistantDeepResearchSchema(db: D1Database) {

@@ -20,6 +20,7 @@ import {
   type AssistantDeepResearchWorkerJob,
 } from "../../functions/_shared/assistant-deep-research";
 import { formatCollectedEvidenceForAgent, type AssistantSearchToolCall } from "../../functions/_shared/assistant-tools";
+import { buildAssistantTaskContract, formatAssistantTaskContract, validateAssistantTaskAnswer } from "../../functions/_shared/assistant-task-contract";
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../functions/_shared/deepseek-cache";
 import { buildDeepSeekFallbackRoutes } from "../../functions/_shared/opencode-go";
 import { buildMandatoryAgentToolCalls, executeAssistantToolCalls } from "../../functions/api/assistant/chat";
@@ -63,7 +64,7 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const startedAt = Date.now();
   await progress(env, job, "running", "正在整理研究问题...", "plan", 1);
   const context = {
-    siteEvidenceSummary: await buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, job.userKey),
+    siteEvidenceSummary: await buildSiteEvidenceSummary(env.REPORT_LIBRARY_DB, job.userKey, job.query),
     modeEvidenceSummary: "",
   };
   const calls = buildDeepResearchExecutionToolCalls(job, context);
@@ -71,13 +72,35 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
 
   const stoppedBeforeTools = await isAssistantDeepResearchStopRequested(env.REPORT_LIBRARY_DB, jobId);
   await progress(env, job, stoppedBeforeTools ? "stopping" : "running", stoppedBeforeTools ? "正在整理阶段性总结..." : "正在查行情、财报、公告和外部来源...", "collect", 2);
-  const evidenceResult = stoppedBeforeTools
+  let evidenceResult = stoppedBeforeTools
     ? { items: [], exa: { used: false, count: 0 }, summary: "用户在检索前停止任务。" }
     : await runWithAbortTimeout(
       DEEP_RESEARCH_TOOL_TIMEOUT_MS,
       "深度研究证据检索超时。",
       (signal) => executeAssistantToolCalls(env, calls, signal, context),
     );
+  const enrichmentCalls = stoppedBeforeTools ? [] : buildDeepResearchCandidateEnrichmentToolCalls(job, evidenceResult.items, calls);
+  if (enrichmentCalls.length) {
+    await writeAssistantDeepResearchStep(env.REPORT_LIBRARY_DB, {
+      jobId,
+      round: 2,
+      stage: "enrich",
+      title: "正在补抓候选公司行情和财报",
+      status: "running",
+      summary: enrichmentCalls.map((call) => call.name).join("、"),
+    });
+    const enriched = await runWithAbortTimeout(
+      DEEP_RESEARCH_TOOL_TIMEOUT_MS,
+      "候选公司补充检索超时。",
+      (signal) => executeAssistantToolCalls(env, enrichmentCalls, signal, context),
+    );
+    calls.push(...enrichmentCalls);
+    evidenceResult = {
+      items: [...evidenceResult.items, ...enriched.items],
+      exa: evidenceResult.exa,
+      summary: [evidenceResult.summary, enriched.summary].filter(Boolean).join("；"),
+    };
+  }
   await writeAssistantDeepResearchStep(env.REPORT_LIBRARY_DB, {
     jobId,
     round: 2,
@@ -103,7 +126,12 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   }
   await progress(env, job, stopped ? "stopping" : "running", stopped ? "正在生成阶段性总结..." : "正在交叉验证并形成最终判断...", "synthesize", 3, evidenceObjectKey);
   const generated = await generateAssistantDeepResearchAnswer(env, job, calls, context.siteEvidenceSummary, evidenceResult.items, stopped);
-  const content = ensureDeepResearchAnswerCompleteness(generated.text, job, stopped, evidenceResult.items.length);
+  const contract = buildAssistantTaskContract(job.researchKind, job.query);
+  const validation = validateAssistantTaskAnswer(generated.text, contract);
+  const repaired = !stopped && !validation.valid
+    ? await repairAssistantDeepResearchAnswer(env, job, generated.text, validation.missing, calls, context.siteEvidenceSummary, evidenceResult.items)
+    : generated.text;
+  const content = ensureDeepResearchAnswerCompleteness(repaired, job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -205,6 +233,7 @@ async function runWithAbortTimeout<T>(timeoutMs: number, timeoutMessage: string,
 }
 
 function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: AssistantSearchToolCall[], siteEvidenceSummary: string, evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0], stopped: boolean): DeepSeekMessage[] {
+  const taskContract = buildAssistantTaskContract(job.researchKind, job.query);
   const system = withCacheProtocol([
     "你是 CSTD Alpha 的后台深度投研 Agent。你必须给明确、可复核、不过度承诺的投资判断。",
     "买卖、预测、对比、行业、反驳类问题的主判断只能使用四档之一：看好 / 中性观察 / 谨慎回避 / 反对。",
@@ -218,6 +247,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
+    "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
   ].join("\n"), "assistant-deep-research");
   const user = cacheStableUserContent({
     kind: "assistant-deep-research",
@@ -229,6 +259,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     },
     volatile: {
       question: job.query,
+      taskContract: formatAssistantTaskContract(taskContract),
       researchKind: job.researchKind,
       stopped,
       toolCalls: calls.map((call) => ({ name: call.name, reason: call.reason })),
@@ -237,6 +268,66 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     },
   });
   return [{ role: "system", content: system }, { role: "user", content: user }];
+}
+
+async function repairAssistantDeepResearchAnswer(
+  env: WorkerEnv,
+  job: AssistantDeepResearchWorkerJob,
+  originalText: string,
+  missing: string[],
+  calls: AssistantSearchToolCall[],
+  siteEvidenceSummary: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const contract = buildAssistantTaskContract(job.researchKind, job.query);
+  const messages: DeepSeekMessage[] = [
+    {
+      role: "system",
+      content: withCacheProtocol([
+        "你是 CSTD Alpha 深研答案修复器。只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
+        "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
+      ].join("\n"), "assistant-deep-research-repair"),
+    },
+    {
+      role: "user",
+      content: cacheStableUserContent({
+        kind: "assistant-deep-research-repair",
+        stable: { repairRule: "answer_the_exact_question_and_fill_only_missing_requirements" },
+        volatile: {
+          question: job.query,
+          taskContract: formatAssistantTaskContract(contract),
+          missing,
+          originalText,
+          toolCalls: calls.map((call) => ({ name: call.name, reason: call.reason })),
+          siteEvidenceSummary,
+          collectedEvidence: formatCollectedEvidenceForAgent(evidence),
+        },
+      }),
+    },
+  ];
+  for (const route of buildDeepSeekFallbackRoutes(env)) {
+    try {
+      const response = await fetch(route.url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+        body: JSON.stringify(buildDeepSeekRequestBody({
+          model: route.model,
+          messages,
+          maxTokens: 12_000,
+          reasoningEffort: "max",
+          thinking: { type: "enabled" },
+          temperature: 0.04,
+          responseFormat: null,
+        })),
+      });
+      if (!response.ok) continue;
+      const text = extractMessageContent(await response.json() as Record<string, unknown>).trim();
+      if (text && validateAssistantTaskAnswer(text, contract).valid) return text;
+    } catch {
+      continue;
+    }
+  }
+  return originalText.trim();
 }
 
 export function buildDeepResearchExecutionToolCalls(
@@ -267,6 +358,25 @@ export function buildDeepResearchExecutionToolCalls(
   ]);
 }
 
+export function buildDeepResearchCandidateEnrichmentToolCalls(
+  job: Pick<AssistantDeepResearchWorkerJob, "query" | "researchKind">,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+  previousCalls: AssistantSearchToolCall[] = [],
+) {
+  if (job.researchKind !== "selection") return [];
+  const text = evidence.map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`).join("\n");
+  const codes = [...new Set(text.match(/\b[0368]\d{5}\b/g) ?? [])].slice(0, 8);
+  if (!codes.length) return [];
+  const query = codes.join(",");
+  const existing = new Set(previousCalls.map((call) => `${call.name}:${call.query ?? ""}`));
+  const calls: AssistantSearchToolCall[] = [
+    { id: "deep:enrich:quote", name: "read_tencent_quote", query, reason: "候选公司发现后批量核验行情和估值" },
+    { id: "deep:enrich:financials", name: "read_financial_statements", query, reason: "候选公司发现后批量核验财报和现金流" },
+    { id: "deep:enrich:reports", name: "read_reports_concepts", query, reason: "候选公司发现后补研报与行业归属" },
+  ];
+  return calls.filter((call) => !existing.has(`${call.name}:${call.query}`));
+}
+
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
   const seen = new Set<string>();
   return calls.filter((call) => {
@@ -279,6 +389,7 @@ function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
 
 export function ensureDeepResearchAnswerCompleteness(text: string, job: AssistantDeepResearchWorkerJob, stopped: boolean, evidenceCount: number) {
   if (hasRequiredDeepResearchAnswerSections(text, job.researchKind, job.query)) return text.trim();
+  if (!stopped) return text.trim();
   return [
     text.trim(),
     "",
