@@ -2201,7 +2201,7 @@ function mockDb({ role }: { role: string }) {
               return {
                 id: "session-1",
                 user_id: "user-1",
-                token_hash: ["hVhvD1VpBYnV5arq", "q-K3tpge3K4fBQqJNr1tyQOnp3c"].join(""),
+                token_hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                 expires_at: "2999-01-01T00:00:00.000Z",
                 username: "admin",
                 display_name: "admin",
@@ -2224,7 +2224,7 @@ function mockDb({ role }: { role: string }) {
     __state: state,
   };
   vi.spyOn(crypto.subtle, "digest").mockImplementation(async () => {
-    const bytes = new Uint8Array([133, 88, 111, 15, 85, 105, 5, 137, 213, 229, 170, 234, 171, 226, 183, 182, 152, 30, 220, 174, 31, 5, 10, 137, 54, 189, 109, 201, 3, 167, 167, 119]);
+    const bytes = new Uint8Array(32);
     return bytes.buffer;
   });
   return db as unknown as D1Database;
