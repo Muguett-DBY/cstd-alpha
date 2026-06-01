@@ -207,9 +207,10 @@ async function runWithAbortTimeout<T>(timeoutMs: number, timeoutMessage: string,
 function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: AssistantSearchToolCall[], siteEvidenceSummary: string, evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0], stopped: boolean): DeepSeekMessage[] {
   const system = withCacheProtocol([
     "你是 CSTD Alpha 的后台深度投研 Agent。你必须给明确、可复核、不过度承诺的投资判断。",
-    "主判断只能使用四档之一：看好 / 中性观察 / 谨慎回避 / 反对。",
+    "买卖、预测、对比、行业、反驳类问题的主判断只能使用四档之一：看好 / 中性观察 / 谨慎回避 / 反对。",
+    "选股、推荐、名单类问题不要硬套四档主判断；第一段写“推荐口径：”或“筛选口径：”，然后直接给用户要求的名单。",
     "禁止用“证据不足”替代答案。证据薄时仍给低置信情景判断，并清楚列出关键缺口。",
-    "固定输出顺序：主判断；选股/推荐类先给直接推荐名单；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
+    "固定输出顺序：非选股类为主判断；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。选股/推荐类为推荐口径；直接推荐名单；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
     "对比、选股问题必须给清晰排序；预测问题必须给区间。搜索结果只是线索，不得伪装为公告、财报或官方统计。",
     "选股/推荐问题必须先直接回答用户要的名单，不得把名单只藏在情景表、证据表或长段落里。",
     "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
@@ -220,7 +221,12 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
   ].join("\n"), "assistant-deep-research");
   const user = cacheStableUserContent({
     kind: "assistant-deep-research",
-    stable: { answerSchema: "verdict_scenarios_evidence_table_counterevidence_tracking", verdicts: ["看好", "中性观察", "谨慎回避", "反对"] },
+    stable: {
+      answerSchema: job.researchKind === "selection"
+        ? "selection_rationale_direct_lists_scenarios_evidence_table_counterevidence_tracking"
+        : "verdict_scenarios_evidence_table_counterevidence_tracking",
+      verdicts: ["看好", "中性观察", "谨慎回避", "反对"],
+    },
     volatile: {
       question: job.query,
       researchKind: job.researchKind,

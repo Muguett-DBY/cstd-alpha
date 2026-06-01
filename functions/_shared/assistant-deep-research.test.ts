@@ -53,7 +53,7 @@ describe("assistant deep research contract", () => {
 
   test("selection answers must include direct A-share and US-stock recommendation lists", () => {
     const buriedScenarioOnly = [
-      "主判断：看好",
+      "推荐口径：AI产业链只按证据强度和赔率排序，不等同于无脑买入。",
       "保守情景：龙头集中。",
       "中性情景（基准推荐）：",
       "| 情景 | 推荐组合 |",
@@ -68,7 +68,7 @@ describe("assistant deep research contract", () => {
     ].join("\n");
 
     const directLists = [
-      "主判断：看好",
+      "推荐口径：AI产业链整体可参与，但只推荐同时具备业务弹性和证据支撑的标的。",
       "A 股 Top10推荐：",
       "| 排名 | 公司 | 代码 | 核心理由 |",
       "| --- | --- | --- | --- |",
@@ -108,6 +108,31 @@ describe("assistant deep research contract", () => {
     const query = "从ai相关产业中推荐10支A股股票，10支美股股票，A股着重看是否为全球业务与国产替代";
     expect(hasRequiredDeepResearchAnswerSections(buriedScenarioOnly, "selection", query)).toBe(false);
     expect(hasRequiredDeepResearchAnswerSections(directLists, "selection", query)).toBe(true);
+  });
+
+  test("selection list answers do not need four-grade verdict wording", () => {
+    const answer = [
+      "筛选口径：只列AI算力链条中证据较强、全球业务或国产替代逻辑明确的公司。",
+      "A股推荐：",
+      "| 排名 | 公司 | 代码 | 核心理由 |",
+      "| --- | --- | --- | --- |",
+      "| 1 | 中际旭创 | 300308 | 光模块 |",
+      "美股推荐：",
+      "| 排名 | 公司 | 代码 | 核心理由 |",
+      "| --- | --- | --- | --- |",
+      "| 1 | NVIDIA | NVDA | GPU |",
+      "保守情景：只买龙头。",
+      "中性情景：按排序分散。",
+      "乐观情景：提高弹性股权重。",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| AI资本开支 | 搜索线索 |",
+      "反证条件：资本开支下修。",
+      "下一步跟踪：跟踪财报和订单。",
+    ].join("\n");
+
+    expect(answer).not.toMatch(/主判断[：:]\s*(看好|中性观察|谨慎回避|反对)/);
+    expect(hasRequiredDeepResearchAnswerSections(answer, "selection", "推荐A股和美股AI股票")).toBe(true);
   });
 
   test("detects stale active jobs without expiring terminal jobs", () => {

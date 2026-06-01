@@ -88,7 +88,9 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
 }
 
 export function hasRequiredDeepResearchAnswerSections(text: string, kind: AssistantDeepResearchKind, query = "") {
-  const hasVerdict = /(主判断|结论)[：:]\s*(?:\*{1,2})?\s*(看好|中性观察|谨慎回避|反对)/.test(text);
+  const hasVerdict = kind === "selection"
+    ? /(推荐口径|筛选口径|推荐结论|排序结论|名单口径)[：:]/.test(text)
+    : /(主判断|结论)[：:]\s*(?:\*{1,2})?\s*(看好|中性观察|谨慎回避|反对)/.test(text);
   const hasScenarios = /(保守|中性|乐观).*(情景|场景)/s.test(text);
   const hasEvidenceTable = /\|[^\n]+\|/.test(text) && /(证据|来源|依据)/.test(text);
   const hasCounterEvidence = /(反证|我可能错在哪里|证伪)/.test(text);
