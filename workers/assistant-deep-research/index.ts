@@ -456,7 +456,7 @@ export function sanitizeAssistantEvidenceConfidenceLabels(
 ) {
   return text.split(/\r?\n/).map((line) => {
     if (!/(中高置信|高置信)/.test(line) || hasStructuredAssistantEvidenceCitation(line, evidence)) return line;
-    return line.replace(/中高置信|高置信/g, "中等（待核验原始来源）");
+    return line.replace(/中高置信|高置信/g, "中等置信");
   }).join("\n");
 }
 

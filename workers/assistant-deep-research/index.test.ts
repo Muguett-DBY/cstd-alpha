@@ -165,7 +165,7 @@ describe("assistant deep research worker", () => {
 
   test("downgrades high-confidence labels that are not tied to structured evidence", () => {
     const text = sanitizeAssistantEvidenceConfidenceLabels(
-      "高置信：高盛研报和多个搜索摘要一致。\n中高置信：行业新闻汇总。",
+      "高置信：高盛研报和多个搜索摘要一致。\n中高置信：行业新闻汇总。\n中性情景（中置信，基于E12高置信财报+E13一致预期）",
       [{
         source: "Tavily",
         query: "AI 算力",
@@ -182,7 +182,8 @@ describe("assistant deep research worker", () => {
 
     expect(text).not.toContain("高置信");
     expect(text).not.toContain("中高置信");
-    expect(text).toContain("中等（待核验原始来源）");
+    expect(text).toContain("中等置信：高盛研报和多个搜索摘要一致。");
+    expect(text).toContain("中性情景（中置信，基于E12中等置信财报+E13一致预期）");
   });
 
   test("strips internal repair preambles before saving final answers", () => {
