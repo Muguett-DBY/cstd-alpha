@@ -135,7 +135,7 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const presentationReady = stripAssistantRepairPreamble(repaired);
   const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(disciplined, job, stopped, evidenceResult.items.length);
+  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantSafetyDisclaimers(disciplined), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -240,12 +240,13 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
   const taskContract = buildAssistantTaskContract(job.researchKind, job.query);
   const system = withCacheProtocol([
     "你是 CSTD Alpha 的后台深度投研 Agent。你必须给明确、可复核、不过度承诺的投资判断。",
+    "这是 admin 私人投研助手，不是公开合规报告。禁止输出“免责声明”“不构成投资建议”“投资需谨慎”“请咨询专业人士”等泛化安全套话；需要保守时用证据等级、反证条件和跟踪项表达。",
     "买卖、预测、行业、反驳类问题的主判断只能使用四档之一：看好 / 中性观察 / 谨慎回避 / 反对。",
     "对比类问题不要单独套四档主判断；第一段必须写相对结论、排序或优先级，例如“主判断：贵州茅台相对更稳，五粮液弹性更高但风险更大”。",
     "选股、推荐、名单类问题不要硬套四档主判断；第一段写“推荐口径：”或“筛选口径：”，然后直接给用户要求的名单。",
     "禁止用“证据不足”替代答案。证据薄时仍给低置信情景判断，并清楚列出关键缺口。",
     "固定输出顺序：预测/行业/反驳/买卖类为主判断；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。对比类为相对主判断；对比表；胜负手/排序；反证条件；下一步跟踪。选股/推荐类为推荐口径；直接推荐名单；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
-    "对比、选股问题必须给清晰排序；预测问题必须给区间。搜索结果只是线索，不得伪装为公告、财报或官方统计。",
+    "对比、选股问题必须给清晰排序；预测问题必须给区间。若用户要求净利润、营收、股价、目标价或估值等数值预测，保守/中性/乐观三档都必须给可计算的数字或数字区间；证据薄时降低置信度，但禁止用“无精确区间”“方向低于当前价”“无法给区间”等文字代替数字区间。搜索结果只是线索，不得伪装为公告、财报或官方统计。",
     "选股/推荐问题必须先直接回答用户要的名单，不得把名单只藏在情景表、证据表或长段落里。",
     "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
@@ -292,8 +293,9 @@ async function repairAssistantDeepResearchAnswer(
       role: "system",
       content: withCacheProtocol([
         "你是 CSTD Alpha 深研答案校验步骤。只输出最终用户可读答案，不要提到校验、修复、规则、原答案、修复后的版本或系统指令。",
+        "禁止输出“免责声明”“不构成投资建议”“投资需谨慎”“请咨询专业人士”等泛化安全套话；需要保守时用证据等级、反证条件和跟踪项表达。",
         "只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
-        "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
+        "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。预测类若任一保守/中性/乐观情景缺少数字或数字区间，必须补齐；证据薄时写低置信区间，禁止用“无精确区间”“方向低于当前价”“无法给区间”等文字替代。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
       ].join("\n"), "assistant-deep-research-repair"),
@@ -456,6 +458,15 @@ export function sanitizeAssistantEvidenceConfidenceLabels(
     if (!/(中高置信|高置信)/.test(line) || hasStructuredAssistantEvidenceCitation(line, evidence)) return line;
     return line.replace(/中高置信|高置信/g, "中等（待核验原始来源）");
   }).join("\n");
+}
+
+export function sanitizeAssistantSafetyDisclaimers(text: string) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !/(免责声明|不构成投资建议|投资需谨慎|请咨询专业人士|仅供参考)/.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {

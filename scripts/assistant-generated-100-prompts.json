@@ -1,0 +1,126 @@
+{
+  "name": "assistant-generated-100-prompts",
+  "createdAt": "2026-06-02",
+  "description": "全新生成的100条中文投研助手回归提示词，覆盖20个类别、A/H/美股、行业、技术、估值、风险、对比、图表、记忆和澄清。",
+  "prompts": [
+    { "id": "g100-forecast-001", "category": "forecast", "mode": "target", "prompt": "贵州茅台未来12个月净利润和股价大概怎么估？给保守、中性、乐观区间。", "mustUseEvidence": true },
+    { "id": "g100-forecast-002", "category": "forecast", "mode": "target", "prompt": "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。", "mustUseEvidence": true },
+    { "id": "g100-forecast-003", "category": "forecast", "mode": "target", "prompt": "腾讯今年利润增长主要靠广告、游戏、云，还是成本控制？给一个区间判断。", "mustUseEvidence": true },
+    { "id": "g100-forecast-004", "category": "forecast", "mode": "target", "prompt": "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。", "mustUseEvidence": true },
+    { "id": "g100-forecast-005", "category": "forecast", "mode": "target", "prompt": "英伟达下一财年收入增速还能维持高增长吗？给保守、中性、乐观三档。", "mustUseEvidence": true },
+
+    { "id": "g100-target-001", "category": "target", "mode": "target", "prompt": "宁德时代现在最值得关注的买入理由和最大反证分别是什么？", "mustUseEvidence": true },
+    { "id": "g100-target-002", "category": "target", "mode": "target", "prompt": "比亚迪当前是利润率修复机会还是价格战陷阱？直接给主判断。", "mustUseEvidence": true },
+    { "id": "g100-target-003", "category": "target", "mode": "target", "prompt": "美团现在的核心矛盾是外卖竞争、到店利润，还是新业务亏损？", "mustUseEvidence": true },
+    { "id": "g100-target-004", "category": "target", "mode": "target", "prompt": "中海油适合作为高股息长期持仓吗？反驳过度乐观观点。", "mustUseEvidence": true },
+    { "id": "g100-target-005", "category": "target", "mode": "target", "prompt": "恒瑞医药现在到底是创新药兑现期还是估值修复过头？", "mustUseEvidence": true },
+
+    { "id": "g100-industry-001", "category": "industry", "mode": "industry", "prompt": "AI算力产业链现在最确定的利润环节在哪里？请推荐优先关注方向。", "mustUseEvidence": true },
+    { "id": "g100-industry-002", "category": "industry", "mode": "industry", "prompt": "光伏行业是否已经出清？请区分硅料、组件、逆变器和设备。", "mustUseEvidence": true },
+    { "id": "g100-industry-003", "category": "industry", "mode": "industry", "prompt": "银行高股息现在是安全现金流还是估值陷阱？请给结论。", "mustUseEvidence": true },
+    { "id": "g100-industry-004", "category": "industry", "mode": "industry", "prompt": "港股互联网吸引力来自利润修复、回购，还是估值修复？请排序。", "mustUseEvidence": true },
+    { "id": "g100-industry-005", "category": "industry", "mode": "industry", "prompt": "中国消费出海公司现在是长期机会还是阶段性高估？", "mustUseEvidence": true },
+
+    { "id": "g100-technical-001", "category": "technical", "mode": "target", "prompt": "优必选人形机器人所谓大脑和小脑协同，到底强在哪里、弱在哪里？", "mustUseEvidence": true },
+    { "id": "g100-technical-002", "category": "technical", "mode": "industry", "prompt": "HBM产业链里A股真正能赚到钱的是材料、设备、封装还是接口芯片？", "mustUseEvidence": true },
+    { "id": "g100-technical-003", "category": "technical", "mode": "industry", "prompt": "智能驾驶产业链中，算法、域控、传感器和整车厂谁的利润更确定？", "mustUseEvidence": true },
+    { "id": "g100-technical-004", "category": "technical", "mode": "industry", "prompt": "固态电池现在有哪些可验证的量产信号？哪些只是概念炒作？", "mustUseEvidence": true },
+    { "id": "g100-technical-005", "category": "technical", "mode": "industry", "prompt": "AI数据中心用电增长如何传导到变压器、电网自动化和储能？", "mustUseEvidence": true },
+
+    { "id": "g100-valuation-001", "category": "valuation", "mode": "target", "prompt": "贵州茅台现在估值是否已经充分反映悲观预期？给主判断。", "mustUseEvidence": true },
+    { "id": "g100-valuation-002", "category": "valuation", "mode": "target", "prompt": "腾讯当前估值更像低估、合理，还是价值陷阱？", "mustUseEvidence": true },
+    { "id": "g100-valuation-003", "category": "valuation", "mode": "target", "prompt": "英伟达当前估值还能用PEG解释吗？请反驳盲目乐观。", "mustUseEvidence": true },
+    { "id": "g100-valuation-004", "category": "valuation", "mode": "target", "prompt": "宁德时代当前估值是否已经包含储能和海外增长？", "mustUseEvidence": true },
+    { "id": "g100-valuation-005", "category": "valuation", "mode": "target", "prompt": "中远海控估值低是机会还是周期顶部折价？", "mustUseEvidence": true },
+
+    { "id": "g100-risk-001", "category": "risk", "mode": "target", "prompt": "万科A现在最重要的三条红线是什么？如果只看一条，看哪条？", "mustUseEvidence": true },
+    { "id": "g100-risk-002", "category": "risk", "mode": "target", "prompt": "隆基绿能最大的风险是价格、现金流、技术路线，还是资产减值？", "mustUseEvidence": true },
+    { "id": "g100-risk-003", "category": "risk", "mode": "target", "prompt": "优必选的主要风险是商业化、现金流、估值，还是技术落地？", "mustUseEvidence": true },
+    { "id": "g100-risk-004", "category": "risk", "mode": "industry", "prompt": "银行股最大的尾部风险来自地产、息差、资本充足率还是分红削减？", "mustUseEvidence": true },
+    { "id": "g100-risk-005", "category": "risk", "mode": "target", "prompt": "Super Micro 的AI服务器弹性和治理风险怎么权衡？", "mustUseEvidence": true },
+
+    { "id": "g100-compare-001", "category": "compare", "mode": "target", "prompt": "把贵州茅台和五粮液做一个对比表，最后给相对主判断。", "mustUseEvidence": true },
+    { "id": "g100-compare-002", "category": "compare", "mode": "target", "prompt": "宁德时代和比亚迪谁更适合长期持有？请给胜负手。", "mustUseEvidence": true },
+    { "id": "g100-compare-003", "category": "compare", "mode": "target", "prompt": "英伟达和AMD谁在AI算力周期中风险收益比更好？", "mustUseEvidence": true },
+    { "id": "g100-compare-004", "category": "compare", "mode": "target", "prompt": "腾讯和阿里巴巴现在谁更值得买？请给排序和反证。", "mustUseEvidence": true },
+    { "id": "g100-compare-005", "category": "compare", "mode": "industry", "prompt": "CXO和创新药哪个方向更可能进入景气上行期？", "mustUseEvidence": true },
+
+    { "id": "g100-chart-001", "category": "chart", "mode": "target", "prompt": "给我做一个茅台、五粮液、泸州老窖的对比表，最后给一句结论。", "mustUseEvidence": true },
+    { "id": "g100-chart-002", "category": "chart", "mode": "industry", "prompt": "用表格列出AI算力产业链上游、中游、下游各自最关键的A股和美股代表公司。", "mustUseEvidence": true },
+    { "id": "g100-chart-003", "category": "chart", "mode": "target", "prompt": "用情景表测算宁德时代未来一年股价的保守、中性、乐观区间。", "mustUseEvidence": true },
+    { "id": "g100-chart-004", "category": "chart", "mode": "industry", "prompt": "把光伏硅料、组件、逆变器、设备四个环节做成风险收益矩阵。", "mustUseEvidence": true },
+    { "id": "g100-chart-005", "category": "chart", "mode": "chat", "prompt": "用Python算一下10万元分别年化5%、8%、12%复利5年的结果，并用表格展示。", "mustUseEvidence": false },
+
+    { "id": "g100-memory-001", "category": "memory", "mode": "chat", "prompt": "记住：以后分析白酒时必须先看批价、库存和合同负债。", "mustUseEvidence": false },
+    { "id": "g100-memory-002", "category": "memory", "mode": "chat", "prompt": "记住：我不喜欢只给框架，买卖排序题必须先给明确排序。", "mustUseEvidence": false },
+    { "id": "g100-memory-003", "category": "memory", "mode": "chat", "prompt": "记住：以后分析AI公司时先区分算力、应用、模型和数据中心电力。", "mustUseEvidence": false },
+    { "id": "g100-memory-004", "category": "memory", "mode": "chat", "prompt": "记住：我非常讨厌把搜索摘要当成财报硬数据。", "mustUseEvidence": false },
+    { "id": "g100-memory-005", "category": "memory", "mode": "chat", "prompt": "记住：如果我问对比题，结论必须是相对判断，而不是单票评级。", "mustUseEvidence": false },
+
+    { "id": "g100-clarification-001", "category": "clarification", "mode": "chat", "prompt": "苹果怎么样？", "shouldClarify": true },
+    { "id": "g100-clarification-002", "category": "clarification", "mode": "chat", "prompt": "光伏呢？", "shouldClarify": true },
+    { "id": "g100-clarification-003", "category": "clarification", "mode": "chat", "prompt": "港股AI可以吗？", "shouldClarify": true },
+    { "id": "g100-clarification-004", "category": "clarification", "mode": "chat", "prompt": "宁德怎么样？", "shouldClarify": true },
+    { "id": "g100-clarification-005", "category": "clarification", "mode": "chat", "prompt": "现在买啥？", "shouldClarify": true },
+
+    { "id": "g100-cashflow-001", "category": "cashflow", "mode": "chat", "prompt": "用两句话解释为什么自由现金流比净利润更适合判断长期回报。", "mustUseEvidence": false },
+    { "id": "g100-cashflow-002", "category": "cashflow", "mode": "target", "prompt": "宁德时代经营现金流和利润背离时应该优先相信哪个？", "mustUseEvidence": true },
+    { "id": "g100-cashflow-003", "category": "cashflow", "mode": "target", "prompt": "腾讯的自由现金流能否支撑长期回购和分红？", "mustUseEvidence": true },
+    { "id": "g100-cashflow-004", "category": "cashflow", "mode": "target", "prompt": "五粮液合同负债和经营现金流对判断渠道健康有什么意义？", "mustUseEvidence": true },
+    { "id": "g100-cashflow-005", "category": "cashflow", "mode": "industry", "prompt": "银行股看利润还是看拨备前利润、资本充足率和现金分红？", "mustUseEvidence": true },
+
+    { "id": "g100-dividend-001", "category": "dividend", "mode": "industry", "prompt": "银行高股息是不是稳定收益？请直接反驳“稳赚”观点。", "mustUseEvidence": true },
+    { "id": "g100-dividend-002", "category": "dividend", "mode": "target", "prompt": "中国移动的高分红更像债券替代还是成长股？", "mustUseEvidence": true },
+    { "id": "g100-dividend-003", "category": "dividend", "mode": "target", "prompt": "中海油高股息能持续吗？油价下跌时会怎样？", "mustUseEvidence": true },
+    { "id": "g100-dividend-004", "category": "dividend", "mode": "industry", "prompt": "煤炭股高分红现在是机会还是衰退前的高股息陷阱？", "mustUseEvidence": true },
+    { "id": "g100-dividend-005", "category": "dividend", "mode": "industry", "prompt": "电力公用事业适合做长期分红组合核心吗？", "mustUseEvidence": true },
+
+    { "id": "g100-moat-001", "category": "moat", "mode": "target", "prompt": "贵州茅台的护城河有没有被批价下跌削弱？", "mustUseEvidence": true },
+    { "id": "g100-moat-002", "category": "moat", "mode": "target", "prompt": "腾讯的护城河来自社交网络、游戏内容还是资本配置？", "mustUseEvidence": true },
+    { "id": "g100-moat-003", "category": "moat", "mode": "target", "prompt": "英伟达护城河最怕被ASIC、AMD还是自研芯片削弱？", "mustUseEvidence": true },
+    { "id": "g100-moat-004", "category": "moat", "mode": "target", "prompt": "恒瑞医药的创新药护城河到底够不够深？", "mustUseEvidence": true },
+    { "id": "g100-moat-005", "category": "moat", "mode": "target", "prompt": "比亚迪的垂直整合护城河是否正在被价格战消耗？", "mustUseEvidence": true },
+
+    { "id": "g100-cycle-001", "category": "cycle", "mode": "industry", "prompt": "猪周期当前处于反转、磨底还是二次探底？", "mustUseEvidence": true },
+    { "id": "g100-cycle-002", "category": "cycle", "mode": "industry", "prompt": "航运周期现在是运价扰动还是供需反转？", "mustUseEvidence": true },
+    { "id": "g100-cycle-003", "category": "cycle", "mode": "industry", "prompt": "铜铝有色金属是供给约束驱动还是需求复苏驱动？", "mustUseEvidence": true },
+    { "id": "g100-cycle-004", "category": "cycle", "mode": "industry", "prompt": "钢铁水泥是否有周期修复机会，还是被地产链继续拖累？", "mustUseEvidence": true },
+    { "id": "g100-cycle-005", "category": "cycle", "mode": "industry", "prompt": "存储芯片涨价周期什么时候最可能见顶？", "mustUseEvidence": true },
+
+    { "id": "g100-bubble-001", "category": "bubble", "mode": "industry", "prompt": "人形机器人现在是产业机会还是股价泡沫？", "mustUseEvidence": true },
+    { "id": "g100-bubble-002", "category": "bubble", "mode": "industry", "prompt": "AI应用股是不是多数缺少收入兑现？请给泡沫风险排序。", "mustUseEvidence": true },
+    { "id": "g100-bubble-003", "category": "bubble", "mode": "industry", "prompt": "低空经济当前最大问题是政策、订单、商业模式还是估值？", "mustUseEvidence": true },
+    { "id": "g100-bubble-004", "category": "bubble", "mode": "industry", "prompt": "HBM概念股有没有明显透支未来增长？", "mustUseEvidence": true },
+    { "id": "g100-bubble-005", "category": "bubble", "mode": "industry", "prompt": "半导体设备国产替代是否已经被A股估值提前透支？", "mustUseEvidence": true },
+
+    { "id": "g100-hk-001", "category": "hk", "mode": "target", "prompt": "腾讯控股当前最值得关注的三条投资逻辑是什么？", "mustUseEvidence": true },
+    { "id": "g100-hk-002", "category": "hk", "mode": "target", "prompt": "美团现在是竞争恶化还是利润修复？", "mustUseEvidence": true },
+    { "id": "g100-hk-003", "category": "hk", "mode": "target", "prompt": "小米集团港股估值是否充分反映汽车业务？", "mustUseEvidence": true },
+    { "id": "g100-hk-004", "category": "hk", "mode": "target", "prompt": "阿里巴巴的云和电商能否支撑估值修复？", "mustUseEvidence": true },
+    { "id": "g100-hk-005", "category": "hk", "mode": "industry", "prompt": "港股互联网现在应该优先看回购、利润率还是收入增速？", "mustUseEvidence": true },
+
+    { "id": "g100-us-001", "category": "us", "mode": "target", "prompt": "英伟达当前最主要的下行风险是什么？", "mustUseEvidence": true },
+    { "id": "g100-us-002", "category": "us", "mode": "target", "prompt": "苹果AI换机周期能否支撑下一轮增长？", "mustUseEvidence": true },
+    { "id": "g100-us-003", "category": "us", "mode": "target", "prompt": "微软AI收入是否已经足够支撑估值？", "mustUseEvidence": true },
+    { "id": "g100-us-004", "category": "us", "mode": "target", "prompt": "特斯拉现在更像汽车公司、AI公司还是机器人期权？", "mustUseEvidence": true },
+    { "id": "g100-us-005", "category": "us", "mode": "target", "prompt": "Palantir的估值是否已经透支AI商业化？", "mustUseEvidence": true },
+
+    { "id": "g100-portfolio-001", "category": "portfolio", "mode": "chat", "prompt": "如果我只有10万元人民币，想配置三只股票，A股、港股、美股各一只，你怎么排？", "mustUseEvidence": true },
+    { "id": "g100-portfolio-002", "category": "portfolio", "mode": "chat", "prompt": "我风险承受能力低，但想参与AI产业，怎么构建一个不激进的组合？", "mustUseEvidence": true },
+    { "id": "g100-portfolio-003", "category": "portfolio", "mode": "chat", "prompt": "请给一个白酒、AI算力、高股息三类资产的组合权重建议，并说明反证。", "mustUseEvidence": true },
+    { "id": "g100-portfolio-004", "category": "portfolio", "mode": "chat", "prompt": "如果只能买一只港股和一只A股长期拿三年，你会选谁？", "mustUseEvidence": true },
+    { "id": "g100-portfolio-005", "category": "portfolio", "mode": "chat", "prompt": "我想一年翻倍但不能亏超过20%，这个目标现实吗？请直接反驳或给方案。", "mustUseEvidence": true },
+
+    { "id": "g100-contrarian-001", "category": "contrarian", "mode": "chat", "prompt": "我认为银行股稳赚高股息，你反驳我。", "mustUseEvidence": true },
+    { "id": "g100-contrarian-002", "category": "contrarian", "mode": "industry", "prompt": "我觉得AI算力永远高增长，所以现在所有AI硬件都可以买，你反驳我。", "mustUseEvidence": true },
+    { "id": "g100-contrarian-003", "category": "contrarian", "mode": "target", "prompt": "我觉得茅台品牌永远不会差，所以跌了就闭眼买，你反驳我。", "mustUseEvidence": true },
+    { "id": "g100-contrarian-004", "category": "contrarian", "mode": "industry", "prompt": "我觉得光伏跌这么多肯定见底了，你反驳我。", "mustUseEvidence": true },
+    { "id": "g100-contrarian-005", "category": "contrarian", "mode": "chat", "prompt": "我觉得低PE股票一定更安全，你反驳我。", "mustUseEvidence": true },
+
+    { "id": "g100-tooling-001", "category": "tooling", "mode": "target", "prompt": "查一下贵州茅台当前股价和最近财报，然后给我一个简短结论。", "mustUseEvidence": true },
+    { "id": "g100-tooling-002", "category": "tooling", "mode": "industry", "prompt": "用外部搜索补一下最新AI算力资本开支变化，再给主判断。", "mustUseEvidence": true },
+    { "id": "g100-tooling-003", "category": "tooling", "mode": "chat", "prompt": "用Python算一下：10万元，先亏20%，再涨25%，最后是多少钱？解释为什么不是回本。", "mustUseEvidence": false },
+    { "id": "g100-tooling-004", "category": "tooling", "mode": "target", "prompt": "查一下英伟达和AMD最新AI芯片竞争线索，最后给谁更值得关注。", "mustUseEvidence": true },
+    { "id": "g100-tooling-005", "category": "tooling", "mode": "chat", "prompt": "帮我做一个三列表格：问题、需要的数据、如果数据恶化应该怎么处理。主题是白酒投资。", "mustUseEvidence": false }
+  ]
+}

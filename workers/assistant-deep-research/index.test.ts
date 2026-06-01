@@ -8,6 +8,7 @@ import {
   findAssistantEvidenceDisciplineIssues,
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
+  sanitizeAssistantSafetyDisclaimers,
   stripAssistantRepairPreamble,
 } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
@@ -199,6 +200,22 @@ describe("assistant deep research worker", () => {
     expect(text).toMatch(/^相对主判断/);
     expect(text).not.toContain("修复器");
     expect(text).not.toContain("核心修复点");
+  });
+
+  test("removes generic public-report safety disclaimers from final answers", () => {
+    const text = sanitizeAssistantSafetyDisclaimers([
+      "主判断：中性观察",
+      "关键证据表",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "免责声明：以上仅为基于公开信息的投研框架，不构成投资建议。市场有风险，投资需谨慎。",
+    ].join("\n"));
+
+    expect(text).toContain("主判断：中性观察");
+    expect(text).not.toContain("免责声明");
+    expect(text).not.toContain("不构成投资建议");
+    expect(text).not.toContain("投资需谨慎");
   });
 });
 

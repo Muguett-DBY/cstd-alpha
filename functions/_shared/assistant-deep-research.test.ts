@@ -37,9 +37,9 @@ describe("assistant deep research contract", () => {
   test("requires verdict, scenarios, evidence table, counter evidence and tracking", () => {
     const complete = [
       "主判断：中性观察",
-      "保守情景：利润下降。",
-      "中性情景：利润持平。",
-      "乐观情景：利润增长。",
+      "保守情景：利润区间 800-830 亿元，股价区间 1100-1250 元。",
+      "中性情景：利润区间 850-880 亿元，股价区间 1300-1500 元。",
+      "乐观情景：利润区间 900-1000 亿元，股价区间 1600-2000 元。",
       "| 证据 | 来源 |",
       "| --- | --- |",
       "| 财报 | 公告 |",

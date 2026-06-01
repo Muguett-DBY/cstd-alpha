@@ -82,7 +82,10 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
     missing.push("四档主判断");
   }
 
-  if (contract.needsForecastRange && !/(区间|保守|中性|乐观|情景|场景)/.test(text)) missing.push("预测区间或情景");
+  if (contract.needsForecastRange) {
+    if (!/(区间|保守|中性|乐观|情景|场景)/.test(text)) missing.push("预测区间或情景");
+    if (!hasForecastScenarioNumericRanges(text)) missing.push("保守/中性/乐观数字区间");
+  }
   if (contract.needsCurrentPrice && !hasCurrentPriceValue(text)) missing.push("当前股价口径和数值");
   for (const subject of contract.comparedSubjects) {
     if (!text.includes(subject)) missing.push(`覆盖对比对象：${subject}`);
@@ -155,6 +158,14 @@ function hasCurrentPriceValue(text: string) {
 
 function hasEvidenceTable(text: string) {
   return /\|[^\n]+\|/.test(text) && /(证据|来源|依据|核心理由|主要风险)/.test(text);
+}
+
+function hasForecastScenarioNumericRanges(text: string) {
+  if (/(?:无|未有|没有|无法|不能|难以|不宜|暂不|不列).{0,8}(?:精确)?(?:区间|目标价|价格区间|股价区间|数值)|方向大概率(?:低于|高于)当前价/.test(text)) return false;
+  return ["保守", "中性", "乐观"].every((label) => {
+    const line = text.split("\n").find((item) => item.includes(label) && /\d/.test(item)) ?? "";
+    return /\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(line);
+  });
 }
 
 function extractComparedSubjects(query: string) {

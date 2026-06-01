@@ -19,4 +19,30 @@ describe("assistant prompt regression evaluator", () => {
       ),
     ).toEqual([]);
   });
+
+  test("does not flag populated markdown sections as empty heading leaks", () => {
+    expect(__test__.hasEmptyMarkdownHeadingLeak("### 下一步跟踪\n\n1. 跟踪批价。\n2. 跟踪中报。")).toBe(false);
+    expect(__test__.hasEmptyMarkdownHeadingLeak("### 下一步跟踪\n\n---\n\n### 反证条件")).toBe(true);
+  });
+
+  test("flags forecast answers with vague scenario ranges", () => {
+    expect(
+      __test__.evaluateForecastAnswer(
+        "贵州茅台未来12个月净利润和股价大概怎么估？给保守、中性、乐观区间。",
+        [
+          "主判断：中性观察",
+          "当前股价：约 1420 元。",
+          "| 情景 | 归母净利润 | 12个月股价区间 |",
+          "| --- | --- | --- |",
+          "| 保守 | 820-840亿元 | 无精确区间，方向大概率低于当前价 |",
+          "| 中性 | 850-870亿元 | 1350-1500元 |",
+          "| 乐观 | 890-930亿元 | 1550-1750元 |",
+          "| 证据 | 来源 |",
+          "| 财报 | 公告 |",
+          "反证条件：批价继续回落。",
+          "下一步跟踪：跟踪批价。",
+        ].join("\n"),
+      ),
+    ).toContain("保守/中性/乐观数字区间");
+  });
 });
