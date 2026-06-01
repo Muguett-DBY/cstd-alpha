@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { buildAssistantDeepResearchToolCalls, classifyAssistantDeepResearch, hasRequiredDeepResearchAnswerSections, shouldStartAssistantDeepResearch } from "./assistant-deep-research";
+import {
+  ASSISTANT_DEEP_RESEARCH_STALE_MS,
+  buildAssistantDeepResearchToolCalls,
+  classifyAssistantDeepResearch,
+  hasRequiredDeepResearchAnswerSections,
+  isAssistantDeepResearchJobStale,
+  shouldStartAssistantDeepResearch,
+} from "./assistant-deep-research";
 
 describe("assistant deep research contract", () => {
   test("routes high-value investment prompts to background research but keeps concept chat realtime", () => {
@@ -42,5 +49,30 @@ describe("assistant deep research contract", () => {
     expect(hasRequiredDeepResearchAnswerSections(complete, "forecast")).toBe(true);
     expect(hasRequiredDeepResearchAnswerSections(complete.replace("主判断：中性观察", "主判断：**中性观察**"), "forecast")).toBe(true);
     expect(hasRequiredDeepResearchAnswerSections("结论：看好", "forecast")).toBe(false);
+  });
+
+  test("detects stale active jobs without expiring terminal jobs", () => {
+    const now = Date.parse("2026-06-01T10:20:00.000Z");
+    const staleUpdatedAt = new Date(now - ASSISTANT_DEEP_RESEARCH_STALE_MS - 1_000).toISOString();
+    const freshUpdatedAt = new Date(now - 5 * 60 * 1_000).toISOString();
+
+    expect(isAssistantDeepResearchJobStale({
+      status: "running",
+      createdAt: staleUpdatedAt,
+      startedAt: staleUpdatedAt,
+      updatedAt: staleUpdatedAt,
+    }, now)).toBe(true);
+    expect(isAssistantDeepResearchJobStale({
+      status: "running",
+      createdAt: freshUpdatedAt,
+      startedAt: freshUpdatedAt,
+      updatedAt: freshUpdatedAt,
+    }, now)).toBe(false);
+    expect(isAssistantDeepResearchJobStale({
+      status: "completed",
+      createdAt: staleUpdatedAt,
+      startedAt: staleUpdatedAt,
+      updatedAt: staleUpdatedAt,
+    }, now)).toBe(false);
   });
 });

@@ -25,6 +25,9 @@ import { buildDeepSeekFallbackRoutes } from "../../functions/_shared/opencode-go
 import { buildMandatoryAgentToolCalls, executeAssistantToolCalls } from "../../functions/api/assistant/chat";
 import type { AssistantUsage } from "../../src/shared/assistant";
 
+const DEEP_RESEARCH_TOOL_TIMEOUT_MS = 8 * 60 * 1_000;
+const DEEP_RESEARCH_MODEL_ROUTE_TIMEOUT_MS = 6 * 60 * 1_000;
+
 type WorkerEnv = AssistantEnv & {
   REPORT_LIBRARY_DB: D1Database;
   REPORT_CACHE?: KVNamespace;
@@ -70,7 +73,11 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   await progress(env, job, stoppedBeforeTools ? "stopping" : "running", stoppedBeforeTools ? "正在整理阶段性总结..." : "正在查行情、财报、公告和外部来源...", "collect", 2);
   const evidenceResult = stoppedBeforeTools
     ? { items: [], exa: { used: false, count: 0 }, summary: "用户在检索前停止任务。" }
-    : await executeAssistantToolCalls(env, calls, new AbortController().signal, context);
+    : await runWithAbortTimeout(
+      DEEP_RESEARCH_TOOL_TIMEOUT_MS,
+      "深度研究证据检索超时。",
+      (signal) => executeAssistantToolCalls(env, calls, signal, context),
+    );
   await writeAssistantDeepResearchStep(env.REPORT_LIBRARY_DB, {
     jobId,
     round: 2,
@@ -140,9 +147,12 @@ async function generateAssistantDeepResearchAnswer(
   for (const route of buildDeepSeekFallbackRoutes(env)) {
     try {
       const startedAt = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort("deep-research-model-timeout"), DEEP_RESEARCH_MODEL_ROUTE_TIMEOUT_MS);
       const response = await fetch(route.url, {
         method: "POST",
         headers: { "content-type": "application/json", ...(route.apiKey ? { authorization: `Bearer ${route.apiKey}` } : {}) },
+        signal: controller.signal,
         body: JSON.stringify(buildDeepSeekRequestBody({
           model: route.model,
           messages,
@@ -152,7 +162,7 @@ async function generateAssistantDeepResearchAnswer(
           temperature: 0.08,
           responseFormat: null,
         })),
-      });
+      }).finally(() => clearTimeout(timeout));
       if (!response.ok) {
         lastError = new Error(`${route.provider} failed: ${response.status}`);
         continue;
@@ -173,10 +183,25 @@ async function generateAssistantDeepResearchAnswer(
         } satisfies AssistantUsage,
       };
     } catch (error) {
-      lastError = error;
+      lastError = error instanceof Error && error.name === "AbortError"
+        ? new Error(`${route.provider} deep research answer timeout`)
+        : error;
     }
   }
   throw lastError instanceof Error ? lastError : new Error("后台深度研究模型调用失败。");
+}
+
+async function runWithAbortTimeout<T>(timeoutMs: number, timeoutMessage: string, task: (signal: AbortSignal) => Promise<T>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(timeoutMessage), timeoutMs);
+  try {
+    return await task(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(timeoutMessage, { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: AssistantSearchToolCall[], siteEvidenceSummary: string, evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0], stopped: boolean): DeepSeekMessage[] {

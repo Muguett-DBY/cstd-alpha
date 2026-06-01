@@ -5,6 +5,7 @@ export const ASSISTANT_DEEP_RESEARCH_QUEUE_BINDING = "ASSISTANT_DEEP_RESEARCH_QU
 export const ASSISTANT_DEEP_RESEARCH_QUEUE_NAME = "cstd-alpha-assistant-deep-research";
 export const ASSISTANT_DEEP_RESEARCH_PROGRESS_TTL_SECONDS = 60 * 60;
 export const ASSISTANT_DEEP_RESEARCH_MAX_MS = 15 * 60 * 1_000;
+export const ASSISTANT_DEEP_RESEARCH_STALE_MS = ASSISTANT_DEEP_RESEARCH_MAX_MS + 60 * 1_000;
 
 export type AssistantDeepResearchQueueMessage = {
   jobId: string;
@@ -50,6 +51,15 @@ export function classifyAssistantDeepResearch(message: string, mode: AssistantMo
 
 export function shouldStartAssistantDeepResearch(message: string, mode: AssistantMode) {
   return classifyAssistantDeepResearch(message, mode) !== null;
+}
+
+export function isAssistantDeepResearchJobStale(
+  job: Pick<AssistantDeepResearchJob, "status" | "createdAt" | "startedAt" | "updatedAt">,
+  nowMs = Date.now(),
+) {
+  if (job.status === "completed" || job.status === "failed") return false;
+  const lastUpdateMs = Date.parse(job.updatedAt || job.startedAt || job.createdAt || "");
+  return Number.isFinite(lastUpdateMs) && nowMs - lastUpdateMs > ASSISTANT_DEEP_RESEARCH_STALE_MS;
 }
 
 export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchKind, message: string): AssistantSearchToolCall[] {
@@ -151,7 +161,9 @@ export async function readAssistantDeepResearchJob(db: D1Database, userKey: stri
             stop_requested, result_message_id, error_message, created_at, started_at, updated_at, completed_at
      FROM assistant_deep_research_jobs WHERE id = ?1 AND user_key = ?2`,
   ).bind(id, userKey).first<DeepResearchRow>();
-  return row ? rowToAssistantDeepResearchJob(row) : null;
+  if (!row) return null;
+  const job = rowToAssistantDeepResearchJob(row);
+  return isAssistantDeepResearchJobStale(job) ? expireStaleAssistantDeepResearchJob(db, row) : job;
 }
 
 export async function readAssistantDeepResearchJobForWorker(db: D1Database, id: string) {
@@ -242,6 +254,28 @@ export async function writeAssistantDeepResearchStep(db: D1Database, input: {
     input.evidenceCount ?? 0,
     input.now ?? new Date().toISOString(),
   ).run();
+}
+
+async function expireStaleAssistantDeepResearchJob(db: D1Database, row: DeepResearchRow) {
+  const now = new Date().toISOString();
+  const errorMessage = "后台研究超时或 Worker 中断，已停止等待。";
+  await db.prepare(
+    `UPDATE assistant_deep_research_jobs
+     SET status = 'failed', progress_title = '后台研究超时，请重新发起。', progress_stage = 'failed',
+         progress_current = progress_total, error_message = COALESCE(error_message, ?1),
+         completed_at = ?2, updated_at = ?2
+     WHERE id = ?3 AND status IN ('queued', 'running', 'stopping')`,
+  ).bind(errorMessage, now, row.id).run();
+  return {
+    ...rowToAssistantDeepResearchJob(row),
+    status: "failed",
+    progressTitle: "后台研究超时，请重新发起。",
+    progressStage: "failed",
+    progressCurrent: row.progress_total,
+    errorMessage: row.error_message ?? errorMessage,
+    updatedAt: now,
+    completedAt: now,
+  } satisfies AssistantDeepResearchJob;
 }
 
 function rowToAssistantDeepResearchJob(row: DeepResearchRow): AssistantDeepResearchJob {
