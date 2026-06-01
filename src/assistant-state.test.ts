@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { assistantCacheHitRate, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import { assistantCacheHitRate, mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import type { AssistantDeepResearchJob } from "./shared/assistant";
 
 describe("assistant view state", () => {
   test("merges streamed deltas into one assistant draft", () => {
@@ -31,4 +32,41 @@ describe("assistant view state", () => {
 
     expect(stripInternalAssistantCompletion(text)).toBe("");
   });
+
+  test("does not let stale deep research metadata regress live job status", () => {
+    const completed = deepResearchJob({ status: "completed", updatedAt: "2026-06-01T08:00:00.000Z" });
+    const queuedFromMessageMetadata = deepResearchJob({ status: "queued", updatedAt: "2026-06-01T07:50:00.000Z" });
+
+    const merged = mergeAssistantDeepResearchJobs({ job1: completed }, [queuedFromMessageMetadata]);
+
+    expect(merged.job1.status).toBe("completed");
+  });
+
+  test("keeps deep research status moving forward during polling", () => {
+    const queued = deepResearchJob({ status: "queued", updatedAt: "2026-06-01T07:50:00.000Z" });
+    const running = deepResearchJob({ status: "running", updatedAt: "2026-06-01T07:51:00.000Z" });
+
+    const merged = mergeAssistantDeepResearchJobs({ job1: queued }, [running]);
+
+    expect(merged.job1.status).toBe("running");
+  });
 });
+
+function deepResearchJob(overrides: Partial<AssistantDeepResearchJob>): AssistantDeepResearchJob {
+  return {
+    id: "job1",
+    threadId: "thread1",
+    query: "茅台预测",
+    mode: "chat",
+    researchKind: "forecast",
+    status: "queued",
+    progressTitle: "正在排队...",
+    progressStage: "queued",
+    progressCurrent: 0,
+    progressTotal: 4,
+    stopRequested: false,
+    createdAt: "2026-06-01T07:50:00.000Z",
+    updatedAt: "2026-06-01T07:50:00.000Z",
+    ...overrides,
+  };
+}

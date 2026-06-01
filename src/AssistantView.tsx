@@ -15,7 +15,7 @@ import {
 import { composeClarifiedAssistantMessage, type AssistantClarificationOption, type AssistantClarificationRequest } from "./assistant-clarification";
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import { mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
@@ -120,11 +120,7 @@ export function AssistantView() {
       const results = await Promise.all(ids.map((id) => fetchAssistantDeepResearchJob(id).catch(() => null)));
       if (cancelled) return;
       const completed = results.some((job) => job?.status === "completed" || job?.status === "failed");
-      setDeepResearchJobs((current) => {
-        const next = { ...current };
-        for (const job of results) if (job) next[job.id] = job;
-        return next;
-      });
+      setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, results));
       if (completed) {
         await reloadThread(activeThreadIdRef.current ?? undefined);
         void loadThreadList();
@@ -144,7 +140,7 @@ export function AssistantView() {
     try {
       const next = await fetchAssistantThread(threadId);
       setThread(next);
-      setDeepResearchJobs((current) => ({ ...current, ...collectDeepResearchJobs(next.messages) }));
+      setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, collectDeepResearchJobs(next.messages)));
       setPhase("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "助手读取失败。");
@@ -434,7 +430,7 @@ export function AssistantView() {
       setPendingMemory(event.candidate);
     }
     if (event.type === "deep_research_job") {
-      setDeepResearchJobs((current) => ({ ...current, [event.job.id]: event.job }));
+      setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, [event.job]));
       setAgentStatus("");
     }
     if (event.type === "code_exec") {
@@ -624,7 +620,7 @@ export function AssistantView() {
 }
 
 function collectDeepResearchJobs(messages: AssistantMessage[]) {
-  return Object.fromEntries(messages.flatMap((message) => message.metadata?.deepResearchJob ? [[message.metadata.deepResearchJob.id, message.metadata.deepResearchJob]] : []));
+  return messages.flatMap((message) => message.metadata?.deepResearchJob ? [message.metadata.deepResearchJob] : []);
 }
 
 function AssistantDeepResearchCard({ job, onStop }: { job: AssistantDeepResearchJob; onStop: (job: AssistantDeepResearchJob) => void }) {
