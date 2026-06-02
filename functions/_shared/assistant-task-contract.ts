@@ -78,8 +78,9 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
       if (countAllRecommendations(text) < required) missing.push(`推荐名单至少 ${required} 家`);
     }
   } else if (contract.needsRelativeJudgment) {
-    if (!/(相对主判断|主判断|结论)[：:]|#{1,4}\s*相对主判断/.test(text)) missing.push("对比主判断");
-    const conclusionLine = text.split(/\n/).find((line) => /(相对主判断|主判断|结论)[：:]|#{1,4}\s*相对主判断/.test(line)) ?? "";
+    const relativeJudgmentLabel = /(?:\*{0,2}(?:相对主判断|主判断|结论)\*{0,2})[：:]|#{1,4}\s*\*{0,2}相对主判断\*{0,2}/;
+    if (!relativeJudgmentLabel.test(text)) missing.push("对比主判断");
+    const conclusionLine = text.split(/\n/).find((line) => relativeJudgmentLabel.test(line)) ?? "";
     if (!/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|第一|第二|>|＞)/.test(conclusionLine + "\n" + text.slice(0, 500))) {
       missing.push("对比相对结论");
     }

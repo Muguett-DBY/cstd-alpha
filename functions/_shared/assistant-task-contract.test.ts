@@ -315,6 +315,22 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("accepts bold markdown relative judgment labels", () => {
+    const contract = buildAssistantTaskContract("comparison", "宁德时代和比亚迪谁更适合长期持有？请给胜负手。");
+    const result = validateAssistantTaskAnswer([
+      "**相对主判断**：宁德时代相对更稳，比亚迪弹性更高但利润波动更大；排序为宁德时代 > 比亚迪。",
+      "### 关键证据表",
+      "| 公司 | 证据 | 判断 |",
+      "| --- | --- | --- |",
+      "| 宁德时代 | 现金流和毛利率更稳 | 更适合长期持有 |",
+      "| 比亚迪 | 规模更大但利润承压 | 等待拐点 |",
+      "反证条件：若比亚迪现金流修复且单车利润回升，排序需要重算。",
+      "下一步跟踪：半年报、销量结构、现金流和毛利率。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("rejects comparison answers that only give a four-grade label without relative conclusion", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
