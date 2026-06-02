@@ -479,10 +479,11 @@ function hasUnqualifiedRoboticsMarketingClaim(promptText: string, answer: string
   const scope = `${promptText}\n${answer}`;
   if (!/(优必选|人形机器人|机器人|宇树|UBTECH|Unitree)/i.test(scope)) return false;
   const normalized = answer.replace(/\s+/g, "");
-  const needsQualification = /(待核验|第三方|benchmark|复核|公司公开|公司披露|公开资料|媒体线索|非上市公司|审计财报|统一口径|口径核验)/;
+  const needsQualification = /(待核验|第三方|benchmark|复核|公司公开|公司披露|公开资料|媒体线索|非上市公司|审计财报|统一口径|口径核验|官方披露|官方公告|公司公告|待公告|待官方)/;
   if (/Thinker.{0,20}(九项|9项).{0,20}全球第一/i.test(normalized) && !needsQualification.test(answer)) return true;
   if (/全球唯一.{0,30}(千台|1000台).{0,30}(交付|人形机器人)/.test(normalized) && !needsQualification.test(answer)) return true;
   if (/宇树.{0,20}2025.{0,20}(盈利|利润).{0,10}6亿/.test(normalized) && !needsQualification.test(answer)) return true;
+  if (/宇树.{0,24}2025.{0,24}(已实现盈利|实现盈利|盈利|利润|IPO)/.test(normalized) && !needsQualification.test(answer)) return true;
   return false;
 }
 
