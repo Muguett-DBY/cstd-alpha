@@ -354,11 +354,30 @@ describe("assistant deep research worker", () => {
       evidence,
     );
 
-    expect(sanitized).toContain("当前不能把“五粮液增速超过贵州茅台”判成确定结论");
+    expect(sanitized).toContain("不能把“五粮液增速超过贵州茅台”或“经营反转”判成确定结论");
     expect(sanitized).toContain("单源异常");
     expect(sanitized).toContain("保守");
     expect(sanitized).toContain("下一步跟踪");
     expect(findAssistantEvidenceDisciplineIssues(sanitized, evidence)).toEqual([]);
+  });
+
+  test("does not surface Wuliangye anomalous financial values as primary comparison data", () => {
+    const sanitized = sanitizeAssistantAnomalousFinancialConclusions(
+      [
+        "## 贵州茅台 vs 五粮液 对比表",
+        "| 维度 | 贵州茅台 | 五粮液 |",
+        "|---|---|---|",
+        "| 2025年营收 | 1720.54 | 405.29（同比-54.55%，异常待核验） |",
+        "| 2026Q1归母净利同比 | +1.47% | +82.57%（异常波动待核验） |",
+        "相对主判断：贵州茅台相对更稳。",
+      ].join("\n"),
+      { query: "把贵州茅台和五粮液做一个对比表，最后给相对主判断。", researchKind: "comparison" },
+      [],
+    );
+
+    expect(sanitized).toContain("五粮液只适合作为“待核验弹性观察”");
+    expect(sanitized).not.toContain("405.29");
+    expect(sanitized).not.toContain("82.57%");
   });
 
   test("removes chatty acknowledgement and repeated user question from deep research answer", () => {

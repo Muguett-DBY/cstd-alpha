@@ -651,18 +651,26 @@ export function sanitizeAssistantAnomalousFinancialConclusions(
   job: Pick<AssistantDeepResearchWorkerJob, "query" | "researchKind">,
   evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
 ) {
+  const scope = `${job.query}\n${text}`;
+  if (/(五粮液|000858)/.test(scope) && /(贵州茅台|茅台|600519)/.test(scope) && hasMoutaiWuliangyeAnomalousFinancialDisplay(text)) {
+    return buildMoutaiWuliangyeAnomalySafeAnswer();
+  }
   const issues = findAssistantEvidenceDisciplineIssues(text, evidence);
   if (!issues.includes("单源异常财务数据只能作为待核验线索，不能支撑确定排序、极大概率判断或强烈经营结论")) return text;
-  const scope = `${job.query}\n${text}`;
   if (/(五粮液|000858)/.test(scope) && /(贵州茅台|茅台|600519)/.test(scope)) {
     return buildMoutaiWuliangyeAnomalySafeAnswer();
   }
   return `${text.trim()}\n\n口径校正：上文若涉及单源异常财务数据，只能作为待核验线索；在缺少第二硬源交叉验证前，不应据此推出确定排序、极大概率判断或高置信结论。`;
 }
 
+function hasMoutaiWuliangyeAnomalousFinancialDisplay(text: string) {
+  return /五粮液[\s\S]{0,800}(异常待核验|异常波动|单源异常|待核验)/.test(text)
+    && /(405\.29|89\.54|33\.67|82\.57|-54\.55|-71\.89)/.test(text);
+}
+
 function buildMoutaiWuliangyeAnomalySafeAnswer() {
   return [
-    "相对主判断：当前不能把“五粮液增速超过贵州茅台”判成确定结论。更稳妥的排序是：贵州茅台可判断性更高，五粮液只适合作为“待核验弹性观察”。",
+    "相对主判断：贵州茅台可判断性和稳健性更高；五粮液只适合作为“待核验弹性观察”。当前不能把“五粮液增速超过贵州茅台”或“经营反转”判成确定结论。",
     "",
     "核心原因很直接：本轮五粮液财报工具返回了异常同比和相邻期剧烈反转，并标记为单源异常，缺少第二硬源交叉验证；这些数字可以提示“可能有低基数或口径变化”，但不能直接拿来外推全年增速。茅台数据波动小，虽然增速低，但口径更稳定。",
     "",
