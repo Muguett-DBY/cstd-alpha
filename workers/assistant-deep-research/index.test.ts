@@ -213,6 +213,15 @@ describe("assistant deep research worker", () => {
     expect(issues).toContain("财年年份与自然年明显倒置，必须删除错误日期或改成可核验口径");
   });
 
+  test("flags likely mistranslation of end-of-decade into end-of-century", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "E18指出超大规模数据中心资本支出可能到2027年达1万亿美元，AI基础设施本世纪末3–4万亿。",
+      [],
+    );
+
+    expect(issues).toContain("“本世纪末”这类超长期表述疑似误译，必须改为证据支持的年份或删除");
+  });
+
   test("allows one additional constrained repair pass but stops after the configured limit", () => {
     expect(shouldContinueAssistantRepair(0, ["量化情景结果区间"], false)).toBe(true);
     expect(shouldContinueAssistantRepair(1, ["量化情景结果区间"], false)).toBe(true);
@@ -299,6 +308,10 @@ describe("assistant deep research worker", () => {
 
   test("normalizes private-use and unusual spacing characters before presentation", () => {
     expect(sanitizeAssistantPresentationText("2026\uF020Q1\u00A0利润  增长")).toBe("2026 Q1 利润 增长");
+  });
+
+  test("normalizes misplaced percent signs before presentation", () => {
+    expect(sanitizeAssistantPresentationText("三个客户占数据中心收入%68，风险较高。")).toContain("68%");
   });
 });
 

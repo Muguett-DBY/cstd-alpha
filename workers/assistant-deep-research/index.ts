@@ -265,6 +265,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
     "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
     "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
+    "英文 end of decade 应译为“十年末/2030年前后/本十年末”，不是“本世纪末”；没有明确证据时删除这类超长期表述。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
   ].join("\n"), "assistant-deep-research");
@@ -314,6 +315,7 @@ async function repairAssistantDeepResearchAnswer(
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
         "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
         "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
+        "英文 end of decade 应译为“十年末/2030年前后/本十年末”，不是“本世纪末”；没有明确证据时删除这类超长期表述。",
       ].join("\n"), "assistant-deep-research-repair"),
     },
     {
@@ -475,6 +477,9 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some(hasBackwardFiscalYearDate)) {
     issues.push("财年年份与自然年明显倒置，必须删除错误日期或改成可核验口径");
   }
+  if (lines.some(hasLikelyEndOfCenturyMistranslation)) {
+    issues.push("“本世纪末”这类超长期表述疑似误译，必须改为证据支持的年份或删除");
+  }
   return issues;
 }
 
@@ -505,6 +510,7 @@ export function sanitizeAssistantPresentationText(text: string) {
   return text
     .replace(/[\uE000-\uF8FF]/g, " ")
     .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/%(\d+(?:\.\d+)?)/g, "$1%")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
@@ -563,6 +569,10 @@ function hasBackwardFiscalYearDate(line: string) {
     if (calendarYear < fiscalYear - 1) return true;
   }
   return false;
+}
+
+function hasLikelyEndOfCenturyMistranslation(line: string) {
+  return /本世纪末/.test(line) && /(AI|人工智能|数据中心|基础设施|资本支出|Capex|TAM|万亿|E\d+)/i.test(line);
 }
 
 function hasDroppedBUnitDecimalFromEvidence(
