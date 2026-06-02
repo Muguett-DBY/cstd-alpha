@@ -512,6 +512,9 @@ export function sanitizeAssistantPresentationText(text: string) {
     .replace(/[\uE000-\uF8FF]/g, " ")
     .replace(/[\u00A0\u2007\u202F]/g, " ")
     .replace(/%(\d+(?:\.\d+)?)/g, "$1%")
+    .replace(/风险\/threat/g, "风险")
+    .replace(/太空算力/g, "算力绿电需求")
+    .replace(/太空光伏/g, "新技术路线")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
 }

@@ -313,6 +313,12 @@ describe("assistant deep research worker", () => {
   test("normalizes misplaced percent signs before presentation", () => {
     expect(sanitizeAssistantPresentationText("三个客户占数据中心收入%68，风险较高。")).toContain("68%");
   });
+
+  test("cleans awkward mixed-language and speculative presentation terms", () => {
+    const text = sanitizeAssistantPresentationText("需求端超预期风险/threat；HJT/太空算力推动设备订单；太空光伏进入扩产。");
+
+    expect(text).toBe("需求端超预期风险；HJT/算力绿电需求推动设备订单；新技术路线进入扩产。");
+  });
 });
 
 function mockJob(): AssistantDeepResearchWorkerJob {
