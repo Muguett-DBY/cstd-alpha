@@ -10,6 +10,7 @@ import {
   sanitizeAssistantEvidenceConfidenceLabels,
   sanitizeAssistantPresentationText,
   sanitizeAssistantSafetyDisclaimers,
+  sanitizeAssistantAnomalousFinancialConclusions,
   sanitizeAssistantUnsupportedLeverageLabels,
   shouldContinueAssistantRepair,
   stripAssistantRepairPreamble,
@@ -262,6 +263,31 @@ describe("assistant deep research worker", () => {
 
     expect(issues).toContain("单源异常财务数据只能作为待核验线索，不能支撑确定排序、极大概率判断或强烈经营结论");
     expect(issues).toContain("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
+  });
+
+  test("replaces Wuliangye versus Moutai abnormal conclusions with a safe relative answer", () => {
+    const evidence = [{
+      source: "CSTD Alpha",
+      query: "000858,600519",
+      title: "多标的同口径财务报表",
+      summary: "结构化核验状态：单源异常，缺少 Tushare/第二硬源交叉验证；利润表：2026一季报/归母净利同比=82.57%(异常波动待核验)",
+      url: "",
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 2,
+      qualityScore: 0.58,
+    }] as Parameters<typeof sanitizeAssistantAnomalousFinancialConclusions>[2];
+    const sanitized = sanitizeAssistantAnomalousFinancialConclusions(
+      "相对主判断：五粮液极大概率超过贵州茅台。高置信：五粮液2026Q1归母净利同比82.57%（E1），几乎全部情景都更强。",
+      { query: "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。", researchKind: "comparison" },
+      evidence,
+    );
+
+    expect(sanitized).toContain("当前不能把“五粮液增速超过贵州茅台”判成确定结论");
+    expect(sanitized).toContain("单源异常");
+    expect(sanitized).toContain("保守");
+    expect(sanitized).toContain("下一步跟踪");
+    expect(findAssistantEvidenceDisciplineIssues(sanitized, evidence)).toEqual([]);
   });
 
   test("allows one additional constrained repair pass but stops after the configured limit", () => {

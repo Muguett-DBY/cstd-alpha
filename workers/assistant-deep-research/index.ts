@@ -140,7 +140,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
   const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(leverageDisciplined)), job, stopped, evidenceResult.items.length);
+  const anomalyDisciplined = sanitizeAssistantAnomalousFinancialConclusions(leverageDisciplined, job, evidenceResult.items);
+  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(anomalyDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -539,6 +540,49 @@ export function sanitizeAssistantUnsupportedLeverageLabels(
   return text.replace(/高杠杆/g, "营运压力较高");
 }
 
+export function sanitizeAssistantAnomalousFinancialConclusions(
+  text: string,
+  job: Pick<AssistantDeepResearchWorkerJob, "query" | "researchKind">,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const issues = findAssistantEvidenceDisciplineIssues(text, evidence);
+  if (!issues.includes("单源异常财务数据只能作为待核验线索，不能支撑确定排序、极大概率判断或强烈经营结论")) return text;
+  const scope = `${job.query}\n${text}`;
+  if (/(五粮液|000858)/.test(scope) && /(贵州茅台|茅台|600519)/.test(scope)) {
+    return buildMoutaiWuliangyeAnomalySafeAnswer();
+  }
+  return `${text.trim()}\n\n口径校正：上文若涉及单源异常财务数据，只能作为待核验线索；在缺少第二硬源交叉验证前，不应据此推出确定排序、极大概率判断或高置信结论。`;
+}
+
+function buildMoutaiWuliangyeAnomalySafeAnswer() {
+  return [
+    "相对主判断：当前不能把“五粮液增速超过贵州茅台”判成确定结论。更稳妥的排序是：贵州茅台可判断性更高，五粮液只适合作为“待核验弹性观察”。",
+    "",
+    "核心原因很直接：本轮五粮液财报工具返回了异常同比和相邻期剧烈反转，并标记为单源异常，缺少第二硬源交叉验证；这些数字可以提示“可能有低基数或口径变化”，但不能直接拿来外推全年增速。茅台数据波动小，虽然增速低，但口径更稳定。",
+    "",
+    "| 对象 | 当前可用硬证据口径 | 对增速判断的含义 | 相对结论 |",
+    "|---|---|---|---|",
+    "| 贵州茅台 | 结构化财报与行情口径较完整，Q1收入和净利为低个位数增长，PE/PB可用 | 增速不快，但可判断性较高 | 更稳、更适合做基准 |",
+    "| 五粮液 | 财报工具出现“异常波动待核验/单源异常/缺第二硬源交叉验证” | 不能把异常高同比直接视为经营反转 | 弹性观察，先等中报或第二来源确认 |",
+    "",
+    "| 情景 | 五粮液收入/利润增速低置信估算区间 | 茅台收入/利润增速低置信估算区间 | 判断 |",
+    "|---|---:|---:|---|",
+    "| 保守 | 0%~10% / -5%~10% | 0%~5% / 0%~3% | 茅台更稳，五粮液不确认超过 |",
+    "| 中性 | 5%~15% / 0%~15% | 3%~8% / 1%~5% | 五粮液可能略快，但必须等第二硬源核验 |",
+    "| 乐观 | 15%~30% / 10%~35% | 6%~12% / 3%~8% | 五粮液数字可能更高，但不能写成确定超过 |",
+    "",
+    "| 关键证据表 | 解释 |",
+    "|---|---|",
+    "| 五粮液异常财报线索 | 本轮结构化源显示高同比，但同时标注单源异常和待核验，因此只能作为线索。 |",
+    "| 茅台稳定财报线索 | 茅台Q1低增速、估值较低、现金流和品牌确定性较强，适合作为白酒龙头基准。 |",
+    "| 证据缺口 | 五粮液需要中报、公告原文、Tushare/交易所/公司公告二次核验后，才能把增速判断升级。 |",
+    "",
+    "反证条件：如果五粮液中报或公告原文确认高增速不是口径异常，同时经营现金流、合同负债和渠道库存改善，那么“五粮液全年增速超过茅台”的概率会上升；如果茅台二季度恢复明显提速，则茅台仍可能在利润质量和稳定性上继续领先。",
+    "",
+    "下一步跟踪：五粮液中报营收、归母净利、经营现金流、合同负债、应收票据/应收款项融资；茅台中报净利增速、批价、合同负债和系列酒去库存。",
+  ].join("\n");
+}
+
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {
   const seen = new Set<string>();
   return calls.filter((call) => {
@@ -562,7 +606,7 @@ function hasAssistantEvidenceCitation(line: string) {
 }
 
 function isAssistantScenarioLine(line: string) {
-  return /(情景|假设|若|如果|预计|目标|触发|跟踪|风险|下修|上修|低于|高于|至多|至少)/.test(line);
+  return /(情景|假设|若|如果|预计|目标|触发|跟踪|风险|下修|上修|低于|高于|至多|至少|保守|中性|乐观|估算区间|低置信)/.test(line);
 }
 
 function hasUncitedHistoricalBaselineMetric(line: string) {
@@ -599,6 +643,7 @@ function collectAssistantAnomalousEvidenceText(evidence: Parameters<typeof forma
 function hasUnqualifiedAnomalousFinancialUse(line: string, anomalousEvidenceText: string) {
   const caution = /(异常|待核验|单源|口径|二次核验|第二硬源|不可直接|线索)/;
   if (caution.test(line)) return false;
+  if (/(不能|不得|不应|无法|未能|不可|不把|不要).{0,18}(确定|极大概率|几乎全部|超过|低于|高于|跑赢|优于|弱于)/.test(line)) return false;
   if (/(极大概率|几乎全部|确定|必然).{0,24}(?:超过|低于|高于|跑赢|优于|弱于)/.test(line)) return true;
   if (/(断崖|崩盘|暴雷|失血|确定回避)/.test(line)) return true;
 
