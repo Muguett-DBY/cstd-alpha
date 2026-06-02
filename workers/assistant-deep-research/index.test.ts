@@ -7,6 +7,7 @@ import {
   ensureDeepResearchAnswerCompleteness,
   findAssistantEvidenceDisciplineIssues,
   ensureAssistantExplicitRelativeRiskRanking,
+  ensureAssistantEvidenceTableLabel,
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
   sanitizeAssistantPresentationText,
@@ -227,6 +228,18 @@ describe("assistant deep research worker", () => {
     );
 
     expect(text.startsWith("风险排序：现金流 > 商业化 > 估值 > 技术落地。")).toBe(true);
+  });
+
+  test("labels E-numbered comparison tables as evidence tables", () => {
+    const text = ensureAssistantEvidenceTableLabel([
+      "主判断：宁德时代相对更适合长期持有。",
+      "",
+      "| 对比维度 | 宁德时代 | 比亚迪 |",
+      "| --- | --- | --- |",
+      "| 当前估值 (E1/E5) | PE 25.4 | PE 32.0 |",
+    ].join("\n"));
+
+    expect(text).toContain("### 关键证据表（对比口径）");
   });
 
   test("flags uncited precise claims and ungrounded high-confidence labels for repair", () => {

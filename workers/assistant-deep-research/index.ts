@@ -144,7 +144,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const sectorDisciplined = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(anomalyDisciplined, evidenceResult.items);
   const technicalDisciplined = sanitizeAssistantTechnicalMarketingClaims(sectorDisciplined);
   const relativeDisciplined = ensureAssistantExplicitRelativeRiskRanking(technicalDisciplined, job.query);
-  const echoDisciplined = sanitizeAssistantQuestionEcho(relativeDisciplined, job.query);
+  const evidenceLabelDisciplined = ensureAssistantEvidenceTableLabel(relativeDisciplined);
+  const echoDisciplined = sanitizeAssistantQuestionEcho(evidenceLabelDisciplined, job.query);
   const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(echoDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
@@ -611,6 +612,13 @@ export function ensureAssistantExplicitRelativeRiskRanking(text: string, query: 
   const options = extractAssistantRiskOptions(query);
   if (options.length < 2) return text.trim();
   return `风险排序：${rankAssistantRiskOptions(options).join(" > ")}。\n\n${text.trim()}`;
+}
+
+export function ensureAssistantEvidenceTableLabel(text: string) {
+  if (/(关键证据表|证据表|证据编号|来源)/.test(text)) return text.trim();
+  if (!/\|[^\n]+\|\s*\n\|(?:\s*:?-+:?\s*\|)+/.test(text)) return text.trim();
+  if (!/\bE\d+\b|E\d+\s*[/;、]\s*E\d+/i.test(text)) return text.trim();
+  return text.replace(/(\n|^)(\|[^\n]+\|\s*\n\|(?:\s*:?-+:?\s*\|)+)/, "$1### 关键证据表（对比口径）\n$2").trim();
 }
 
 function extractAssistantRiskOptions(query: string) {
