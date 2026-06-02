@@ -383,6 +383,50 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("中性情景（中置信，基于E12中等置信财报+E13一致预期）");
   });
 
+  test("flags US financial hard claims when cited evidence is only search summary", () => {
+    const evidence = [{
+      source: "Exa",
+      query: "NVIDIA PEG net income customer concentration",
+      title: "NVIDIA valuation analysis",
+      summary: "Search summary mentions GAAP net income and customer concentration.",
+      url: "https://example.com/nvidia-analysis",
+      sourceType: "news",
+      signalType: "external_search",
+      weight: 1,
+      qualityScore: 0.7,
+    }] as Parameters<typeof findAssistantEvidenceDisciplineIssues>[1];
+
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "| E1 | GAAP 净利 583 亿美元中包含159 亿美元非现金投资增值，3 个客户贡献73%数据中心收入 | **高** — 验证利润注水 |",
+      evidence,
+    );
+
+    expect(issues).toContain("美股精确财务/估值数字必须来自 SEC、公司 IR、实时行情或站内结构化硬源；搜索线索不得标高或支撑强评级");
+    expect(sanitizeAssistantEvidenceConfidenceLabels("| E1 | GAAP 净利 583 亿美元 | **高** — 搜索摘要 |", evidence)).toContain("**中**");
+  });
+
+  test("allows US financial hard claims when cited evidence is official SEC or IR evidence", () => {
+    const evidence = [{
+      source: "Exa",
+      query: "NVIDIA quarterly results",
+      title: "NVIDIA Announces Financial Results for First Quarter Fiscal 2027",
+      summary: "Record quarterly revenue of $81.6 billion. Data Center revenue of $75.2 billion.",
+      url: "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-First-Quarter-Fiscal-2027/",
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 5,
+      qualityScore: 0.9,
+    }] as Parameters<typeof findAssistantEvidenceDisciplineIssues>[1];
+
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "E1显示 Q1 营收 $81.6B，毛利率 74.9%。",
+      evidence,
+    );
+
+    expect(issues).not.toContain("美股精确财务/估值数字必须来自 SEC、公司 IR、实时行情或站内结构化硬源；搜索线索不得标高或支撑强评级");
+    expect(sanitizeAssistantEvidenceConfidenceLabels("| E1 | Q1 营收 $81.6B | **高** — 公司IR |", evidence)).toContain("**高**");
+  });
+
   test("strips internal repair preambles before saving final answers", () => {
     const text = stripAssistantRepairPreamble([
       "好的，收到指令。我将严格遵循“CSTD Alpha深研答案修复器”的规则，对原答案进行修复。",

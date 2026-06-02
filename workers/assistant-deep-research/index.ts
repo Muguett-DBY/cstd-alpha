@@ -267,6 +267,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻本轮证据编号（例如 E3）。如果本轮证据没有提供该数字，删除精确数字，改写成定性判断或“待核验线索”；禁止凭常识补数字。",
+    "美股财务和估值题必须优先使用 SEC、公司 IR/财报原文、实时行情或站内结构化证据。若精确收入、净利、毛利率、客户集中度、PEG、Forward P/E 等只来自 Exa/Brave/Tavily/AnySearch/SearXNG 搜索摘要或券商摘要，必须写成“中/低置信线索”，不得标“高”或用来支撑强评级。",
     "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
     "机器人、AI、半导体、医药等技术题中，公司宣传稿、媒体转述、采访和发布会只能作为线索。禁止把“全球第一”“全球唯一”“绝对领先”“行业第一”等宣传性绝对表述直接写成事实；必须改成“公司披露称”“公开资料显示”“横向口径仍需第三方复核”。非上市竞争对手的收入、利润、毛利率等精确数字若没有审计财报或官方披露，只能写成“媒体线索，待核验”。",
     "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
@@ -323,6 +324,7 @@ async function repairAssistantDeepResearchAnswer(
         "行业拆分问题必须逐环节核验。某个子环节若只有相邻环节或行业间接线索，没有该子环节公司级财报、订单、出货、价格或官方统计，不得直接标为“看好”；最多写“中性观察，等待直接硬证据”。",
         "太空数据中心、轨道能源、万亿级新市场、通用AGI等远期叙事只能写成远期待核验线索，不能作为当前行业评级或盈利拐点的依据。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
+        "美股财务和估值题必须优先使用 SEC、公司 IR/财报原文、实时行情或站内结构化证据。若精确收入、净利、毛利率、客户集中度、PEG、Forward P/E 等只来自 Exa/Brave/Tavily/AnySearch/SearXNG 搜索摘要或券商摘要，必须写成“中/低置信线索”，不得标“高”或用来支撑强评级。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
         "机器人、AI、半导体、医药等技术题中，公司宣传稿、媒体转述、采访和发布会只能作为线索。禁止把“全球第一”“全球唯一”“绝对领先”“行业第一”等宣传性绝对表述直接写成事实；必须改成“公司披露称”“公开资料显示”“横向口径仍需第三方复核”。非上市竞争对手的收入、利润、毛利率等精确数字若没有审计财报或官方披露，只能写成“媒体线索，待核验”。",
         "如果证据中出现“单源异常”“异常波动待核验”“缺少第二硬源交叉验证”，相关财务数字必须写成待核验线索；不得用这些数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
@@ -479,6 +481,9 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some((line) => /(中高置信|高置信)/.test(line) && !hasStructuredAssistantEvidenceCitation(line, evidence))) {
     issues.push("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
   }
+  if (lines.some((line) => hasUnverifiedUsFinancialMetricClaim(line, evidence))) {
+    issues.push("美股精确财务/估值数字必须来自 SEC、公司 IR、实时行情或站内结构化硬源；搜索线索不得标高或支撑强评级");
+  }
   if (lines.some(hasUncitedHistoricalBaselineMetric)) {
     issues.push("情景中的历史基数必须引用本轮 E 编号，否则删除该历史数字");
   }
@@ -515,6 +520,13 @@ export function sanitizeAssistantEvidenceConfidenceLabels(
   return text.split(/\r?\n/).map((line) => {
     if (!/(中高置信|高置信)/.test(line) || hasStructuredAssistantEvidenceCitation(line, evidence)) return line;
     return line.replace(/中高置信|高置信/g, "中等置信");
+  }).map((line) => {
+    if (!hasHighEvidenceStrengthLabel(line) || hasUsFinancialHardEvidenceCitation(line, evidence) || hasStructuredAssistantEvidenceCitation(line, evidence)) return line;
+    return line
+      .replace(/\*\*高\*\*/g, "**中**")
+      .replace(/(^|\|)\s*高\s*(?=\||—|-|—|$)/g, "$1 中 ")
+      .replace(/高\s*—/g, "中 —")
+      .replace(/高\s*-/g, "中 -");
   }).join("\n");
 }
 
@@ -728,6 +740,37 @@ function hasUnqualifiedAnomalousFinancialUse(line: string, anomalousEvidenceText
 function hasUnqualifiedAccountingRestatementClaim(line: string) {
   if (!/(会计差错|追溯调整|追溯更正|前董事长留置|销售费用大增)/.test(line)) return false;
   return !/(待核验|线索|未验证|需核验|搜索摘要|公告原文|本轮证据)/.test(line);
+}
+
+function hasUnverifiedUsFinancialMetricClaim(
+  line: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  if (!hasAssistantEvidenceCitation(line) || !hasAssistantPreciseInvestmentMetric(line)) return false;
+  if (!/(GAAP|Non[- ]?GAAP|SEC|10[- ]?[KQ]|净利|净利润|营收|收入|revenue|gross margin|毛利率|客户|集中|市占率|份额|PEG|Forward\s*P\/?E|P\/E|PE|EPS|Capex|资本开支|数据中心收入|投资增值|非现金投资)/i.test(line)) return false;
+  if (/(低置信|中置信|中等置信|估算|线索|待核验|券商|共识|预测|目标价|情景|假设|区间|外推)/.test(line) && !hasHighEvidenceStrengthLabel(line)) return false;
+  const referenced = referencedAssistantEvidenceItems(line, evidence);
+  if (!referenced.length) return false;
+  return !referenced.some(isUsFinancialHardEvidence);
+}
+
+function hasHighEvidenceStrengthLabel(line: string) {
+  return /(?:\*\*高\*\*|\b高\b|高置信|中高置信|支撑强度\s*[：:]\s*高|证据等级\s*[：:]\s*高)/.test(line);
+}
+
+function hasUsFinancialHardEvidenceCitation(
+  line: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  return referencedAssistantEvidenceItems(line, evidence).some(isUsFinancialHardEvidence);
+}
+
+function isUsFinancialHardEvidence(item: Parameters<typeof formatCollectedEvidenceForAgent>[0][number]) {
+  const text = `${item.source}\n${item.sourceType}\n${item.title}\n${item.url}\n${item.summary}\n${item.content ?? ""}`;
+  if (item.source === "CSTD Alpha" && item.sourceType === "official" && (item.qualityScore ?? 1) >= 0.75) return true;
+  if (item.source === "CSTD Alpha" && /(实时行情|quote|Yahoo Finance|SEC EDGAR|company facts|companyfacts|financial statements|财务报表|财报)/i.test(text)) return true;
+  if (item.sourceType !== "official") return false;
+  return /(sec\.gov|SEC EDGAR|companyfacts|10-K|10-Q|investor\.[^/\s]+|ir\.[^/\s]+|investor relations|quarterly results|annual report|financial results|Yahoo Finance|Nasdaq|NYSE)/i.test(text);
 }
 
 function hasDroppedBUnitDecimalFromEvidence(
