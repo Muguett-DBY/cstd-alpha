@@ -139,6 +139,24 @@ describe("assistant task contracts", () => {
     expect(result.missing).not.toContain("四档主判断");
   });
 
+  test("treats multi-option risk questions with '还是' as relative judgments", () => {
+    const contract = buildAssistantTaskContract("target", "隆基绿能最大的风险是价格、现金流、技术路线，还是资产减值？");
+    const result = validateAssistantTaskAnswer([
+      "## 相对主判断",
+      "排序：价格 > 资产减值 ≈ 技术路线 > 现金流。",
+      "| 风险维度 | 证据 | 判断 |",
+      "| --- | --- | --- |",
+      "| 价格 | 组件价格和毛利率压力 | 最大风险 |",
+      "| 现金流 | 短期仍有缓冲 | 次要风险 |",
+      "反证条件：若组件价格连续两个季度回升，排序需要下调价格风险。",
+      "下一步跟踪：跟踪价格、现金流、资产减值和技术路线。",
+    ].join("\n"), contract);
+
+    expect(contract.needsRelativeJudgment).toBe(true);
+    expect(result.valid).toBe(true);
+    expect(result.missing).not.toContain("四档主判断");
+  });
+
   test("accepts forecast scenario ranges written below section headings", () => {
     const contract = buildAssistantTaskContract("forecast", "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
     const result = validateAssistantTaskAnswer([
