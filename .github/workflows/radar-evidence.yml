@@ -50,7 +50,7 @@ jobs:
       - name: Install Wrangler
         run: npm ci --ignore-scripts
 
-      - name: Start local SearXNG
+      - name: Start optional local SearXNG
         run: |
           mkdir -p .searxng
           cat > .searxng/settings.yml <<'YAML'
@@ -70,16 +70,31 @@ jobs:
             request_timeout: 8.0
           YAML
 
-          docker run -d --name cstd-searxng \
+          EXISTING_SEARXNG_ENDPOINTS="$(printf '%s' "$SEARXNG_ENDPOINTS" | tr '\r\n' ',,' | sed 's/,,*/,/g; s/^,//; s/,$//')"
+
+          if ! timeout 90 docker pull searxng/searxng:latest; then
+            echo "::warning::Could not pull searxng/searxng:latest from Docker Hub. Continuing with configured SEARXNG_ENDPOINTS only."
+            if [ -n "$EXISTING_SEARXNG_ENDPOINTS" ]; then
+              echo "SEARXNG_ENDPOINTS=$EXISTING_SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
+            fi
+            exit 0
+          fi
+
+          if ! docker run -d --name cstd-searxng \
             -p 8080:8080 \
             -v "${{ github.workspace }}/.searxng:/etc/searxng:ro" \
-            searxng/searxng:latest
+            searxng/searxng:latest; then
+            echo "::warning::Could not start local SearXNG container. Continuing with configured SEARXNG_ENDPOINTS only."
+            if [ -n "$EXISTING_SEARXNG_ENDPOINTS" ]; then
+              echo "SEARXNG_ENDPOINTS=$EXISTING_SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
+            fi
+            exit 0
+          fi
 
           for attempt in $(seq 1 30); do
             if curl -fsS "http://127.0.0.1:8080/search?q=test&format=json" >/dev/null; then
-              SEARXNG_ENDPOINTS="$(printf '%s' "$SEARXNG_ENDPOINTS" | tr '\r\n' ',,' | sed 's/,,*/,/g; s/^,//; s/,$//')"
-              if [ -n "$SEARXNG_ENDPOINTS" ]; then
-                echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080,$SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
+              if [ -n "$EXISTING_SEARXNG_ENDPOINTS" ]; then
+                echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080,$EXISTING_SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
               else
                 echo "SEARXNG_ENDPOINTS=http://127.0.0.1:8080" >> "$GITHUB_ENV"
               fi
@@ -88,8 +103,11 @@ jobs:
             sleep 2
           done
 
-          docker logs cstd-searxng
-          exit 1
+          docker logs cstd-searxng || true
+          echo "::warning::Local SearXNG did not become ready. Continuing with configured SEARXNG_ENDPOINTS only."
+          if [ -n "$EXISTING_SEARXNG_ENDPOINTS" ]; then
+            echo "SEARXNG_ENDPOINTS=$EXISTING_SEARXNG_ENDPOINTS" >> "$GITHUB_ENV"
+          fi
 
       - name: Collect evidence snapshot
         run: |
