@@ -51,6 +51,17 @@ describe("assistant deep research contract", () => {
     expect(calls.find((call) => call.name === "read_filings_news")?.query).toBe("000858,600519");
   });
 
+  test("collects quote and evidence calls for NVDA versus AMD comparisons", () => {
+    const companies = extractDeepResearchCompanyQueries("英伟达和AMD谁在AI算力周期中风险收益比更好？");
+    expect(companies.map((company) => company.companyQuery)).toEqual(["英伟达 NVDA", "AMD AMD"]);
+
+    const calls = buildAssistantDeepResearchToolCalls("comparison", "英伟达和AMD谁在AI算力周期中风险收益比更好？");
+    expect(calls.filter((call) => call.name === "read_company_evidence").map((call) => call.query)).toEqual(["英伟达 NVDA", "AMD AMD"]);
+    expect(calls.find((call) => call.name === "read_tencent_quote")?.query).toBe("NVDA,AMD");
+    expect(calls.filter((call) => call.name === "read_financial_statements").map((call) => call.query)).toEqual(["英伟达 NVDA", "AMD AMD"]);
+    expect(calls.filter((call) => call.name === "read_filings_news").map((call) => call.query)).toEqual(["英伟达 NVDA", "AMD AMD"]);
+  });
+
   test("expands AI compute industry research to cover critical profit pools", () => {
     const expanded = expandDeepResearchIndustrySubject("AI算力产业链最确定的利润环节");
     expect(expanded).toContain("GPU/AI芯片");
