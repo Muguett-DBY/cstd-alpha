@@ -263,6 +263,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
+    "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
   ].join("\n"), "assistant-deep-research");
@@ -310,6 +311,7 @@ async function repairAssistantDeepResearchAnswer(
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
+        "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
       ].join("\n"), "assistant-deep-research-repair"),
     },
     {
@@ -465,6 +467,9 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some(hasContradictoryAspDirection)) {
     issues.push("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
   }
+  if (lines.some((line) => hasDroppedBUnitDecimalFromEvidence(line, evidence))) {
+    issues.push("紧邻 E 编号的 B 单位金额疑似丢失小数点，必须按对应证据原文保留小数和单位");
+  }
   return issues;
 }
 
@@ -544,6 +549,60 @@ function hasUncitedHistoricalBaselineMetric(line: string) {
 function hasContradictoryAspDirection(line: string) {
   return /高(?:价|配|端)[^。\n]{0,20}(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)/i.test(line)
     || /(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)[^。\n]{0,20}高(?:价|配|端)/i.test(line);
+}
+
+function hasDroppedBUnitDecimalFromEvidence(
+  line: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const claims = [...line.matchAll(/\b(\d{3,5})\s*B\b/g)].map((match) => match[1]);
+  if (!claims.length) return false;
+  const referenced = referencedAssistantEvidenceItems(line, evidence);
+  if (!referenced.length) return false;
+  const evidenceText = referenced
+    .map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`)
+    .join("\n")
+    .replace(/,/g, "");
+
+  return claims.some((claim) => {
+    if (containsBillionValue(evidenceText, claim)) return false;
+    return decimalCandidatesFromCompactNumber(claim).some((candidate) => containsBillionValue(evidenceText, candidate));
+  });
+}
+
+function decimalCandidatesFromCompactNumber(value: string) {
+  const candidates = new Set<string>();
+  for (let split = 1; split < value.length; split += 1) {
+    const left = value.slice(0, split);
+    const right = value.slice(split);
+    candidates.add(`${left}.${right}`);
+    if (/0+$/.test(right)) candidates.add(left);
+  }
+  return [...candidates];
+}
+
+function containsBillionValue(text: string, value: string) {
+  const variants = new Set<string>([value]);
+  if (/\.0+$/.test(value)) variants.add(value.replace(/\.0+$/, ""));
+  return [...variants].some((variant) => {
+    const escaped = escapeRegExp(variant);
+    return new RegExp(`(?:\\$\\s*)?${escaped}\\s*(?:B\\b|bn\\b|billion\\b|十亿\\b|亿美元\\b|十亿美元\\b)`, "i").test(text);
+  });
+}
+
+function referencedAssistantEvidenceItems(
+  line: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const sorted = [...evidence]
+    .sort((left, right) => assistantEvidencePriority(right) - assistantEvidencePriority(left))
+    .slice(0, 24);
+  const items: Parameters<typeof formatCollectedEvidenceForAgent>[0] = [];
+  for (const match of line.matchAll(/\bE(\d+)\b/g)) {
+    const item = sorted[Number(match[1]) - 1];
+    if (item) items.push(item);
+  }
+  return items;
 }
 
 function hasStructuredAssistantEvidenceCitation(

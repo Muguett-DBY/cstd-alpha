@@ -184,6 +184,26 @@ describe("assistant deep research worker", () => {
     expect(issues).toContain("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
   });
 
+  test("flags compact B-unit values that drop decimals from cited evidence", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "英伟达 FY2027 Q1 营收 816B（E1），Q2 指引 910B（E1）。",
+      [{
+        source: "NVIDIA Investor Relations",
+        query: "NVIDIA Q1 FY2027 revenue outlook",
+        title: "NVIDIA Announces Financial Results for First Quarter Fiscal 2027",
+        summary: "Record quarterly revenue of $81.6 billion, up 20% from Q4 and up 85% from a year ago. Outlook revenue is expected to be $91.0 billion, plus or minus 2%.",
+        url: "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-First-Quarter-Fiscal-2027/",
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 5,
+        score: 5,
+        freshness: "today",
+      }],
+    );
+
+    expect(issues).toContain("紧邻 E 编号的 B 单位金额疑似丢失小数点，必须按对应证据原文保留小数和单位");
+  });
+
   test("allows one additional constrained repair pass but stops after the configured limit", () => {
     expect(shouldContinueAssistantRepair(0, ["量化情景结果区间"], false)).toBe(true);
     expect(shouldContinueAssistantRepair(1, ["量化情景结果区间"], false)).toBe(true);
