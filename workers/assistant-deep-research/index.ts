@@ -257,6 +257,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
     "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
+    "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
   ].join("\n"), "assistant-deep-research");
@@ -302,6 +303,7 @@ async function repairAssistantDeepResearchAnswer(
         "如果用户要求“量化关键假设”“测算”“利润桥”或“影响区间”，每个情景必须同时给关键输入假设和最终结果数字区间，例如分部全年经营亏损/利润、集团利润影响或股价区间。禁止只写“显著高于”“大幅收窄”“接近盈亏平衡”。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
+        "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
       ].join("\n"), "assistant-deep-research-repair"),
     },
     {
@@ -451,6 +453,12 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some((line) => /(中高置信|高置信)/.test(line) && !hasStructuredAssistantEvidenceCitation(line, evidence))) {
     issues.push("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
   }
+  if (lines.some(hasUncitedHistoricalBaselineMetric)) {
+    issues.push("情景中的历史基数必须引用本轮 E 编号，否则删除该历史数字");
+  }
+  if (lines.some(hasContradictoryAspDirection)) {
+    issues.push("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
+  }
   return issues;
 }
 
@@ -515,6 +523,17 @@ function hasAssistantEvidenceCitation(line: string) {
 
 function isAssistantScenarioLine(line: string) {
   return /(情景|假设|若|如果|预计|目标|触发|跟踪|风险|下修|上修|低于|高于|至多|至少)/.test(line);
+}
+
+function hasUncitedHistoricalBaselineMetric(line: string) {
+  if (hasAssistantEvidenceCitation(line) || !hasAssistantPreciseInvestmentMetric(line)) return false;
+  const currentYear = new Date().getUTCFullYear();
+  return [...line.matchAll(/\b(20\d{2})\s*年?/g)].some((match) => Number(match[1]) < currentYear);
+}
+
+function hasContradictoryAspDirection(line: string) {
+  return /高(?:价|配|端)[^。\n]{0,20}(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)/i.test(line)
+    || /(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)[^。\n]{0,20}高(?:价|配|端)/i.test(line);
 }
 
 function hasStructuredAssistantEvidenceCitation(

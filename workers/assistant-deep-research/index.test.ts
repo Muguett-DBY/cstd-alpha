@@ -165,6 +165,24 @@ describe("assistant deep research worker", () => {
     expect(issues).toContain("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
   });
 
+  test("flags uncited historical baseline metrics even inside forecast scenarios", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "保守情景：集团利润将显著低于2025年（约315亿元），汽车仍为核心拖累变量。",
+      [],
+    );
+
+    expect(issues).toContain("情景中的历史基数必须引用本轮 E 编号，否则删除该历史数字");
+  });
+
+  test("flags internally contradictory ASP direction explanations", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "中性情景：ASP 23-24万元，YU7 GT高配拉低均价。",
+      [],
+    );
+
+    expect(issues).toContain("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
+  });
+
   test("downgrades high-confidence labels that are not tied to structured evidence", () => {
     const text = sanitizeAssistantEvidenceConfidenceLabels(
       "高置信：高盛研报和多个搜索摘要一致。\n中高置信：行业新闻汇总。\n中性情景（中置信，基于E12高置信财报+E13一致预期）",
