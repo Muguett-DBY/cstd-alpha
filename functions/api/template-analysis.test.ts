@@ -110,7 +110,7 @@ describe("isUsableTemplateAnalysisCache", () => {
 
 describe("template model routing", () => {
   test("uses OpenCode Go before free Zen and ignores official DeepSeek fallback", () => {
-    const routes = templateModelRoutes({ OPENCODE_API_KEY: "go-key" }, true);
+    const routes = templateModelRoutes({ OPENCODE_GO_API_KEY: "go-key" }, true);
 
     expect(routes.map((route) => route.provider)).toEqual(["opencode-go", "opencode-zen-free"]);
     expect(routes[0]).toMatchObject({ model: "deepseek-v4-flash", isFree: false });
@@ -142,7 +142,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { OPENCODE_GO_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -184,7 +184,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { OPENCODE_GO_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -213,7 +213,7 @@ describe("template model routing", () => {
 
     await expect(
       requestTemplateReport(
-        { OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+        { OPENCODE_GO_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
         watchlistRow(),
         evidenceBundle(),
         RESEARCH_TEMPLATES[9],
@@ -306,7 +306,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await requestTemplateReport(
-      { ANYSEARCH_API_KEY: "any-key", OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { ANYSEARCH_API_KEY: "any-key", OPENCODE_GO_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -405,7 +405,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const generated = await requestTemplateReport(
-      { ANYSEARCH_API_KEY: "any-key", OPENCODE_API_KEY: "paid-key" },
+      { ANYSEARCH_API_KEY: "any-key", OPENCODE_GO_API_KEY: "paid-key" },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -460,7 +460,7 @@ describe("template model routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await requestTemplateReport(
-      { SEARXNG_ENDPOINTS: "https://search.example.com", OPENCODE_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
+      { SEARXNG_ENDPOINTS: "https://search.example.com", OPENCODE_GO_API_KEY: "paid-key", REPORT_LIBRARY_DB: {} as D1Database, REPORT_LIBRARY_BUCKET: {} as R2Bucket },
       watchlistRow(),
       evidenceBundle(),
       RESEARCH_TEMPLATES[0],
@@ -583,7 +583,6 @@ describe("normalizeGeneratedAnalysis score discipline", () => {
 function nextTick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
-
 function customTemplate() {
   return {
     id: "custom-strict-template",
@@ -594,7 +593,6 @@ function customTemplate() {
     fullPrompt: "请严格评分。",
   };
 }
-
 function watchlistRow() {
   return {
     id: "watch-1",

@@ -21,7 +21,6 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
       RADAR_EVIDENCE_KV_NAMESPACE_ID: d2c77bf9e7f14258af33e2efd3f59c60
       RADAR_D1_DATABASE_NAME: cstd-alpha-report-library
       RADAR_JOB_ID: ${{ inputs.job_id }}

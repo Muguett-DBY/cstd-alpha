@@ -162,7 +162,7 @@ describe("DeepSeek report client", () => {
   test("requests OpenCode Go DeepSeek Flash first with JSON output", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
@@ -186,7 +186,7 @@ describe("DeepSeek report client", () => {
   test("routes report generation through OpenCode Go before the free fallback", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "go-key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "go-key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[0][1].headers).toHaveProperty("authorization");
@@ -203,7 +203,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[2][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
@@ -224,7 +224,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(fetchMock.mock.calls[1][0]).toBe("https://opencode.ai/zen/v1/chat/completions");
@@ -235,7 +235,7 @@ describe("DeepSeek report client", () => {
     const fetchMock = mockSuccessfulReport();
     const controller = new AbortController();
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock, signal: controller.signal });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock, signal: controller.signal });
 
     expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: controller.signal }));
   });
@@ -245,7 +245,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(12);
     expect(report.company.name).toBe("Example Inc.");
@@ -255,7 +255,7 @@ describe("DeepSeek report client", () => {
   test("uses OpenCode Go DeepSeek Flash for scoring, detail and narrative generation", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     const scoringBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     const detailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
@@ -273,7 +273,7 @@ describe("DeepSeek report client", () => {
     const fetchMock = mockSuccessfulReport();
     const metrics = { modelCalls: 0 };
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock, metrics });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock, metrics });
 
     expect(metrics.modelCalls).toBe(11);
     expect(metrics.tokenUsage).toEqual([
@@ -316,7 +316,7 @@ describe("DeepSeek report client", () => {
     };
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "key", evidence: rawHeavyEvidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence: rawHeavyEvidence, fetchImpl: fetchMock });
 
     const userPrompts = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).messages[1].content as string);
     expect(userPrompts.join("\n")).not.toContain("SHOULD_NOT_BE_SENT");
@@ -327,7 +327,7 @@ describe("DeepSeek report client", () => {
   test("keeps long shared context before batch-specific detail and narrative keys to improve prefix caching", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     const detailPayload = JSON.parse(JSON.parse(fetchMock.mock.calls[1][1].body).messages[1].content);
     const narrativePayload = JSON.parse(JSON.parse(fetchMock.mock.calls[5][1].body).messages[1].content);
@@ -338,7 +338,7 @@ describe("DeepSeek report client", () => {
   test("keeps narrative prompt prefixes stable and sends section-specific score items after shared context", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     const firstNarrativeBody = JSON.parse(fetchMock.mock.calls[5][1].body);
     const secondNarrativeBody = JSON.parse(fetchMock.mock.calls[6][1].body);
@@ -356,7 +356,7 @@ describe("DeepSeek report client", () => {
   test("enriches score item evidence and reasons in four small batches before narrative sections", async () => {
     const fetchMock = mockSuccessfulReport();
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(11);
     const firstDetailBody = JSON.parse(fetchMock.mock.calls[1][1].body);
@@ -381,7 +381,7 @@ describe("DeepSeek report client", () => {
       throw new Error("Unexpected DeepSeek request");
     });
 
-    const reportPromise = callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
+    const reportPromise = callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
     await nextTick();
     await nextTick();
 
@@ -419,7 +419,7 @@ describe("DeepSeek report client", () => {
       }),
     });
 
-    await expect(callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock })).rejects.toMatchObject({
+    await expect(callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock })).rejects.toMatchObject({
       message: MODEL_OUTPUT_LENGTH_MESSAGE,
       code: "MODEL_OUTPUT_LENGTH",
     });
@@ -438,7 +438,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(12);
     const strictBody = JSON.parse(fetchMock.mock.calls[1][1].body);
@@ -459,7 +459,7 @@ describe("DeepSeek report client", () => {
       }),
     });
 
-    await expect(callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock })).rejects.toMatchObject({
+    await expect(callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock })).rejects.toMatchObject({
       message: MODEL_OUTPUT_INVALID_JSON_MESSAGE,
       code: "MODEL_OUTPUT_INVALID_JSON",
       retryable: true,
@@ -487,7 +487,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence: maotaiEvidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence: maotaiEvidence, fetchImpl: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(report.company).toMatchObject({ name: "贵州茅台", ticker: "600519", market: "沪A" });
@@ -499,7 +499,7 @@ describe("DeepSeek report client", () => {
   test("falls back to provider company identity when model omits company fields", async () => {
     const fetchMock = mockSuccessfulReport(reportPayload({ company: undefined }));
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(report.company.name).toBe("Example Inc.");
     expect(report.company.ticker).toBe("EXM");
@@ -520,7 +520,7 @@ describe("DeepSeek report client", () => {
       }),
     );
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(report.valuationAnalysis.currentPrice).toBe("10（公开报价，2026-05-10）");
     expect(report.valuationAnalysis.fairValueRange).toBe("8.5-11.5 USD（公开报价锚定观察区间）");
@@ -534,7 +534,7 @@ describe("DeepSeek report client", () => {
   test("fills missing template sections with traceable fallback text", async () => {
     const fetchMock = mockSuccessfulReport(reportPayload({ company: { name: "Example Inc." }, sections: undefined }));
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(report.sections.companyOverview).toBe("完整公司概况");
     expect(report.fullSections.companyOverview).toBe("完整公司概况");
@@ -551,7 +551,7 @@ describe("DeepSeek report client", () => {
     mockDetailBatches(fetchMock);
     mockNarrativeBatches(fetchMock);
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock });
 
     expect(report.company.name).toBe("Example Inc.");
     expect(report.sections.finalConclusion).toBe("完整最终结论");
@@ -581,7 +581,7 @@ describe("DeepSeek report client", () => {
       throw new Error("Unexpected DeepSeek request");
     });
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
     expect(fetchMock).toHaveBeenCalledTimes(12);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
@@ -612,7 +612,7 @@ describe("DeepSeek report client", () => {
       throw new Error("Unexpected DeepSeek request");
     });
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
     expect(fetchMock).toHaveBeenCalledTimes(13);
     expect(report.fullSections.onePageConclusion).toBe("完整一页结论");
@@ -654,7 +654,7 @@ describe("DeepSeek report client", () => {
       throw new Error("Unexpected DeepSeek request");
     });
 
-    const report = await callDeepSeekReport({ apiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
+    const report = await callDeepSeekReport({ opencodeGoApiKey: "key", evidence, fetchImpl: fetchMock as typeof fetch });
 
     expect(fetchMock).toHaveBeenCalledTimes(12);
     expect(report.scoreItems20[0].evidence).toEqual(["公开证据"]);

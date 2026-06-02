@@ -29,7 +29,6 @@ type Env = {
   AUTH_SECRET: string;
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
-  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   GITHUB_RADAR_DISPATCH_TOKEN?: string;
@@ -43,7 +42,6 @@ type Env = {
 type DurableTemplateEnv = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
-  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   REPORT_LIBRARY_DB?: D1Database;
@@ -569,7 +567,7 @@ function clampMarkdownForSynthesis(markdown: string, maxChars: number) {
   return `${normalized.slice(0, Math.max(0, maxChars - 60)).trim()}\n\n（后文因上下文长度限制截断，汇总时以已提供正文和结构化要点交叉验证。）`;
 }
 
-export function templateModelRoutes(env: Pick<DurableTemplateEnv, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY" | "OPENCODE_API_KEY">, preferPaid = false): DeepSeekFallbackRoute[] {
+export function templateModelRoutes(env: Pick<DurableTemplateEnv, "OPENCODE_ZEN_API_KEY" | "OPENCODE_GO_API_KEY">, preferPaid = false): DeepSeekFallbackRoute[] {
   void preferPaid;
   return buildDeepSeekFallbackRoutes(env);
 }
@@ -1054,7 +1052,7 @@ function roundTemplateScore(value: number) {
 
 function normalizeTemplateAnalysisError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  if (message.includes("OPENCODE_API_KEY")) return "OpenCode Go API Key 未配置，无法调用 DeepSeek Flash Max。";
+  if (message.includes("OPENCODE_GO_API_KEY")) return "OpenCode Go API Key 未配置，无法调用 DeepSeek Flash Max。";
   if (message.includes("Rate limit exceeded")) return "DeepSeek Flash Max 当前触发限流，请稍后重试；任务已保存为可重试失败。";
   if (message.includes("429")) return "模板分析模型通道当前限流，请稍后重试。";
   return message || "模板分析生成失败。";

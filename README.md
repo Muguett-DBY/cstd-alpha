@@ -11,7 +11,7 @@
 5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
 6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
 
-批量导入报告库仍可使用 OpenCode CLI 或 Direct API 生成报告，再导入 D1/R2 报告库。线上模型调用保留多级 fallback，避免单一路由限流时直接失败。
+批量导入报告库仍可使用 OpenCode CLI 或 OpenCode Go API 生成报告，再导入 D1/R2 报告库。线上模型调用仅保留 OpenCode Go 和 OpenCode Zen Free 两级 fallback，避免误走官方 DeepSeek API。
 
 ## API
 
@@ -72,7 +72,6 @@ GitHub 仓库 secrets：
 - `CHECKOUT_PAT`（可选；私有仓库 checkout 或跨仓库场景需要）
 - `OPENCODE_GO_API_KEY`
 - `OPENCODE_ZEN_API_KEY`
-- `OPENCODE_API_KEY`（兼容旧配置，可选）
 - `ANYSEARCH_API_KEY`（外部搜索增强，可选但建议配置）
 - `SEARXNG_ENDPOINTS`（逗号或换行分隔的 SearXNG base URL；需实例启用 JSON 输出）
 - `EXA_API_KEY`（助手高价值外部检索增强，可选）
@@ -91,7 +90,6 @@ Cloudflare Pages secrets：
 - `AUTH_SECRET`
 - `OPENCODE_GO_API_KEY`
 - `OPENCODE_ZEN_API_KEY`
-- `OPENCODE_API_KEY`（兼容旧配置，可选）
 - `GITHUB_RADAR_DISPATCH_TOKEN`（fine-grained token，允许触发本仓库 Actions workflow）
 - `GITHUB_TEMPLATE_DISPATCH_TOKEN`（可选；缺省复用 `GITHUB_RADAR_DISPATCH_TOKEN`）
 - `GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN`（可选；缺省复用模板或雷达 dispatch token）

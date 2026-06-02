@@ -17,14 +17,13 @@ export type DeepSeekFallbackRoute = {
 export type DeepSeekFallbackEnv = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
-  OPENCODE_API_KEY?: string;
 };
 
-export type OpenCodeGoEnv = Pick<DeepSeekFallbackEnv, "OPENCODE_API_KEY" | "OPENCODE_GO_API_KEY">;
+export type OpenCodeGoEnv = Pick<DeepSeekFallbackEnv, "OPENCODE_GO_API_KEY">;
 
 export function buildDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv): DeepSeekFallbackRoute[] {
   const zenKey = cleanKey(env.OPENCODE_ZEN_API_KEY);
-  const goKey = cleanKey(env.OPENCODE_GO_API_KEY) || cleanKey(env.OPENCODE_API_KEY);
+  const goKey = cleanKey(env.OPENCODE_GO_API_KEY);
   return [
     ...(goKey
       ? [
@@ -54,8 +53,8 @@ export function requireDeepSeekFallbackRoutes(env: DeepSeekFallbackEnv, featureN
 }
 
 export function requireOpenCodeGoApiKey(env: OpenCodeGoEnv, featureName: string) {
-  const apiKey = cleanKey(env.OPENCODE_GO_API_KEY) || cleanKey(env.OPENCODE_API_KEY);
-  if (!apiKey) throw new Error(`OPENCODE_API_KEY is not configured for ${featureName}.`);
+  const apiKey = cleanKey(env.OPENCODE_GO_API_KEY);
+  if (!apiKey) throw new Error(`OPENCODE_GO_API_KEY is not configured for ${featureName}.`);
   return apiKey;
 }
 

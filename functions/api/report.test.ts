@@ -482,7 +482,6 @@ type TestKvCache = {
 function mockKvCache(value: unknown): TestKvCache {
   return mockKvCacheByKey((key) => (key.startsWith("report:") ? value : null));
 }
-
 function mockKvCacheByKey(
   resolve: (key: string) => unknown,
   options: { resolve?: (key: string) => unknown; afterPut?: (key: string, stored: Map<string, string>) => void; failDelete?: boolean } = {},
@@ -505,7 +504,6 @@ function mockKvCacheByKey(
     }),
   };
 }
-
 function reportGetKeys(cache: TestKvCache) {
   return cache.get.mock.calls.map(([key]) => key).filter((key): key is string => typeof key === "string" && key.startsWith("report:"));
 }
@@ -545,7 +543,7 @@ async function postReportResponse(options: { forceRefresh?: boolean; company?: R
         company,
       }),
     }),
-    env: { AUTH_SECRET: "secret", OPENCODE_API_KEY: "key", ...options.env },
+    env: { AUTH_SECRET: "secret", OPENCODE_GO_API_KEY: "key", ...options.env },
     waitUntil: options.waitUntil ?? vi.fn(),
   } as Parameters<typeof onRequestPost>[0]);
 }

@@ -8,7 +8,6 @@ export type AssistantEnv = {
   AUTH_SECRET: string;
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
-  OPENCODE_API_KEY?: string;
   ANYSEARCH_API_KEY?: string;
   SEARXNG_ENDPOINTS?: string;
   EXA_API_KEY?: string;

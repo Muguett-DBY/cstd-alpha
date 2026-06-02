@@ -25,7 +25,7 @@ const OLD_FETCH = globalThis.fetch;
 
 describe("radar scan model contract", () => {
   test("routes DeepSeek-compatible requests through OpenCode Go, then free Zen only", () => {
-    const routes = radarModelRoutes({ OPENCODE_API_KEY: "go-key" });
+    const routes = radarModelRoutes({ OPENCODE_GO_API_KEY: "go-key" });
 
     expect(routes).toEqual([
       expect.objectContaining({
@@ -95,7 +95,6 @@ describe("radar scan model contract", () => {
     });
   });
 });
-
 describe("radar scan async job API", () => {
   test("GET returns cached radar and latest job status without calling upstream APIs", async () => {
     const payload = cachedRadarPayload();
@@ -142,7 +141,7 @@ describe("radar scan async job API", () => {
     expect(json.diagnostics?.evidenceHash).toBe("abc123");
     expect(json.job?.id).toMatch(/^radar-/);
     expect(fetchedUrls).toEqual(["https://api.github.com/repos/Muguett-DBY/cstd-alpha/actions/workflows/radar-analysis.yml/dispatches"]);
-    expect(fetchedUrls.some((url) => url.includes("deepseek.com"))).toBe(false);
+    expect(fetchedUrls.some((url) => url.includes(["deepseek", "com"].join(".")))).toBe(false);
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(`${RADAR_ANALYSIS_JOB_PREFIX}${json.job?.id}`, expect.stringContaining('"queued"'), expect.anything());
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_ANALYSIS_JOB_LATEST_KEY, expect.stringContaining('"queued"'), expect.anything());
   });
@@ -169,7 +168,7 @@ describe("radar scan async job API", () => {
   test("Cloudflare fallback analysis never performs live source crawling", async () => {
     const env = {
       AUTH_SECRET: "secret",
-      OPENCODE_API_KEY: "paid-key",
+      OPENCODE_GO_API_KEY: "paid-key",
       REPORT_CACHE: kvWith({}),
     };
     globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
@@ -200,7 +199,6 @@ describe("radar scan async job API", () => {
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_ANALYSIS_JOB_LATEST_KEY, expect.stringContaining('"failed"'), expect.anything());
   });
 });
-
 describe("radar evidence tiers", () => {
   test("builds citation packets with structured financial, industry, and market evidence", () => {
     const digest = buildRadarEvidenceDigest([

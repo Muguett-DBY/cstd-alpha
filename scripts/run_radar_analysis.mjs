@@ -444,7 +444,7 @@ async function repairDeepSeekJsonContent(content) {
 
 function deepSeekFallbackRoutesFromEnv() {
   const zenKey = cleanEnvKey(process.env.OPENCODE_ZEN_API_KEY);
-  const goKey = cleanEnvKey(process.env.OPENCODE_GO_API_KEY) || cleanEnvKey(process.env.OPENCODE_API_KEY);
+  const goKey = cleanEnvKey(process.env.OPENCODE_GO_API_KEY);
   return [
     ...(goKey
       ? [

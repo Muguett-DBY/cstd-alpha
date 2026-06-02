@@ -105,7 +105,6 @@ export class DeepSeekReportError extends Error {
 }
 
 type DeepSeekInput = {
-  apiKey?: string;
   opencodeZenApiKey?: string;
   opencodeGoApiKey?: string;
   evidence: EvidenceBundle;
@@ -124,11 +123,9 @@ type DeepSeekUsageTracker = {
 type DeepSeekRouteEnv = {
   opencodeZenApiKey?: string;
   opencodeGoApiKey?: string;
-  opencodeApiKey?: string;
 };
 
 export async function callDeepSeekReport({
-  apiKey,
   opencodeZenApiKey,
   opencodeGoApiKey,
   evidence,
@@ -144,7 +141,6 @@ export async function callDeepSeekReport({
   const routeEnv: DeepSeekRouteEnv = {
     opencodeZenApiKey,
     opencodeGoApiKey,
-    opencodeApiKey: apiKey,
   };
   const countedFetch = ((...args: Parameters<FetchLike>) => {
     const resource = args[0];
@@ -740,7 +736,6 @@ function modelRoutes(routeEnv: DeepSeekRouteEnv, preferredModel: DeepSeekModel):
   const routes = buildDeepSeekFallbackRoutes({
     OPENCODE_ZEN_API_KEY: routeEnv.opencodeZenApiKey,
     OPENCODE_GO_API_KEY: routeEnv.opencodeGoApiKey,
-    OPENCODE_API_KEY: routeEnv.opencodeApiKey,
   });
   if (!routes.length) throw new DeepSeekReportError("DeepSeek 路由未配置，本次报告未完成。", "DEEPSEEK_ROUTE_MISSING", false);
   const preferredIndex = routes.findIndex((route) => route.model === preferredModel);

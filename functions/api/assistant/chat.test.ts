@@ -12,7 +12,7 @@ describe("assistant chat endpoint", () => {
       request: new Request("https://example.com/api/assistant/chat", { method: "POST", headers: { cookie: "cstd_alpha_session=session-1.token" }, body: JSON.stringify({ message: "hi" }) }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "user" }),
       },
       params: {},
@@ -49,7 +49,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -81,7 +81,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -107,7 +107,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
         ASSISTANT_DEEP_RESEARCH_QUEUE: queue,
       },
@@ -167,7 +167,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -234,7 +234,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         TAVILY_API_KEY: "tvly-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -266,7 +266,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -293,7 +293,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -330,7 +330,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -376,7 +376,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -420,7 +420,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -462,7 +462,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -593,7 +593,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -622,7 +622,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -650,7 +650,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -679,7 +679,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -726,7 +726,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -787,7 +787,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -817,7 +817,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -854,7 +854,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -884,7 +884,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -976,7 +976,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: db,
       },
       params: {},
@@ -1011,7 +1011,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1058,7 +1058,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1098,7 +1098,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1131,7 +1131,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1185,7 +1185,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         EXA_API_KEY: "exa-key",
         REPORT_CACHE: kv,
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
@@ -1252,7 +1252,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         ANYSEARCH_API_KEY: "any-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -1312,7 +1312,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         TAVILY_API_KEY: "tvly-key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
@@ -1380,7 +1380,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1426,7 +1426,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1464,7 +1464,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1496,7 +1496,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1532,7 +1532,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1564,7 +1564,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1596,7 +1596,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         EXA_API_KEY: "exa-key",
         REPORT_CACHE: mockKv(),
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
@@ -1761,7 +1761,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1790,7 +1790,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1837,7 +1837,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1867,7 +1867,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1897,7 +1897,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1944,7 +1944,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -1982,7 +1982,7 @@ describe("assistant chat endpoint", () => {
       }),
       env: {
         AUTH_SECRET: "secret",
-        OPENCODE_API_KEY: "key",
+        OPENCODE_GO_API_KEY: "key",
         REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
       },
       params: {},
@@ -2009,7 +2009,7 @@ describe("assistant chat endpoint", () => {
         }),
         env: {
           AUTH_SECRET: "secret",
-          OPENCODE_API_KEY: "key",
+          OPENCODE_GO_API_KEY: "key",
           REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
         },
         params: {},
@@ -2049,7 +2049,7 @@ describe("assistant chat endpoint", () => {
         }),
         env: {
           AUTH_SECRET: "secret",
-          OPENCODE_API_KEY: "key",
+          OPENCODE_GO_API_KEY: "key",
           REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
         },
         params: {},
@@ -2229,7 +2229,6 @@ function mockDb({ role }: { role: string }) {
   });
   return db as unknown as D1Database;
 }
-
 function mockKv() {
   return {
     get: vi.fn().mockResolvedValue(null),

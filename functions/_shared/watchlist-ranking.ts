@@ -8,7 +8,6 @@ const WATCHLIST_RANKING_SCHEMA_VERSION = "v1";
 export type WatchlistRankingEnv = {
   OPENCODE_ZEN_API_KEY?: string;
   OPENCODE_GO_API_KEY?: string;
-  OPENCODE_API_KEY?: string;
   REPORT_LIBRARY_DB?: D1Database;
 };
 

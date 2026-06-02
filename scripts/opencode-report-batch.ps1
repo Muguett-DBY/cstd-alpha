@@ -242,16 +242,15 @@ function Invoke-JsonPost {
 
 function Get-OpenCodeApiKey {
   if ($env:OPENCODE_GO_API_KEY) { return $env:OPENCODE_GO_API_KEY }
-  if ($env:OPENCODE_API_KEY) { return $env:OPENCODE_API_KEY }
 
   $tokenPath = $env:CSTD_ALPHA_TOKEN_FILE
   if ($tokenPath -and (Test-Path -LiteralPath $tokenPath)) {
     $tokenText = Get-Content -LiteralPath $tokenPath -Raw -Encoding UTF8
-    $match = [regex]::Match($tokenText, "(?im)^\s*(?:OPENCODE_GO_API_KEY|OPENCODE_API_KEY|OPEN_CODE_API_KEY|OPENCODE)[:=\s]+([^\s]+)")
+    $match = [regex]::Match($tokenText, "(?im)^\s*OPENCODE_GO_API_KEY[:=\s]+([^\s]+)")
     if ($match.Success) { return $match.Groups[1].Value }
   }
 
-  throw "OpenCode API key not found. Set OPENCODE_GO_API_KEY, OPENCODE_API_KEY, or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_GO_API_KEY."
+  throw "OpenCode Go API key not found. Set OPENCODE_GO_API_KEY, or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_GO_API_KEY."
 }
 
 function Invoke-OpenCodeDeepSeekChatCompletion {
