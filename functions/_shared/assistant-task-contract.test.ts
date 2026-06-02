@@ -176,6 +176,25 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("accepts quantified forecast outcome ranges in a scenario table", () => {
+    const contract = buildAssistantTaskContract("forecast", "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：谨慎回避",
+      "| 情景 | 关键输入假设 | 汽车分部全年经营利润/亏损区间 | 对集团利润的影响 |",
+      "| --- | --- | --- | --- |",
+      "| **保守** | 交付 50 万辆，毛利率 19.5% | **亏损约 55‑80 亿元** | 拖累集团利润约 15‑20 个百分点 |",
+      "| **中性** | 交付 55 万辆，毛利率 21.0% | **亏损约 5‑25 亿元** | 拖累集团利润约 1‑6 个百分点 |",
+      "| **乐观** | 交付 65 万辆，毛利率 23.5% | **盈利约 15‑40 亿元** | 提升集团利润约 4‑10 个百分点 |",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若交付不及预期，结论需要下修。",
+      "下一步跟踪：跟踪交付量、毛利率和经营亏损。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([

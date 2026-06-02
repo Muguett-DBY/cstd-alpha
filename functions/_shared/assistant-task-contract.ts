@@ -184,15 +184,19 @@ function hasForecastScenarioNumericRanges(text: string) {
 function hasQuantifiedScenarioOutcomes(text: string) {
   return ["保守", "中性", "乐观"].every((label) => {
     const lines = text.split("\n");
+    const scenarioTableLine = lines.find((line) => line.includes(label) && hasFinancialOutcomeRange(line));
+    if (scenarioTableLine) return true;
     const headingIndex = lines.findIndex((item) => new RegExp(`${label}(?:情景|场景)`).test(item));
     if (headingIndex < 0) return false;
     const outcomeLines = lines.slice(headingIndex, headingIndex + 14).filter((line) =>
       /(?:结果|预计|对应|经营亏损|经营利润|净利润|利润影响|利润贡献|拖累|盈利|盈亏)/.test(line),
     );
-    return outcomeLines.some((line) =>
-      /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}-?\d+(?:\.\d+)?\s*[-–~至]\s*-?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line),
-    );
+    return outcomeLines.some(hasFinancialOutcomeRange);
   });
+}
+
+function hasFinancialOutcomeRange(line: string) {
+  return /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}-?\d+(?:\.\d+)?\s*[-‑–~至]\s*-?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line);
 }
 
 function extractComparedSubjects(query: string) {
