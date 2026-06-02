@@ -11,7 +11,7 @@ param(
   [string]$Agent = "build",
   [switch]$ImportOnline,
   [switch]$ContinueOnError,
-  [switch]$DirectDeepSeekApi,
+  [switch]$DirectOpenCodeGoApi,
   [int]$MaxAttempts = 2,
   [int]$OpencodeTimeoutMinutes = 45,
   [int]$CacheAnchorRepeat = 0
@@ -253,7 +253,7 @@ function Get-OpenCodeApiKey {
   throw "OpenCode Go API key not found. Set OPENCODE_GO_API_KEY, or set CSTD_ALPHA_TOKEN_FILE with OPENCODE_GO_API_KEY."
 }
 
-function Invoke-OpenCodeDeepSeekChatCompletion {
+function Invoke-OpenCodeGoChatCompletion {
   param(
     [string]$Model,
     [string]$Variant,
@@ -286,15 +286,15 @@ function Invoke-OpenCodeDeepSeekChatCompletion {
     $httpCode = (curl.exe --silent --show-error --max-time 1800 -o $responsePath -w "%{http_code}" -H "Authorization: Bearer $apiKey" -H "Content-Type: application/json; charset=utf-8" --data-binary "@$requestPath" "https://opencode.ai/zen/go/v1/chat/completions") -join ""
     $body = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
     if ($LASTEXITCODE -ne 0 -or -not ($httpCode -match '^2\d\d$')) {
-      throw "OpenCode Go DeepSeek API failed with HTTP $httpCode. $body"
+      throw "OpenCode Go API failed with HTTP $httpCode. $body"
     }
 
     $response = $body | ConvertFrom-Json
     $choice = $response.choices[0]
     $finishReason = [string]$choice.finish_reason
-    if ($finishReason -eq "length") { throw "OpenCode Go DeepSeek API stopped because max_tokens was reached; retry with a smaller evidence payload or larger max_tokens." }
+    if ($finishReason -eq "length") { throw "OpenCode Go API stopped because max_tokens was reached; retry with a smaller evidence payload or larger max_tokens." }
     $content = [string]$choice.message.content
-    if (-not $content) { throw "OpenCode Go DeepSeek API returned empty content." }
+    if (-not $content) { throw "OpenCode Go API returned empty content." }
 
     $usage = $response.usage
     $cacheHit = 0
@@ -773,9 +773,9 @@ $modelInputPath
 $modelInput
 "@
 
-  if ($DirectDeepSeekApi -and ($Model -like "deepseek/*" -or $Model -like "opencode/deepseek*")) {
-    Write-Output "RUN OpenCode Go DeepSeek API $($company.code) $($company.name)"
-    $raw = Invoke-OpenCodeDeepSeekChatCompletion -Model $Model -Variant $Variant -Prompt $opencodeMessage -EventsPath $eventsPath
+  if ($DirectOpenCodeGoApi -and ($Model -like "deepseek/*" -or $Model -like "opencode/deepseek*")) {
+    Write-Output "RUN OpenCode Go API $($company.code) $($company.name)"
+    $raw = Invoke-OpenCodeGoChatCompletion -Model $Model -Variant $Variant -Prompt $opencodeMessage -EventsPath $eventsPath
   } else {
     Write-Output "RUN opencode $($company.code) $($company.name)"
     $opencodeInvocation = Resolve-OpenCodeInvocation

@@ -41,7 +41,7 @@ export type AssistantDeepResearchWorkerJob = AssistantDeepResearchJob & {
 export function classifyAssistantDeepResearch(message: string, mode: AssistantMode): AssistantDeepResearchKind | null {
   const text = message.trim();
   if (!text) return null;
-  if (/(对比|比较|区别|谁更|哪家更|超过|跑赢|优于|高于|低于|相比|vs\b|VS\b)/i.test(text)) return "comparison";
+  if (/(对比|比较|区别|谁更|哪家更|超过|跑赢|优于|高于|低于|相比|vs\b|VS\b|(?:来自|来源|因素|吸引力).{0,24}(?:还是|排序)|排序.{0,16}(?:来源|因素|驱动|吸引力))/i.test(text)) return "comparison";
   if (/(选股|推荐|最值得买|买哪|三家|排行|排序|优先级|梭哈|标的)/.test(text)) return "selection";
   if (/(预估|预测|目标价|明年股价|未来.*利润|业绩.*多少|估值.*多少|空间|情景测算)/.test(text)) return "forecast";
   if (/(反驳|是不是稳赚|一定涨|必涨|无风险|高股息.*稳赚|泡沫|过度乐观|过度悲观)/.test(text)) return "contrarian";

@@ -12,7 +12,7 @@ param(
   [int]$MaxAttempts = 2,
   [int]$OpencodeTimeoutMinutes = 20,
   [switch]$ImportOnline,
-  [switch]$UseOpencodeForDeepSeek,
+  [switch]$UseOpenCodeCli,
   [switch]$DryRun
 )
 
@@ -77,7 +77,7 @@ for ($index = 0; $index -lt $Workers; $index += 1) {
   )
   if ($BaseUrl) { $arguments += @("-BaseUrl", $BaseUrl) }
   if ($ImportOnline) { $arguments += "-ImportOnline" }
-  if (-not $UseOpencodeForDeepSeek -and ($Model -like "deepseek/*" -or $Model -like "opencode/deepseek*")) { $arguments += "-DirectDeepSeekApi" }
+  if (-not $UseOpenCodeCli -and ($Model -like "deepseek/*" -or $Model -like "opencode/deepseek*")) { $arguments += "-DirectOpenCodeGoApi" }
 
   $started += [pscustomobject]@{
     Worker = $index + 1

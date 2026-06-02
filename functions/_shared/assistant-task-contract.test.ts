@@ -44,6 +44,20 @@ describe("assistant task contracts", () => {
     expect(result.missing).toContain("当前股价口径和数值");
   });
 
+  test("accepts natural four-level verdict wording inside the main judgment paragraph", () => {
+    const contract = buildAssistantTaskContract("industry", "光伏行业是否已经出清？请区分硅料、组件、逆变器和设备。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：光伏行业整体尚未完成出清，各环节分化明显，当前主判断为“中性观察”。",
+      "| 环节 | 判断 |",
+      "| --- | --- |",
+      "| 硅料 | 出清未完成 |",
+      "反证条件：价格重新下跌。",
+      "下一步跟踪：库存和排产。",
+    ].join("\n"), contract);
+
+    expect(result.missing).not.toContain("四档主判断");
+  });
+
   test("rejects forecast answers that replace a scenario price range with vague direction text", () => {
     const contract = buildAssistantTaskContract("forecast", "贵州茅台未来12个月净利润和股价大概怎么估？给保守、中性、乐观区间。");
     const result = validateAssistantTaskAnswer([

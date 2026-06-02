@@ -16,6 +16,7 @@ describe("assistant deep research contract", () => {
     expect(classifyAssistantDeepResearch("给我三家半导体/AI算力最值得买的公司", "chat")).toBe("selection");
     expect(classifyAssistantDeepResearch("贵州茅台和五粮液谁更值得长期持有？", "chat")).toBe("comparison");
     expect(classifyAssistantDeepResearch("五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。", "target")).toBe("comparison");
+    expect(classifyAssistantDeepResearch("港股互联网吸引力来自利润修复、回购，还是估值修复？请排序。", "industry")).toBe("comparison");
     expect(classifyAssistantDeepResearch("银行股是不是稳赚高股息？请反驳我", "chat")).toBe("contrarian");
     expect(shouldStartAssistantDeepResearch("用两句话解释自由现金流为什么重要。", "chat")).toBe(false);
   });

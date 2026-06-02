@@ -83,7 +83,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
     if (!/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|第一|第二|>|＞)/.test(conclusionLine + "\n" + text.slice(0, 500))) {
       missing.push("对比相对结论");
     }
-  } else if (!/(主判断|结论)[：:]\s*(?:\*{1,2})?\s*(看好|中性观察|谨慎回避|反对)/.test(text)) {
+  } else if (!/(主判断|结论)[：:][\s\S]{0,180}(看好|中性观察|谨慎回避|反对)/.test(text)) {
     missing.push("四档主判断");
   }
 
