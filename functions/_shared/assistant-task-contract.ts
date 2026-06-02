@@ -174,11 +174,11 @@ function hasForecastScenarioNumericRanges(text: string) {
   return ["保守", "中性", "乐观"].every((label) => {
     const lines = text.split("\n");
     const matchingLine = lines.find((item) => item.includes(label) && /\d/.test(item)) ?? "";
-    if (/\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(matchingLine)) return true;
+    if (/[+-]?\d+(?:\.\d+)?\s*(?:[-‑–~～至]\s*[+-]?\d+(?:\.\d+)?)?/.test(matchingLine)) return true;
     const headingIndex = lines.findIndex((item) => new RegExp(`${label}(?:情景|场景)`).test(item));
     if (headingIndex < 0) return false;
     const section = lines.slice(headingIndex + 1, headingIndex + 9).join("\n");
-    return /\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(section);
+    return /[+-]?\d+(?:\.\d+)?\s*(?:[-‑–~～至]\s*[+-]?\d+(?:\.\d+)?)?/.test(section);
   });
 }
 
@@ -203,7 +203,7 @@ function hasQuantifiedScenarioInputs(text: string) {
     if (scenarioTableLine) {
       const cells = scenarioTableLine.split("|").map((cell) => cell.trim()).filter(Boolean);
       const labelIndex = cells.findIndex((cell) => cell.includes(label));
-      const outcomeIndex = cells.findIndex((cell, index) => index > labelIndex && /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)/.test(cell));
+      const outcomeIndex = cells.findIndex((cell, index) => index > labelIndex && hasFinancialOutcomeRange(cell));
       const inputCells = cells.slice(labelIndex + 1, outcomeIndex > labelIndex ? outcomeIndex : undefined).join(" ");
       return hasConcreteScenarioInput(inputCells);
     }
@@ -217,11 +217,11 @@ function hasQuantifiedScenarioInputs(text: string) {
 }
 
 function hasFinancialOutcomeRange(line: string) {
-  return /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}-?\d+(?:\.\d+)?\s*[-‑–~至]\s*-?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line);
+  return /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}[+-]?\d+(?:\.\d+)?\s*[-‑–~～至]\s*[+-]?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line);
 }
 
 function hasConcreteScenarioInput(text: string) {
-  if (/-?\d+(?:\.\d+)?\s*[-‑–~至]\s*-?\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)?/.test(text)) return true;
+  if (/[+-]?\d+(?:\.\d+)?\s*[-‑–~～至]\s*[+-]?\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)?/.test(text)) return true;
   if (/(?:低于|高于|接近|超过|远低于|显著超过|目标|参考|Q1)/i.test(text)) return false;
   return /\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)/.test(text);
 }

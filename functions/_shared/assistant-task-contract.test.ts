@@ -215,6 +215,25 @@ describe("assistant task contracts", () => {
     expect(result.missing).toContain("量化情景输入假设区间");
   });
 
+  test("accepts quantified forecast tables with full-width tildes and signed profit ranges", () => {
+    const contract = buildAssistantTaskContract("forecast", "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：谨慎回避",
+      "| 情景 | 核心输入假设 | 分部经营利润估算区间 |",
+      "| --- | --- | --- |",
+      "| **乐观情景** | 交付量 55～60 万辆；毛利率 23%～26%；分部费用 280～320 亿元（基于季度经营亏损年化调整） | 经营利润 +70～+110 亿元 |",
+      "| **中性情景** | 交付量 52～55 万辆；毛利率 22%～24%；分部费用 300～330 亿元（基于季度经营亏损年化调整） | 经营亏损 -30～+5 亿元 |",
+      "| **保守情景** | 交付量 45～50 万辆；毛利率 20%～21.5%；分部费用 330～360 亿元（基于季度经营亏损年化调整） | 经营亏损 -120～-80 亿元 |",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若交付不及预期，结论需要下修。",
+      "下一步跟踪：跟踪交付量、毛利率和经营亏损。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
