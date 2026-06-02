@@ -3,6 +3,7 @@ import {
   ASSISTANT_DEEP_RESEARCH_STALE_MS,
   buildAssistantDeepResearchToolCalls,
   classifyAssistantDeepResearch,
+  expandDeepResearchIndustrySubject,
   hasRequiredDeepResearchAnswerSections,
   isAssistantDeepResearchJobStale,
   shouldStartAssistantDeepResearch,
@@ -32,6 +33,22 @@ describe("assistant deep research contract", () => {
       "search_brave",
       "search_exa",
     ]);
+  });
+
+  test("expands AI compute industry research to cover critical profit pools", () => {
+    const expanded = expandDeepResearchIndustrySubject("AI算力产业链最确定的利润环节");
+    expect(expanded).toContain("GPU/AI芯片");
+    expect(expanded).toContain("HBM/存储");
+    expect(expanded).toContain("光模块/光器件");
+    expect(expanded).toContain("先进制程/封装");
+    expect(expanded).toContain("AI服务器");
+    expect(expanded).toContain("PCB/交换芯片");
+
+    const calls = buildAssistantDeepResearchToolCalls("industry", "AI算力产业链现在最确定的利润环节在哪里？");
+    const researchQueries = calls.filter((call) => call.name === "read_radar_result" || call.name.startsWith("search_")).map((call) => call.query).join("\n");
+    expect(researchQueries).toContain("光模块/光器件");
+    expect(researchQueries).toContain("HBM/存储");
+    expect(researchQueries).toContain("电源散热");
   });
 
   test("requires verdict, scenarios, evidence table, counter evidence and tracking", () => {

@@ -65,6 +65,7 @@ export function isAssistantDeepResearchJobStale(
 
 export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchKind, message: string): AssistantSearchToolCall[] {
   const subject = message.trim().slice(0, 180);
+  const industrySubject = expandDeepResearchIndustrySubject(subject);
   const calls: AssistantSearchToolCall[] = [];
   const add = (name: AssistantSearchToolCall["name"], query: string, reason: string) => calls.push({ id: `deep:${calls.length + 1}:${name}`, name, query, reason });
   if (kind === "forecast" || kind === "risk" || kind === "comparison") {
@@ -74,10 +75,10 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
     add("read_filings_news", subject, "核验公告和最新事件");
   }
   if (kind === "selection" || kind === "industry") {
-    add("read_radar_result", subject, "读取全行业雷达和主题线索");
+    add("read_radar_result", industrySubject, "读取全行业雷达和主题线索");
     add("read_market_data", "industry", "核验行业强弱排序");
-    add("search_tavily", `${subject} 行业 代表公司 财报 订单 估值 风险 最新`, "补充行业和候选公司外部线索");
-    add("search_brave", `${subject} 行业 代表公司 财报 订单 估值 风险 最新`, "交叉验证行业和候选公司");
+    add("search_tavily", `${industrySubject} 行业 代表公司 财报 订单 估值 风险 最新`, "补充行业和候选公司外部线索");
+    add("search_brave", `${industrySubject} 行业 代表公司 财报 订单 估值 风险 最新`, "交叉验证行业和候选公司");
   }
   if (kind === "contrarian") {
     add("search_tavily", `${subject} 数据 案例 风险 反证 最新`, "检索支持和反方证据");
@@ -86,6 +87,12 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
   }
   add("search_exa", `${subject} latest financial evidence risks counter evidence`, "补充全球高质量来源");
   return dedupeToolCalls(calls);
+}
+
+export function expandDeepResearchIndustrySubject(subject: string) {
+  if (!/(AI\s*算力|算力|AI产业链|人工智能产业链|半导体)/i.test(subject)) return subject;
+  const coverage = "GPU/AI芯片 HBM/存储 光模块/光器件 先进制程/封装 AI服务器 PCB/交换芯片 电源散热 国产替代 全球业务";
+  return subject.includes("光模块") && subject.includes("HBM") ? subject : `${subject} ${coverage}`;
 }
 
 export function hasRequiredDeepResearchAnswerSections(text: string, kind: AssistantDeepResearchKind, query = "") {
