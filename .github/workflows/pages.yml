@@ -50,7 +50,16 @@ jobs:
         run: |
           npx wrangler d1 migrations apply cstd-alpha-report-library --remote
           npx wrangler queues info cstd-alpha-assistant-deep-research || npm run queue:create:assistant
-          npm run worker:deploy:assistant
+          for attempt in 1 2 3; do
+            echo "Cloudflare Worker deploy attempt ${attempt}/3"
+            if npm run worker:deploy:assistant; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 15))
+          done
           for attempt in 1 2 3; do
             echo "Cloudflare Pages deploy attempt ${attempt}/3"
             if npm run pages:deploy; then
