@@ -331,6 +331,22 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("treats who is better phrasing with intervening context as relative comparison", () => {
+    const contract = buildAssistantTaskContract("industry", "英伟达和AMD谁在AI算力周期中风险收益比更好？");
+    const result = validateAssistantTaskAnswer([
+      "主判断：风险控制视角英伟达更好，弹性视角AMD更好；排序为英伟达 > AMD（稳健），AMD > 英伟达（弹性）。",
+      "### 关键证据表",
+      "| 对象 | 证据 | 判断 |",
+      "| --- | --- | --- |",
+      "| 英伟达 | 生态与现金流更强 | 更稳 |",
+      "| AMD | 份额提升弹性更大 | 更弹 |",
+      "反证条件：若AMD关键客户导入超预期，排序需要重算。",
+      "下一步跟踪：数据中心收入、毛利率和客户采购结构。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("rejects comparison answers that only give a four-grade label without relative conclusion", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
