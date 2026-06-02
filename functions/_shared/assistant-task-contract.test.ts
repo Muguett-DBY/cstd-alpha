@@ -195,6 +195,26 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("rejects quantified forecast tables that use vague input directions instead of assumption ranges", () => {
+    const contract = buildAssistantTaskContract("forecast", "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：谨慎回避",
+      "| 情景 | 关键输入假设 | 汽车分部全年经营利润 | 集团全年经调整净利润 |",
+      "| --- | --- | --- | --- |",
+      "| **保守** | 交付量远低于55万辆目标；ASP低于23.51万元；毛利率低于20.1% | **亏损120–150亿元** | **200–250亿元** |",
+      "| **中性** | 交付量达到55万辆目标；ASP接近23.51万元；毛利率略高于20.1% | **亏损50–70亿元** | **300–350亿元** |",
+      "| **乐观** | 交付量显著超过55万辆目标；ASP明显提升；毛利率显著改善 | **亏损10–30亿元** | **380–420亿元** |",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若交付不及预期，结论需要下修。",
+      "下一步跟踪：跟踪交付量、毛利率和经营亏损。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(false);
+    expect(result.missing).toContain("量化情景输入假设区间");
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([

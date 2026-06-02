@@ -91,6 +91,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
     if (!/(区间|保守|中性|乐观|情景|场景)/.test(text)) missing.push("预测区间或情景");
     if (!hasForecastScenarioNumericRanges(text)) missing.push("保守/中性/乐观数字区间");
   }
+  if (contract.needsQuantifiedOutcomes && !hasQuantifiedScenarioInputs(text)) missing.push("量化情景输入假设区间");
   if (contract.needsQuantifiedOutcomes && !hasQuantifiedScenarioOutcomes(text)) missing.push("量化情景结果区间");
   if (contract.needsCurrentPrice && !hasCurrentPriceValue(text)) missing.push("当前股价口径和数值");
   for (const subject of contract.comparedSubjects) {
@@ -195,8 +196,34 @@ function hasQuantifiedScenarioOutcomes(text: string) {
   });
 }
 
+function hasQuantifiedScenarioInputs(text: string) {
+  return ["保守", "中性", "乐观"].every((label) => {
+    const lines = text.split("\n");
+    const scenarioTableLine = lines.find((line) => line.includes(label) && line.includes("|"));
+    if (scenarioTableLine) {
+      const cells = scenarioTableLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+      const labelIndex = cells.findIndex((cell) => cell.includes(label));
+      const outcomeIndex = cells.findIndex((cell, index) => index > labelIndex && /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)/.test(cell));
+      const inputCells = cells.slice(labelIndex + 1, outcomeIndex > labelIndex ? outcomeIndex : undefined).join(" ");
+      return hasConcreteScenarioInput(inputCells);
+    }
+    const headingIndex = lines.findIndex((item) => new RegExp(`${label}(?:情景|场景)`).test(item));
+    if (headingIndex < 0) return false;
+    const inputLines = lines.slice(headingIndex + 1, headingIndex + 10).filter((line) =>
+      !/(?:结果|经营亏损|经营利润|净利润|利润影响|利润贡献|拖累|盈利|盈亏)/.test(line),
+    );
+    return inputLines.some(hasConcreteScenarioInput);
+  });
+}
+
 function hasFinancialOutcomeRange(line: string) {
   return /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}-?\d+(?:\.\d+)?\s*[-‑–~至]\s*-?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line);
+}
+
+function hasConcreteScenarioInput(text: string) {
+  if (/-?\d+(?:\.\d+)?\s*[-‑–~至]\s*-?\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)?/.test(text)) return true;
+  if (/(?:低于|高于|接近|超过|远低于|显著超过|目标|参考|Q1)/i.test(text)) return false;
+  return /\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)/.test(text);
 }
 
 function extractComparedSubjects(query: string) {
