@@ -90,6 +90,10 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
 }
 
 export function expandDeepResearchIndustrySubject(subject: string) {
+  if (/消费出海|出海公司|品牌出海|中国出海/i.test(subject)) {
+    const coverage = "消费品牌出海 潮玩/IP 新茶饮 家电 消费电子 跨境平台 安克创新 石头科技 泡泡玛特 名创优品 霸王茶姬 海尔智家 美的集团 传音控股 海外收入 毛利率 库存 关税";
+    return subject.includes("泡泡玛特") && subject.includes("安克创新") ? subject : `${subject} ${coverage}`;
+  }
   if (!/(AI\s*算力|算力|AI产业链|人工智能产业链|半导体)/i.test(subject)) return subject;
   const coverage = "GPU/AI芯片 HBM/存储 光模块/光器件 先进制程/封装 AI服务器 PCB/交换芯片 电源散热 国产替代 全球业务";
   return subject.includes("光模块") && subject.includes("HBM") ? subject : `${subject} ${coverage}`;

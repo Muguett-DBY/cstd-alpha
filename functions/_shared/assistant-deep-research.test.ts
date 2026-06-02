@@ -51,6 +51,24 @@ describe("assistant deep research contract", () => {
     expect(researchQueries).toContain("电源散热");
   });
 
+  test("expands consumer outbound research without drifting into industrial exports", () => {
+    const expanded = expandDeepResearchIndustrySubject("中国消费出海公司现在是长期机会还是阶段性高估？");
+    expect(expanded).toContain("消费品牌出海");
+    expect(expanded).toContain("潮玩/IP");
+    expect(expanded).toContain("新茶饮");
+    expect(expanded).toContain("家电");
+    expect(expanded).toContain("跨境平台");
+    expect(expanded).toContain("泡泡玛特");
+    expect(expanded).toContain("安克创新");
+    expect(expanded).not.toContain("光模块");
+
+    const calls = buildAssistantDeepResearchToolCalls("industry", "中国消费出海公司现在是长期机会还是阶段性高估？");
+    const researchQueries = calls.filter((call) => call.name === "read_radar_result" || call.name.startsWith("search_")).map((call) => call.query).join("\n");
+    expect(researchQueries).toContain("名创优品");
+    expect(researchQueries).toContain("海外收入");
+    expect(researchQueries).not.toContain("AI服务器");
+  });
+
   test("requires verdict, scenarios, evidence table, counter evidence and tracking", () => {
     const complete = [
       "主判断：中性观察",
