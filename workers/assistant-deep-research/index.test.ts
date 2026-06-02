@@ -170,6 +170,14 @@ describe("assistant deep research worker", () => {
     )).toBe("主判断：中性观察。");
   });
 
+  test("removes internal empty-result wording from presentation text", () => {
+    const text = sanitizeAssistantPresentationText("因本轮查询未获取到最新结构化SEC财报（E1-E5均为占位/空结果），以下为低置信判断。");
+
+    expect(text).toContain("本轮相关工具未返回足够结构化硬数据");
+    expect(text).not.toContain("占位");
+    expect(text).not.toContain("空结果");
+  });
+
   test("downgrades unsupported inverter bullish calls and demotes speculative photovoltaic narratives", () => {
     const text = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(
       [

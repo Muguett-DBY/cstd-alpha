@@ -94,6 +94,10 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
       add("read_financial_statements", company?.aCode ?? query, "核验财报和现金流");
       add("read_filings_news", company?.aCode ?? query, "核验公告和最新事件");
     }
+    if (kind === "comparison") {
+      add("search_tavily", `${subject} 最新 财报 数据中心 营收 毛利率 估值 风险`, "补充对比双方外部财务和产业线索");
+      add("search_brave", `${subject} 最新 财报 数据中心 营收 毛利率 估值 风险`, "交叉验证对比双方外部证据");
+    }
   }
   if (kind === "selection" || kind === "industry") {
     add("read_radar_result", industrySubject, "读取全行业雷达和主题线索");

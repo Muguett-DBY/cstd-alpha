@@ -545,6 +545,8 @@ export function sanitizeAssistantPresentationText(text: string) {
   return text
     .replace(/[\uE000-\uF8FF]/g, " ")
     .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/（?E\d+\s*[-‑–~至]\s*E\d+[^。；;\n]{0,36}(?:占位|空结果|空白|无结果)[^。；;\n]{0,36}）?/g, "本轮相关工具未返回足够结构化硬数据")
+    .replace(/(?:E\d+\s*[-‑–~至]\s*E\d+|E\d+\s*[/、]\s*E\d+)[^。；;\n]{0,24}(?:占位|空结果|空白|无结果)[^。；;\n]{0,36}/g, "本轮相关工具未返回足够结构化硬数据")
     .replace(/%(\d+(?:\.\d+)?)/g, "$1%")
     .replace(/风险\/threat/g, "风险")
     .replace(/太空算力/g, "算力绿电需求")

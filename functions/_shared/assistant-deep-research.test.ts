@@ -60,6 +60,8 @@ describe("assistant deep research contract", () => {
     expect(calls.find((call) => call.name === "read_tencent_quote")?.query).toBe("NVDA,AMD");
     expect(calls.filter((call) => call.name === "read_financial_statements").map((call) => call.query)).toEqual(["英伟达 NVDA", "AMD AMD"]);
     expect(calls.filter((call) => call.name === "read_filings_news").map((call) => call.query)).toEqual(["英伟达 NVDA", "AMD AMD"]);
+    expect(calls.some((call) => call.name === "search_tavily" && call.query.includes("英伟达和AMD"))).toBe(true);
+    expect(calls.some((call) => call.name === "search_brave" && call.query.includes("英伟达和AMD"))).toBe(true);
   });
 
   test("expands AI compute industry research to cover critical profit pools", () => {
