@@ -135,7 +135,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const presentationReady = stripAssistantRepairPreamble(repaired);
   const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantSafetyDisclaimers(disciplined), job, stopped, evidenceResult.items.length);
+  const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
+  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantSafetyDisclaimers(leverageDisciplined), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -253,6 +254,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻本轮证据编号（例如 E3）。如果本轮证据没有提供该数字，删除精确数字，改写成定性判断或“待核验线索”；禁止凭常识补数字。",
     "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
+    "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
@@ -467,6 +469,16 @@ export function sanitizeAssistantSafetyDisclaimers(text: string) {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+export function sanitizeAssistantUnsupportedLeverageLabels(
+  text: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  if (!/高杠杆/.test(text)) return text;
+  const evidenceText = evidence.map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`).join("\n");
+  if (/(资产负债率|有息负债|净负债率|利息保障倍数|短期借款|长期借款|债务率|debt[- ]to[- ]equity|net debt|leverage)/i.test(evidenceText)) return text;
+  return text.replace(/高杠杆/g, "营运压力较高");
 }
 
 function dedupeDeepResearchToolCalls(calls: AssistantSearchToolCall[]) {

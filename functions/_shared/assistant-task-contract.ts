@@ -8,6 +8,7 @@ export type AssistantTaskContract = {
   requestedTotalCount?: number;
   comparedSubjects: string[];
   needsDirectRecommendations: boolean;
+  needsRelativeJudgment: boolean;
   needsCurrentPrice: boolean;
   needsForecastRange: boolean;
 };
@@ -39,6 +40,7 @@ const CHINESE_COUNTS: Record<string, number> = {
 
 export function buildAssistantTaskContract(kind: AssistantDeepResearchKind, query: string): AssistantTaskContract {
   const requestedMarkets = MARKET_PATTERNS.filter(({ pattern }) => pattern.test(query)).map(({ market }) => market);
+  const needsRelativeJudgment = kind === "comparison" || isRelativeComparisonQuery(query);
   const requestedCounts = Object.fromEntries(
     requestedMarkets
       .map((market) => [market, extractMarketCount(query, market)] as const)
@@ -50,8 +52,9 @@ export function buildAssistantTaskContract(kind: AssistantDeepResearchKind, quer
     requestedMarkets,
     requestedCounts,
     ...(kind === "selection" ? { requestedTotalCount: extractTotalRecommendationCount(query) } : {}),
-    comparedSubjects: kind === "comparison" ? extractComparedSubjects(query) : [],
+    comparedSubjects: needsRelativeJudgment ? extractComparedSubjects(query) : [],
     needsDirectRecommendations: kind === "selection",
+    needsRelativeJudgment,
     needsCurrentPrice: /(当前|现在|现时|实时|最新).{0,5}(股价|价格)|股价.{0,5}(多少|是多少|现价)/.test(query),
     needsForecastRange: kind === "forecast",
   };
@@ -72,9 +75,9 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
       const required = contract.requestedTotalCount ?? 1;
       if (countAllRecommendations(text) < required) missing.push(`推荐名单至少 ${required} 家`);
     }
-  } else if (contract.kind === "comparison") {
-    if (!/(主判断|结论)[：:]/.test(text)) missing.push("对比主判断");
-    const conclusionLine = text.split(/\n/).find((line) => /(主判断|结论)[：:]/.test(line)) ?? "";
+  } else if (contract.needsRelativeJudgment) {
+    if (!/(相对主判断|主判断|结论)[：:]|#{1,4}\s*相对主判断/.test(text)) missing.push("对比主判断");
+    const conclusionLine = text.split(/\n/).find((line) => /(相对主判断|主判断|结论)[：:]|#{1,4}\s*相对主判断/.test(line)) ?? "";
     if (!/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|第一|第二|>|＞)/.test(conclusionLine + "\n" + text.slice(0, 500))) {
       missing.push("对比相对结论");
     }
@@ -105,6 +108,7 @@ export function formatAssistantTaskContract(contract: AssistantTaskContract) {
     requestedTotalCount: contract.requestedTotalCount,
     comparedSubjects: contract.comparedSubjects,
     needsDirectRecommendations: contract.needsDirectRecommendations,
+    needsRelativeJudgment: contract.needsRelativeJudgment,
     needsCurrentPrice: contract.needsCurrentPrice,
     needsForecastRange: contract.needsForecastRange,
   });
@@ -169,9 +173,15 @@ function hasForecastScenarioNumericRanges(text: string) {
 }
 
 function extractComparedSubjects(query: string) {
+  const exceedMatch = query.match(/([^，。？！?\n]{2,24}?)\s*(?:今年|未来|当前|现在)?[^，。？！?\n]{0,18}?(?:能否|是否)?\s*(?:超过|跑赢|优于|高于|低于)\s*([^，。？！?\n]{2,24})/);
+  if (exceedMatch) return [cleanComparedSubject(exceedMatch[1]), cleanComparedSubject(exceedMatch[2])].filter((item) => item.length >= 2);
   const match = query.match(/(?:把|比较|对比)?\s*([^，。？！?\n]{1,24}?)\s*(?:和|与|vs\.?|VS\.?)\s*([^，。？！?\n]{1,24}?)(?:做|进行|谁|哪个|哪家|比较|对比|，|。|？|\?|$)/);
   if (!match) return [];
   return [cleanComparedSubject(match[1]), cleanComparedSubject(match[2])].filter((item) => item.length >= 2);
+}
+
+function isRelativeComparisonQuery(query: string) {
+  return /(?:超过|跑赢|优于|高于|低于|相比|对比|比较|谁更|哪个更|哪家更)/.test(query);
 }
 
 function cleanComparedSubject(value: string) {

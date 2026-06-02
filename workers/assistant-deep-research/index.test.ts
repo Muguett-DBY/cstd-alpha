@@ -9,6 +9,7 @@ import {
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
   sanitizeAssistantSafetyDisclaimers,
+  sanitizeAssistantUnsupportedLeverageLabels,
   stripAssistantRepairPreamble,
 } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
@@ -217,6 +218,27 @@ describe("assistant deep research worker", () => {
     expect(text).not.toContain("免责声明");
     expect(text).not.toContain("不构成投资建议");
     expect(text).not.toContain("投资需谨慎");
+  });
+
+  test("does not mislabel working-capital pressure as high leverage without debt evidence", () => {
+    const text = sanitizeAssistantUnsupportedLeverageLabels(
+      "五粮液因高杠杆、弱现金流将更脆弱。",
+      [{
+        source: "CSTD Alpha",
+        query: "000858",
+        title: "现金流与应收票据",
+        summary: "经营现金流转负，应收款项融资上升。",
+        url: "",
+        sourceType: "official",
+        signalType: "external_search",
+        weight: 3,
+        score: 3,
+        freshness: "today",
+      }],
+    );
+
+    expect(text).toContain("营运压力较高");
+    expect(text).not.toContain("高杠杆");
   });
 });
 

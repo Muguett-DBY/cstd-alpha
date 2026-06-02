@@ -85,6 +85,28 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("accepts relative judgment for a comparison-shaped forecast question", () => {
+    const contract = buildAssistantTaskContract("forecast", "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
+    const result = validateAssistantTaskAnswer([
+      "## 相对主判断",
+      "五粮液今年收入和利润增速大概率超过贵州茅台，但茅台现金流质量更稳。",
+      "| 情景 | 五粮液营收增速 | 贵州茅台营收增速 |",
+      "| --- | --- | --- |",
+      "| 保守 | 10%-15% | 5%-7% |",
+      "| 中性 | 20%-25% | 7%-9% |",
+      "| 乐观 | 30%-35% | 9%-11% |",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若五粮液中报增速显著回落，对比结论需要重算。",
+      "下一步跟踪：跟踪半年报、批价和经营现金流。",
+    ].join("\n"), contract);
+
+    expect(contract.needsRelativeJudgment).toBe(true);
+    expect(result.valid).toBe(true);
+    expect(result.missing).not.toContain("四档主判断");
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
