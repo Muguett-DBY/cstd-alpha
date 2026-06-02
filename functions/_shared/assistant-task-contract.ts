@@ -241,5 +241,9 @@ function isRelativeComparisonQuery(query: string) {
 }
 
 function cleanComparedSubject(value: string) {
-  return value.replace(/^(?:把|请|帮我|比较|对比)\s*/, "").replace(/\s*(?:股票|公司|做一个|进行一个)$/, "").trim();
+  return value
+    .replace(/^(?:把|请|帮我|比较|对比)\s*/, "")
+    .replace(/\s*(?:股票|公司|做一个|进行一个)$/, "")
+    .replace(/\s*(?:现在|当前|未来|今年|明年|长期|短期|中长期)$/, "")
+    .trim();
 }

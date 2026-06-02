@@ -347,6 +347,12 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("does not include trailing time words in compared subject coverage", () => {
+    const contract = buildAssistantTaskContract("comparison", "腾讯和阿里巴巴现在谁更值得买？请给排序和反证。");
+
+    expect(contract.comparedSubjects).toEqual(["腾讯", "阿里巴巴"]);
+  });
+
   test("rejects comparison answers that only give a four-grade label without relative conclusion", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([
