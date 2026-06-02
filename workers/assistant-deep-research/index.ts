@@ -143,7 +143,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const anomalyDisciplined = sanitizeAssistantAnomalousFinancialConclusions(leverageDisciplined, job, evidenceResult.items);
   const sectorDisciplined = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(anomalyDisciplined, evidenceResult.items);
   const technicalDisciplined = sanitizeAssistantTechnicalMarketingClaims(sectorDisciplined);
-  const echoDisciplined = sanitizeAssistantQuestionEcho(technicalDisciplined, job.query);
+  const relativeDisciplined = ensureAssistantExplicitRelativeRiskRanking(technicalDisciplined, job.query);
+  const echoDisciplined = sanitizeAssistantQuestionEcho(relativeDisciplined, job.query);
   const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(echoDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
@@ -598,9 +599,37 @@ export function sanitizeAssistantTechnicalMarketingClaims(text: string) {
     .replace(/(?:自研)?\s*Thinker\s*大模型[^。；;\n]{0,30}(?:九项|9项)[^。；;\n]{0,20}全球第一[^。；;\n]*/gi, "公司公开材料称自研 Thinker 大模型取得多项评测领先，尚需第三方复核和 benchmark 验证")
     .replace(/(?:公司是)?全球唯一[^。；;\n]{0,20}(?:交付|交付量)[^。；;\n]{0,20}(?:千台|1000台)[^。；;\n]{0,20}(?:全尺寸)?人形机器人[^。；;\n]*/g, "公开资料显示已实现千台级全尺寸人形机器人交付，是否全球唯一仍需统一口径复核")
     .replace(/宇树(?:科技)?[^。；;\n]{0,24}2025年[^。；;\n]{0,28}(?:盈利|利润)[^。；;\n]{0,12}6\s*(?:亿|亿元)[^。；;\n]*/g, "媒体线索称宇树2025年盈利约6亿元（非上市公司审计财报，待核验）")
-    .replace(/宇树(?:科技)?[^。；;\n]{0,24}2025年[^。；;\n]{0,28}(?:已实现盈利|实现盈利)[^。；;\n]*(?:IPO[^。；;\n]*)?/g, "媒体线索称宇树科技2025年可能已实现盈利，IPO状态需以官方披露为准（非上市公司审计财报，待核验）")
-    .replace(/(?:竞争对手|竞品)?宇树(?:科技)?(?![^。；;\n]{0,12}2025年)[^。；;\n]{0,12}(?:已盈利|已实现盈利|实现盈利)(?:（[^）]{0,30}）)?/g, "媒体线索称宇树科技可能已盈利（非上市公司审计财报，待核验）")
+    .replace(/宇树(?:科技)?[^。；;\n]{0,24}2025年[^。；;\n]{0,28}(?:已实现[^。；;\n]{0,8}盈利|实现盈利)[^。；;\n]*(?:IPO[^。；;\n]*)?/g, "媒体线索称宇树科技2025年可能已实现盈利，IPO状态需以官方披露为准（非上市公司审计财报，待核验）")
+    .replace(/(?:竞争对手|竞品)?宇树(?:科技)?(?![^。；;\n]{0,12}2025年)[^。；;\n]{0,12}(?:已盈利|已实现[^。；;\n]{0,8}盈利|实现盈利)(?:（[^）]{0,30}）)?/g, "媒体线索称宇树科技可能已盈利（非上市公司审计财报，待核验）")
     .replace(/，?已经明显领先/g, "，但领先程度仍需第三方指标复核");
+}
+
+export function ensureAssistantExplicitRelativeRiskRanking(text: string, query: string) {
+  if (!/(主要风险|核心风险|最大风险|风险)[^是。？！?\n]{0,24}是/.test(query) || !/还是/.test(query)) return text.trim();
+  const firstPart = text.slice(0, 650);
+  if (/(风险排序|风险优先级|风险排名|优先级|排序|排名|第一|第二|>|＞|≥)/.test(firstPart)) return text.trim();
+  const options = extractAssistantRiskOptions(query);
+  if (options.length < 2) return text.trim();
+  return `风险排序：${rankAssistantRiskOptions(options).join(" > ")}。\n\n${text.trim()}`;
+}
+
+function extractAssistantRiskOptions(query: string) {
+  const match = query.match(/(?:主要风险|核心风险|最大风险|风险)[^是。？！?\n]{0,24}是([^。？！?\n]+)/);
+  if (!match) return [];
+  return Array.from(new Set(match[1]
+    .split(/还是|、|，|,|和|与/)
+    .map((item) => item.replace(/^[\s:：]+|[\s？?。]+$/g, "").trim())
+    .filter((item) => item.length >= 2 && item.length <= 12)));
+}
+
+function rankAssistantRiskOptions(options: string[]) {
+  const priority = ["现金流", "商业化", "估值", "技术落地", "技术"];
+  return [...options].sort((left, right) => riskOptionPriority(left, priority) - riskOptionPriority(right, priority));
+}
+
+function riskOptionPriority(option: string, priority: string[]) {
+  const index = priority.findIndex((keyword) => option.includes(keyword));
+  return index >= 0 ? index : priority.length;
 }
 
 function normalizeAssistantEchoText(value: string) {

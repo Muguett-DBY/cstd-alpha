@@ -107,6 +107,12 @@ describe("assistant prompt regression evaluator", () => {
     ).toBe(true);
     expect(
       __test__.hasUnqualifiedRoboticsMarketingClaim(
+        "优必选的主要风险是商业化、现金流、估值，还是技术落地？",
+        "技术落地竞争：宇树科技2025年已实现小幅盈利，计划IPO。",
+      ),
+    ).toBe(true);
+    expect(
+      __test__.hasUnqualifiedRoboticsMarketingClaim(
         "优必选人形机器人，大脑与小脑之间的协调性如何？",
         "公司公开材料称 Thinker 模型取得多项评测领先，仍需第三方 benchmark 复核。公开资料显示优必选具备千台级交付记录，是否全球唯一仍需统一口径核验。媒体线索称宇树可能盈利，非上市公司审计财报口径，待官方公告核验。",
       ),

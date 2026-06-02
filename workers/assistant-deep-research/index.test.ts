@@ -6,6 +6,7 @@ import {
   buildDeepResearchExecutionToolCalls,
   ensureDeepResearchAnswerCompleteness,
   findAssistantEvidenceDisciplineIssues,
+  ensureAssistantExplicitRelativeRiskRanking,
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
   sanitizeAssistantPresentationText,
@@ -201,6 +202,7 @@ describe("assistant deep research worker", () => {
       "公司是全球唯一全年交付超千台全尺寸人形机器人的企业。",
       "宇树2025年盈利约6亿元，已经明显领先。",
       "竞品宇树科技2025年已实现盈利，IPO推进中。",
+      "宇树科技2025年已实现小幅盈利，计划IPO。",
       "技术落地风险低于现金流，因为竞争对手宇树科技已盈利（E18，媒体线索，待核验）。",
     ].join("\n"));
 
@@ -214,7 +216,17 @@ describe("assistant deep research worker", () => {
     expect(text).not.toContain("斩获九项全球第一，并开源");
     expect(text).not.toContain("全球唯一全年交付超千台");
     expect(text).not.toContain("宇树科技已盈利");
+    expect(text).not.toContain("已实现小幅盈利");
     expect(text).not.toContain("已经明显领先");
+  });
+
+  test("adds explicit risk ranking for multi-option risk questions", () => {
+    const text = ensureAssistantExplicitRelativeRiskRanking(
+      "主判断：谨慎回避。核心风险是商业化可持续性与现金流压力的叠加。",
+      "优必选的主要风险是商业化、现金流、估值，还是技术落地？",
+    );
+
+    expect(text.startsWith("风险排序：现金流 > 商业化 > 估值 > 技术落地。")).toBe(true);
   });
 
   test("flags uncited precise claims and ungrounded high-confidence labels for repair", () => {

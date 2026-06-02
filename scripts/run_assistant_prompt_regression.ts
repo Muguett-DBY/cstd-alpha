@@ -483,7 +483,7 @@ function hasUnqualifiedRoboticsMarketingClaim(promptText: string, answer: string
   if (/Thinker.{0,20}(九项|9项).{0,20}全球第一/i.test(normalized) && !needsQualification.test(answer)) return true;
   if (/全球唯一.{0,30}(千台|1000台).{0,30}(交付|人形机器人)/.test(normalized) && !needsQualification.test(answer)) return true;
   if (/宇树.{0,20}2025.{0,20}(盈利|利润).{0,10}6亿/.test(normalized) && !needsQualification.test(answer)) return true;
-  if (/宇树.{0,24}2025.{0,24}(已实现盈利|实现盈利|盈利|利润|IPO)/.test(normalized) && !needsQualification.test(answer)) return true;
+  if (/宇树.{0,24}2025.{0,24}(已实现.{0,8}盈利|实现盈利|盈利|利润|IPO)/.test(normalized) && !needsQualification.test(answer)) return true;
   return false;
 }
 
