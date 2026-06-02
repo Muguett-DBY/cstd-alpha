@@ -545,7 +545,7 @@ export function sanitizeAssistantSafetyDisclaimers(text: string) {
 }
 
 export function sanitizeAssistantPresentationText(text: string) {
-  return text
+  return fillAssistantEmptyMarkdownTableCells(text)
     .replace(/[\uE000-\uF8FF]/g, " ")
     .replace(/[\u00A0\u2007\u202F]/g, " ")
     .replace(/（?E\d+\s*[-‑–~至]\s*E\d+[^。；;\n]{0,36}(?:占位|空结果|空白|无结果)[^。；;\n]{0,36}）?/g, "本轮相关工具未返回足够结构化硬数据")
@@ -556,6 +556,18 @@ export function sanitizeAssistantPresentationText(text: string) {
     .replace(/太空光伏/g, "新技术路线")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function fillAssistantEmptyMarkdownTableCells(text: string) {
+  return text.split(/\r?\n/).map((line) => {
+    if (!/^\s*\|.*\|\s*$/.test(line) || /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(line)) return line;
+    const cells = line.split("|");
+    if (cells.length <= 3) return line;
+    for (let index = 1; index < cells.length - 1; index += 1) {
+      if (!cells[index].trim()) cells[index] = " 本轮未获取结构化数据 ";
+    }
+    return cells.join("|");
+  }).join("\n");
 }
 
 export function sanitizeAssistantQuestionEcho(text: string, query: string) {

@@ -178,6 +178,12 @@ describe("assistant deep research worker", () => {
     expect(text).not.toContain("空结果");
   });
 
+  test("fills blank markdown table cells with an explicit unavailable label", () => {
+    const text = sanitizeAssistantPresentationText("| 实时估值 | PE 17.64 | |");
+
+    expect(text).toBe("| 实时估值 | PE 17.64 | 本轮未获取结构化数据 |");
+  });
+
   test("downgrades unsupported inverter bullish calls and demotes speculative photovoltaic narratives", () => {
     const text = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(
       [
