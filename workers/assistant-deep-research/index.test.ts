@@ -12,6 +12,7 @@ import {
   sanitizeAssistantQuestionEcho,
   sanitizeAssistantSafetyDisclaimers,
   sanitizeAssistantAnomalousFinancialConclusions,
+  sanitizeAssistantUnsupportedIndustrySubsectorVerdicts,
   sanitizeAssistantUnsupportedLeverageLabels,
   shouldContinueAssistantRepair,
   stripAssistantRepairPreamble,
@@ -157,6 +158,40 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("中际旭创 (300308)");
     expect(text).toContain("工业富联 (601138)");
     expect(text).not.toContain("002463");
+  });
+
+  test("removes chatty admin acknowledgements before the answer", () => {
+    expect(sanitizeAssistantQuestionEcho(
+      "好的，admin。以下是针对您提出的问题。\n\n主判断：中性观察。",
+      "光伏行业是否已经出清？",
+    )).toBe("主判断：中性观察。");
+  });
+
+  test("downgrades unsupported inverter bullish calls and demotes speculative photovoltaic narratives", () => {
+    const text = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(
+      [
+        "逆变器环节：看好（格局优异）",
+        "太空数据中心对光伏供电高度依赖，光伏设备将迎来全新的“轨道级”市场。",
+      ].join("\n"),
+      [{
+        source: "Research summary",
+        query: "光伏",
+        title: "组件出口线索",
+        summary: "组件出口同比改善，辅材企业被机构看好。",
+        url: "",
+        sourceType: "news",
+        signalType: "external_search",
+        weight: 1,
+        score: 1,
+        freshness: "month",
+      }],
+    );
+
+    expect(text).toContain("逆变器环节：中性观察（本轮缺少逆变器公司级财报、订单、出货或价格硬证据）");
+    expect(text).toContain("远期算力绿电线索（待核验）");
+    expect(text).toContain("远期待核验市场");
+    expect(text).not.toContain("太空数据中心");
+    expect(text).not.toContain("轨道级");
   });
 
   test("flags uncited precise claims and ungrounded high-confidence labels for repair", () => {

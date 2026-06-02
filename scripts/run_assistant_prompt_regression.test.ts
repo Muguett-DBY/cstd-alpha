@@ -71,4 +71,24 @@ describe("assistant prompt regression evaluator", () => {
       ),
     ).toBe(false);
   });
+
+  test("flags chatty acknowledgements at the start of answers", () => {
+    expect(__test__.hasChattyAnswerPreamble("好的，admin。以下是光伏行业判断。\n主判断：中性观察。")).toBe(true);
+    expect(__test__.hasChattyAnswerPreamble("主判断：中性观察。")).toBe(false);
+  });
+
+  test("flags unsupported photovoltaic subsector bullish calls and over-weighted speculative narratives", () => {
+    expect(
+      __test__.hasUnsupportedPhotovoltaicSubsectorClaim(
+        "光伏行业是否已经出清？请区分硅料、组件、逆变器和设备。",
+        "逆变器环节：看好。组件出口改善，辅材企业被机构看好。",
+      ),
+    ).toBe(true);
+    expect(
+      __test__.hasUnsupportedPhotovoltaicSubsectorClaim(
+        "光伏行业是否已经出清？请区分硅料、组件、逆变器和设备。",
+        "逆变器环节：中性观察。太空数据中心属于远期待核验线索，不作为当前评级依据。",
+      ),
+    ).toBe(false);
+  });
 });

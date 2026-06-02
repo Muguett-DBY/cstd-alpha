@@ -141,7 +141,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
   const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
   const anomalyDisciplined = sanitizeAssistantAnomalousFinancialConclusions(leverageDisciplined, job, evidenceResult.items);
-  const echoDisciplined = sanitizeAssistantQuestionEcho(anomalyDisciplined, job.query);
+  const sectorDisciplined = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(anomalyDisciplined, evidenceResult.items);
+  const echoDisciplined = sanitizeAssistantQuestionEcho(sectorDisciplined, job.query);
   const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(echoDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
@@ -260,6 +261,8 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
     "AI算力、半导体或AI产业链问题必须先横向比较核心利润环节，至少覆盖 GPU/AI芯片、HBM/存储、光模块/光器件、先进制程/封装、AI服务器/整机、PCB/交换芯片/电源散热。若最终推荐只保留其中部分环节，必须说明其他环节为何未排在前面；禁止只讨论晶圆代工、芯片或服务器而漏掉光模块和HBM。",
     "消费出海、品牌出海或中国消费公司出海问题必须聚焦消费者端公司和商业模式，例如潮玩/IP、新茶饮、家电、消费电子、跨境平台/品牌、餐饮零售和生活方式品牌。光模块、半导体、服务器、工业设备等只能作为宏观出口背景，不得作为消费出海代表公司或主结论依据。",
+    "行业拆分问题必须逐环节核验。若某个子环节只有相邻环节、券商摘要或行业间接线索，没有该子环节公司级财报、订单、出货、价格或官方统计，不得直接标为“看好”；最多写“中性观察，等待直接硬证据”。",
+    "太空数据中心、轨道能源、万亿级新市场、通用AGI等远期叙事只能放在“远期待核验线索”，不得作为当前行业评级、盈利拐点或乐观情景的主要依据。",
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻本轮证据编号（例如 E3）。如果本轮证据没有提供该数字，删除精确数字，改写成定性判断或“待核验线索”；禁止凭常识补数字。",
@@ -315,6 +318,8 @@ async function repairAssistantDeepResearchAnswer(
         "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。预测类若任一保守/中性/乐观情景缺少数字或数字区间，必须补齐；证据薄时写低置信区间，禁止用“无精确区间”“方向低于当前价”“无法给区间”等文字替代。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
         "如果用户要求“量化关键假设”“测算”“利润桥”或“影响区间”，每个情景必须同时给至少一个明确的输入假设点值或区间，以及最终结果数字区间，例如交付量/ASP/毛利率输入区间、分部全年经营亏损/利润、集团利润影响或股价区间。禁止只写“低于Q1”“接近目标”“显著超过”“大幅收窄”“接近盈亏平衡”。",
         "情景结果数字区间属于分析估算，不是已披露事实。允许基于明确输入假设给较宽的估算区间，但必须写明“估算区间”或“低置信区间”；不要因为没有公司指引而退回模糊文字。",
+        "行业拆分问题必须逐环节核验。某个子环节若只有相邻环节或行业间接线索，没有该子环节公司级财报、订单、出货、价格或官方统计，不得直接标为“看好”；最多写“中性观察，等待直接硬证据”。",
+        "太空数据中心、轨道能源、万亿级新市场、通用AGI等远期叙事只能写成远期待核验线索，不能作为当前行业评级或盈利拐点的依据。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
         "如果证据中出现“单源异常”“异常波动待核验”“缺少第二硬源交叉验证”，相关财务数字必须写成待核验线索；不得用这些数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
@@ -540,7 +545,7 @@ export function sanitizeAssistantQuestionEcho(text: string, query: string) {
       lines.shift();
       continue;
     }
-    if (/^好的[，,。]?\s*(收到|明白|我来|你的问题|收到你的问题)/.test(first)) {
+    if (/^好的[，,。]?\s*(?:admin[，,。]?\s*)?(收到|明白|我来|你的问题|收到你的问题|以下是)/i.test(first)) {
       lines.shift();
       continue;
     }
@@ -551,6 +556,26 @@ export function sanitizeAssistantQuestionEcho(text: string, query: string) {
     break;
   }
   return lines.join("\n").trim();
+}
+
+export function sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(
+  text: string,
+  evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
+) {
+  const evidenceText = evidence.map((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`).join("\n");
+  const hasDirectInverterEvidence = /(逆变器|阳光电源|德业股份|固德威|锦浪科技|禾迈股份|inverter).{0,120}(财报|公告|订单|出货|销量|营收|净利润|毛利率|经营现金流|价格|官方统计)/i.test(evidenceText);
+  let normalized = text;
+  if (!hasDirectInverterEvidence) {
+    normalized = normalized.replace(
+      /(逆变器(?:环节)?[：:]\s*)(?:\*{0,2})?看好(?:\*{0,2})?(?=[（(，,。\s])/g,
+      "$1中性观察（本轮缺少逆变器公司级财报、订单、出货或价格硬证据）",
+    );
+  }
+  return normalized
+    .replace(/太空数据中心/g, "远期算力绿电线索（待核验）")
+    .replace(/轨道能源体系的核心基础设施/g, "远期潜在线索")
+    .replace(/全新的[“"]?轨道级[”"]?市场/g, "远期待核验市场")
+    .replace(/新的万亿级市场/g, "远期待核验市场");
 }
 
 function normalizeAssistantEchoText(value: string) {

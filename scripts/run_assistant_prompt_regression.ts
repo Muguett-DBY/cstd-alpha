@@ -299,6 +299,8 @@ function evaluatePromptResult(
   if (/^结构化表格\s*\d*$/im.test(parsed.answer)) issues.push("generic table label leaked");
   if (hasSystemLeak(parsed.answer)) issues.push("system or tool instruction leaked");
   if (hasEmptyMarkdownHeadingLeak(parsed.answer)) issues.push("empty markdown heading leaked");
+  if (hasChattyAnswerPreamble(parsed.answer)) issues.push("chatty acknowledgement leaked");
+  if (hasUnsupportedPhotovoltaicSubsectorClaim(prompt.prompt, parsed.answer)) issues.push("unsupported photovoltaic subsector claim");
   if (prompt.mustUseEvidence && !hasConcreteEvidence(parsed.answer)) issues.push("missing concrete evidence");
   if (hasUnqualifiedKnownAStockAnomaly(prompt.prompt, parsed.answer)) issues.push("unqualified abnormal A-share financial data");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
@@ -449,6 +451,18 @@ function hasEmptyMarkdownHeadingLeak(answer: string) {
   return false;
 }
 
+function hasChattyAnswerPreamble(answer: string) {
+  return /^好的[，,。]?\s*(?:admin[，,。]?\s*)?(?:收到|明白|我来|你的问题|收到你的问题|以下是)/i.test(answer.trim());
+}
+
+function hasUnsupportedPhotovoltaicSubsectorClaim(promptText: string, answer: string) {
+  if (!/光伏/.test(promptText)) return false;
+  if (/逆变器(?:环节)?[：:]\s*(?:\*{0,2})?看好/.test(answer) && !/(阳光电源|德业股份|固德威|锦浪科技|禾迈股份).{0,80}(财报|公告|订单|出货|销量|营收|净利润|毛利率|经营现金流|价格)/.test(answer)) {
+    return true;
+  }
+  return /(太空数据中心|轨道级市场|万亿级市场)/.test(answer) && !/(远期|待核验|线索)/.test(answer);
+}
+
 function parseArgs(values: string[]) {
   const parsed: Record<string, string> = {};
   for (let index = 0; index < values.length; index += 1) {
@@ -470,4 +484,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
 }
 
-export const __test__ = { evaluateCompareAnswer, evaluateForecastAnswer, evaluateExplicitCountRequirement, hasConcreteEvidence, hasEmptyMarkdownHeadingLeak, hasUnqualifiedKnownAStockAnomaly };
+export const __test__ = {
+  evaluateCompareAnswer,
+  evaluateForecastAnswer,
+  evaluateExplicitCountRequirement,
+  hasConcreteEvidence,
+  hasEmptyMarkdownHeadingLeak,
+  hasUnqualifiedKnownAStockAnomaly,
+  hasChattyAnswerPreamble,
+  hasUnsupportedPhotovoltaicSubsectorClaim,
+};
