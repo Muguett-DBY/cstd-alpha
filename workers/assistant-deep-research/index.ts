@@ -28,6 +28,7 @@ import type { AssistantUsage } from "../../src/shared/assistant";
 
 const DEEP_RESEARCH_TOOL_TIMEOUT_MS = 8 * 60 * 1_000;
 const DEEP_RESEARCH_MODEL_ROUTE_TIMEOUT_MS = 6 * 60 * 1_000;
+const MAX_ASSISTANT_DEEP_RESEARCH_REPAIR_ATTEMPTS = 2;
 
 type WorkerEnv = AssistantEnv & {
   REPORT_LIBRARY_DB: D1Database;
@@ -127,11 +128,14 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   await progress(env, job, stopped ? "stopping" : "running", stopped ? "正在生成阶段性总结..." : "正在交叉验证并形成最终判断...", "synthesize", 3, evidenceObjectKey);
   const generated = await generateAssistantDeepResearchAnswer(env, job, calls, context.siteEvidenceSummary, evidenceResult.items, stopped);
   const contract = buildAssistantTaskContract(job.researchKind, job.query);
-  const validation = validateAssistantTaskAnswer(generated.text, contract);
-  const disciplineIssues = findAssistantEvidenceDisciplineIssues(generated.text, evidenceResult.items);
-  const repaired = !stopped && (!validation.valid || disciplineIssues.length)
-    ? await repairAssistantDeepResearchAnswer(env, job, generated.text, [...validation.missing, ...disciplineIssues], calls, context.siteEvidenceSummary, evidenceResult.items)
-    : generated.text;
+  let repaired = generated.text;
+  for (let repairAttempt = 0; repairAttempt < MAX_ASSISTANT_DEEP_RESEARCH_REPAIR_ATTEMPTS; repairAttempt += 1) {
+    const validation = validateAssistantTaskAnswer(repaired, contract);
+    const disciplineIssues = findAssistantEvidenceDisciplineIssues(repaired, evidenceResult.items);
+    const repairIssues = [...validation.missing, ...disciplineIssues];
+    if (!shouldContinueAssistantRepair(repairAttempt, repairIssues, stopped)) break;
+    repaired = await repairAssistantDeepResearchAnswer(env, job, repaired, repairIssues, calls, context.siteEvidenceSummary, evidenceResult.items);
+  }
   const presentationReady = stripAssistantRepairPreamble(repaired);
   const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
@@ -249,6 +253,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "固定输出顺序：预测/行业/反驳/买卖类为主判断；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。对比类为相对主判断；对比表；胜负手/排序；反证条件；下一步跟踪。选股/推荐类为推荐口径；直接推荐名单；保守/中性/乐观情景；关键证据表；反证条件；下一步跟踪。",
     "对比、选股问题必须给清晰排序；预测问题必须给区间。若用户要求净利润、营收、股价、目标价或估值等数值预测，保守/中性/乐观三档都必须给可计算的数字或数字区间；证据薄时降低置信度，但禁止用“无精确区间”“方向低于当前价”“无法给区间”等文字代替数字区间。搜索结果只是线索，不得伪装为公告、财报或官方统计。",
     "如果用户要求“量化关键假设”“测算”“利润桥”或“影响区间”，每个情景必须同时给关键输入假设和最终结果数字区间，例如分部全年经营亏损/利润、集团利润影响或股价区间。禁止只写“显著高于”“大幅收窄”“接近盈亏平衡”。",
+    "情景结果数字区间属于分析估算，不是已披露事实。允许基于明确输入假设给较宽的估算区间，但必须写明“估算区间”或“低置信区间”；不要因为没有公司指引而退回模糊文字。",
     "选股/推荐问题必须先直接回答用户要的名单，不得把名单只藏在情景表、证据表或长段落里。",
     "当用户要求推荐10支A股和10支美股时，必须给两个独立小节：A股Top10推荐、美股Top10推荐；各列满10个，并给代码/市场、核心理由、主要风险。A股必须标注全球业务和国产替代两项判断。",
     "用户询问当前股价时，只能使用标题为实时行情快照、带 retrieved_at 的本轮行情证据；历史研报或旧报告中的价格只能标为历史参考，不能写成当前价。",
@@ -301,6 +306,7 @@ async function repairAssistantDeepResearchAnswer(
         "只修复当前答案遗漏的用户任务，不要追加通用模板，不要改变问题，不要省略原答案里正确的信息。",
         "必须直接补齐缺失的名单、数量、市场、当前价格、预测区间或对比对象。预测类若任一保守/中性/乐观情景缺少数字或数字区间，必须补齐；证据薄时写低置信区间，禁止用“无精确区间”“方向低于当前价”“无法给区间”等文字替代。不能把名单藏进情景说明。禁止编造本轮证据没有提供的硬数据。",
         "如果用户要求“量化关键假设”“测算”“利润桥”或“影响区间”，每个情景必须同时给关键输入假设和最终结果数字区间，例如分部全年经营亏损/利润、集团利润影响或股价区间。禁止只写“显著高于”“大幅收窄”“接近盈亏平衡”。",
+        "情景结果数字区间属于分析估算，不是已披露事实。允许基于明确输入假设给较宽的估算区间，但必须写明“估算区间”或“低置信区间”；不要因为没有公司指引而退回模糊文字。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
@@ -460,6 +466,10 @@ export function findAssistantEvidenceDisciplineIssues(
     issues.push("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
   }
   return issues;
+}
+
+export function shouldContinueAssistantRepair(attempt: number, issues: string[], stopped: boolean) {
+  return !stopped && attempt < MAX_ASSISTANT_DEEP_RESEARCH_REPAIR_ATTEMPTS && issues.length > 0;
 }
 
 export function sanitizeAssistantEvidenceConfidenceLabels(

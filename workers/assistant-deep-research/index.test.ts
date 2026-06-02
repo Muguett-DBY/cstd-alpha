@@ -11,6 +11,7 @@ import {
   sanitizeAssistantPresentationText,
   sanitizeAssistantSafetyDisclaimers,
   sanitizeAssistantUnsupportedLeverageLabels,
+  shouldContinueAssistantRepair,
   stripAssistantRepairPreamble,
 } from "./index";
 import type { AssistantDeepResearchWorkerJob } from "../../functions/_shared/assistant-deep-research";
@@ -181,6 +182,13 @@ describe("assistant deep research worker", () => {
     );
 
     expect(issues).toContain("高价或高配产品对 ASP 的方向解释自相矛盾，重新核对表述");
+  });
+
+  test("allows one additional constrained repair pass but stops after the configured limit", () => {
+    expect(shouldContinueAssistantRepair(0, ["量化情景结果区间"], false)).toBe(true);
+    expect(shouldContinueAssistantRepair(1, ["量化情景结果区间"], false)).toBe(true);
+    expect(shouldContinueAssistantRepair(2, ["量化情景结果区间"], false)).toBe(false);
+    expect(shouldContinueAssistantRepair(0, ["量化情景结果区间"], true)).toBe(false);
   });
 
   test("downgrades high-confidence labels that are not tied to structured evidence", () => {
