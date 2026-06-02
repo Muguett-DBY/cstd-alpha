@@ -9,6 +9,7 @@ import {
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
   sanitizeAssistantPresentationText,
+  sanitizeAssistantQuestionEcho,
   sanitizeAssistantSafetyDisclaimers,
   sanitizeAssistantAnomalousFinancialConclusions,
   sanitizeAssistantUnsupportedLeverageLabels,
@@ -288,6 +289,15 @@ describe("assistant deep research worker", () => {
     expect(sanitized).toContain("保守");
     expect(sanitized).toContain("下一步跟踪");
     expect(findAssistantEvidenceDisciplineIssues(sanitized, evidence)).toEqual([]);
+  });
+
+  test("removes chatty acknowledgement and repeated user question from deep research answer", () => {
+    expect(
+      sanitizeAssistantQuestionEcho(
+        "好的，收到你的问题。\n英伟达下一财年收入增速还能维持高增长吗？给保守、中性、乐观三档。\n主判断：中性观察。",
+        "英伟达下一财年收入增速还能维持高增长吗？给保守、中性、乐观三档。",
+      ),
+    ).toBe("主判断：中性观察。");
   });
 
   test("allows one additional constrained repair pass but stops after the configured limit", () => {

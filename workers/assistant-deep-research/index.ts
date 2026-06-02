@@ -141,7 +141,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
   const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
   const anomalyDisciplined = sanitizeAssistantAnomalousFinancialConclusions(leverageDisciplined, job, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(anomalyDisciplined)), job, stopped, evidenceResult.items.length);
+  const echoDisciplined = sanitizeAssistantQuestionEcho(anomalyDisciplined, job.query);
+  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(echoDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -528,6 +529,32 @@ export function sanitizeAssistantPresentationText(text: string) {
     .replace(/太空光伏/g, "新技术路线")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+export function sanitizeAssistantQuestionEcho(text: string, query: string) {
+  const lines = text.trim().split(/\r?\n/);
+  const normalizedQuery = normalizeAssistantEchoText(query);
+  while (lines.length) {
+    const first = lines[0].trim();
+    if (!first) {
+      lines.shift();
+      continue;
+    }
+    if (/^好的[，,。]?\s*(收到|明白|我来|你的问题|收到你的问题)/.test(first)) {
+      lines.shift();
+      continue;
+    }
+    if (normalizeAssistantEchoText(first) === normalizedQuery) {
+      lines.shift();
+      continue;
+    }
+    break;
+  }
+  return lines.join("\n").trim();
+}
+
+function normalizeAssistantEchoText(value: string) {
+  return value.replace(/[#*_`>\s。！？!?，,：:；;、“”"']/g, "").toLowerCase();
 }
 
 export function sanitizeAssistantUnsupportedLeverageLabels(
