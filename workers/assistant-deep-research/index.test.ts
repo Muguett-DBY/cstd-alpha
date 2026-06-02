@@ -186,12 +186,12 @@ describe("assistant deep research worker", () => {
 
   test("flags compact B-unit values that drop decimals from cited evidence", () => {
     const issues = findAssistantEvidenceDisciplineIssues(
-      "英伟达 FY2027 Q1 营收 816B（E1），Q2 指引 910B（E1）。",
+      "英伟达 FY2027 Q1 营收 816B（E1），数据中心收入 752B（E1），Q2 指引 910B（E1）。",
       [{
         source: "NVIDIA Investor Relations",
         query: "NVIDIA Q1 FY2027 revenue outlook",
         title: "NVIDIA Announces Financial Results for First Quarter Fiscal 2027",
-        summary: "Record quarterly revenue of $81.6 billion, up 20% from Q4 and up 85% from a year ago. Outlook revenue is expected to be $91.0 billion, plus or minus 2%.",
+        summary: "Record quarterly revenue of $81.6 billion, up 20% from Q4 and up 85% from a year ago. Record Data Center revenue of $75.2 billion. Outlook revenue is expected to be $91.0 billion, plus or minus 2%.",
         url: "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-First-Quarter-Fiscal-2027/",
         sourceType: "official",
         signalType: "external_search",
@@ -202,6 +202,15 @@ describe("assistant deep research worker", () => {
     );
 
     expect(issues).toContain("紧邻 E 编号的 B 单位金额疑似丢失小数点，必须按对应证据原文保留小数和单位");
+  });
+
+  test("flags fiscal-year end dates that run backward", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "主判断：中性观察。英伟达下一财年（FY2028，至2026年1月）收入增速将回落。",
+      [],
+    );
+
+    expect(issues).toContain("财年年份与自然年明显倒置，必须删除错误日期或改成可核验口径");
   });
 
   test("allows one additional constrained repair pass but stops after the configured limit", () => {

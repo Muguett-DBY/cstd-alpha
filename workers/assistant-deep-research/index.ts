@@ -264,6 +264,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
     "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
+    "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
     "输出前复核所有金额、百分比、年份和单位，禁止把“2200元”误写成“22年”这类数值单位混淆。",
     "任务契约优先级最高：必须完整回答契约要求的市场、数量、主体和字段。格式完整但漏掉用户要的名单、当前价或对比对象，仍然属于失败答案。",
   ].join("\n"), "assistant-deep-research");
@@ -312,6 +313,7 @@ async function repairAssistantDeepResearchAnswer(
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
         "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
+        "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
       ].join("\n"), "assistant-deep-research-repair"),
     },
     {
@@ -470,6 +472,9 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some((line) => hasDroppedBUnitDecimalFromEvidence(line, evidence))) {
     issues.push("紧邻 E 编号的 B 单位金额疑似丢失小数点，必须按对应证据原文保留小数和单位");
   }
+  if (lines.some(hasBackwardFiscalYearDate)) {
+    issues.push("财年年份与自然年明显倒置，必须删除错误日期或改成可核验口径");
+  }
   return issues;
 }
 
@@ -549,6 +554,15 @@ function hasUncitedHistoricalBaselineMetric(line: string) {
 function hasContradictoryAspDirection(line: string) {
   return /高(?:价|配|端)[^。\n]{0,20}(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)/i.test(line)
     || /(?:拉低|压低|降低)[^。\n]{0,10}(?:均价|ASP)[^。\n]{0,20}高(?:价|配|端)/i.test(line);
+}
+
+function hasBackwardFiscalYearDate(line: string) {
+  for (const match of line.matchAll(/\bFY(?:20)?(\d{2})\b[^。\n]{0,24}(?:至|截至|结束|止|through|ending)[^。\n]{0,12}20(\d{2})年?/gi)) {
+    const fiscalYear = 2000 + Number(match[1]);
+    const calendarYear = 2000 + Number(match[2]);
+    if (calendarYear < fiscalYear - 1) return true;
+  }
+  return false;
 }
 
 function hasDroppedBUnitDecimalFromEvidence(
