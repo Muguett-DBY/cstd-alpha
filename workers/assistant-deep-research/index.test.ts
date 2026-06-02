@@ -238,6 +238,32 @@ describe("assistant deep research worker", () => {
     expect(issues).toContain("“本世纪末”这类超长期表述疑似误译，必须改为证据支持的年份或删除");
   });
 
+  test("flags deterministic conclusions from single-source abnormal financial data", () => {
+    const evidence = [{
+      source: "CSTD Alpha",
+      query: "000858,600519",
+      title: "多标的同口径财务报表",
+      summary: [
+        "【重要核验约束】以下财务报表包含未被第二硬源交叉验证的异常同比或相邻期剧烈反转；只能作为待核验线索。",
+        "【五粮液 000858 同口径财务证据】",
+        "结构化核验状态：单源异常，缺少 Tushare/第二硬源交叉验证；异常同比只能作为待核验线索。",
+        "利润表：2026一季报/营收=228.38亿/营收同比=33.67%(异常波动待核验)/归母净利=80.63亿/归母净利同比=82.57%(异常波动待核验)",
+      ].join("\n"),
+      url: "",
+      sourceType: "official",
+      signalType: "external_search",
+      weight: 2,
+      qualityScore: 0.58,
+    }] as Parameters<typeof findAssistantEvidenceDisciplineIssues>[1];
+    const issues = findAssistantEvidenceDisciplineIssues(
+      "相对主判断：五粮液极大概率超过贵州茅台。高置信：五粮液2026Q1归母净利同比82.57%（E1），几乎全部情景都更强。",
+      evidence,
+    );
+
+    expect(issues).toContain("单源异常财务数据只能作为待核验线索，不能支撑确定排序、极大概率判断或强烈经营结论");
+    expect(issues).toContain("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
+  });
+
   test("allows one additional constrained repair pass but stops after the configured limit", () => {
     expect(shouldContinueAssistantRepair(0, ["量化情景结果区间"], false)).toBe(true);
     expect(shouldContinueAssistantRepair(1, ["量化情景结果区间"], false)).toBe(true);

@@ -264,6 +264,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
     "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
+    "如果证据中出现“单源异常”“缺少第二硬源交叉验证”或“异常同比只能作为待核验线索”，必须降低该公司财报数字权重；不得用这些异常数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
     "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
     "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
     "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
@@ -314,6 +315,7 @@ async function repairAssistantDeepResearchAnswer(
         "情景结果数字区间属于分析估算，不是已披露事实。允许基于明确输入假设给较宽的估算区间，但必须写明“估算区间”或“低置信区间”；不要因为没有公司指引而退回模糊文字。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
+        "如果证据中出现“单源异常”“异常波动待核验”“缺少第二硬源交叉验证”，相关财务数字必须写成待核验线索；不得用这些数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
         "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
         "若本轮证据没有明确给出财年结束日期，不要自行写“至某年某月”；禁止出现 FY2028 却写成至2026年这类财年自然年倒置。",
@@ -482,6 +484,13 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some(hasLikelyEndOfCenturyMistranslation)) {
     issues.push("“本世纪末”这类超长期表述疑似误译，必须改为证据支持的年份或删除");
   }
+  const anomalousEvidenceText = collectAssistantAnomalousEvidenceText(evidence);
+  if (anomalousEvidenceText && lines.some((line) => hasUnqualifiedAnomalousFinancialUse(line, anomalousEvidenceText))) {
+    issues.push("单源异常财务数据只能作为待核验线索，不能支撑确定排序、极大概率判断或强烈经营结论");
+  }
+  if (lines.some(hasUnqualifiedAccountingRestatementClaim)) {
+    issues.push("会计差错、追溯调整、管理层事件等重大事项必须明确为本轮证据线索并标待核验，否则删除");
+  }
   return issues;
 }
 
@@ -580,6 +589,39 @@ function hasLikelyEndOfCenturyMistranslation(line: string) {
   return /本世纪末/.test(line) && /(AI|人工智能|数据中心|基础设施|资本支出|Capex|TAM|万亿|E\d+)/i.test(line);
 }
 
+function collectAssistantAnomalousEvidenceText(evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0]) {
+  return evidence
+    .flatMap((item) => `${item.title}\n${item.summary}\n${item.content ?? ""}`.split(/\r?\n/))
+    .filter((line) => /单源异常|异常波动待核验|财务口径提醒|第二硬源交叉验证|待核验线索/.test(line))
+    .join("\n");
+}
+
+function hasUnqualifiedAnomalousFinancialUse(line: string, anomalousEvidenceText: string) {
+  const caution = /(异常|待核验|单源|口径|二次核验|第二硬源|不可直接|线索)/;
+  if (caution.test(line)) return false;
+  if (/(极大概率|几乎全部|确定|必然).{0,24}(?:超过|低于|高于|跑赢|优于|弱于)/.test(line)) return true;
+  if (/(断崖|崩盘|暴雷|失血|确定回避)/.test(line)) return true;
+
+  const anomalyNumbers = new Set<string>();
+  for (const match of anomalousEvidenceText.matchAll(/[+-]?\d+(?:\.\d+)?(?=%|亿|万|元|$)/g)) {
+    const raw = match[0];
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || Math.abs(numeric) < 30) continue;
+    anomalyNumbers.add(raw.replace(/\.0+$/, ""));
+    anomalyNumbers.add(numeric.toFixed(2).replace(/\.?0+$/, ""));
+    anomalyNumbers.add(numeric.toFixed(1).replace(/\.?0+$/, ""));
+  }
+  for (const value of anomalyNumbers) {
+    if (value && line.includes(value)) return true;
+  }
+  return false;
+}
+
+function hasUnqualifiedAccountingRestatementClaim(line: string) {
+  if (!/(会计差错|追溯调整|追溯更正|前董事长留置|销售费用大增)/.test(line)) return false;
+  return !/(待核验|线索|未验证|需核验|搜索摘要|公告原文|本轮证据)/.test(line);
+}
+
 function hasDroppedBUnitDecimalFromEvidence(
   line: string,
   evidence: Parameters<typeof formatCollectedEvidenceForAgent>[0],
@@ -643,7 +685,7 @@ function hasStructuredAssistantEvidenceCitation(
     .slice(0, 24);
   for (const match of line.matchAll(/\bE(\d+)\b/g)) {
     const item = sorted[Number(match[1]) - 1];
-    if (item?.source === "CSTD Alpha" && item.sourceType === "official" && (item.qualityScore ?? 1) >= 0.5) return true;
+    if (item?.source === "CSTD Alpha" && item.sourceType === "official" && (item.qualityScore ?? 1) >= 0.8) return true;
   }
   return false;
 }

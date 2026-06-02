@@ -997,7 +997,26 @@ async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSea
         const [statements, info] = await Promise.all([fetchSinaFinancialStatements(code), fetchEastmoneyStockInfo(code)]);
         return `【${code} 公司信息】\n${info}\n\n【${code} 财报三表】\n${statements}`;
       }));
-      items.push({ source: "CSTD Alpha", query, title: codes.length > 1 ? "多标的同口径财务报表" : "财务报表", url: "", summary: chunks.join("\n\n---\n\n").slice(0, 3600), sourceType: "official", signalType: "external_search", weight: 4, publishedAt: now, qualityScore: 0.95 });
+      const summary = chunks.join("\n\n---\n\n");
+      const hasSingleSourceAnomaly = /单源异常|异常波动待核验|财务口径提醒/.test(summary) && !/Tushare补强：(?!未取得|未配置)/.test(summary);
+      const prefixedSummary = hasSingleSourceAnomaly
+        ? [
+            "【重要核验约束】以下财务报表包含未被第二硬源交叉验证的异常同比或相邻期剧烈反转；只能作为待核验线索，不能作为确定预测、确定排序或高置信结论的基准。",
+            summary,
+          ].join("\n")
+        : summary;
+      items.push({
+        source: "CSTD Alpha",
+        query,
+        title: codes.length > 1 ? "多标的同口径财务报表" : "财务报表",
+        url: "",
+        summary: prefixedSummary.slice(0, 4200),
+        sourceType: "official",
+        signalType: "external_search",
+        weight: hasSingleSourceAnomaly ? 2 : 4,
+        publishedAt: now,
+        qualityScore: hasSingleSourceAnomaly ? 0.58 : 0.95,
+      });
     } else if (call.name === "read_reports_concepts") {
       if (query.startsWith("kline:")) {
         const code = query.replace("kline:", "").trim();
@@ -1597,8 +1616,14 @@ function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
   const tenYearRows = Array.isArray(tenYear?.rows) ? tenYear.rows.filter(isRecord).slice(0, 4) : [];
   const tushare = isRecord(facts.tushare) ? facts.tushare : undefined;
   const tushareLines = formatTushareFactsForAssistant(tushare);
+  const hasAnomaly = hasAssistantFinancialAnomaly(incomeRows);
   return [
     `【${bundle.company.name} ${bundle.company.ticker ?? ""} 同口径财务证据】retrieved_at=${bundle.retrievedAt}`,
+    hasAnomaly
+      ? (tushareLines.length
+          ? "结构化核验状态：东方财富口径存在异常同比，已尝试 Tushare 交叉验证；回答必须区分已验证事实和待核验线索。"
+          : "结构化核验状态：单源异常，缺少 Tushare/第二硬源交叉验证；异常同比只能作为待核验线索，不得直接支撑确定预测或排序。")
+      : "",
     quote ? `行情：价格=${formatPkgValue(quote.regularMarketPrice)}，市值=${formatPkgValue(quote.marketCap)}，PE=${formatPkgValue(quote.trailingPE)}，PB=${formatPkgValue(quote.priceToBook)}` : "",
     incomeRows.length ? `利润表：${incomeRows.map(formatEastmoneyIncomeRow).join("；")}` : "利润表：未取得东方财富最新利润表。",
     buildAssistantFinancialAnomalyNote(incomeRows),
@@ -1607,6 +1632,15 @@ function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
     tenYearRows.length ? `多年摘要：${tenYearRows.map(formatTenYearMetricRow).join("；")}` : "",
     tushareLines.length ? `Tushare补强：${tushareLines.join("；")}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function hasAssistantFinancialAnomaly(incomeRows: Array<Record<string, unknown>>) {
+  return incomeRows.some((row) => {
+    const revenueYoy = finiteNumberOrNull(row.TOTAL_OPERATE_INCOME_YOY);
+    const profitYoy = finiteNumberOrNull(row.PARENT_NETPROFIT_YOY);
+    return (revenueYoy !== null && Math.abs(revenueYoy) >= 40)
+      || (profitYoy !== null && Math.abs(profitYoy) >= 40);
+  });
 }
 
 function buildAssistantFinancialAnomalyNote(incomeRows: Array<Record<string, unknown>>) {

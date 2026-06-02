@@ -56,4 +56,19 @@ describe("assistant prompt regression evaluator", () => {
     expect(__test__.hasConcreteEvidence("E1：2026Q1营收同比增长 6.5%。")).toBe(true);
     expect(__test__.hasConcreteEvidence("| 证据 | 内容 |\n|---|---|\n| 财报 | 净利润 100 亿元 |")).toBe(true);
   });
+
+  test("flags unqualified Wuliangye abnormal financial claims", () => {
+    expect(
+      __test__.hasUnqualifiedKnownAStockAnomaly(
+        "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。",
+        "相对主判断：五粮液极大概率超过贵州茅台。五粮液2026Q1净利润同比82.57%，2025年收入405.29亿元。",
+      ),
+    ).toBe(true);
+    expect(
+      __test__.hasUnqualifiedKnownAStockAnomaly(
+        "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。",
+        "相对主判断：硬数据待核验。五粮液2026Q1净利润同比82.57%属于单源异常，需第二硬源二次核验。",
+      ),
+    ).toBe(false);
+  });
 });

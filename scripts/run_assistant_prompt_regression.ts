@@ -300,6 +300,7 @@ function evaluatePromptResult(
   if (hasSystemLeak(parsed.answer)) issues.push("system or tool instruction leaked");
   if (hasEmptyMarkdownHeadingLeak(parsed.answer)) issues.push("empty markdown heading leaked");
   if (prompt.mustUseEvidence && !hasConcreteEvidence(parsed.answer)) issues.push("missing concrete evidence");
+  if (hasUnqualifiedKnownAStockAnomaly(prompt.prompt, parsed.answer)) issues.push("unqualified abnormal A-share financial data");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
   issues.push(...evaluateExplicitCountRequirement(prompt.prompt, parsed.answer));
   issues.push(...evaluateTaskContract(prompt, parsed.answer));
@@ -337,6 +338,14 @@ function hasConcreteEvidence(answer: string) {
 
 function hasSystemLeak(answer: string) {
   return /(系统补全|developer message|system prompt|assistant-rational-review|cache protocol|JSON schema|工具调用协议|你是 CSTD Alpha|当前应输出低置信判断，而不是停止回答)/i.test(answer);
+}
+
+function hasUnqualifiedKnownAStockAnomaly(promptText: string, answer: string) {
+  const scope = `${promptText}\n${answer}`;
+  if (!/(五粮液|000858)/.test(scope)) return false;
+  const suspicious = /(405\.29|89\.54|228\.38|80\.63|82\.57|33\.67|-54\.55|-71\.89|会计差错|追溯调整|前董事长留置|销售费用大增)/;
+  if (!suspicious.test(answer)) return false;
+  return !/(异常波动待核验|单源异常|第二硬源|二次核验|不可直接|待核验线索)/.test(answer);
 }
 
 function evaluateExplicitCountRequirement(promptText: string, answer: string) {
@@ -461,4 +470,4 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
 }
 
-export const __test__ = { evaluateCompareAnswer, evaluateForecastAnswer, evaluateExplicitCountRequirement, hasConcreteEvidence, hasEmptyMarkdownHeadingLeak };
+export const __test__ = { evaluateCompareAnswer, evaluateForecastAnswer, evaluateExplicitCountRequirement, hasConcreteEvidence, hasEmptyMarkdownHeadingLeak, hasUnqualifiedKnownAStockAnomaly };
