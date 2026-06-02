@@ -8,6 +8,7 @@ import {
   findAssistantEvidenceDisciplineIssues,
   sanitizeAssistantAStockTickerPairs,
   sanitizeAssistantEvidenceConfidenceLabels,
+  sanitizeAssistantPresentationText,
   sanitizeAssistantSafetyDisclaimers,
   sanitizeAssistantUnsupportedLeverageLabels,
   stripAssistantRepairPreamble,
@@ -239,6 +240,10 @@ describe("assistant deep research worker", () => {
 
     expect(text).toContain("营运压力较高");
     expect(text).not.toContain("高杠杆");
+  });
+
+  test("normalizes private-use and unusual spacing characters before presentation", () => {
+    expect(sanitizeAssistantPresentationText("2026\uF020Q1\u00A0利润  增长")).toBe("2026 Q1 利润 增长");
   });
 });
 

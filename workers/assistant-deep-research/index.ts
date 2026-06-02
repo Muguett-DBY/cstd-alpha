@@ -136,7 +136,7 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const normalized = sanitizeAssistantAStockTickerPairs(presentationReady, evidenceResult.items);
   const disciplined = sanitizeAssistantEvidenceConfidenceLabels(normalized, evidenceResult.items);
   const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
-  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantSafetyDisclaimers(leverageDisciplined), job, stopped, evidenceResult.items.length);
+  const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(leverageDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
     userKey: job.userKey,
@@ -468,6 +468,14 @@ export function sanitizeAssistantSafetyDisclaimers(text: string) {
     .filter((line) => !/(免责声明|不构成投资建议|投资需谨慎|请咨询专业人士|仅供参考)/.test(line))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function sanitizeAssistantPresentationText(text: string) {
+  return text
+    .replace(/[\uE000-\uF8FF]/g, " ")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
