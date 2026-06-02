@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { ASSISTANT_QUALITY_PROMPTS, ASSISTANT_REGRESSION_100_PROMPTS, isUnsatisfactoryEvidenceOnlyAnswer, type AssistantQualityPrompt } from "../functions/_shared/assistant-quality";
+import { classifyAssistantDeepResearch } from "../functions/_shared/assistant-deep-research";
 import { buildAssistantTaskContract, validateAssistantTaskAnswer } from "../functions/_shared/assistant-task-contract";
 
 type RunResult = {
@@ -44,7 +45,7 @@ async function main() {
     cookie = await loginAndReadCookie();
   }
 
-  const selectedPrompts = selectPrompts(promptFile ? await readPromptFile(promptFile) : suite === "100" ? ASSISTANT_REGRESSION_100_PROMPTS : ASSISTANT_QUALITY_PROMPTS);
+  const selectedPrompts = selectPrompts(await loadPromptSource());
   const results: RunResult[] = [];
   await mkdir(".tmp", { recursive: true });
   const outputPath = `.tmp/assistant-regression-${new Date().toISOString().replaceAll(":", "-")}.json`;
@@ -131,7 +132,7 @@ async function runPromptOnce(prompt: AssistantQualityPrompt, attempt: number): P
     let parsed = parseAssistantSse(raw);
     if (parsed.deepJob?.id) {
       const job = await pollDeepResearchJob(parsed.deepJob.id);
-      const finalAnswer = await latestAssistantContent();
+      const finalAnswer = await latestAssistantContent(job?.resultMessageId);
       parsed = { ...parsed, answer: finalAnswer || parsed.answer, deepJobStatus: job?.status };
     }
     const elapsedMs = Date.now() - startedAt;
@@ -244,34 +245,41 @@ function parseAssistantSse(raw: string) {
 
 async function pollDeepResearchJob(id: string) {
   const startedAt = Date.now();
-  let latest: { status?: string } | undefined;
+  let latest: { status?: string; resultMessageId?: string } | undefined;
   while (Date.now() - startedAt < perPromptTimeoutMs) {
     await new Promise((resolve) => setTimeout(resolve, 4000));
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/assistant/deep-research/${encodeURIComponent(id)}`, {
       headers: { cookie, "cache-control": "no-store" },
     });
     if (!response.ok) throw new Error(`deep research poll failed ${response.status}: ${await response.text()}`);
-    const data = await response.json() as { job?: { status?: string } };
+    const data = await response.json() as { job?: { status?: string; resultMessageId?: string } };
     latest = data.job;
-    if (latest?.status === "completed" || latest?.status === "failed") return latest;
+    if (latest?.status === "completed") {
+      if (!latest.resultMessageId) throw new Error(`deep research completed without result message ${id}`);
+      return latest;
+    }
+    if (latest?.status === "failed") throw new Error(`deep research failed ${id}`);
   }
   throw new Error(`deep research timeout ${id}; latest=${JSON.stringify(latest)}`);
 }
 
-async function latestAssistantContent() {
+async function latestAssistantContent(resultMessageId?: string) {
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/assistant/thread`, {
     headers: { cookie, "cache-control": "no-store" },
   });
   if (!response.ok) throw new Error(`thread read failed ${response.status}: ${await response.text()}`);
-  const data = await response.json() as { thread?: { messages?: Array<{ role?: string; content?: string }> } };
-  const latest = [...(data.thread?.messages ?? [])].reverse().find((message) => message.role === "assistant" && message.content);
+  const data = await response.json() as { thread?: { messages?: Array<{ id?: string; role?: string; content?: string }> } };
+  const messages = data.thread?.messages ?? [];
+  const latest = resultMessageId
+    ? messages.find((message) => message.id === resultMessageId && message.role === "assistant" && message.content)
+    : [...messages].reverse().find((message) => message.role === "assistant" && message.content);
   return latest?.content?.trim() ?? "";
 }
 
 function evaluatePromptResult(
   prompt: AssistantQualityPrompt,
   status: number,
-  parsed: { answer: string; gotClarification: boolean; gotMemoryCandidate: boolean; error: string },
+  parsed: { answer: string; gotClarification: boolean; gotMemoryCandidate: boolean; error: string; deepJobStatus?: string },
 ) {
   const issues: string[] = [];
   if (status < 200 || status >= 300) issues.push(`http ${status}`);
@@ -285,12 +293,16 @@ function evaluatePromptResult(
     if (!parsed.gotMemoryCandidate) issues.push("expected memory candidate");
     return issues;
   }
+  if (parsed.deepJobStatus && parsed.deepJobStatus !== "completed") issues.push(`deep research not completed: ${parsed.deepJobStatus}`);
   if (parsed.answer.length < 160) issues.push("answer too short");
   if (isUnsatisfactoryEvidenceOnlyAnswer(parsed.answer)) issues.push("evidence-only refusal");
   if (/^结构化表格\s*\d*$/im.test(parsed.answer)) issues.push("generic table label leaked");
+  if (hasSystemLeak(parsed.answer)) issues.push("system or tool instruction leaked");
   if (hasEmptyMarkdownHeadingLeak(parsed.answer)) issues.push("empty markdown heading leaked");
-  if (prompt.mustUseEvidence && !/(证据|来源|财报|公告|数据|口径|线索|E\d+|反证|跟踪)/.test(parsed.answer)) issues.push("missing evidence language");
+  if (prompt.mustUseEvidence && !hasConcreteEvidence(parsed.answer)) issues.push("missing concrete evidence");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
+  issues.push(...evaluateExplicitCountRequirement(prompt.prompt, parsed.answer));
+  issues.push(...evaluateTaskContract(prompt, parsed.answer));
   if (prompt.category === "compare") {
     const compareIssues = evaluateCompareAnswer(prompt.prompt, parsed.answer);
     issues.push(...compareIssues);
@@ -309,6 +321,52 @@ function evaluatePromptResult(
   return issues;
 }
 
+function evaluateTaskContract(prompt: AssistantQualityPrompt, answer: string) {
+  const kind = classifyAssistantDeepResearch(prompt.prompt, prompt.mode);
+  if (!kind) return [];
+  const validation = validateAssistantTaskAnswer(answer, buildAssistantTaskContract(kind, prompt.prompt));
+  return validation.missing.map((item) => `contract missing: ${item}`);
+}
+
+function hasConcreteEvidence(answer: string) {
+  if (/(?:^|\s)E\d+(?:\s|[：:、,，).）])/i.test(answer)) return true;
+  if (/\|[^\n]*(证据|来源|财报|公告|行情|价格|现金流|营收|净利润|PE|PB|TTM)[^\n]*\|/i.test(answer)) return true;
+  if (/(财报|公告|行情|价格|批价|合同负债|现金流|营收|净利润|毛利率|PE|PB|TTM|市值|股价)[^\n。；;]{0,30}\d+(?:\.\d+)?\s*(?:%|亿元|亿|元|港元|美元|x|倍)?/i.test(answer)) return true;
+  return false;
+}
+
+function hasSystemLeak(answer: string) {
+  return /(系统补全|developer message|system prompt|assistant-rational-review|cache protocol|JSON schema|工具调用协议|你是 CSTD Alpha|当前应输出低置信判断，而不是停止回答)/i.test(answer);
+}
+
+function evaluateExplicitCountRequirement(promptText: string, answer: string) {
+  const issues: string[] = [];
+  const countMatches = [...promptText.matchAll(/(\d+|[一二两三四五六七八九十]+)\s*(?:条|个(?!月)|只|支|家|列|项)/g)]
+    .map((match) => parseChineseCount(match[1]))
+    .filter((value): value is number => Boolean(value && value >= 2 && value <= 20));
+  if (!countMatches.length) return issues;
+  const required = Math.max(...countMatches);
+  if (countAnswerItems(answer) < required) issues.push(`explicit count not satisfied: expected at least ${required}`);
+  return issues;
+}
+
+function parseChineseCount(value: string) {
+  if (/^\d+$/.test(value)) return Number(value);
+  const map: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  if (map[value]) return map[value];
+  if (value.startsWith("十")) return 10 + (map[value.slice(1)] ?? 0);
+  if (value.endsWith("十")) return (map[value.slice(0, -1)] ?? 1) * 10;
+  return 0;
+}
+
+function countAnswerItems(answer: string) {
+  const listRows = answer.split("\n").filter((line) =>
+    /^\s*(?:\d+[.、)]|[-*]\s+|\|\s*\d+\s*\|)/.test(line)
+    || (/^\s*\|\s*[^|]+\s*\|\s*[^|]+\s*\|/.test(line) && !/^\s*\|\s*[-: ]+\|/.test(line)),
+  );
+  return listRows.length;
+}
+
 function evaluateCompareAnswer(promptText: string, answer: string) {
   const issues: string[] = [];
   const subjects = expectedCompareSubjects(promptText);
@@ -323,6 +381,18 @@ function evaluateCompareAnswer(promptText: string, answer: string) {
     issues.push("single-stock action verdict in comparison");
   }
   return issues;
+}
+
+async function loadPromptSource() {
+  if (promptFile) return readPromptFile(promptFile);
+  if (suite === "100" || suite === "generated-100") {
+    try {
+      return await readPromptFile("scripts/assistant-generated-100-prompts.json");
+    } catch {
+      return ASSISTANT_REGRESSION_100_PROMPTS;
+    }
+  }
+  return ASSISTANT_QUALITY_PROMPTS;
 }
 
 function evaluateForecastAnswer(promptText: string, answer: string) {
@@ -363,7 +433,7 @@ function hasEmptyMarkdownHeadingLeak(answer: string) {
   const lines = answer.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (!/^#{1,6}\s*(核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级)\s*$/i.test(line.trim())) continue;
+    if (!/^#{1,6}\s*(结论|主判断|核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级|关键证据表|反证条件|结构化表格\s*\d*)\s*$/i.test(line.trim())) continue;
     const next = lines.slice(index + 1).find((item) => item.trim());
     if (!next || /^#{1,6}\s+/.test(next.trim()) || /^-{3,}$/.test(next.trim())) return true;
   }
@@ -391,4 +461,4 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
 }
 
-export const __test__ = { evaluateCompareAnswer, evaluateForecastAnswer, hasEmptyMarkdownHeadingLeak };
+export const __test__ = { evaluateCompareAnswer, evaluateForecastAnswer, evaluateExplicitCountRequirement, hasConcreteEvidence, hasEmptyMarkdownHeadingLeak };

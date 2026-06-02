@@ -1,6 +1,6 @@
 import type { AssistantDeepResearchJob, AssistantDeepResearchKind, AssistantDeepResearchStatus, AssistantMode } from "../../src/shared/assistant";
 import type { AssistantSearchToolCall } from "./assistant-tools";
-import { buildAssistantTaskContract, validateAssistantTaskAnswer } from "./assistant-task-contract";
+import { buildAssistantTaskContract, extractComparedSubjects, validateAssistantTaskAnswer } from "./assistant-task-contract";
 
 export const ASSISTANT_DEEP_RESEARCH_QUEUE_BINDING = "ASSISTANT_DEEP_RESEARCH_QUEUE";
 export const ASSISTANT_DEEP_RESEARCH_QUEUE_NAME = "cstd-alpha-assistant-deep-research";
@@ -41,7 +41,7 @@ export type AssistantDeepResearchWorkerJob = AssistantDeepResearchJob & {
 export function classifyAssistantDeepResearch(message: string, mode: AssistantMode): AssistantDeepResearchKind | null {
   const text = message.trim();
   if (!text) return null;
-  if (/(对比|比较|区别|谁更|哪家更|vs\b|VS\b)/i.test(text)) return "comparison";
+  if (/(对比|比较|区别|谁更|哪家更|超过|跑赢|优于|高于|低于|相比|vs\b|VS\b)/i.test(text)) return "comparison";
   if (/(选股|推荐|最值得买|买哪|三家|排行|排序|优先级|梭哈|标的)/.test(text)) return "selection";
   if (/(预估|预测|目标价|明年股价|未来.*利润|业绩.*多少|估值.*多少|空间|情景测算)/.test(text)) return "forecast";
   if (/(反驳|是不是稳赚|一定涨|必涨|无风险|高股息.*稳赚|泡沫|过度乐观|过度悲观)/.test(text)) return "contrarian";
@@ -69,10 +69,31 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
   const calls: AssistantSearchToolCall[] = [];
   const add = (name: AssistantSearchToolCall["name"], query: string, reason: string) => calls.push({ id: `deep:${calls.length + 1}:${name}`, name, query, reason });
   if (kind === "forecast" || kind === "risk" || kind === "comparison") {
-    add("read_company_evidence", subject, "读取站内公司证据包");
-    add("read_tencent_quote", subject, "核验最新行情和估值");
-    add("read_financial_statements", subject, "核验财报和现金流");
-    add("read_filings_news", subject, "核验公告和最新事件");
+    const companies = extractDeepResearchCompanyQueries(message);
+    if (companies.length >= 2) {
+      for (const company of companies) add("read_company_evidence", company.companyQuery, `读取${company.label}站内公司证据包`);
+      const aCodes = companies.map((company) => company.aCode).filter((code): code is string => Boolean(code));
+      const quoteQueries = companies.map((company) => company.quoteQuery ?? company.companyQuery).filter(Boolean);
+      add("read_tencent_quote", aCodes.length >= 2 ? aCodes.join(",") : quoteQueries.join(","), "多标的对比核验最新行情和估值");
+      if (aCodes.length) {
+        add("read_financial_statements", aCodes.join(","), "多标的对比核验同口径财报和现金流");
+        add("read_filings_news", aCodes.join(","), "多标的对比核验公告和最新事件");
+        add("read_reports_concepts", aCodes.join(","), "多标的对比补充研报、概念和预期口径");
+      } else {
+        for (const company of companies) {
+          add("read_financial_statements", company.companyQuery, `核验${company.label}财报和现金流`);
+          add("read_filings_news", company.companyQuery, `核验${company.label}公告和最新事件`);
+        }
+      }
+    } else {
+      const company = companies[0];
+      const query = company?.companyQuery ?? subject;
+      const quoteQuery = company?.quoteQuery ?? company?.aCode ?? subject;
+      add("read_company_evidence", query, "读取站内公司证据包");
+      add("read_tencent_quote", quoteQuery, "核验最新行情和估值");
+      add("read_financial_statements", company?.aCode ?? query, "核验财报和现金流");
+      add("read_filings_news", company?.aCode ?? query, "核验公告和最新事件");
+    }
   }
   if (kind === "selection" || kind === "industry") {
     add("read_radar_result", industrySubject, "读取全行业雷达和主题线索");
@@ -87,6 +108,67 @@ export function buildAssistantDeepResearchToolCalls(kind: AssistantDeepResearchK
   }
   add("search_exa", `${subject} latest financial evidence risks counter evidence`, "补充全球高质量来源");
   return dedupeToolCalls(calls);
+}
+
+type DeepResearchCompanyQuery = {
+  label: string;
+  companyQuery: string;
+  aCode?: string;
+  quoteQuery?: string;
+};
+
+const DEEP_RESEARCH_KNOWN_COMPANIES: DeepResearchCompanyQuery[] = [
+  { label: "贵州茅台", companyQuery: "贵州茅台 600519", aCode: "600519", quoteQuery: "600519" },
+  { label: "茅台", companyQuery: "贵州茅台 600519", aCode: "600519", quoteQuery: "600519" },
+  { label: "五粮液", companyQuery: "五粮液 000858", aCode: "000858", quoteQuery: "000858" },
+  { label: "宁德时代", companyQuery: "宁德时代 300750", aCode: "300750", quoteQuery: "300750" },
+  { label: "比亚迪", companyQuery: "比亚迪 002594", aCode: "002594", quoteQuery: "002594" },
+  { label: "万科A", companyQuery: "万科A 000002", aCode: "000002", quoteQuery: "000002" },
+  { label: "万科", companyQuery: "万科A 000002", aCode: "000002", quoteQuery: "000002" },
+  { label: "隆基绿能", companyQuery: "隆基绿能 601012", aCode: "601012", quoteQuery: "601012" },
+  { label: "中芯国际", companyQuery: "中芯国际 688981", aCode: "688981", quoteQuery: "688981" },
+  { label: "腾讯控股", companyQuery: "腾讯控股 00700.HK", quoteQuery: "00700.HK" },
+  { label: "腾讯", companyQuery: "腾讯控股 00700.HK", quoteQuery: "00700.HK" },
+  { label: "小米集团", companyQuery: "小米集团 01810.HK", quoteQuery: "01810.HK" },
+  { label: "小米", companyQuery: "小米集团 01810.HK", quoteQuery: "01810.HK" },
+  { label: "优必选", companyQuery: "优必选 09880.HK", quoteQuery: "09880.HK" },
+  { label: "阿里巴巴", companyQuery: "阿里巴巴 09988.HK", quoteQuery: "09988.HK" },
+  { label: "阿里", companyQuery: "阿里巴巴 09988.HK", quoteQuery: "09988.HK" },
+  { label: "英伟达", companyQuery: "英伟达 NVDA", quoteQuery: "NVDA" },
+  { label: "NVIDIA", companyQuery: "英伟达 NVDA", quoteQuery: "NVDA" },
+  { label: "NVDA", companyQuery: "英伟达 NVDA", quoteQuery: "NVDA" },
+  { label: "苹果", companyQuery: "苹果 AAPL", quoteQuery: "AAPL" },
+  { label: "Apple", companyQuery: "苹果 AAPL", quoteQuery: "AAPL" },
+  { label: "AAPL", companyQuery: "苹果 AAPL", quoteQuery: "AAPL" },
+];
+
+export function extractDeepResearchCompanyQueries(message: string): DeepResearchCompanyQuery[] {
+  const matched = new Map<string, DeepResearchCompanyQuery>();
+  const addKnown = (value: string) => {
+    const normalized = value.trim();
+    const known = DEEP_RESEARCH_KNOWN_COMPANIES.find((company) =>
+      new RegExp(`(^|[^\\w\\u4e00-\\u9fff])${escapeRegExp(company.label)}([^\\w\\u4e00-\\u9fff]|$)`, "i").test(` ${normalized} `)
+      || normalized.includes(company.label),
+    );
+    if (known) matched.set(known.companyQuery, known);
+  };
+  const occurrences = DEEP_RESEARCH_KNOWN_COMPANIES
+    .map((company) => ({ company, index: message.search(new RegExp(escapeRegExp(company.label), "i")) }))
+    .filter((item) => item.index >= 0)
+    .sort((left, right) => left.index - right.index || right.company.label.length - left.company.label.length);
+  for (const { company } of occurrences) {
+    matched.set(company.companyQuery, company);
+  }
+  for (const subject of extractComparedSubjects(message)) addKnown(subject);
+  for (const code of message.match(/\b[0368]\d{5}\b/g) ?? []) {
+    const known = DEEP_RESEARCH_KNOWN_COMPANIES.find((company) => company.aCode === code);
+    matched.set(known?.companyQuery ?? code, known ?? { label: code, companyQuery: code, aCode: code, quoteQuery: code });
+  }
+  return [...matched.values()].slice(0, 5);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function expandDeepResearchIndustrySubject(subject: string) {

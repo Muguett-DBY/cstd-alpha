@@ -4,6 +4,7 @@ import {
   buildAssistantDeepResearchToolCalls,
   classifyAssistantDeepResearch,
   expandDeepResearchIndustrySubject,
+  extractDeepResearchCompanyQueries,
   hasRequiredDeepResearchAnswerSections,
   isAssistantDeepResearchJobStale,
   shouldStartAssistantDeepResearch,
@@ -14,6 +15,7 @@ describe("assistant deep research contract", () => {
     expect(classifyAssistantDeepResearch("茅台当前股价是多少，预测明年股价", "chat")).toBe("forecast");
     expect(classifyAssistantDeepResearch("给我三家半导体/AI算力最值得买的公司", "chat")).toBe("selection");
     expect(classifyAssistantDeepResearch("贵州茅台和五粮液谁更值得长期持有？", "chat")).toBe("comparison");
+    expect(classifyAssistantDeepResearch("五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。", "target")).toBe("comparison");
     expect(classifyAssistantDeepResearch("银行股是不是稳赚高股息？请反驳我", "chat")).toBe("contrarian");
     expect(shouldStartAssistantDeepResearch("用两句话解释自由现金流为什么重要。", "chat")).toBe(false);
   });
@@ -33,6 +35,18 @@ describe("assistant deep research contract", () => {
       "search_brave",
       "search_exa",
     ]);
+  });
+
+  test("splits comparison questions into per-company hard-data tool calls", () => {
+    const companies = extractDeepResearchCompanyQueries("五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
+    expect(companies.map((company) => company.companyQuery)).toEqual(["五粮液 000858", "贵州茅台 600519"]);
+
+    const calls = buildAssistantDeepResearchToolCalls("comparison", "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
+    const evidenceQueries = calls.filter((call) => call.name === "read_company_evidence").map((call) => call.query);
+    expect(evidenceQueries).toEqual(["五粮液 000858", "贵州茅台 600519"]);
+    expect(calls.find((call) => call.name === "read_tencent_quote")?.query).toBe("000858,600519");
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("000858,600519");
+    expect(calls.find((call) => call.name === "read_filings_news")?.query).toBe("000858,600519");
   });
 
   test("expands AI compute industry research to cover critical profit pools", () => {

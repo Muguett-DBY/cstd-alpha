@@ -1504,7 +1504,7 @@ function isBuySellDecisionQuestion(message: string) {
 }
 
 function isComparisonResearchQuestion(message: string) {
-  return /(对比|比较|谁更|哪个更|哪家更|孰优|排序|排名|强弱|长期回报|更稳|更值得|优于|劣于|VS|vs|compare|comparison|versus|rank|ranking|和.*比|与.*比)/i.test(message);
+  return /(对比|比较|谁更|哪个更|哪家更|孰优|排序|排名|强弱|长期回报|更稳|更值得|超过|跑赢|高于|低于|优于|劣于|VS|vs|compare|comparison|versus|rank|ranking|和.*比|与.*比)/i.test(message);
 }
 
 function isQuantitativeAssistantQuestion(message: string) {
@@ -1532,12 +1532,19 @@ function buildDeterministicPythonCodeForAssistant(message: string) {
 }
 
 function findAgentKnownCompanies(message: string) {
-  return AGENT_KNOWN_COMPANIES.filter((company) => {
-    if (company.names.some((name) => new RegExp(escapeRegex(name), "i").test(message))) return true;
-    if (company.aCode && new RegExp(`(^|\\D)${escapeRegex(company.aCode)}(\\D|$)`).test(message)) return true;
-    if (company.quote && new RegExp(`(^|\\s|[,，、;])${escapeRegex(company.quote)}($|\\s|[,，、;])`, "i").test(message)) return true;
-    return false;
-  });
+  return AGENT_KNOWN_COMPANIES
+    .map((company) => {
+      const nameIndexes = company.names
+        .map((name) => message.search(new RegExp(escapeRegex(name), "i")))
+        .filter((index) => index >= 0);
+      const aCodeIndex = company.aCode && new RegExp(`(^|\\D)${escapeRegex(company.aCode)}(\\D|$)`).test(message) ? message.indexOf(company.aCode) : -1;
+      const quoteIndex = company.quote && new RegExp(`(^|\\s|[,，、;])${escapeRegex(company.quote)}($|\\s|[,，、;])`, "i").test(message) ? message.toLowerCase().indexOf(company.quote.toLowerCase()) : -1;
+      const indexes = [...nameIndexes, aCodeIndex, quoteIndex].filter((index) => index >= 0);
+      return indexes.length ? { company, index: Math.min(...indexes) } : null;
+    })
+    .filter((item): item is { company: typeof AGENT_KNOWN_COMPANIES[number]; index: number } => Boolean(item))
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.company);
 }
 
 function escapeRegex(value: string) {

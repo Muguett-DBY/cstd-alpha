@@ -66,6 +66,22 @@ describe("assistant deep research worker", () => {
     expect(calls.find((call) => call.name === "read_tencent_quote")?.query).not.toContain("预测");
   });
 
+  test("collects hard data for both companies in relative comparison questions", () => {
+    const calls = buildDeepResearchExecutionToolCalls({
+      ...mockJob(),
+      query: "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。",
+      researchKind: "comparison",
+    }, {
+      siteEvidenceSummary: "",
+      modeEvidenceSummary: "",
+    });
+
+    expect(calls.find((call) => call.name === "compare_stocks")?.query).toBe("000858,600519");
+    expect(calls.find((call) => call.name === "read_tencent_quote")?.query).toBe("000858,600519");
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("000858,600519");
+    expect(calls.find((call) => call.name === "read_reports_concepts")?.query).toBe("000858,600519");
+  });
+
   test("enriches discovered A-share selection candidates with quotes and financial statements", () => {
     const calls = buildDeepResearchCandidateEnrichmentToolCalls({
       ...mockJob(),

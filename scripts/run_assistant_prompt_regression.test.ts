@@ -45,4 +45,15 @@ describe("assistant prompt regression evaluator", () => {
       ),
     ).toContain("保守/中性/乐观数字区间");
   });
+
+  test("flags explicit count requirements without treating months as list counts", () => {
+    expect(__test__.evaluateExplicitCountRequirement("给我推荐三支A股股票。", "1. 贵州茅台\n2. 宁德时代")).toContain("explicit count not satisfied: expected at least 3");
+    expect(__test__.evaluateExplicitCountRequirement("贵州茅台未来12个月净利润和股价大概怎么估？", "主判断：中性观察")).toEqual([]);
+  });
+
+  test("requires concrete evidence instead of generic evidence words", () => {
+    expect(__test__.hasConcreteEvidence("结论：看好。反证和跟踪如下。")).toBe(false);
+    expect(__test__.hasConcreteEvidence("E1：2026Q1营收同比增长 6.5%。")).toBe(true);
+    expect(__test__.hasConcreteEvidence("| 证据 | 内容 |\n|---|---|\n| 财报 | 净利润 100 亿元 |")).toBe(true);
+  });
 });

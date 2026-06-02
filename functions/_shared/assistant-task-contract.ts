@@ -99,7 +99,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
   }
   if (contract.kind === "comparison" && !/(排序|排名|优先级|更稳|更优|更强|更弱|优于|弱于|胜负|相对|相比|主判断)/.test(text)) missing.push("对比结论");
   if (!/(反证|我可能错在哪里|证伪|主要风险)/.test(text)) missing.push("反证条件");
-  if (!/(下一步跟踪|跟踪指标|后续跟踪)/.test(text)) missing.push("下一步跟踪");
+  if (!/(下一步跟踪|跟踪指标|后续跟踪|跟踪项|持续跟踪)/.test(text)) missing.push("下一步跟踪");
   if (!hasEvidenceTable(text)) missing.push("关键证据表");
   return { valid: missing.length === 0, missing };
 }
@@ -226,7 +226,7 @@ function hasConcreteScenarioInput(text: string) {
   return /\d+(?:\.\d+)?\s*(?:万辆|万元|亿元|亿|万|元|%)/.test(text);
 }
 
-function extractComparedSubjects(query: string) {
+export function extractComparedSubjects(query: string) {
   const exceedMatch = query.match(/([^，。？！?\n]{2,24}?)\s*(?:今年|未来|当前|现在)?[^，。？！?\n]{0,18}?(?:能否|是否)?\s*(?:超过|跑赢|优于|高于|低于)\s*([^，。？！?\n]{2,24})/);
   if (exceedMatch) return [cleanComparedSubject(exceedMatch[1]), cleanComparedSubject(exceedMatch[2])].filter((item) => item.length >= 2);
   const match = query.match(/(?:把|比较|对比)?\s*([^，。？！?\n]{1,24}?)\s*(?:和|与|vs\.?|VS\.?)\s*([^，。？！?\n]{1,24}?)(?:做|进行|谁|哪个|哪家|比较|对比|，|。|？|\?|$)/);
