@@ -128,6 +128,54 @@ describe("assistant task contracts", () => {
     expect(result.valid).toBe(true);
   });
 
+  test("rejects quantified forecasts that only quantify assumptions but leave outcomes vague", () => {
+    const contract = buildAssistantTaskContract("forecast", "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：中性观察",
+      "### 保守情景",
+      "- 核心假设：全年交付量 35-40 万辆，毛利率 16%-18%。",
+      "- 结果：汽车业务全年经营亏损可能显著扩大，拖累集团利润。",
+      "### 中性情景",
+      "- 核心假设：全年交付量 50-55 万辆，毛利率 19%-21%。",
+      "- 结果：汽车业务全年经营亏损大幅收窄。",
+      "### 乐观情景",
+      "- 核心假设：全年交付量 60-65 万辆，毛利率 22%-24%。",
+      "- 结果：汽车业务接近盈亏平衡。",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若交付不及预期，结论需要下修。",
+      "下一步跟踪：跟踪交付量、毛利率和经营亏损。",
+    ].join("\n"), contract);
+
+    expect(contract.needsQuantifiedOutcomes).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.missing).toContain("量化情景结果区间");
+  });
+
+  test("accepts quantified forecasts when each scenario gives assumptions and outcome ranges", () => {
+    const contract = buildAssistantTaskContract("forecast", "小米集团今年汽车业务会拖累还是提升整体利润？请量化关键假设。");
+    const result = validateAssistantTaskAnswer([
+      "主判断：中性观察",
+      "### 保守情景",
+      "- 核心假设：全年交付量 35-40 万辆，毛利率 16%-18%。",
+      "- 结果：汽车业务全年经营亏损预计为 90-120 亿元，拖累集团利润。",
+      "### 中性情景",
+      "- 核心假设：全年交付量 50-55 万辆，毛利率 19%-21%。",
+      "- 结果：汽车业务全年经营亏损预计为 35-60 亿元。",
+      "### 乐观情景",
+      "- 核心假设：全年交付量 60-65 万辆，毛利率 22%-24%。",
+      "- 结果：汽车业务全年经营利润预计为 -10 至 10 亿元。",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若交付不及预期，结论需要下修。",
+      "下一步跟踪：跟踪交付量、毛利率和经营亏损。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([

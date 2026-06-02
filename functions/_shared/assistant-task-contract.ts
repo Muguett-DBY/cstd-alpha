@@ -11,6 +11,7 @@ export type AssistantTaskContract = {
   needsRelativeJudgment: boolean;
   needsCurrentPrice: boolean;
   needsForecastRange: boolean;
+  needsQuantifiedOutcomes: boolean;
 };
 
 export type AssistantTaskValidation = {
@@ -57,6 +58,7 @@ export function buildAssistantTaskContract(kind: AssistantDeepResearchKind, quer
     needsRelativeJudgment,
     needsCurrentPrice: /(当前|现在|现时|实时|最新).{0,5}(股价|价格)|股价.{0,5}(多少|是多少|现价)/.test(query),
     needsForecastRange: kind === "forecast",
+    needsQuantifiedOutcomes: kind === "forecast" && /(量化|测算|利润桥|关键假设|影响区间)/.test(query),
   };
 }
 
@@ -89,6 +91,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
     if (!/(区间|保守|中性|乐观|情景|场景)/.test(text)) missing.push("预测区间或情景");
     if (!hasForecastScenarioNumericRanges(text)) missing.push("保守/中性/乐观数字区间");
   }
+  if (contract.needsQuantifiedOutcomes && !hasQuantifiedScenarioOutcomes(text)) missing.push("量化情景结果区间");
   if (contract.needsCurrentPrice && !hasCurrentPriceValue(text)) missing.push("当前股价口径和数值");
   for (const subject of contract.comparedSubjects) {
     if (!text.includes(subject)) missing.push(`覆盖对比对象：${subject}`);
@@ -111,6 +114,7 @@ export function formatAssistantTaskContract(contract: AssistantTaskContract) {
     needsRelativeJudgment: contract.needsRelativeJudgment,
     needsCurrentPrice: contract.needsCurrentPrice,
     needsForecastRange: contract.needsForecastRange,
+    needsQuantifiedOutcomes: contract.needsQuantifiedOutcomes,
   });
 }
 
@@ -174,6 +178,20 @@ function hasForecastScenarioNumericRanges(text: string) {
     if (headingIndex < 0) return false;
     const section = lines.slice(headingIndex + 1, headingIndex + 9).join("\n");
     return /\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(section);
+  });
+}
+
+function hasQuantifiedScenarioOutcomes(text: string) {
+  return ["保守", "中性", "乐观"].every((label) => {
+    const lines = text.split("\n");
+    const headingIndex = lines.findIndex((item) => new RegExp(`${label}(?:情景|场景)`).test(item));
+    if (headingIndex < 0) return false;
+    const outcomeLines = lines.slice(headingIndex, headingIndex + 14).filter((line) =>
+      /(?:结果|预计|对应|经营亏损|经营利润|净利润|利润影响|利润贡献|拖累|盈利|盈亏)/.test(line),
+    );
+    return outcomeLines.some((line) =>
+      /(?:亏损|利润|影响|贡献|拖累|盈利|盈亏)[^\n]{0,60}-?\d+(?:\.\d+)?\s*[-–~至]\s*-?\d+(?:\.\d+)?\s*(?:亿元|亿|万元|万|元|%)?/.test(line),
+    );
   });
 }
 
