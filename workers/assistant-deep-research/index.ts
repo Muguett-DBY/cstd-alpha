@@ -142,7 +142,8 @@ export async function processAssistantDeepResearchJob(env: WorkerEnv, jobId: str
   const leverageDisciplined = sanitizeAssistantUnsupportedLeverageLabels(disciplined, evidenceResult.items);
   const anomalyDisciplined = sanitizeAssistantAnomalousFinancialConclusions(leverageDisciplined, job, evidenceResult.items);
   const sectorDisciplined = sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(anomalyDisciplined, evidenceResult.items);
-  const echoDisciplined = sanitizeAssistantQuestionEcho(sectorDisciplined, job.query);
+  const technicalDisciplined = sanitizeAssistantTechnicalMarketingClaims(sectorDisciplined);
+  const echoDisciplined = sanitizeAssistantQuestionEcho(technicalDisciplined, job.query);
   const content = ensureDeepResearchAnswerCompleteness(sanitizeAssistantPresentationText(sanitizeAssistantSafetyDisclaimers(echoDisciplined)), job, stopped, evidenceResult.items.length);
   const blocks = extractAssistantBlocks(content, job.query);
   const toolRun = await writeToolRun(env.REPORT_LIBRARY_DB, {
@@ -267,6 +268,7 @@ function buildDeepResearchMessages(job: AssistantDeepResearchWorkerJob, calls: A
     "搜索摘要只是待核验线索。只有公告、财报、实时行情、官方统计等结构化硬证据可写成已披露事实；其他内容必须明确写成线索或待核验判断。",
     "任何精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻本轮证据编号（例如 E3）。如果本轮证据没有提供该数字，删除精确数字，改写成定性判断或“待核验线索”；禁止凭常识补数字。",
     "搜索摘要、券商研报汇总和财经新闻不能标成“高置信”或“中高置信”。高置信标签必须引用本轮结构化行情、财报、公告或官方统计 E 编号。",
+    "机器人、AI、半导体、医药等技术题中，公司宣传稿、媒体转述、采访和发布会只能作为线索。禁止把“全球第一”“全球唯一”“绝对领先”“行业第一”等宣传性绝对表述直接写成事实；必须改成“公司披露称”“公开资料显示”“横向口径仍需第三方复核”。非上市竞争对手的收入、利润、毛利率等精确数字若没有审计财报或官方披露，只能写成“媒体线索，待核验”。",
     "严格区分营运资金压力和财务杠杆：没有资产负债率、有息负债、净负债率或借款数据时，不得把票据、应收或单季经营现金流压力写成“高杠杆”。",
     "任何标注“异常波动待核验”“财务口径提醒”的同比数据，只能作为核验线索，不得直接写成公司已经断崖下滑、暴雷或确定回避；除非另有至少一条独立公告/财报原文交叉验证。",
     "如果证据中出现“单源异常”“缺少第二硬源交叉验证”或“异常同比只能作为待核验线索”，必须降低该公司财报数字权重；不得用这些异常数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
@@ -322,6 +324,7 @@ async function repairAssistantDeepResearchAnswer(
         "太空数据中心、轨道能源、万亿级新市场、通用AGI等远期叙事只能写成远期待核验线索，不能作为当前行业评级或盈利拐点的依据。",
         "精确金额、百分比、倍数、份额、增速、估值和预测数字必须紧邻真实存在的本轮 E 编号。如果证据中没有数字，删除该精确数字并改写为定性判断或待核验线索。禁止为了显得专业而补数字。",
         "搜索摘要、券商研报汇总和财经新闻只能作为线索，不能标成高置信或中高置信；高置信必须绑定本轮结构化行情、财报、公告或官方统计 E 编号。",
+        "机器人、AI、半导体、医药等技术题中，公司宣传稿、媒体转述、采访和发布会只能作为线索。禁止把“全球第一”“全球唯一”“绝对领先”“行业第一”等宣传性绝对表述直接写成事实；必须改成“公司披露称”“公开资料显示”“横向口径仍需第三方复核”。非上市竞争对手的收入、利润、毛利率等精确数字若没有审计财报或官方披露，只能写成“媒体线索，待核验”。",
         "如果证据中出现“单源异常”“异常波动待核验”“缺少第二硬源交叉验证”，相关财务数字必须写成待核验线索；不得用这些数字推出“极大概率”“几乎全部情景”“确定超过/低于/跑赢”等强结论。",
         "情景测算中引用历史年度基数时，历史数字仍必须紧邻本轮 E 编号；不得把未引用的历史基数混入预测。价格、销量、利润率等变量的方向解释必须自洽，例如高价或高配产品通常不能写成“拉低均价”。",
         "英文财报金额必须保留原始小数点和单位：例如 $81.6 billion 必须写成 81.6B 或 81.6 billion，禁止写成 816B；$91.0 billion 必须写成 91.0B 或 91.0 billion，禁止写成 910B。",
@@ -576,6 +579,14 @@ export function sanitizeAssistantUnsupportedIndustrySubsectorVerdicts(
     .replace(/轨道能源体系的核心基础设施/g, "远期潜在线索")
     .replace(/全新的[“"]?轨道级[”"]?市场/g, "远期待核验市场")
     .replace(/新的万亿级市场/g, "远期待核验市场");
+}
+
+export function sanitizeAssistantTechnicalMarketingClaims(text: string) {
+  return text
+    .replace(/(?:自研)?\s*Thinker\s*大模型[^。；;\n]{0,30}(?:九项|9项)[^。；;\n]{0,20}全球第一[^。；;\n]*/gi, "公司公开材料称自研 Thinker 大模型取得多项评测领先，尚需第三方复核和 benchmark 验证")
+    .replace(/(?:公司是)?全球唯一[^。；;\n]{0,20}(?:交付|交付量)[^。；;\n]{0,20}(?:千台|1000台)[^。；;\n]{0,20}(?:全尺寸)?人形机器人[^。；;\n]*/g, "公开资料显示已实现千台级全尺寸人形机器人交付，是否全球唯一仍需统一口径复核")
+    .replace(/宇树[^。；;\n]{0,20}2025年[^。；;\n]{0,20}(?:盈利|利润)[^。；;\n]{0,12}6\s*亿元/g, "媒体线索称宇树2025年盈利约6亿元（非上市公司审计财报，待核验）")
+    .replace(/，?已经明显领先/g, "，但领先程度仍需第三方指标复核");
 }
 
 function normalizeAssistantEchoText(value: string) {

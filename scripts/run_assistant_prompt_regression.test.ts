@@ -91,4 +91,24 @@ describe("assistant prompt regression evaluator", () => {
       ),
     ).toBe(false);
   });
+
+  test("flags unqualified robotics marketing and private competitor financial claims", () => {
+    expect(
+      __test__.hasUnqualifiedRoboticsMarketingClaim(
+        "优必选人形机器人，大脑与小脑之间的协调性如何？",
+        "优必选自研Thinker大模型斩获九项全球第一，并开源。公司是全球唯一全年交付超千台全尺寸人形机器人的企业。宇树2025年盈利约6亿元。",
+      ),
+    ).toBe(true);
+    expect(
+      __test__.hasUnqualifiedRoboticsMarketingClaim(
+        "优必选人形机器人，大脑与小脑之间的协调性如何？",
+        "公司公开材料称 Thinker 模型取得多项评测领先，仍需第三方 benchmark 复核。公开资料显示优必选具备千台级交付记录，是否全球唯一仍需统一口径核验。媒体线索称宇树可能盈利，非上市公司审计财报口径，待核验。",
+      ),
+    ).toBe(false);
+  });
+
+  test("refuses to report success when prompt filters match nothing", () => {
+    expect(() => __test__.assertSelectedPrompts([])).toThrow("No assistant regression prompts matched");
+    expect(() => __test__.assertSelectedPrompts([{ id: "one" } as never])).not.toThrow();
+  });
 });

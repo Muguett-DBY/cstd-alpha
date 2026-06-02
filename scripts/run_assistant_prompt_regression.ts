@@ -46,6 +46,7 @@ async function main() {
   }
 
   const selectedPrompts = selectPrompts(await loadPromptSource());
+  assertSelectedPrompts(selectedPrompts);
   const results: RunResult[] = [];
   await mkdir(".tmp", { recursive: true });
   const outputPath = `.tmp/assistant-regression-${new Date().toISOString().replaceAll(":", "-")}.json`;
@@ -99,6 +100,16 @@ function selectPrompts(prompts: AssistantQualityPrompt[]) {
     ? Array.from(byCategory.values()).flatMap((list) => list.slice(0, promptsPerCategory))
     : candidates;
   return limit > 0 ? selected.slice(0, limit) : selected;
+}
+
+function assertSelectedPrompts(prompts: AssistantQualityPrompt[]) {
+  if (prompts.length) return;
+  const filters = [
+    onlyIds.size ? `ids=${Array.from(onlyIds).join(",")}` : "",
+    onlyCategory ? `category=${onlyCategory}` : "",
+    promptFile ? `prompt-file=${promptFile}` : "",
+  ].filter(Boolean).join(" ");
+  throw new Error(`No assistant regression prompts matched${filters ? `: ${filters}` : ""}`);
 }
 
 async function runPrompt(prompt: AssistantQualityPrompt): Promise<RunResult> {
@@ -301,6 +312,7 @@ function evaluatePromptResult(
   if (hasEmptyMarkdownHeadingLeak(parsed.answer)) issues.push("empty markdown heading leaked");
   if (hasChattyAnswerPreamble(parsed.answer)) issues.push("chatty acknowledgement leaked");
   if (hasUnsupportedPhotovoltaicSubsectorClaim(prompt.prompt, parsed.answer)) issues.push("unsupported photovoltaic subsector claim");
+  if (hasUnqualifiedRoboticsMarketingClaim(prompt.prompt, parsed.answer)) issues.push("unqualified robotics marketing claim");
   if (prompt.mustUseEvidence && !hasConcreteEvidence(parsed.answer)) issues.push("missing concrete evidence");
   if (hasUnqualifiedKnownAStockAnomaly(prompt.prompt, parsed.answer)) issues.push("unqualified abnormal A-share financial data");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
@@ -463,6 +475,17 @@ function hasUnsupportedPhotovoltaicSubsectorClaim(promptText: string, answer: st
   return /(太空数据中心|轨道级市场|万亿级市场)/.test(answer) && !/(远期|待核验|线索)/.test(answer);
 }
 
+function hasUnqualifiedRoboticsMarketingClaim(promptText: string, answer: string) {
+  const scope = `${promptText}\n${answer}`;
+  if (!/(优必选|人形机器人|机器人|宇树|UBTECH|Unitree)/i.test(scope)) return false;
+  const normalized = answer.replace(/\s+/g, "");
+  const needsQualification = /(待核验|第三方|benchmark|复核|公司公开|公司披露|公开资料|媒体线索|非上市公司|审计财报|统一口径|口径核验)/;
+  if (/Thinker.{0,20}(九项|9项).{0,20}全球第一/i.test(normalized) && !needsQualification.test(answer)) return true;
+  if (/全球唯一.{0,30}(千台|1000台).{0,30}(交付|人形机器人)/.test(normalized) && !needsQualification.test(answer)) return true;
+  if (/宇树.{0,20}2025.{0,20}(盈利|利润).{0,10}6亿/.test(normalized) && !needsQualification.test(answer)) return true;
+  return false;
+}
+
 function parseArgs(values: string[]) {
   const parsed: Record<string, string> = {};
   for (let index = 0; index < values.length; index += 1) {
@@ -493,4 +516,6 @@ export const __test__ = {
   hasUnqualifiedKnownAStockAnomaly,
   hasChattyAnswerPreamble,
   hasUnsupportedPhotovoltaicSubsectorClaim,
+  hasUnqualifiedRoboticsMarketingClaim,
+  assertSelectedPrompts,
 };

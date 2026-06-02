@@ -11,6 +11,7 @@ import {
   sanitizeAssistantPresentationText,
   sanitizeAssistantQuestionEcho,
   sanitizeAssistantSafetyDisclaimers,
+  sanitizeAssistantTechnicalMarketingClaims,
   sanitizeAssistantAnomalousFinancialConclusions,
   sanitizeAssistantUnsupportedIndustrySubsectorVerdicts,
   sanitizeAssistantUnsupportedLeverageLabels,
@@ -192,6 +193,23 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("远期待核验市场");
     expect(text).not.toContain("太空数据中心");
     expect(text).not.toContain("轨道级");
+  });
+
+  test("downgrades robotics marketing claims and private competitor financial claims", () => {
+    const text = sanitizeAssistantTechnicalMarketingClaims([
+      "优必选自研Thinker大模型斩获九项全球第一，并开源。",
+      "公司是全球唯一全年交付超千台全尺寸人形机器人的企业。",
+      "宇树2025年盈利约6亿元，已经明显领先。",
+    ].join("\n"));
+
+    expect(text).toContain("公司公开材料称");
+    expect(text).toContain("第三方复核");
+    expect(text).toContain("是否全球唯一仍需统一口径复核");
+    expect(text).toContain("媒体线索称宇树2025年盈利约6亿元");
+    expect(text).toContain("非上市公司审计财报");
+    expect(text).not.toContain("斩获九项全球第一，并开源");
+    expect(text).not.toContain("全球唯一全年交付超千台");
+    expect(text).not.toContain("已经明显领先");
   });
 
   test("flags uncited precise claims and ungrounded high-confidence labels for repair", () => {
