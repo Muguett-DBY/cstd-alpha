@@ -201,6 +201,7 @@ describe("assistant deep research worker", () => {
       "公司是全球唯一全年交付超千台全尺寸人形机器人的企业。",
       "宇树2025年盈利约6亿元，已经明显领先。",
       "竞品宇树科技2025年已实现盈利，IPO推进中。",
+      "技术落地风险低于现金流，因为竞争对手宇树科技已盈利（E18，媒体线索，待核验）。",
     ].join("\n"));
 
     expect(text).toContain("公司公开材料称");
@@ -208,9 +209,11 @@ describe("assistant deep research worker", () => {
     expect(text).toContain("是否全球唯一仍需统一口径复核");
     expect(text).toContain("媒体线索称宇树2025年盈利约6亿元");
     expect(text).toContain("媒体线索称宇树科技2025年可能已实现盈利，IPO状态需以官方披露为准");
+    expect(text).toContain("媒体线索称宇树科技可能已盈利（非上市公司审计财报，待核验）");
     expect(text).toContain("非上市公司审计财报");
     expect(text).not.toContain("斩获九项全球第一，并开源");
     expect(text).not.toContain("全球唯一全年交付超千台");
+    expect(text).not.toContain("宇树科技已盈利");
     expect(text).not.toContain("已经明显领先");
   });
 
