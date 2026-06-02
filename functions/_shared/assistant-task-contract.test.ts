@@ -107,6 +107,27 @@ describe("assistant task contracts", () => {
     expect(result.missing).not.toContain("四档主判断");
   });
 
+  test("accepts forecast scenario ranges written below section headings", () => {
+    const contract = buildAssistantTaskContract("forecast", "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
+    const result = validateAssistantTaskAnswer([
+      "## 相对主判断",
+      "五粮液今年增速大概率超过贵州茅台，但增速质量更弱。",
+      "### 中性情景",
+      "- 五粮液净利增速 60%-90%，茅台约 3%-5%。",
+      "### 保守情景",
+      "- 五粮液净利增速 30%-50%，茅台约 5%-8%。",
+      "### 乐观情景",
+      "- 五粮液净利增速 90%-120%，茅台约 4%。",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报 | 公告 |",
+      "反证条件：若五粮液中报增速显著回落，对比结论需要重算。",
+      "下一步跟踪：跟踪半年报、批价和经营现金流。",
+    ].join("\n"), contract);
+
+    expect(result.valid).toBe(true);
+  });
+
   test("requires every compared subject to appear in comparison output", () => {
     const contract = buildAssistantTaskContract("comparison", "把贵州茅台和五粮液做一个简单对比表，最后给主判断");
     const result = validateAssistantTaskAnswer([

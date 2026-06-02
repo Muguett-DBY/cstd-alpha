@@ -167,8 +167,13 @@ function hasEvidenceTable(text: string) {
 function hasForecastScenarioNumericRanges(text: string) {
   if (/(?:无|未有|没有|无法|不能|难以|不宜|暂不|不列).{0,8}(?:精确)?(?:区间|目标价|价格区间|股价区间|数值)|方向大概率(?:低于|高于)当前价/.test(text)) return false;
   return ["保守", "中性", "乐观"].every((label) => {
-    const line = text.split("\n").find((item) => item.includes(label) && /\d/.test(item)) ?? "";
-    return /\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(line);
+    const lines = text.split("\n");
+    const matchingLine = lines.find((item) => item.includes(label) && /\d/.test(item)) ?? "";
+    if (/\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(matchingLine)) return true;
+    const headingIndex = lines.findIndex((item) => new RegExp(`${label}(?:情景|场景)`).test(item));
+    if (headingIndex < 0) return false;
+    const section = lines.slice(headingIndex + 1, headingIndex + 9).join("\n");
+    return /\d+(?:\.\d+)?\s*(?:[-–~至]\s*\d+(?:\.\d+)?)?/.test(section);
   });
 }
 
