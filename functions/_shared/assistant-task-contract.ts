@@ -235,7 +235,8 @@ export function extractComparedSubjects(query: string) {
 }
 
 function isRelativeComparisonQuery(query: string) {
-  return /(?:超过|跑赢|优于|高于|低于|相比|对比|比较|谁更|哪个更|哪家更)/.test(query);
+  return /(?:超过|跑赢|优于|高于|低于|相比|对比|比较|谁更|哪个更|哪家更|排序|排名|优先级)/.test(query)
+    || /(?:材料|设备|封装|芯片|接口|环节|板块|公司|标的|品类|来源|因素|驱动|吸引力)[^。？！?\n]{0,40}还是/.test(query);
 }
 
 function cleanComparedSubject(value: string) {

@@ -121,6 +121,24 @@ describe("assistant task contracts", () => {
     expect(result.missing).not.toContain("四档主判断");
   });
 
+  test("treats multi-option industry questions with '还是' as relative judgments", () => {
+    const contract = buildAssistantTaskContract("industry", "HBM产业链里A股真正能赚到钱的是材料、设备、封装还是接口芯片？");
+    const result = validateAssistantTaskAnswer([
+      "## 相对主判断",
+      "排序：封装 > 材料 ≈ 设备 > 接口芯片。",
+      "| 环节 | 证据 | 判断 |",
+      "| --- | --- | --- |",
+      "| 封装 | 财报和订单线索更直接 | 相对更优 |",
+      "| 材料 | 供应链线索 | 中性观察 |",
+      "反证条件：若材料公司披露直接 HBM 收入占比显著提升，则排序上调。",
+      "下一步跟踪：跟踪财报、订单和国产 HBM 量产进度。",
+    ].join("\n"), contract);
+
+    expect(contract.needsRelativeJudgment).toBe(true);
+    expect(result.valid).toBe(true);
+    expect(result.missing).not.toContain("四档主判断");
+  });
+
   test("accepts forecast scenario ranges written below section headings", () => {
     const contract = buildAssistantTaskContract("forecast", "五粮液今年收入和利润增速能否超过贵州茅台？请给情景判断。");
     const result = validateAssistantTaskAnswer([
