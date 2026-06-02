@@ -275,6 +275,18 @@ describe("assistant deep research worker", () => {
     expect(issues).toContain("高置信或中高置信标签必须绑定本轮结构化硬证据 E 编号");
   });
 
+  test("flags precise metrics on explicitly unverified lines for repair", () => {
+    const issues = findAssistantEvidenceDisciplineIssues(
+      [
+        "AI GPU市场地位：NVDA份额预估>80%，AMD份额预估<5%（待核验）。",
+        "估值水平：NVDA当前P/E约45x（无结构化报价）。",
+      ].join("\n"),
+      [],
+    );
+
+    expect(issues).toContain("标注待核验、无直接证据或工具未返回的行不得继续保留精确份额、营收、估值倍数等数字；删除精确数字或改成定性判断");
+  });
+
   test("flags uncited historical baseline metrics even inside forecast scenarios", () => {
     const issues = findAssistantEvidenceDisciplineIssues(
       "保守情景：集团利润将显著低于2025年（约315亿元），汽车仍为核心拖累变量。",

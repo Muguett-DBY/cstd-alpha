@@ -486,6 +486,9 @@ export function findAssistantEvidenceDisciplineIssues(
   if (lines.some((line) => hasUnverifiedUsFinancialMetricClaim(line, evidence))) {
     issues.push("美股精确财务/估值数字必须来自 SEC、公司 IR、实时行情或站内结构化硬源；搜索线索不得标高或支撑强评级");
   }
+  if (lines.some(hasPreciseMetricOnExplicitlyUnverifiedLine)) {
+    issues.push("标注待核验、无直接证据或工具未返回的行不得继续保留精确份额、营收、估值倍数等数字；删除精确数字或改成定性判断");
+  }
   if (lines.some(hasUncitedHistoricalBaselineMetric)) {
     issues.push("情景中的历史基数必须引用本轮 E 编号，否则删除该历史数字");
   }
@@ -737,6 +740,11 @@ function hasUncitedHistoricalBaselineMetric(line: string) {
   if (hasAssistantEvidenceCitation(line) || !hasAssistantPreciseInvestmentMetric(line)) return false;
   const currentYear = new Date().getUTCFullYear();
   return [...line.matchAll(/\b(20\d{2})\s*年?/g)].some((match) => Number(match[1]) < currentYear);
+}
+
+function hasPreciseMetricOnExplicitlyUnverifiedLine(line: string) {
+  if (!/(待核验|待确认|无直接证据|缺乏直接证据|未显示|未获取|工具未返回|结构化硬数据不足|无结构化报价|待财报确认|无直接财报证据)/.test(line)) return false;
+  return hasAssistantPreciseInvestmentMetric(line);
 }
 
 function hasContradictoryAspDirection(line: string) {
