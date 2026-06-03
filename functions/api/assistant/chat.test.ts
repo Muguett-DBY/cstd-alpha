@@ -1192,6 +1192,24 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toMatch(/待官方验证|未经其他来源交叉确认|精确份额需第三方统计口径|无独立公开/);
   });
 
+  test("field lookup table strips preamble, inserts separator and drops risk tail", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜当前市值｜24营收TTM｜25营收TTM｜26第一季度营收TTM｜备注/口径。";
+    const answer = [
+      "口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算。",
+      "",
+      "|公司|主分类|当前市值|24营收TTM|25营收TTM|26第一季度营收TTM|备注/口径|",
+      "|五粮液|白酒|319.65 CNY|89.18 CNY|40.53 CNY|22.84 CNY|财务数据均按东方财富口径|",
+      "",
+      "风险预算：这类问题必须先限定最大可承受亏损。",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(answer, prompt, "chat");
+
+    expect(repaired).toMatch(/^\|公司\|主分类\|当前市值\|24营收TTM\|25营收TTM\|26第一季度营收TTM\|备注\/口径\|\n\|---\|---\|---\|---\|---\|---\|---\|/);
+    expect(repaired).not.toContain("口径说明");
+    expect(repaired).not.toContain("风险预算");
+  });
+
   test("company field lookup forces financial, quote and external search tools", () => {
     const calls = __test__.buildMandatoryAgentToolCalls(
       "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",

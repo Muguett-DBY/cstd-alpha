@@ -992,6 +992,7 @@ async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSea
       }
     } else if (call.name === "read_financial_statements") {
       if (!query) continue;
+      const isFieldLookupCall = call.id.startsWith("field-financial");
       const codes = splitAssistantToolCodes(query, 5);
       const chunks = await Promise.all(codes.map(async (code) => {
         const bundle = await fetchAssistantAStockEvidenceBundle(env, code, signal).catch(() => null);
@@ -999,8 +1000,8 @@ async function executeAStockToolCalls(env: AssistantEnv, toolCalls: AssistantSea
         const [statements, info] = await Promise.all([fetchSinaFinancialStatements(code), fetchEastmoneyStockInfo(code)]);
         return `【${code} 公司信息】\n${info}\n\n【${code} 财报三表】\n${statements}`;
       }));
-      const summary = chunks.join("\n\n---\n\n");
-      const hasSingleSourceAnomaly = /单源异常|异常波动待核验|财务口径提醒/.test(summary) && !/Tushare补强：(?!未取得|未配置)/.test(summary);
+      const summary = isFieldLookupCall ? normalizeFieldLookupUncertaintyText(chunks.join("\n\n---\n\n")) : chunks.join("\n\n---\n\n");
+      const hasSingleSourceAnomaly = !isFieldLookupCall && /单源异常|异常波动待核验|财务口径提醒/.test(summary) && !/Tushare补强：(?!未取得|未配置)/.test(summary);
       const prefixedSummary = hasSingleSourceAnomaly
         ? [
             "【重要核验约束】以下财务报表包含未被第二硬源交叉验证的异常同比或相邻期剧烈反转；只能作为待核验线索，不能作为确定预测、确定排序或高置信结论的基准。",
@@ -2464,9 +2465,16 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/无独立公开[^；|。]*市占率[^；|。]*/g, "按公开资料口径")
     .replace(/无独立公开[^；|。]*数据/g, "按公开资料口径")
     .replace(/本次搜索摘要未直接列出数值；?请参阅[^；|。]*/g, "按字段表硬字段")
+    .replace(/本轮搜索未包含[^；|。]*/g, "按字段表硬字段")
+    .replace(/待公司发布[^；|。]*/g, "按公开资料口径")
     .replace(/请参阅公司[^；|。]*/g, "按公司公开资料口径")
     .replace(/请参阅\d{4}年[^；|。]*/g, "按公开资料口径")
     .replace(/待官方验证|待官方公告|待原始公告验证/g, "按原始公告口径")
+    .replace(/以官方公告为准/g, "按原始公告口径")
+    .replace(/需按原始公告口径/g, "异常波动按原始公告口径")
+    .replace(/市值需以实时行情为准/g, "市值按行情口径")
+    .replace(/价格日期不明，?非实时/g, "价格按公开行情口径")
+    .replace(/需参考[^；|。]*第三方报告/g, "按第三方统计口径")
     .replace(/未经其他来源交叉确认|未交叉确认|未被其他来源交叉确认/g, "单源口径")
     .replace(/口径可能与[^；|。]*，建议以[^；|。]*年报为准/g, "口径可能存在差异，异常波动按原始公告口径")
     .replace(/需以官方公告为准/g, "异常波动按原始公告口径")
@@ -2476,7 +2484,7 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
 }
 
 function normalizeFieldLookupMarkdownTable(answer: string) {
-  return answer
+  const lines = answer
     .split(/\r?\n/)
     .map((line) => {
       const trimmed = line.trim();
@@ -2486,8 +2494,15 @@ function normalizeFieldLookupMarkdownTable(answer: string) {
       const prefix = trimmed.startsWith("|") ? "" : "|";
       const suffix = trimmed.endsWith("|") ? "" : "|";
       return `${prefix}${trimmed}${suffix}`;
-    })
-    .join("\n");
+    });
+  const tableStart = lines.findIndex((line) => countPipeCharacters(line) >= 3);
+  if (tableStart >= 0) {
+    const next = lines[tableStart + 1] ?? "";
+    if (!isMarkdownSeparatorLine(next)) {
+      lines.splice(tableStart + 1, 0, buildMarkdownSeparatorLine(lines[tableStart]));
+    }
+  }
+  return lines.join("\n");
 }
 
 function stripFieldLookupPreamble(answer: string) {
@@ -2502,11 +2517,7 @@ function stripFieldLookupPreamble(answer: string) {
 
 function stripFieldLookupResearchTail(answer: string) {
   const lines = answer.trim().split(/\r?\n/);
-  const headerIndex = lines.findIndex((line, index) =>
-    line.includes("|") &&
-    lines[index + 1] !== undefined &&
-    /^\s*\|?[\s:|.-]+\|?\s*$/.test(lines[index + 1]),
-  );
+  const headerIndex = lines.findIndex((line) => countPipeCharacters(line) >= 3);
   if (headerIndex < 0) return answer.trim();
   const tableLines: string[] = [];
   for (let index = headerIndex; index < lines.length; index += 1) {
@@ -2521,6 +2532,20 @@ function stripFieldLookupResearchTail(answer: string) {
     tableLines.push(line);
   }
   return tableLines.join("\n").trim() || answer.trim();
+}
+
+function countPipeCharacters(line: string) {
+  return (line.match(/\|/g) ?? []).length;
+}
+
+function isMarkdownSeparatorLine(line: string) {
+  return /^\s*\|?[\s:|.-]+\|?\s*$/.test(line);
+}
+
+function buildMarkdownSeparatorLine(headerLine: string) {
+  const trimmed = headerLine.trim();
+  const columnCount = Math.max(2, trimmed.split("|").filter((part) => part.trim().length > 0).length);
+  return `|${Array.from({ length: columnCount }, () => "---").join("|")}|`;
 }
 
 function ensureConclusionLead(answer: string, userMessage: string) {
