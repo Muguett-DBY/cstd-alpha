@@ -2353,9 +2353,12 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
 function normalizeFieldLookupUncertaintyText(answer: string) {
   return stripFieldLookupResearchTail(stripFieldLookupPreamble(answer))
     .replace(/异常波动待核验/g, "异常波动需原始公告复核")
+    .replace(/异常同比待核验/g, "异常同比需原始公告复核")
     .replace(/异常待核验/g, "异常需原始公告复核")
     .replace(/待核验线索/g, "需原始公告复核线索")
     .replace(/待核验/g, "公开文件未单列")
+    .replace(/公开文件未单列异常同比/g, "异常同比需原始公告复核")
+    .replace(/异常同比公开文件未单列/g, "异常同比需原始公告复核")
     .replace(/未确认|待确认|待核实|未核实/g, "公开文件未单列")
     .replace(/无法核验/g, "无法交叉验证")
     .replace(/未披露/g, "公开披露未细分")

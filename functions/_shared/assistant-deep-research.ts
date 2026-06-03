@@ -63,6 +63,7 @@ export function isAssistantCompanyFieldLookupQuestion(message: string) {
     /(当前市值|市值|market cap)/i,
     /(营收|收入|TTM|年度营收|一季度营收|Q1|财报)/i,
   ].filter((pattern) => pattern.test(text)).length;
+  if (/(表头|一行表格|只用.*表格|只返回表格|字段)/.test(text) && fieldMatches >= 1 && /(公司|代码|成立日期|上市日期|营收|市值)/.test(text)) return true;
   return fieldMatches >= 4;
 }
 

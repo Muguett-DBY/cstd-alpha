@@ -1106,6 +1106,20 @@ describe("assistant chat endpoint", () => {
     expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|需原始公告复核/);
   });
 
+  test("field lookup abnormal yoy wording is not converted into generic missing disclosure", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜26第一季度营收TTM｜备注/口径。";
+    const table = [
+      "| 公司 | 26第一季度营收TTM | 备注/口径 |",
+      "| --- | --- | --- |",
+      "| 五粮液 | 22.84 | 2026Q1同比+33.67%异常同比待核验 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired).toContain("异常同比需原始公告复核");
+    expect(repaired).not.toContain("公开文件未单列异常同比");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
