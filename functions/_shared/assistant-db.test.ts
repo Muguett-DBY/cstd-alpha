@@ -193,6 +193,24 @@ describe("assistant prompt and memory helpers", () => {
     expect(payload.volatileContext.threadSummary).toBe("长期摘要会变");
   });
 
+  test("adds strict table-only instructions for company field lookup prompts", () => {
+    const messages = buildAssistantPromptMessages({
+      memories: [],
+      threadSummary: "",
+      evidenceSummary: "暂无证据。",
+      externalEvidenceSummary: "字段表硬字段优先摘要：字段表硬字段：公司=盛科通信；代码=688702；2024年营收=1.08bn CNY。",
+      recentMessages: [],
+      userMessage: "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜成立日期｜上市日期｜24营收TTM｜25营收TTM｜26第一季度营收TTM｜数据来源URL｜备注/口径。",
+      mode: "chat",
+    });
+    const system = messages[0].content;
+
+    expect(system).toContain("字段表任务硬约束");
+    expect(system).toContain("最终只输出一张 Markdown 表格");
+    expect(system).toContain("必须优先逐字段使用其中的公司、代码、成立日期、上市日期、市值、2024营收、2025营收、2026Q1营收");
+    expect(system).toContain("禁止写“待核验、未确认、缺数据、N/A、本次搜索摘要未直接列出数值");
+  });
+
   test("uses token-oriented context compaction thresholds instead of raw character count", () => {
     const chineseText = "茅台批价库存现金流反证条件".repeat(100);
     const englishText = "free cash flow margin inventory valuation risk ".repeat(100);

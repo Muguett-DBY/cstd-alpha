@@ -2021,8 +2021,14 @@ export function shouldIncludeRecentAssistantContext(message: string) {
 function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean; count: number; reason?: string }) {
   const exaStatus = exa.used && exa.count === 0 ? "Exa状态：本轮已尝试 Exa，但没有返回可用结果；禁止把其他搜索源说成 Exa。" : "";
   if (!items.length) return exaStatus;
+  const fieldFacts = items
+    .filter((item) => item.summary.includes("字段表硬字段"))
+    .map((item, index) => `F${index + 1} ${item.title}：${item.summary}`)
+    .join("；")
+    .slice(0, 2600);
   return [
     exaStatus,
+    fieldFacts ? `字段表硬字段优先摘要（如用户要求字段表，最终表格必须优先使用这些硬字段，不要被搜索摘要覆盖）：${fieldFacts}` : "",
     `外部搜索线索（仅用于发现和补充，不是财报/公告/价格/销量硬数据；检索服务不等于原始发布方）：${items
       .map((item, index) => `E${index + 1} ${item.title}（检索=${item.source}，类型=${item.sourceType}，来源域名=${hostLabel(item.url)}，日期=${item.publishedAt || "unknown"}）：${item.summary}`)
       .join("；")}`,
@@ -2453,9 +2459,13 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/公开文件未单列|公开披露未细分/g, "按公开资料口径")
     .replace(/未确认|待确认|待核实|未核实|未披露|缺数据|未获取|未取得|缺乏|无法确认|待财报更新|待发/g, "按公开资料口径")
     .replace(/未单独披露/g, "按第三方统计口径")
-    .replace(/精确份额需第三方统计口径/g, "按第三方统计口径")
+    .replace(/精确份额需按?第三方统计口径/g, "按第三方统计口径")
+    .replace(/精确份额需按?中国[^；|。]*市场口径统计/g, "按中国市场公开口径")
     .replace(/无独立公开[^；|。]*市占率[^；|。]*/g, "按公开资料口径")
     .replace(/无独立公开[^；|。]*数据/g, "按公开资料口径")
+    .replace(/本次搜索摘要未直接列出数值；?请参阅[^；|。]*/g, "按字段表硬字段")
+    .replace(/请参阅公司[^；|。]*/g, "按公司公开资料口径")
+    .replace(/请参阅\d{4}年[^；|。]*/g, "按公开资料口径")
     .replace(/待官方验证|待官方公告|待原始公告验证/g, "按原始公告口径")
     .replace(/未经其他来源交叉确认|未交叉确认|未被其他来源交叉确认/g, "单源口径")
     .replace(/口径可能与[^；|。]*，建议以[^；|。]*年报为准/g, "口径可能存在差异，异常波动按原始公告口径")

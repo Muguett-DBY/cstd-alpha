@@ -529,6 +529,7 @@ export function buildAssistantPromptMessages(input: {
   generalChat?: boolean;
 }): DeepSeekMessage[] {
   const mode = input.mode ?? "chat";
+  const fieldLookupMode = isAssistantFieldLookupPrompt(input.userMessage);
   if (input.generalChat) {
     return [
       {
@@ -583,8 +584,11 @@ export function buildAssistantPromptMessages(input: {
       "图表规则：如果用户明确要求画图、画表、对比表、趋势图或证据矩阵，必须先给结论，再给一张 Markdown 表格，表格列名清晰且数值列可解析；不要输出 ECharts JSON 或代码块。",
       "图表规则：表格里的数值必须来自上下文证据或明确标注为打分/估计；无法给出数值时输出证据矩阵而不是编造趋势。",
       "图表规则：禁止说“无法画图”、“无法直接生成图片/图表”、“无法在聊天框里生成图表”。如果你手头有数据（如搜索到的股价），直接输出 Markdown 表格，系统会自动渲染为图表；如果没有任何可用数据，可以说“当前搜索未找到完整数据”并提议其他方式，但不许说“无法画图”或以代码块替代 Markdown 表格。禁止用“证据未提供完整数据”、“仅能构建极简示意”、“建议通过公开API获取”等话术变相拒绝；如果有部分数据就直接输出表格，如果完全没有数据就明确说“当前搜索未找到”并给出具体建议，不要输出半成品描述。",
+      fieldLookupMode
+        ? "字段表任务硬约束：用户要的是字段表，不是投研结论。最终只输出一张 Markdown 表格，不写主判断、结论、证据等级、反证或下一步跟踪。若上下文包含“字段表硬字段”，必须优先逐字段使用其中的公司、代码、成立日期、上市日期、市值、2024营收、2025营收、2026Q1营收；搜索摘要只能补主分类、主要市场、市占率和备注，不能覆盖这些硬字段。禁止写“待核验、未确认、缺数据、N/A、本次搜索摘要未直接列出数值、请参阅年报、无独立公开、待官方验证、未经交叉确认”等缺口话术；必要时用“按公开资料口径、按第三方统计口径、单源口径、按原始公告口径”作为表格口径说明。"
+        : "",
       "Python 计算：你可以使用 python_repl 工具执行 Python 代码来完成数学计算、统计分析、数据可视化和财务指标计算。当你需要精确数字（CAGR、增长率、估值区间、统计指标等）或图表时，主动使用 python_repl 工具，把计算过程写为完整自包含的 Python 代码，使用 print() 输出结果。支持 numpy、pandas、matplotlib。",
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
     "assistant-chat",
   );
   const stableContext = cacheStableUserContent({
@@ -610,6 +614,25 @@ export function buildAssistantPromptMessages(input: {
     ...input.recentMessages.map((message) => ({ role: message.role, content: message.content })),
     { role: "user", content: input.userMessage },
   ];
+}
+
+function isAssistantFieldLookupPrompt(message: string) {
+  const text = message.replace(/\s+/g, "");
+  const fieldMatches = [
+    "主要市场",
+    "主营业务全球市占率",
+    "主营业务中国市占率",
+    "A股代码/港股代码/美股代码/未上市",
+    "成立日期",
+    "上市日期",
+    "当前市值",
+    "24营收TTM",
+    "25营收TTM",
+    "26第一季度营收TTM",
+    "数据来源URL",
+    "备注/口径",
+  ].filter((field) => text.includes(field.replace(/\s+/g, ""))).length;
+  return (/(表头|一行表格|只用.*表格|只返回表格|字段)/.test(text) && fieldMatches >= 1 && /(公司|代码|成立日期|上市日期|营收|市值)/.test(text)) || fieldMatches >= 4;
 }
 
 export function buildAssistantDeepSeekBody(messages: DeepSeekMessage[], route?: Pick<DeepSeekFallbackRoute, "model" | "isFree">) {
