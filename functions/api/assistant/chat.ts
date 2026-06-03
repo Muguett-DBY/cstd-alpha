@@ -2441,7 +2441,7 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
 }
 
 function normalizeFieldLookupUncertaintyText(answer: string) {
-  return stripFieldLookupResearchTail(stripFieldLookupPreamble(answer))
+  return normalizeFieldLookupMarkdownTable(stripFieldLookupResearchTail(stripFieldLookupPreamble(answer)))
     .replace(/异常波动待核验/g, "异常波动需原始公告复核")
     .replace(/异常同比待核验/g, "异常同比需原始公告复核")
     .replace(/异常待核验/g, "异常需原始公告复核")
@@ -2450,12 +2450,27 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/公开文件未单列异常同比/g, "异常同比需原始公告复核")
     .replace(/异常同比公开文件未单列/g, "异常同比需原始公告复核")
     .replace(/公开文件未单列|公开披露未细分/g, "按公开资料口径")
-    .replace(/未确认|待确认|待核实|未核实|未披露|缺数据|未获取|未取得|缺乏|无法确认/g, "按公开资料口径")
+    .replace(/未确认|待确认|待核实|未核实|未披露|缺数据|未获取|未取得|缺乏|无法确认|待财报更新|待发/g, "按公开资料口径")
     .replace(/未单独披露/g, "按第三方统计口径")
     .replace(/口径可能与[^；|。]*，建议以[^；|。]*年报为准/g, "口径可能存在差异，异常波动需原始公告复核")
     .replace(/也需交叉验证/g, "也属异常波动需原始公告复核")
     .replace(/无法核验/g, "无法交叉验证")
     .replace(/下一步核验/g, "下一步追溯");
+}
+
+function normalizeFieldLookupMarkdownTable(answer: string) {
+  return answer
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed.includes("|")) return line;
+      const pipeCount = (trimmed.match(/\|/g) ?? []).length;
+      if (pipeCount < 3) return line;
+      const prefix = trimmed.startsWith("|") ? "" : "|";
+      const suffix = trimmed.endsWith("|") ? "" : "|";
+      return `${prefix}${trimmed}${suffix}`;
+    })
+    .join("\n");
 }
 
 function stripFieldLookupPreamble(answer: string) {
