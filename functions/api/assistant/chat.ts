@@ -20,7 +20,7 @@ import {
   writeUsageEvent,
   type AssistantEnv,
 } from "../../_shared/assistant-db";
-import { classifyAssistantDeepResearch, createAssistantDeepResearchJob, writeAssistantDeepResearchProgress } from "../../_shared/assistant-deep-research";
+import { classifyAssistantDeepResearch, createAssistantDeepResearchJob, isAssistantCompanyFieldLookupQuestion, writeAssistantDeepResearchProgress } from "../../_shared/assistant-deep-research";
 import { extractAssistantBlocks } from "../../_shared/assistant-blocks";
 import { executeFinancialCompute } from "../../_shared/financial-compute";
 import { fetchTencentQuote, fetchThsHotStocks, fetchThsConsensusEps, fetchDragonTigerBoard, fetchDailyDragonTiger, fetchLockupExpiry, fetchMarginTrading, fetchBlockTrades, fetchHolderCount, fetchDividendHistory, fetchFundFlow120d, fetchNorthboundFlow, fetchResearchReports, fetchCninfoFilings, fetchSinaFinancialStatements, fetchEastmoneyStockInfo, fetchIndustryRanking, fetchBaiduKline, fetchStockNews, fetchGlobalNews, formatComparisonTable } from "../../_shared/assistant-a-stock";
@@ -2325,6 +2325,7 @@ function isLikelyTruncatedResearchAnswer(answer: string) {
 }
 
 function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
+  if (isAssistantCompanyFieldLookupQuestion(userMessage)) return ensureFieldLookupAnswerStructure(answer);
   if (!shouldEnsureResearchStructure(userMessage)) return answer;
   const parts = [ensureConclusionLead(answer, userMessage).trim()];
   if (/(画表|表格|对比)/.test(userMessage) && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(answer)) {
@@ -2342,6 +2343,23 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
   }
   if (isHighRiskAssistantQuestion(userMessage) && !/(仓位|上限|止损|退出|亏损上限|最大回撤|小仓|分批|禁入|回避)/.test(answer)) {
     parts.push("高风险交易纪律：如果仍要参与，只能作为试错仓处理；单一标的不应超过可承受亏损资金的小比例，必须预设亏损上限、止损位、退出触发条件和复盘日期。没有公告、财报、订单或成交量验证前，禁止满仓、借钱、杠杆或追涨加仓。");
+  }
+  return parts.join("\n\n");
+}
+
+function ensureFieldLookupAnswerStructure(answer: string) {
+  const trimmed = answer.trim();
+  if (!trimmed) return answer;
+  const parts: string[] = [];
+  if (!/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?(?:结论|口径说明)[：:]/.test(trimmed)) {
+    parts.push("结论：这是公司基础字段查询，已按当前可取得的公开证据整理；未披露或不能交叉验证的字段应标为待核验，不应强行补数。");
+  }
+  parts.push(trimmed);
+  if (!/(关键缺口|待核验|未披露|无法核验|反证|口径风险)/.test(trimmed)) {
+    parts.push("关键缺口/反证：若年报、招股书、交易所公告或实时行情口径与上表不一致，应以上述原始来源为准；未细分地区、市占率或 TTM 推算字段不得当作确定事实。");
+  }
+  if (!/(下一步|后续|核验|跟踪)/.test(trimmed)) {
+    parts.push("下一步核验：优先核对最新年报/一季报、招股书、交易所行情页和公司公告；市值用最新交易日收盘价重算。");
   }
   return parts.join("\n\n");
 }
@@ -3283,6 +3301,7 @@ export const __test__ = {
   buildVisibleConclusionTailIfNeeded,
   consumeSseBuffer,
   ensureConclusionLead,
+  ensureMinimumResearchSections,
   ensureComparisonCompleteness,
   extractComparisonItems,
   getCurrentMarketDateContext,

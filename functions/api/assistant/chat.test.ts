@@ -1004,6 +1004,24 @@ describe("assistant chat endpoint", () => {
     expect(__test__.buildVisibleConclusionTailIfNeeded(answer, "茅台当前股价是多少，预测明年股价")).toBe("");
   });
 
+  test("company field lookup answers get a compact conclusion and verification tail", () => {
+    const prompt =
+      "查询盛科通信以下信息:主要市场(美国，欧洲，中国，亚太，南美，中东等等)，主营业务全球市占率，主营业务中国市占率，A股代码/港股代码/美股代码/未上市，成立日期，上市日期，当前市值(上市地货币，bn)24营收TTM/年度营收(报告币种，bn)，25营收TTM/年度营收(报告币种，bn)，26第一季度营收TTM(报告币种，bn)";
+    const answer = [
+      "以下是盛科通信（688702）核心查询信息汇总。",
+      "",
+      "| 指标 | 数据 |",
+      "| --- | --- |",
+      "| A股代码 | 688702 |",
+      "| 当前市值 | 约人民币 120bn |",
+    ].join("\n");
+    const normalized = __test__.ensureMinimumResearchSections(answer, prompt, "chat");
+
+    expect(normalized).toMatch(/^结论：/);
+    expect(normalized).toContain("关键缺口/反证");
+    expect(normalized).toContain("下一步核验");
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
