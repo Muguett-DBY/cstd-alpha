@@ -1068,7 +1068,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toContain("| 盛科通信 | 半导体 | 需原始公告复核 | 2026Q1按公开资料口径 |");
+    expect(repaired).toContain("| 盛科通信 | 半导体 | 按原始公告口径 | 2026Q1按公开资料口径 |");
     expect(repaired).not.toContain("结论");
     expect(repaired).not.toContain("关键缺口/反证");
     expect(repaired).not.toContain("下一步追溯");
@@ -1103,7 +1103,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|需原始公告复核/);
+    expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|按原始公告口径/);
   });
 
   test("field lookup abnormal yoy wording is not converted into generic missing disclosure", () => {
@@ -1116,7 +1116,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toContain("异常同比需原始公告复核");
+    expect(repaired).toContain("异常同比按原始公告口径");
     expect(repaired).not.toContain("公开文件未单列异常同比");
     expect(repaired).not.toContain("公开文件未单列");
   });
@@ -1131,7 +1131,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toContain("异常波动需原始公告复核");
+    expect(repaired).toContain("异常波动按原始公告口径");
     expect(repaired).toContain("按第三方统计口径");
     expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|未单独披露/);
   });
@@ -1172,8 +1172,24 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toContain("异常波动需原始公告复核");
+    expect(repaired).toContain("异常波动按原始公告口径");
     expect(repaired).not.toContain("需以官方公告为准");
+  });
+
+  test("field lookup table removes disguised missing-evidence wording", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜全球市占率｜26Q1营收｜备注/口径。";
+    const table = [
+      "| 公司 | 全球市占率 | 26Q1营收 | 备注/口径 |",
+      "| --- | --- | --- | --- |",
+      "| 五粮液 | 精确份额需第三方统计口径 | 22.84（同比异常待官方验证） | 数据未经其他来源交叉确认；无独立公开市占率数据。 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired).toContain("按第三方统计口径");
+    expect(repaired).toContain("按原始公告口径");
+    expect(repaired).toContain("单源口径");
+    expect(repaired).not.toMatch(/待官方验证|未经其他来源交叉确认|精确份额需第三方统计口径|无独立公开/);
   });
 
   test("company field lookup forces financial, quote and external search tools", () => {
