@@ -1238,6 +1238,44 @@ describe("assistant chat endpoint", () => {
     expect(answer).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|请参阅|可参考|需实时更新/);
   });
 
+  test("company field lookup uses Tencent quote market cap fallback and industry profile", () => {
+    const answer = __test__.buildDeterministicCompanyFieldTableAnswer(
+      "请严格按下面表头，用一行表格查询宁德时代全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",
+      [
+        {
+          source: "CSTD Alpha",
+          query: "300750",
+          title: "宁德时代 A股硬字段",
+          url: "",
+          summary:
+            "字段表硬字段：公司=宁德时代；代码=300750；成立日期=2011-12-16；上市日期=2018-06-11；行业=电气机械和器材制造业；当前市值=0.00bn CNY；2024年营收=362.01bn CNY；2025年营收=423.70bn CNY；2026Q1营收=129.13bn CNY；数据源=Eastmoney company profile + Eastmoney F10 income + quote",
+          sourceType: "official",
+          signalType: "external_search",
+          publishedAt: "2026-06-03",
+          qualityScore: 0.95,
+          weight: 4,
+        },
+        {
+          source: "CSTD Alpha",
+          query: "300750",
+          title: "实时行情快照",
+          url: "",
+          summary: "retrieved_at=2026-06-03T00:00:00.000Z；宁德时代(300750) 411.16元 PE=22.93 PB=5.82 市值19022.29亿",
+          sourceType: "official",
+          signalType: "external_search",
+          publishedAt: "2026-06-03",
+          qualityScore: 0.95,
+          weight: 3,
+        },
+      ],
+    );
+
+    expect(answer).toContain("|宁德时代|新能源/锂电池|动力电池与储能电池全球龙头|");
+    expect(answer).toContain("|300750|2011-12-16|2018-06-11|1902.23bn CNY|");
+    expect(answer).not.toContain("0.00bn CNY");
+    expect(answer).not.toMatch(/按公开资料口径\|按公开资料口径\|按公开资料口径/);
+  });
+
   test("company field lookup forces financial, quote and external search tools", () => {
     const calls = __test__.buildMandatoryAgentToolCalls(
       "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",

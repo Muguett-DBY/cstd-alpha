@@ -2075,7 +2075,8 @@ function buildDeterministicCompanyFieldTableAnswer(message: string, items: AnySe
   const company = String(fields.get("公司") ?? "").trim();
   const code = String(fields.get("代码") ?? "").trim();
   if (!company || !code) return "";
-  const profile = deterministicCompanyFieldProfile(company, code);
+  const profile = deterministicCompanyFieldProfile(company, code, fields);
+  const currentMarketCap = usableFieldTableValue(fields.get("当前市值")) || parseAssistantQuoteMarketCap(items, company, code) || "按行情口径";
   const table = [
     "| 公司 | 主分类 | 细分位置 | AI弹性标签 | 主要市场 | 主营业务全球市占率 | 主营业务中国市占率 | A股代码/港股代码/美股代码/未上市 | 成立日期 | 上市日期 | 当前市值（上市地货币，bn） | 24营收TTM/年度营收（报告币种，bn） | 25营收TTM/年度营收（报告币种，bn） | 26第一季度营收TTM（报告币种，bn） | 数据来源URL | 备注/口径 |",
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
@@ -2090,7 +2091,7 @@ function buildDeterministicCompanyFieldTableAnswer(message: string, items: AnySe
       code,
       fields.get("成立日期") ?? "按公开资料口径",
       fields.get("上市日期") ?? "按公开资料口径",
-      fields.get("当前市值") ?? "按行情口径",
+      currentMarketCap,
       fields.get("2024年营收") ?? "按公开资料口径",
       fields.get("2025年营收") ?? "按公开资料口径",
       fields.get("2026Q1营收") ?? "按公开资料口径",
@@ -2112,7 +2113,22 @@ function parseAssistantFieldFacts(text: string) {
   return fields;
 }
 
-function deterministicCompanyFieldProfile(company: string, code: string) {
+function deterministicCompanyFieldProfile(company: string, code: string, fields?: Map<string, string>) {
+  const industry = String(fields?.get("行业") ?? "").trim();
+  const combined = `${company}${code}${industry}`;
+  if (/贵州茅台|600519/.test(combined)) {
+    return {
+      companyName: "贵州茅台",
+      category: "白酒",
+      subcategory: "高端白酒龙头，酱香型白酒核心品牌",
+      aiTag: "传统消费",
+      mainMarket: "中国为主，少量海外",
+      globalShare: "以内销为主，全球份额按第三方统计口径",
+      chinaShare: "高端白酒第一梯队，按第三方统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；市占率为第三方统计口径。",
+    };
+  }
   if (/五粮液|000858/.test(`${company}${code}`)) {
     return {
       companyName: "五粮液",
@@ -2124,6 +2140,58 @@ function deterministicCompanyFieldProfile(company: string, code: string) {
       chinaShare: "高端白酒核心品牌，行业第二梯队，按第三方统计口径",
       sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
       note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；异常同比按原始公告口径。",
+    };
+  }
+  if (/宁德时代|300750/.test(combined)) {
+    return {
+      companyName: "宁德时代",
+      category: "新能源/锂电池",
+      subcategory: "动力电池与储能电池全球龙头",
+      aiTag: "电动化、储能、智能制造",
+      mainMarket: "中国、欧洲、亚太、北美等全球市场",
+      globalShare: "动力电池全球第一梯队，份额按第三方装机统计口径",
+      chinaShare: "动力电池中国第一梯队，份额按第三方装机统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；市场份额按第三方装机统计口径。",
+    };
+  }
+  if (/比亚迪|002594/.test(combined)) {
+    return {
+      companyName: "比亚迪",
+      category: "新能源汽车/动力电池",
+      subcategory: "新能源整车、电池与汽车电子一体化龙头",
+      aiTag: "智能驾驶、新能源汽车、出海",
+      mainMarket: "中国为主，欧洲、亚太、南美、中东等海外市场扩张",
+      globalShare: "新能源汽车全球第一梯队，份额按第三方销量统计口径",
+      chinaShare: "新能源汽车中国第一梯队，份额按乘用车销量统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；市场份额按第三方销量统计口径。",
+    };
+  }
+  if (/隆基绿能|601012/.test(combined)) {
+    return {
+      companyName: "隆基绿能",
+      category: "新能源/光伏",
+      subcategory: "单晶硅片、组件与光伏解决方案龙头",
+      aiTag: "能源转型、光伏出清",
+      mainMarket: "中国、欧洲、亚太、中东、南美等全球市场",
+      globalShare: "光伏硅片/组件全球第一梯队，份额按第三方出货统计口径",
+      chinaShare: "光伏硅片/组件中国第一梯队，份额按第三方出货统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；行业处于出清周期，份额按第三方出货统计口径。",
+    };
+  }
+  if (/中芯国际|688981/.test(combined)) {
+    return {
+      companyName: "中芯国际",
+      category: "半导体/晶圆代工",
+      subcategory: "中国大陆晶圆代工龙头",
+      aiTag: "国产替代、先进制程、AI芯片制造",
+      mainMarket: "中国为主，亚太、欧洲、北美等全球客户",
+      globalShare: "晶圆代工全球前列，份额按第三方统计口径",
+      chinaShare: "中国大陆晶圆代工第一梯队，份额按第三方统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；市场份额按第三方晶圆代工统计口径。",
     };
   }
   if (/盛科通信|688702/.test(`${company}${code}`)) {
@@ -2141,15 +2209,71 @@ function deterministicCompanyFieldProfile(company: string, code: string) {
   }
   return {
     companyName: company,
-    category: "按公开资料口径",
-    subcategory: "按公开资料口径",
-    aiTag: "按公开资料口径",
-    mainMarket: "按公开资料口径",
-    globalShare: "按第三方统计口径",
-    chinaShare: "按第三方统计口径",
+    category: inferFieldTableCategory(industry),
+    subcategory: inferFieldTableSubcategory(industry),
+    aiTag: inferFieldTableAiTag(industry),
+    mainMarket: inferFieldTableMainMarket(industry),
+    globalShare: `${inferFieldTableSubcategory(industry)}全球份额按第三方统计口径`,
+    chinaShare: `${inferFieldTableSubcategory(industry)}中国份额按第三方统计口径`,
     sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
     note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成。",
   };
+}
+
+function usableFieldTableValue(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text || /^(?:NA|N\/A)$/i.test(text)) return "";
+  if (/^0(?:\.0+)?bn\b/i.test(text)) return "";
+  return text;
+}
+
+function parseAssistantQuoteMarketCap(items: AnySearchEvidence[], company: string, code: string) {
+  const codePattern = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const companyPattern = company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const linePattern = new RegExp(`(?:${companyPattern}|${codePattern})[^；\\n]*?市值\\s*([\\d,.]+)\\s*亿`);
+  for (const item of items) {
+    const match = item.summary.match(linePattern);
+    const numeric = match ? Number(match[1].replace(/,/g, "")) : NaN;
+    if (Number.isFinite(numeric) && numeric > 0) return `${(Math.round((numeric / 10 + Number.EPSILON) * 100) / 100).toFixed(2)}bn CNY`;
+  }
+  return "";
+}
+
+function inferFieldTableCategory(industry: string) {
+  if (/酒|饮料|茶/.test(industry)) return "消费/白酒饮料";
+  if (/电气机械|电池|新能源/.test(industry)) return "新能源/电力设备";
+  if (/汽车/.test(industry)) return "汽车/新能源汽车";
+  if (/半导体|集成电路|电子/.test(industry)) return "科技/半导体";
+  if (/医药|医疗/.test(industry)) return "医药医疗";
+  if (/房地产/.test(industry)) return "地产链";
+  if (/银行|保险|证券/.test(industry)) return "金融";
+  return industry || "公开资料行业口径";
+}
+
+function inferFieldTableSubcategory(industry: string) {
+  if (/酒|饮料|茶/.test(industry)) return "白酒/消费品";
+  if (/电气机械|电池|新能源/.test(industry)) return "新能源设备/电池链";
+  if (/汽车/.test(industry)) return "汽车制造/新能源车";
+  if (/半导体|集成电路|电子/.test(industry)) return "半导体/电子制造";
+  if (/医药|医疗/.test(industry)) return "医药医疗";
+  if (/房地产/.test(industry)) return "地产开发/地产链";
+  if (/银行|保险|证券/.test(industry)) return "金融服务";
+  return industry || "公开资料行业口径";
+}
+
+function inferFieldTableAiTag(industry: string) {
+  if (/半导体|集成电路|电子/.test(industry)) return "AI算力、国产替代";
+  if (/汽车/.test(industry)) return "智能驾驶、汽车电子";
+  if (/电气机械|电池|新能源/.test(industry)) return "储能、电动化、智能制造";
+  if (/医药|医疗/.test(industry)) return "AI医疗、研发效率";
+  if (/酒|饮料|茶|房地产|银行|保险|证券/.test(industry)) return "非AI主线";
+  return "按行业公开资料口径";
+}
+
+function inferFieldTableMainMarket(industry: string) {
+  if (/半导体|集成电路|电子|汽车|电气机械|电池|新能源/.test(industry)) return "中国为主，海外市场按公司披露口径";
+  if (/酒|饮料|茶|房地产|银行|保险|证券/.test(industry)) return "中国为主";
+  return "中国为主，海外市场按公司披露口径";
 }
 
 function escapeMarkdownTableCell(value: unknown) {
