@@ -1068,11 +1068,11 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toContain("| 盛科通信 | 半导体 | 公开文件未单列 | 2026Q1公开文件未单列 |");
+    expect(repaired).toContain("| 盛科通信 | 半导体 | 需原始公告复核 | 2026Q1按公开资料口径 |");
     expect(repaired).not.toContain("结论");
     expect(repaired).not.toContain("关键缺口/反证");
     expect(repaired).not.toContain("下一步追溯");
-    expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
+    expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分/);
   });
 
   test("company field lookup tables strip generic research preambles", () => {
@@ -1090,7 +1090,7 @@ describe("assistant chat endpoint", () => {
     expect(repaired).toMatch(/^\| 公司 \| 主分类 \| 备注\/口径 \|/);
     expect(repaired).not.toContain("口径说明");
     expect(repaired).not.toContain("情景测算");
-    expect(repaired).not.toMatch(/未确认|待核验|待确认|待核实|未核实/);
+    expect(repaired).not.toMatch(/未确认|待核验|待确认|待核实|未核实|公开文件未单列|公开披露未细分/);
   });
 
   test("field lookup tails qualify known abnormal A-share financial lines", () => {
@@ -1118,6 +1118,7 @@ describe("assistant chat endpoint", () => {
 
     expect(repaired).toContain("异常同比需原始公告复核");
     expect(repaired).not.toContain("公开文件未单列异常同比");
+    expect(repaired).not.toContain("公开文件未单列");
   });
 
   test("company field lookup forces financial, quote and external search tools", () => {

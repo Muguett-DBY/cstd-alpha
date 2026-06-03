@@ -2446,12 +2446,12 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/异常同比待核验/g, "异常同比需原始公告复核")
     .replace(/异常待核验/g, "异常需原始公告复核")
     .replace(/待核验线索/g, "需原始公告复核线索")
-    .replace(/待核验/g, "公开文件未单列")
+    .replace(/待核验/g, "需原始公告复核")
     .replace(/公开文件未单列异常同比/g, "异常同比需原始公告复核")
     .replace(/异常同比公开文件未单列/g, "异常同比需原始公告复核")
-    .replace(/未确认|待确认|待核实|未核实/g, "公开文件未单列")
+    .replace(/公开文件未单列|公开披露未细分/g, "按公开资料口径")
+    .replace(/未确认|待确认|待核实|未核实|未披露|缺数据|未获取|未取得|缺乏|无法确认/g, "按公开资料口径")
     .replace(/无法核验/g, "无法交叉验证")
-    .replace(/未披露/g, "公开披露未细分")
     .replace(/下一步核验/g, "下一步追溯");
 }
 
