@@ -1121,6 +1121,21 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toContain("公开文件未单列");
   });
 
+  test("field lookup table normalizes annual-report and cross-check wording for abnormal A-share rows", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜成立日期｜上市日期｜25营收｜26Q1营收｜备注/口径。";
+    const table = [
+      "| 公司 | 主分类 | 成立日期 | 上市日期 | 25营收 | 26Q1营收 | 备注/口径 |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
+      "| 五粮液 | 白酒 | 1998-04-21 | 1998-04-27 | 40.53 | 22.84 | 2025年营收40.53bn同比-54.55%，口径可能与2024年不一致，建议以五粮液2025年年报为准；2026Q1营收22.84bn同比+33.67%也需交叉验证；全球份额未单独披露。 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired).toContain("异常波动需原始公告复核");
+    expect(repaired).toContain("按第三方统计口径");
+    expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|未单独披露/);
+  });
+
   test("company field lookup forces financial, quote and external search tools", () => {
     const calls = __test__.buildMandatoryAgentToolCalls(
       "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",
