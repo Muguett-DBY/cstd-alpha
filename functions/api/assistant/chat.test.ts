@@ -125,6 +125,58 @@ describe("assistant chat endpoint", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("keeps company field lookup prompts on realtime SSE instead of queueing deep research", async () => {
+    const prompt =
+      "查询盛科通信以下信息:主要市场(美国，欧洲，中国，亚太，南美，中东等等)，主营业务全球市占率，主营业务中国市占率，A股代码/港股代码/美股代码/未上市，成立日期，上市日期，当前市值(上市地货币，bn)24营收TTM/年度营收(报告币种，bn)，25营收TTM/年度营收(报告币种，bn)，26第一季度营收TTM(报告币种，bn)";
+    const chunks = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "结论：按字段整理。" } }], usage: { total_tokens: 120 } })}\n\n`,
+      "data: [DONE]\n\n",
+    ];
+    const makeStream = () => new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn((url: unknown, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes("/chat/completions")) {
+        const requestBody = typeof init?.body === "string" ? JSON.parse(init.body) as { stream?: boolean } : {};
+        if (requestBody.stream) return Promise.resolve(new Response(makeStream(), { status: 200 }));
+        return Promise.resolve(Response.json({ choices: [{ message: { content: "{\"final_ready\":true,\"reason\":\"字段查询直接回答\"}" } }], usage: { total_tokens: 30 } }));
+      }
+      return Promise.resolve(Response.json({ articles: [], results: [], items: [] }));
+    });
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await productionOnRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: prompt, mode: "chat" }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        OPENCODE_GO_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+        ASSISTANT_DEEP_RESEARCH_QUEUE: queue,
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.text();
+    expect(body).not.toContain('"type":"deep_research_job"');
+    expect(body).toContain('"type":"delta"');
+    expect(body).toContain("按字段整理");
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
   test("tolerates malformed SSE events and multiline data framing", () => {
     const payload = JSON.stringify({ choices: [{ delta: { content: "第一段" } }] });
     const parsed = __test__.consumeSseBuffer(`: keepalive\r\ndata: ${payload}\r\n\r\ndata: {bad-json}\n\npartial`);

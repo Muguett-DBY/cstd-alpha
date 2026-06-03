@@ -69,6 +69,29 @@ describe("assistant view state", () => {
     expect(merged).toBe(current);
   });
 
+  test("ignores polling-only updatedAt changes for visually unchanged deep research jobs", () => {
+    const running = deepResearchJob({
+      status: "running",
+      progressTitle: "正在查行情、财报、公告和外部来源...",
+      progressStage: "collect",
+      progressCurrent: 2,
+      updatedAt: "2026-06-01T07:51:00.000Z",
+    });
+    const current = { job1: running };
+
+    const merged = mergeAssistantDeepResearchJobs(current, [
+      deepResearchJob({
+        status: "running",
+        progressTitle: "正在查行情、财报、公告和外部来源...",
+        progressStage: "collect",
+        progressCurrent: 2,
+        updatedAt: "2026-06-01T07:52:00.000Z",
+      }),
+    ]);
+
+    expect(merged).toBe(current);
+  });
+
   test("keeps extracted markdown tables inline and only renders charts as supplementary blocks", () => {
     const blocks: AssistantBlock[] = [
       { id: "table-1", type: "table", title: "推荐表", columns: ["公司", "理由"], rows: [["中际旭创", "光模块"]] },

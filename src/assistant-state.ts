@@ -65,7 +65,6 @@ function isSameAssistantDeepResearchJob(left: AssistantDeepResearchJob | undefin
     && left.stopRequested === right.stopRequested
     && left.resultMessageId === right.resultMessageId
     && left.errorMessage === right.errorMessage
-    && left.updatedAt === right.updatedAt
   );
 }
 

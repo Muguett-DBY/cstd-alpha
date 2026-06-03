@@ -41,6 +41,7 @@ export type AssistantDeepResearchWorkerJob = AssistantDeepResearchJob & {
 export function classifyAssistantDeepResearch(message: string, mode: AssistantMode): AssistantDeepResearchKind | null {
   const text = message.trim();
   if (!text) return null;
+  if (isAssistantCompanyFieldLookupQuestion(text)) return null;
   if (/(对比|比较|区别|谁更|谁.{0,24}更(?:好|强|优|稳|适合)|哪家更|哪家.{0,24}更(?:好|强|优|稳|适合)|超过|跑赢|优于|高于|低于|相比|vs\b|VS\b|(?:来自|来源|因素|吸引力).{0,24}(?:还是|排序)|排序.{0,16}(?:来源|因素|驱动|吸引力))/i.test(text)) return "comparison";
   if (/(选股|推荐|最值得买|买哪|三家|排行|排序|优先级|梭哈|标的)/.test(text)) return "selection";
   if (/(预估|预测|目标价|明年股价|未来.*利润|业绩.*多少|估值.*多少|空间|情景测算)/.test(text)) return "forecast";
@@ -48,6 +49,21 @@ export function classifyAssistantDeepResearch(message: string, mode: AssistantMo
   if (/(拐点|周期|出清|衰退|景气|行业|产业|板块|赛道|供应链|产业链)/.test(text) || mode === "industry") return "industry";
   if (/(能买吗|买不买|该不该买|卖不卖|持有|回避|风险|排雷|投资价值)/.test(text) || mode === "target") return "risk";
   return null;
+}
+
+export function isAssistantCompanyFieldLookupQuestion(message: string) {
+  const text = message.trim();
+  if (!/(查询|列出|整理|补齐|帮我查|查一下|以下信息|字段|表格)/.test(text)) return false;
+  const fieldMatches = [
+    /(主要市场|区域|美国|欧洲|中国|亚太|南美|中东)/,
+    /(主营业务|业务|产品|收入结构)/,
+    /(全球市占率|中国市占率|市占率|市场份额)/,
+    /(A股代码|港股代码|美股代码|股票代码|未上市|上市地)/i,
+    /(成立日期|成立时间|上市日期|上市时间)/,
+    /(当前市值|市值|market cap)/i,
+    /(营收|收入|TTM|年度营收|一季度营收|Q1|财报)/i,
+  ].filter((pattern) => pattern.test(text)).length;
+  return fieldMatches >= 4;
 }
 
 export function shouldStartAssistantDeepResearch(message: string, mode: AssistantMode) {

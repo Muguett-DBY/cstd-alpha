@@ -22,6 +22,14 @@ describe("assistant deep research contract", () => {
     expect(shouldStartAssistantDeepResearch("用两句话解释自由现金流为什么重要。", "chat")).toBe(false);
   });
 
+  test("keeps factual company field lookup requests on the realtime path", () => {
+    const prompt =
+      "查询盛科通信以下信息:主要市场(美国，欧洲，中国，亚太，南美，中东等等)，主营业务全球市占率，主营业务中国市占率，A股代码/港股代码/美股代码/未上市，成立日期，上市日期，当前市值(上市地货币，bn)24营收TTM/年度营收(报告币种，bn)，25营收TTM/年度营收(报告币种，bn)，26第一季度营收TTM(报告币种，bn)";
+
+    expect(classifyAssistantDeepResearch(prompt, "chat")).toBeNull();
+    expect(shouldStartAssistantDeepResearch(prompt, "chat")).toBe(false);
+  });
+
   test("builds typed minimum evidence packs", () => {
     expect(buildAssistantDeepResearchToolCalls("forecast", "茅台明年净利润预测").map((call) => call.name)).toEqual([
       "read_company_evidence",
