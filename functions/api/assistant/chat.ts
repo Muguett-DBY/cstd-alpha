@@ -2480,6 +2480,7 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/口径可能与[^；|。]*，建议以[^；|。]*年报为准/g, "口径可能存在差异，异常波动按原始公告口径")
     .replace(/需以官方公告为准/g, "异常波动按原始公告口径")
     .replace(/也需交叉验证/g, "也属异常波动按原始公告口径")
+    .replace(/待交叉验证/g, "单源口径")
     .replace(/无法核验/g, "单源口径")
     .replace(/下一步核验/g, "下一步追溯");
 }

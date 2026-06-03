@@ -319,7 +319,7 @@ function evaluatePromptResult(
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
   if (isCompanyFieldTablePrompt(prompt.prompt)) {
     if (!/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing company field table");
-    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|待发|待财报更新|未单独披露|需以官方公告为准|以官方公告为准|待官方验证|待官方公告|未经其他来源交叉确认|精确份额需|无独立公开|本次搜索摘要未直接列出|本轮搜索未包含|请参阅|待公司发布|价格日期不明|非实时|需参考/.test(parsed.answer)) issues.push("vague company field placeholder");
+    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|待发|待财报更新|未单独披露|需以官方公告为准|以官方公告为准|待官方验证|待官方公告|待交叉验证|未经其他来源交叉确认|精确份额需|无独立公开|本次搜索摘要未直接列出|本轮搜索未包含|请参阅|待公司发布|价格日期不明|非实时|需参考/.test(parsed.answer)) issues.push("vague company field placeholder");
     if (countMarkdownTableColumns(parsed.answer) < 12) issues.push("company field table too narrow");
     if (/(^|\n)\s*(?:#{1,6}\s*)?(?:结论|主判断|核心判断|证据等级|反证|我可能错|下一步|后续跟踪|追踪|跟踪指标)[：:]/.test(parsed.answer)) {
       issues.push("company field table has research tail");
@@ -369,7 +369,7 @@ function hasUnqualifiedKnownAStockAnomaly(promptText: string, answer: string) {
   if (!/(五粮液|000858)/.test(scope)) return false;
   const suspicious = /(405\.29|89\.54|228\.38|80\.63|82\.57|33\.67|-54\.55|-71\.89|会计差错|追溯调整|前董事长留置|销售费用大增)/;
   if (!suspicious.test(answer)) return false;
-  return !/(异常波动待核验|异常波动需原始公告复核|异常需原始公告复核|单源异常|第二硬源|二次核验|不可直接|待核验线索|需原始公告复核线索)/.test(answer);
+  return !/(异常波动待核验|异常波动需原始公告复核|异常需原始公告复核|异常波动按原始公告口径|异常同比按原始公告口径|异常按原始公告口径|单源口径|单源异常|第二硬源|二次核验|不可直接|待核验线索|需原始公告复核线索|原始公告口径线索)/.test(answer);
 }
 
 function isCompanyFieldTablePrompt(promptText: string) {
