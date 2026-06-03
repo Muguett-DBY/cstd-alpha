@@ -1019,23 +1019,25 @@ describe("assistant chat endpoint", () => {
 
     expect(normalized).toMatch(/^结论：/);
     expect(normalized).toContain("关键缺口/反证");
-    expect(normalized).toContain("下一步核验");
+    expect(normalized).toContain("下一步追溯");
+    expect(normalized).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
   });
 
-  test("streamed company field lookup tables get an appended verification tail", () => {
+  test("streamed company field lookup tables get an appended source-trace tail without vague placeholders", () => {
     const prompt =
       "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场（美国、欧洲、中国、亚太、南美、中东等）｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值（上市地货币，bn）｜24营收TTM/年度营收（报告币种，bn）｜25营收TTM/年度营收（报告币种，bn）｜26第一季度营收TTM（报告币种，bn）｜数据来源URL｜备注/口径。缺数据要写“待核验/未披露”，不能编。";
     const table = [
       "| 公司 | 主分类 | 主营业务中国市占率 | 备注/口径 |",
       "| --- | --- | --- | --- |",
-      "| 盛科通信 | 半导体 | 待核验 | 2026Q1未披露 |",
+      "| 盛科通信 | 半导体 | 待核验 | 2026Q1未确认 |",
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired.startsWith(table)).toBe(true);
+    expect(repaired).toContain("| 盛科通信 | 半导体 | 公开文件未单列 | 2026Q1公开文件未单列 |");
     expect(repaired).toContain("结论");
     expect(repaired).toContain("关键缺口/反证");
-    expect(repaired).toContain("下一步核验");
+    expect(repaired).toContain("下一步追溯");
+    expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
   });
 
   test("field lookup tails qualify known abnormal A-share financial lines", () => {
@@ -1048,7 +1050,7 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
-    expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|待核验线索/);
+    expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|需原始公告复核/);
   });
 
   test("compacts long target research threads after non-stream answers", async () => {

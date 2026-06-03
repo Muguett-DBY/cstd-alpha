@@ -773,7 +773,7 @@ function AssistantBlocks({ blocks }: { blocks: AssistantBlock[] }) {
 }
 
 function isCompactTable(columnCount: number, rowCount: number) {
-  return columnCount <= 4 && rowCount <= 4;
+  return rowCount <= 2 || (columnCount <= 4 && rowCount <= 4);
 }
 
 function CollapsibleAssistantChart({ block }: { block: AssistantChartBlock }) {
