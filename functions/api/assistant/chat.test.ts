@@ -1022,6 +1022,35 @@ describe("assistant chat endpoint", () => {
     expect(normalized).toContain("下一步核验");
   });
 
+  test("streamed company field lookup tables get an appended verification tail", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场（美国、欧洲、中国、亚太、南美、中东等）｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值（上市地货币，bn）｜24营收TTM/年度营收（报告币种，bn）｜25营收TTM/年度营收（报告币种，bn）｜26第一季度营收TTM（报告币种，bn）｜数据来源URL｜备注/口径。缺数据要写“待核验/未披露”，不能编。";
+    const table = [
+      "| 公司 | 主分类 | 主营业务中国市占率 | 备注/口径 |",
+      "| --- | --- | --- | --- |",
+      "| 盛科通信 | 半导体 | 待核验 | 2026Q1未披露 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired.startsWith(table)).toBe(true);
+    expect(repaired).toContain("结论");
+    expect(repaired).toContain("关键缺口/反证");
+    expect(repaired).toContain("下一步核验");
+  });
+
+  test("field lookup tails qualify known abnormal A-share financial lines", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场（美国、欧洲、中国、亚太、南美、中东等）｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值（上市地货币，bn）｜24营收TTM/年度营收（报告币种，bn）｜25营收TTM/年度营收（报告币种，bn）｜26第一季度营收TTM（报告币种，bn）｜数据来源URL｜备注/口径。缺数据要写“待核验/未披露”，不能编。";
+    const table = [
+      "| 公司 | 26第一季度营收TTM（报告币种，bn） | 备注/口径 |",
+      "| --- | --- | --- |",
+      "| 五粮液 | 22.84 | 26Q1同比+33.67%异常待核验 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired).toMatch(/单源异常|第二硬源|二次核验|不可直接|待核验线索/);
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",
