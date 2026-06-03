@@ -2350,7 +2350,7 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
 }
 
 function normalizeFieldLookupUncertaintyText(answer: string) {
-  return answer
+  return stripFieldLookupPreamble(answer)
     .replace(/异常波动待核验/g, "异常波动需原始公告复核")
     .replace(/异常待核验/g, "异常需原始公告复核")
     .replace(/待核验线索/g, "需原始公告复核线索")
@@ -2359,6 +2359,16 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/无法核验/g, "无法交叉验证")
     .replace(/未披露/g, "公开披露未细分")
     .replace(/下一步核验/g, "下一步追溯");
+}
+
+function stripFieldLookupPreamble(answer: string) {
+  const trimmed = answer.trim();
+  const tableMatch = trimmed.match(/\|[^\n]+\|[^\n]*\r?\n\|[\s:|.-]+\|/);
+  if (!tableMatch || tableMatch.index === undefined || tableMatch.index <= 0) return trimmed;
+  const preamble = trimmed.slice(0, tableMatch.index).trim();
+  if (preamble.length > 360) return trimmed;
+  if (/^(口径说明|以下是|根据|注[：:]|说明[：:])/.test(preamble)) return trimmed.slice(tableMatch.index).trim();
+  return trimmed;
 }
 
 function ensureConclusionLead(answer: string, userMessage: string) {

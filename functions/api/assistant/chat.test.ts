@@ -1017,7 +1017,8 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const normalized = __test__.ensureMinimumResearchSections(answer, prompt, "chat");
 
-    expect(normalized).toBe(answer);
+    expect(normalized).toMatch(/^\| 指标 \| 数据 \|/);
+    expect(normalized).not.toContain("以下是盛科通信");
     expect(normalized).not.toContain("结论：");
     expect(normalized).not.toContain("关键缺口/反证");
     expect(normalized).not.toContain("下一步追溯");
@@ -1039,6 +1040,24 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toContain("关键缺口/反证");
     expect(repaired).not.toContain("下一步追溯");
     expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
+  });
+
+  test("company field lookup tables strip generic research preambles", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询英伟达全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。";
+    const answer = [
+      "口径说明：以下为基于本轮站内证据和外部搜索线索的情景测算；未逐条核对官方公告的历史基数，不应把搜索摘要当作确定财务事实。",
+      "",
+      "| 公司 | 主分类 | 备注/口径 |",
+      "| --- | --- | --- |",
+      "| 英伟达 | 半导体 | 未确认 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(answer, prompt, "chat");
+
+    expect(repaired).toMatch(/^\| 公司 \| 主分类 \| 备注\/口径 \|/);
+    expect(repaired).not.toContain("口径说明");
+    expect(repaired).not.toContain("情景测算");
+    expect(repaired).not.toMatch(/未确认|待核验|待确认|待核实|未核实/);
   });
 
   test("field lookup tails qualify known abnormal A-share financial lines", () => {
