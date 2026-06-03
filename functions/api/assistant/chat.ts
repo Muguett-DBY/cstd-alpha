@@ -2282,6 +2282,7 @@ async function generateReviewedResearchAnswer(input: {
 function shouldRunModelRationalReview(answer: string, userMessage: string) {
   const normalized = answer.trim();
   if (!normalized) return false;
+  if (isAssistantCompanyFieldLookupQuestion(userMessage)) return false;
   if (isUnsatisfactoryEvidenceOnlyAnswer(normalized)) return true;
   if (/^结构化表格\s*\d*$/im.test(normalized)) return true;
   if (/^#{1,6}\s*(核心理由|反驳用户观点|我可能错在哪里|下一步跟踪|证据等级)\s*$/im.test(normalized)) return true;
@@ -2350,7 +2351,7 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
 }
 
 function normalizeFieldLookupUncertaintyText(answer: string) {
-  return stripFieldLookupPreamble(answer)
+  return stripFieldLookupResearchTail(stripFieldLookupPreamble(answer))
     .replace(/异常波动待核验/g, "异常波动需原始公告复核")
     .replace(/异常待核验/g, "异常需原始公告复核")
     .replace(/待核验线索/g, "需原始公告复核线索")
@@ -2369,6 +2370,29 @@ function stripFieldLookupPreamble(answer: string) {
   if (preamble.length > 360) return trimmed;
   if (/^(口径说明|以下是|根据|注[：:]|说明[：:])/.test(preamble)) return trimmed.slice(tableMatch.index).trim();
   return trimmed;
+}
+
+function stripFieldLookupResearchTail(answer: string) {
+  const lines = answer.trim().split(/\r?\n/);
+  const headerIndex = lines.findIndex((line, index) =>
+    line.includes("|") &&
+    lines[index + 1] !== undefined &&
+    /^\s*\|?[\s:|.-]+\|?\s*$/.test(lines[index + 1]),
+  );
+  if (headerIndex < 0) return answer.trim();
+  const tableLines: string[] = [];
+  for (let index = headerIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === "") {
+      const rest = lines.slice(index + 1).join("\n");
+      if (/(^|\n)\s*(?:#{1,6}\s*)?(?:结论|主判断|核心判断|证据等级|反证|我可能错|下一步|后续跟踪|追踪|跟踪指标)[：:]/.test(rest)) break;
+      tableLines.push(line);
+      continue;
+    }
+    if (!line.includes("|")) break;
+    tableLines.push(line);
+  }
+  return tableLines.join("\n").trim() || answer.trim();
 }
 
 function ensureConclusionLead(answer: string, userMessage: string) {
@@ -3318,6 +3342,7 @@ export const __test__ = {
   parseSseJsonItem,
   repairIncompleteAssistantAnswer,
   selectReviewedResearchText,
+  shouldRunModelRationalReview,
   askModelForClarification,
   buildAssistantFinancialAnomalyNote,
   buildSubjectOnlyClarificationRequest,

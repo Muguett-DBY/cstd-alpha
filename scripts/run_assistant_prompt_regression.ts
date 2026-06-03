@@ -321,6 +321,9 @@ function evaluatePromptResult(
     if (!/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing company field table");
     if (/待核验|未确认|待确认|待核实|未核实/.test(parsed.answer)) issues.push("vague company field placeholder");
     if (countMarkdownTableColumns(parsed.answer) < 12) issues.push("company field table too narrow");
+    if (/(^|\n)\s*(?:#{1,6}\s*)?(?:结论|主判断|核心判断|证据等级|反证|我可能错|下一步|后续跟踪|追踪|跟踪指标)[：:]/.test(parsed.answer)) {
+      issues.push("company field table has research tail");
+    }
     return issues;
   }
   issues.push(...evaluateExplicitCountRequirement(prompt.prompt, parsed.answer));

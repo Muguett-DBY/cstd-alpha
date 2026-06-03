@@ -1025,6 +1025,39 @@ describe("assistant chat endpoint", () => {
     expect(normalized).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
   });
 
+  test("company field lookup prompts do not run rational research review", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。";
+    const answer = [
+      "| 公司 | 主分类 | 24营收 |",
+      "| --- | --- | --- |",
+      "| 五粮液 | 白酒 | CNY 89.18bn |",
+    ].join("\n");
+
+    expect(__test__.shouldRunModelRationalReview(answer, prompt)).toBe(false);
+  });
+
+  test("company field lookup postprocess strips research tails and keeps only the table", () => {
+    const prompt =
+      "查询五粮液以下信息:主要市场，主营业务全球市占率，主营业务中国市占率，A股代码/港股代码/美股代码/未上市，成立日期，上市日期，当前市值，24营收TTM/年度营收，25营收TTM/年度营收，26第一季度营收TTM";
+    const answer = [
+      "| 公司 | 主分类 | A股代码 | 成立日期 | 上市日期 | 24营收 |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| 五粮液 | 白酒 | 000858.SZ | 1998-04-21 | 1998-04-27 | CNY 89.18bn |",
+      "",
+      "主判断：中性观察",
+      "",
+      "反证条件：如果财报数据变化，需要重算。",
+      "",
+      "下一步跟踪：继续追踪公告。",
+    ].join("\n");
+
+    const normalized = __test__.repairIncompleteAssistantAnswer(answer, prompt, "chat");
+    expect(normalized).toMatch(/^\| 公司 \| 主分类 \| A股代码 \| 成立日期 \| 上市日期 \| 24营收 \|/);
+    expect(normalized).toContain("| 五粮液 | 白酒 | 000858.SZ | 1998-04-21 | 1998-04-27 | CNY 89.18bn |");
+    expect(normalized).not.toMatch(/主判断|结论|反证条件|下一步跟踪|证据等级/);
+  });
+
   test("streamed company field lookup tables keep table-only output without vague placeholders", () => {
     const prompt =
       "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场（美国、欧洲、中国、亚太、南美、中东等）｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值（上市地货币，bn）｜24营收TTM/年度营收（报告币种，bn）｜25营收TTM/年度营收（报告币种，bn）｜26第一季度营收TTM（报告币种，bn）｜数据来源URL｜备注/口径。缺数据要写“待核验/未披露”，不能编。";
