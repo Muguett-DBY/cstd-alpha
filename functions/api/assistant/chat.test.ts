@@ -1120,6 +1120,70 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toContain("公开文件未单列异常同比");
   });
 
+  test("company field lookup forces financial, quote and external search tools", () => {
+    const calls = __test__.buildMandatoryAgentToolCalls(
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+    const names = calls.map((call) => call.name);
+
+    expect(names).toContain("read_tencent_quote");
+    expect(names).toContain("read_financial_statements");
+    expect(names).toContain("read_filings_news");
+    expect(names).toContain("search_tavily");
+    expect(names).toContain("search_brave");
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("000858");
+  });
+
+  test("A-share evidence bundle exposes deterministic field-table facts without relying on Tushare", () => {
+    const bundle = {
+      company: { name: "五粮液", ticker: "000858", market: "深A" },
+      retrievedAt: "2026-06-03T00:00:00.000Z",
+      evidence: { evidence: [] },
+      materialHash: "hash",
+    } as unknown as CompanyEvidencePackage;
+    bundle.evidence = {
+      company: { name: "五粮液", ticker: "000858", market: "深A" },
+      retrievedAt: "2026-06-03T00:00:00.000Z",
+      evidence: [],
+      facts: {
+        quote: { regularMarketPrice: 128.88, marketCap: 500_120_000_000, trailingPE: 18.2, priceToBook: 3.1 },
+        eastmoney: {
+          orgInfoRows: [
+            {
+              SECURITY_CODE: "000858",
+              SECURITY_NAME_ABBR: "五粮液",
+              ORG_NAME: "宜宾五粮液股份有限公司",
+              ORG_NAME_EN: "Wuliangye Yibin Co.,ltd.",
+              FOUND_DATE: "1998-04-21",
+              LISTING_DATE: "1998-04-27 00:00:00",
+              SECURITY_TYPE: "深交所主板A股",
+              INDUSTRYCSRC1: "酒、饮料和精制茶制造业",
+              ORG_WEB: "www.wuliangye.com.cn",
+            },
+          ],
+          incomeRows: [
+            { REPORT_DATE: "2026-03-31 00:00:00", REPORT_DATE_NAME: "2026一季报", TOTAL_OPERATE_INCOME: 22_838_024_164.27 },
+            { REPORT_DATE: "2025-12-31 00:00:00", REPORT_DATE_NAME: "2025年报", TOTAL_OPERATE_INCOME: 90_123_000_000 },
+            { REPORT_DATE: "2025-09-30 00:00:00", REPORT_DATE_NAME: "2025三季报", TOTAL_OPERATE_INCOME: 67_915_580_112.25 },
+            { REPORT_DATE: "2024-12-31 00:00:00", REPORT_DATE_NAME: "2024年报", TOTAL_OPERATE_INCOME: 89_175_000_000 },
+          ],
+        },
+      },
+    } as never;
+
+    const formatted = __test__.formatAssistantAStockEvidenceBundle(bundle.evidence as never);
+
+    expect(formatted).toContain("字段表硬字段");
+    expect(formatted).toContain("成立日期=1998-04-21");
+    expect(formatted).toContain("上市日期=1998-04-27");
+    expect(formatted).toContain("2026Q1营收=22.84bn CNY");
+    expect(formatted).toContain("2025年营收=90.12bn CNY");
+    expect(formatted).toContain("2024年营收=89.18bn CNY");
+    expect(formatted).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列/);
+  });
+
   test("compacts long target research threads after non-stream answers", async () => {
     const longAnswer = [
       "结论：长期线程需要压缩，但必须保留投资规则、证据边界和反证条件。",

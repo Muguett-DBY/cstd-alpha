@@ -84,6 +84,8 @@ const TUSHARE_API_URL = "http://api.tushare.pro";
 
 type TushareData = {
   tsCode: string;
+  stockBasic: Record<string, unknown>[];
+  stockCompany: Record<string, unknown>[];
   dailyBasic: Record<string, unknown>[];
   income: Record<string, unknown>[];
   balance: Record<string, unknown>[];
@@ -102,9 +104,11 @@ const TUSHARE_ENDPOINTS: Array<{
   apiName: string;
   field: keyof Omit<TushareData, "tsCode">;
   fields: string;
-  evidenceGroup: "valuation" | "financial" | "shareholder" | "disclosure";
+  evidenceGroup: "profile" | "valuation" | "financial" | "shareholder" | "disclosure";
   params: "dateRange" | "period" | "tsCode";
 }> = [
+  { apiName: "stock_basic", field: "stockBasic", fields: "ts_code,symbol,name,area,industry,market,list_date,delist_date,is_hs", evidenceGroup: "profile", params: "tsCode" },
+  { apiName: "stock_company", field: "stockCompany", fields: "ts_code,chairman,manager,secretary,reg_capital,setup_date,province,city,introduction,website,email,office,employees,main_business,business_scope", evidenceGroup: "profile", params: "tsCode" },
   { apiName: "daily_basic", field: "dailyBasic", fields: "ts_code,trade_date,pe_ttm,pb,total_mv,circ_mv,turnover_rate,volume_ratio", evidenceGroup: "valuation", params: "dateRange" },
   { apiName: "income", field: "income", fields: "ts_code,end_date,ann_date,revenue,total_revenue,n_income,n_income_attr_p,basic_eps,total_profit", evidenceGroup: "financial", params: "period" },
   { apiName: "balancesheet", field: "balance", fields: "ts_code,end_date,ann_date,total_assets,total_liab,total_hldr_eqy_exc_min_int,money_cap,accounts_receiv,inventories", evidenceGroup: "financial", params: "period" },
@@ -151,6 +155,7 @@ export async function fetchPublicCompanyEvidence({
   const incomeUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GINCOME", "APP_F10_GINCOME", secucode) : "";
   const cashflowUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GCASHFLOW", "APP_F10_GCASHFLOW", secucode) : "";
   const balanceUrl = secucode ? eastmoneyFinanceUrl("RPT_F10_FINANCE_GBALANCE", "F10_FINANCE_GBALANCE", secucode) : "";
+  const orgInfoUrl = selectedCompany && isAStockListedCompany(selectedCompany) ? eastmoneyOrgInfoUrl(selectedCompany.code) : "";
 
   const eastmoneyQuoteResult = selectedCompany ? await fetchEastmoneyQuote(selectedCompany, fetchImpl) : { url: "", quote: undefined };
   const eastmoneyQuoteUrl = eastmoneyQuoteResult.url;
@@ -164,9 +169,11 @@ export async function fetchPublicCompanyEvidence({
   const incomeJson = incomeUrl ? await fetchJson(incomeUrl, fetchImpl) : null;
   const cashflowJson = cashflowUrl ? await fetchJson(cashflowUrl, fetchImpl) : null;
   const balanceJson = balanceUrl ? await fetchJson(balanceUrl, fetchImpl) : null;
+  const orgInfoJson = orgInfoUrl ? await fetchJson(orgInfoUrl, fetchImpl) : null;
   const incomeRows = arrayPath(incomeJson, ["result", "data"]);
   const cashflowRows = arrayPath(cashflowJson, ["result", "data"]);
   const balanceRows = arrayPath(balanceJson, ["result", "data"]);
+  const orgInfoRows = arrayPath(orgInfoJson, ["result", "data"]);
   const eastmoneyFinancialTenYear = buildFinancialTenYearFromEastmoney(incomeRows, cashflowRows, balanceRows);
   const tushareData =
     selectedCompany && isAStockListedCompany(selectedCompany)
@@ -189,6 +196,7 @@ export async function fetchPublicCompanyEvidence({
   const stooqQuote = isUsSelected && !eastmoneyQuote && !quote && !chartMeta ? await fetchStooqQuote(stooqQuoteUrl, symbol, fetchImpl) : undefined;
 
   const hasEastmoneyFinancials = incomeRows.length > 0 || cashflowRows.length > 0 || balanceRows.length > 0;
+  const hasEastmoneyOrgInfo = orgInfoRows.length > 0;
   const normalizedFundamentals = normalizeFundamentals(fundamentals);
   const providerFinancialData = normalizedFundamentals ?? secData?.summaryFinancialData;
   const yahooFinancialTenYear = buildFinancialTenYearFromYahooFundamentals(providerFinancialData, isHkSelected ? "港元" : undefined);
@@ -201,7 +209,7 @@ export async function fetchPublicCompanyEvidence({
         : eastmoneyFinancialTenYear;
   const hasPublicFinancials = hasEastmoneyFinancials || Boolean(secData?.normalizedFinancialTenYear.rows.length) || yahooFinancialTenYear.rows.length > 0;
 
-  if (!quote && !summary && !chartMeta && !searchQuote && !normalizedFundamentals && !eastmoneyQuote && !tencentQuote && !hasPublicFinancials) {
+  if (!quote && !summary && !chartMeta && !searchQuote && !normalizedFundamentals && !eastmoneyQuote && !tencentQuote && !hasPublicFinancials && !hasEastmoneyOrgInfo) {
     return unavailableBundle(companyName, market, retrievedAt, "Public financial endpoints returned no usable data.");
   }
 
@@ -280,6 +288,18 @@ export async function fetchPublicCompanyEvidence({
       ...(tushareData
         ? tushareEvidenceItems(symbol, retrievedAt, tushareData)
         : []),
+      {
+        title: `${symbol} Eastmoney company profile`,
+        source: "Eastmoney public company profile endpoint",
+        url: orgInfoUrl,
+        retrievedAt,
+        freshness: hasEastmoneyOrgInfo ? "latest-public" : "unavailable",
+        notes: hasEastmoneyOrgInfo
+          ? "A-share company registration, listing date, industry and contact profile rows."
+          : selectedCompany && isAStockListedCompany(selectedCompany)
+            ? "Eastmoney company profile endpoint returned no usable organization row."
+            : "Not applicable for this market.",
+      },
       {
         title: `${symbol} Eastmoney financial statements`,
         source: "Eastmoney public financial statement endpoints",
@@ -382,6 +402,7 @@ export async function fetchPublicCompanyEvidence({
       selectedCompany,
       eastmoney: {
         quote: eastmoneyQuote,
+        orgInfoRows,
         incomeRows,
         cashflowRows,
         balanceRows,
@@ -722,6 +743,12 @@ function eastmoneyFinanceUrl(type: string, style: string, secucode: string) {
   return `https://datacenter.eastmoney.com/securities/api/data/get?type=${type}&sty=${style}&filter=(SECUCODE%3D%22${encodeURIComponent(
     secucode,
   )}%22)&p=1&ps=60&sr=-1&st=REPORT_DATE`;
+}
+
+function eastmoneyOrgInfoUrl(code: string) {
+  return `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_HSF9_BASIC_ORGINFO&columns=ALL&filter=(SECURITY_CODE%3D%22${encodeURIComponent(
+    code,
+  )}%22)&pageNumber=1&pageSize=5&source=WEB&client=WEB`;
 }
 
 function eastmoneySecucode(candidate: CompanyCandidate) {
@@ -1499,6 +1526,8 @@ async function fetchTushareCompanyData({
   if (!token?.trim() || !tsCode) return undefined;
   const rows: TushareData = {
     tsCode,
+    stockBasic: [],
+    stockCompany: [],
     dailyBasic: [],
     income: [],
     balance: [],
@@ -1520,10 +1549,32 @@ async function fetchTushareCompanyData({
   const reportPeriod = latestTusharePeriodFromRows(rows.disclosures) || latestTushareReportPeriod();
   for (const endpoint of TUSHARE_ENDPOINTS) {
     if (endpoint.apiName === "disclosure_date") continue;
-    rows[endpoint.field] = await fetchTushareRows(fetchImpl, token, endpoint.apiName, tsCode, endpoint.fields, endpoint.params, reportPeriod);
+    if (endpoint.apiName === "income") {
+      rows[endpoint.field] = await fetchTushareRowsForPeriods(fetchImpl, token, endpoint.apiName, tsCode, endpoint.fields, latestTushareReportPeriods());
+    } else {
+      rows[endpoint.field] = await fetchTushareRows(fetchImpl, token, endpoint.apiName, tsCode, endpoint.fields, endpoint.params, reportPeriod);
+    }
   }
 
   return Object.values(rows).some((value) => Array.isArray(value) && value.length > 0) ? rows : undefined;
+}
+
+async function fetchTushareRowsForPeriods(
+  fetchImpl: FetchLike,
+  token: string,
+  apiName: string,
+  tsCode: string,
+  fields: string,
+  periods: string[],
+): Promise<Record<string, unknown>[]> {
+  const rows = (await Promise.all(periods.map((period) => fetchTushareRows(fetchImpl, token, apiName, tsCode, fields, "period", period)))).flat();
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = `${stringValue(row.ts_code)}:${stringValue(row.end_date)}:${stringValue(row.ann_date)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function fetchTushareRows(
@@ -1606,6 +1657,13 @@ function latestTushareReportPeriod(reference = new Date()) {
   return periods[0];
 }
 
+function latestTushareReportPeriods(reference = new Date()) {
+  const year = reference.getUTCFullYear();
+  const first = latestTushareReportPeriod(reference);
+  const annuals = [`${year - 1}1231`, `${year - 2}1231`];
+  return [first, ...annuals].filter((value, index, all) => all.indexOf(value) === index);
+}
+
 function formatTushareDate(date: Date) {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -1624,11 +1682,20 @@ function tushareTsCode(company: CompanyCandidate) {
 }
 
 function tushareEvidenceItems(symbol: string, retrievedAt: string, data: TushareData): EvidenceItem[] {
+  const profileCount = data.stockBasic.length + data.stockCompany.length;
   const valuationCount = data.dailyBasic.length;
   const financialCount = data.income.length + data.balance.length + data.cashflow.length + data.indicators.length + data.mainBusiness.length;
   const shareholderCount = data.dividend.length + data.repurchase.length + data.pledge.length + data.shareFloat.length;
   const disclosureCount = data.disclosures.length + data.announcements.length;
   return [
+    {
+      title: `${symbol} Tushare company profile`,
+      source: "Tushare Pro API",
+      url: "https://tushare.pro/",
+      retrievedAt,
+      freshness: profileCount ? "latest-public" : "unavailable",
+      notes: profileCount ? `A-share company profile rows from Tushare for ${data.tsCode}: stock_basic ${data.stockBasic.length}, stock_company ${data.stockCompany.length}.` : "Tushare company profile rows unavailable.",
+    },
     {
       title: `${symbol} Tushare valuation snapshot`,
       source: "Tushare Pro API",

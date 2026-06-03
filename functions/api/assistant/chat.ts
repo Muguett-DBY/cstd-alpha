@@ -1461,6 +1461,23 @@ export function buildMandatoryAgentToolCalls(
     return calls;
   }
 
+  if (isAssistantCompanyFieldLookupQuestion(message)) {
+    for (const company of companies) {
+      if (company.aCode) {
+        add("read_tencent_quote", company.aCode, "字段表必须补当前市值和行情口径。", `field-quote-${company.aCode}`);
+        add("read_financial_statements", company.aCode, "字段表必须补成立/上市日期和2024/2025/2026Q1营收硬字段。", `field-financial-${company.aCode}`);
+        add("read_filings_news", company.aCode, "字段表补公司公告与资料来源，避免写缺失占位。", `field-filings-${company.aCode}`);
+      }
+    }
+    const searchQuery = `${message.slice(0, 170)} 公司资料 年报 营收 上市日期 成立日期 市占率`;
+    add("search_tavily", searchQuery, "字段表缺口必须用外部搜索补齐，不能默认写缺失。", "field-tavily", 8);
+    add("search_brave", searchQuery, "字段表用独立搜索源交叉验证资料字段。", "field-brave", 8);
+    if (!companies.length || /全球市占率|中国市占率|主要市场|未上市|美股代码|港股代码/i.test(message)) {
+      add("search_exa", `${searchQuery} official annual report investor relations`, "字段表涉及市占率/市场/海外资料时用 Exa 深度检索。", "field-exa", 8);
+    }
+    return calls;
+  }
+
   const needsForecast = isStockPriceForecastQuestion(message) || (mode !== "chat" && /(净利润.*预测|净利润.*预估|EPS|一致预期)/i.test(message));
   const needsDecision = isBuySellDecisionQuestion(message);
   const needsComparison = isComparisonResearchQuestion(message) && companies.length >= 2;
@@ -1611,7 +1628,8 @@ function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
   const facts = isRecord(bundle.facts) ? bundle.facts : {};
   const quote = isRecord(facts.quote) ? facts.quote : undefined;
   const eastmoney = isRecord(facts.eastmoney) ? facts.eastmoney : undefined;
-  const incomeRows = Array.isArray(eastmoney?.incomeRows) ? eastmoney.incomeRows.filter(isRecord).slice(0, 2) : [];
+  const orgInfoRows = Array.isArray(eastmoney?.orgInfoRows) ? eastmoney.orgInfoRows.filter(isRecord).slice(0, 1) : [];
+  const incomeRows = Array.isArray(eastmoney?.incomeRows) ? eastmoney.incomeRows.filter(isRecord).slice(0, 8) : [];
   const cashflowRows = Array.isArray(eastmoney?.cashflowRows) ? eastmoney.cashflowRows.filter(isRecord).slice(0, 1) : [];
   const balanceRows = Array.isArray(eastmoney?.balanceRows) ? eastmoney.balanceRows.filter(isRecord).slice(0, 1) : [];
   const tenYear = isRecord(facts.financialTenYear) ? facts.financialTenYear : undefined;
@@ -1626,8 +1644,10 @@ function formatAssistantAStockEvidenceBundle(bundle: EvidenceBundle) {
           ? "结构化核验状态：东方财富口径存在异常同比，已尝试 Tushare 交叉验证；回答必须区分已验证事实和待核验线索。"
           : "结构化核验状态：单源异常，缺少 Tushare/第二硬源交叉验证；异常同比只能作为待核验线索，不得直接支撑确定预测或排序。")
       : "",
+    buildAStockFieldLookupFacts(bundle, quote, orgInfoRows, incomeRows),
+    orgInfoRows.length ? `公司资料：${formatEastmoneyOrgInfoRow(orgInfoRows[0])}` : "",
     quote ? `行情：价格=${formatPkgValue(quote.regularMarketPrice)}，市值=${formatPkgValue(quote.marketCap)}，PE=${formatPkgValue(quote.trailingPE)}，PB=${formatPkgValue(quote.priceToBook)}` : "",
-    incomeRows.length ? `利润表：${incomeRows.map(formatEastmoneyIncomeRow).join("；")}` : "利润表：未取得东方财富最新利润表。",
+    incomeRows.length ? `利润表：${incomeRows.slice(0, 4).map(formatEastmoneyIncomeRow).join("；")}` : "利润表：未取得东方财富最新利润表。",
     buildAssistantFinancialAnomalyNote(incomeRows),
     cashflowRows.length ? `现金流：${cashflowRows.map(formatEastmoneyCashflowRow).join("；")}` : "",
     balanceRows.length ? `资产负债：${balanceRows.map(formatEastmoneyBalanceRow).join("；")}` : "",
@@ -1643,6 +1663,64 @@ function hasAssistantFinancialAnomaly(incomeRows: Array<Record<string, unknown>>
     return (revenueYoy !== null && Math.abs(revenueYoy) >= 40)
       || (profitYoy !== null && Math.abs(profitYoy) >= 40);
   });
+}
+
+function buildAStockFieldLookupFacts(bundle: EvidenceBundle, quote: Record<string, unknown> | undefined, orgInfoRows: Array<Record<string, unknown>>, incomeRows: Array<Record<string, unknown>>) {
+  const org = orgInfoRows[0];
+  const annual2024 = findIncomeRowForPeriod(incomeRows, "2024", "annual");
+  const annual2025 = findIncomeRowForPeriod(incomeRows, "2025", "annual");
+  const q12026 = findIncomeRowForPeriod(incomeRows, "2026", "q1");
+  const parts = [
+    `公司=${bundle.company.name}`,
+    `代码=${bundle.company.ticker ?? "NA"}`,
+    org ? `成立日期=${formatDateOnly(org.FOUND_DATE)}` : "",
+    org ? `上市日期=${formatDateOnly(org.LISTING_DATE)}` : "",
+    org ? `证券类型=${formatPkgValue(org.SECURITY_TYPE)}` : "",
+    org ? `行业=${formatPkgValue(org.EM2016 ?? org.INDUSTRYCSRC1)}` : "",
+    quote ? `当前市值=${formatMoneyBn(quote.marketCap, "CNY")}` : "",
+    annual2024 ? `2024年营收=${formatMoneyBn(annual2024.TOTAL_OPERATE_INCOME ?? annual2024.OPERATE_INCOME, "CNY")}` : "",
+    annual2025 ? `2025年营收=${formatMoneyBn(annual2025.TOTAL_OPERATE_INCOME ?? annual2025.OPERATE_INCOME, "CNY")}` : "",
+    q12026 ? `2026Q1营收=${formatMoneyBn(q12026.TOTAL_OPERATE_INCOME ?? q12026.OPERATE_INCOME, "CNY")}` : "",
+    `数据源=Eastmoney company profile + Eastmoney F10 income + quote`,
+  ].filter(Boolean);
+  return parts.length > 4 ? `字段表硬字段：${parts.join("；")}` : "";
+}
+
+function findIncomeRowForPeriod(rows: Array<Record<string, unknown>>, year: string, kind: "annual" | "q1") {
+  return rows.find((row) => {
+    const reportDate = formatPkgValue(row.REPORT_DATE);
+    const reportName = formatPkgValue(row.REPORT_DATE_NAME ?? row.REPORT_TYPE);
+    if (kind === "annual") return reportDate.startsWith(`${year}-12-31`) || reportName.includes(`${year}年报`);
+    return reportDate.startsWith(`${year}-03-31`) || reportName.includes(`${year}一季报`);
+  });
+}
+
+function formatEastmoneyOrgInfoRow(row: Record<string, unknown>) {
+  return [
+    `全称=${formatPkgValue(row.ORG_NAME)}`,
+    `英文名=${formatPkgValue(row.ORG_NAME_EN)}`,
+    `成立日期=${formatDateOnly(row.FOUND_DATE)}`,
+    `上市日期=${formatDateOnly(row.LISTING_DATE)}`,
+    `证券类型=${formatPkgValue(row.SECURITY_TYPE)}`,
+    `行业=${formatPkgValue(row.EM2016 ?? row.INDUSTRYCSRC1)}`,
+    `地区=${formatPkgValue(row.PROVINCE ?? row.CITY)}`,
+    `官网=${formatPkgValue(row.ORG_WEB)}`,
+  ].join("，");
+}
+
+function formatDateOnly(value: unknown) {
+  const raw = formatPkgValue(value);
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const match = raw.match(/\d{4}[-/]\d{2}[-/]\d{2}/);
+  return match ? match[0].replace(/\//g, "-") : raw;
+}
+
+function formatMoneyBn(value: unknown, currency: string) {
+  const numeric = finiteNumberOrNull(value);
+  if (numeric === null) return "NA";
+  const rounded = Math.round((numeric / 1_000_000_000 + Number.EPSILON) * 100) / 100;
+  return `${rounded.toFixed(2)}bn ${currency}`;
 }
 
 function buildAssistantFinancialAnomalyNote(incomeRows: Array<Record<string, unknown>>) {
@@ -2116,8 +2194,10 @@ function formatTushareFactsForAssistant(tushare: Record<string, unknown> | undef
   if (!tushare) return [];
   const lines: string[] = [];
   const tsCode = formatPkgValue(tushare.tsCode);
+  const stockBasic = rowsFromFact(tushare.stockBasic, 2);
+  const stockCompany = rowsFromFact(tushare.stockCompany, 2);
   const dailyBasic = rowsFromFact(tushare.dailyBasic);
-  const income = rowsFromFact(tushare.income);
+  const income = rowsFromFact(tushare.income, 8);
   const balance = rowsFromFact(tushare.balance);
   const cashflow = rowsFromFact(tushare.cashflow);
   const indicators = rowsFromFact(tushare.indicators);
@@ -2127,10 +2207,20 @@ function formatTushareFactsForAssistant(tushare: Record<string, unknown> | undef
   const repurchase = rowsFromFact(tushare.repurchase);
   const pledge = rowsFromFact(tushare.pledge);
   const shareFloat = rowsFromFact(tushare.shareFloat);
+  const basic = stockBasic[0];
+  const company = stockCompany[0];
+  if (basic || company) {
+    lines.push(
+      `${tsCode}基础资料：名称=${formatPkgValue(basic?.name ?? company?.name)}，行业=${formatPkgValue(basic?.industry)}，上市日期=${formatDateOnly(basic?.list_date)}，成立日期=${formatDateOnly(company?.setup_date)}，主营业务=${formatPkgValue(company?.main_business)}`,
+    );
+  }
   const valuation = dailyBasic[0];
   if (valuation) lines.push(`${tsCode}估值/交易：PE_TTM=${formatPkgValue(valuation.pe_ttm)}，PB=${formatPkgValue(valuation.pb)}，总市值=${formatPkgValue(valuation.total_mv)}，换手=${formatPkgValue(valuation.turnover_rate)}`);
-  const latestIncome = income[0];
-  if (latestIncome) lines.push(`利润表：期末=${formatPkgValue(latestIncome.end_date)}，营收=${formatPkgValue(latestIncome.revenue ?? latestIncome.total_revenue)}，归母净利=${formatPkgValue(latestIncome.n_income_attr_p ?? latestIncome.n_income)}，EPS=${formatPkgValue(latestIncome.basic_eps)}`);
+  const incomeLines = income
+    .filter((row) => row.end_date)
+    .slice(0, 4)
+    .map((row) => `期末=${formatPkgValue(row.end_date)}，营收=${formatPkgValue(row.revenue ?? row.total_revenue)}，归母净利=${formatPkgValue(row.n_income_attr_p ?? row.n_income)}，EPS=${formatPkgValue(row.basic_eps)}`);
+  if (incomeLines.length) lines.push(`利润表多期：${incomeLines.join("；")}`);
   const latestBalance = balance[0];
   if (latestBalance) lines.push(`资产负债：期末=${formatPkgValue(latestBalance.end_date)}，总资产=${formatPkgValue(latestBalance.total_assets)}，总负债=${formatPkgValue(latestBalance.total_liab)}，货币资金=${formatPkgValue(latestBalance.money_cap)}，存货=${formatPkgValue(latestBalance.inventories)}`);
   const latestCashflow = cashflow[0];
@@ -2143,11 +2233,11 @@ function formatTushareFactsForAssistant(tushare: Record<string, unknown> | undef
   if (repurchase[0]) lines.push(`回购/资本动作：${formatPkgValue(repurchase[0].ann_date)} ${formatPkgValue(repurchase[0].proc)}，金额=${formatPkgValue(repurchase[0].amount)}`);
   if (pledge[0]) lines.push(`质押：质押比例=${formatPkgValue(pledge[0].pledge_ratio)}，质押股数=${formatPkgValue(pledge[0].total_share)}`);
   if (shareFloat[0]) lines.push(`限售解禁/流通：${formatPkgValue(shareFloat[0].float_date)}，流通股=${formatPkgValue(shareFloat[0].float_share)}，比例=${formatPkgValue(shareFloat[0].float_ratio)}`);
-  return lines.slice(0, 8);
+  return lines.slice(0, 10);
 }
 
-function rowsFromFact(value: unknown) {
-  return Array.isArray(value) ? value.filter(isRecord).slice(0, 3) : [];
+function rowsFromFact(value: unknown, max = 3) {
+  return Array.isArray(value) ? value.filter(isRecord).slice(0, max) : [];
 }
 
 function watchlistItemMatchesMessage(item: { company_name: string; ticker: string; market: string }, message: string) {
@@ -3348,7 +3438,9 @@ export const __test__ = {
   shouldRunModelRationalReview,
   askModelForClarification,
   buildAssistantFinancialAnomalyNote,
+  buildMandatoryAgentToolCalls,
   buildSubjectOnlyClarificationRequest,
+  formatAssistantAStockEvidenceBundle,
   formatEastmoneyIncomeRow,
   splitAssistantToolCodes,
   onRequestPostRealtime: (context: AssistantChatPostContext) => handleAssistantChatPost(context, { skipDeepResearch: true }),

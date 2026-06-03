@@ -1093,6 +1093,79 @@ describe("public data providers", () => {
       ]),
     );
   });
+
+  test("adds Eastmoney A-share company profile and multi-period income without Tushare", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("push2.eastmoney.com")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            data: { f57: "000858", f58: "五粮液", f43: 12888, f116: 500120000000, f162: 1820, f167: 310 },
+          }),
+        });
+      }
+      if (url.includes("RPT_HSF9_BASIC_ORGINFO")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            result: {
+              data: [{
+                SECURITY_CODE: "000858",
+                SECURITY_NAME_ABBR: "五粮液",
+                ORG_NAME: "宜宾五粮液股份有限公司",
+                FOUND_DATE: "1998-04-21",
+                LISTING_DATE: "1998-04-27 00:00:00",
+                INDUSTRYCSRC1: "酒、饮料和精制茶制造业",
+              }],
+            },
+          }),
+        });
+      }
+      if (url.includes("RPT_F10_FINANCE_GINCOME")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            result: {
+              data: [
+                { REPORT_DATE: "2026-03-31 00:00:00", REPORT_DATE_NAME: "2026一季报", TOTAL_OPERATE_INCOME: 22_838_024_164.27 },
+                { REPORT_DATE: "2025-12-31 00:00:00", REPORT_DATE_NAME: "2025年报", TOTAL_OPERATE_INCOME: 90_123_000_000 },
+                { REPORT_DATE: "2024-12-31 00:00:00", REPORT_DATE_NAME: "2024年报", TOTAL_OPERATE_INCOME: 89_175_000_000 },
+              ],
+            },
+          }),
+        });
+      }
+      if (url.includes("datacenter")) {
+        return Promise.resolve({ ok: true, json: async () => ({ result: { data: [] } }) });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    });
+
+    const result = await fetchPublicCompanyEvidence({
+      companyName: "五粮液",
+      company: {
+        id: "eastmoney:0.000858",
+        name: "五粮液",
+        code: "000858",
+        exchange: "深圳证券交易所",
+        listingPlace: "深A",
+        marketType: "AStock",
+        quoteId: "0.000858",
+        source: "eastmoney",
+      },
+      fetchImpl: fetchMock as typeof fetch,
+    });
+
+    const eastmoney = result.facts.eastmoney as { orgInfoRows?: Record<string, unknown>[]; incomeRows?: Record<string, unknown>[] };
+    expect(eastmoney.orgInfoRows?.[0]).toMatchObject({ FOUND_DATE: "1998-04-21", LISTING_DATE: "1998-04-27 00:00:00" });
+    expect(eastmoney.incomeRows?.map((row) => row.REPORT_DATE_NAME)).toEqual(["2026一季报", "2025年报", "2024年报"]);
+    expect(result.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "Eastmoney public company profile endpoint", freshness: "latest-public" }),
+        expect.objectContaining({ source: "Eastmoney public financial statement endpoints", freshness: "latest-public" }),
+      ]),
+    );
+  });
 });
 
 function secAppleFacts() {
