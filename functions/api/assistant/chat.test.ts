@@ -1182,7 +1182,7 @@ describe("assistant chat endpoint", () => {
     const table = [
       "| 公司 | 全球市占率 | 26Q1营收 | 备注/口径 |",
       "| --- | --- | --- | --- |",
-      "| 五粮液 | 精确份额需第三方统计口径 | 22.84（同比异常待官方验证） | 数据未经其他来源交叉确认；精确份额需第三方报告；无独立公开市占率数据。 |",
+      "| 五粮液 | 精确份额需第三方统计口径 | 22.84（同比异常待官方验证） | 数据未经其他来源交叉确认；精确份额需第三方报告；无独立公开市占率数据；精确份额未在公开文件中单列（可参考行业研报）；口径待进一步确认；市值需实时更新。 |",
     ].join("\n");
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
@@ -1190,7 +1190,8 @@ describe("assistant chat endpoint", () => {
     expect(repaired).toContain("按第三方报告口径");
     expect(repaired).toContain("按原始公告口径");
     expect(repaired).toContain("单源口径");
-    expect(repaired).not.toMatch(/待官方验证|未经其他来源交叉确认|精确份额需第三方统计口径|无独立公开/);
+    expect(repaired).toContain("市值按行情快照口径");
+    expect(repaired).not.toMatch(/待官方验证|未经其他来源交叉确认|精确份额需第三方统计口径|无独立公开|未在公开文件中单列|可参考|待进一步确认|需实时更新/);
   });
 
   test("field lookup table strips preamble, inserts separator and drops risk tail", () => {

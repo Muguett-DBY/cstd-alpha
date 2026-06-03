@@ -319,7 +319,7 @@ function evaluatePromptResult(
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
   if (isCompanyFieldTablePrompt(prompt.prompt)) {
     if (!/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing company field table");
-    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|待发|待财报更新|未单独披露|需以官方公告为准|以官方公告为准|待官方验证|待官方公告|待交叉验证|未经其他来源交叉确认|精确份额需|无独立公开|本次搜索摘要未直接列出|本轮搜索未包含|请参阅|待公司发布|价格日期不明|非实时|需参考/.test(parsed.answer)) issues.push("vague company field placeholder");
+    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|未在公开文件中单列|缺数据|未获取|未取得|缺乏|无法确认|N\/A|待发|待财报更新|未单独披露|需以官方公告为准|以官方公告为准|待官方验证|待官方公告|待交叉验证|待进一步确认|未经其他来源交叉确认|精确份额需|无独立公开|本次搜索摘要未直接列出|本轮搜索未包含|请参阅|可参考|待公司发布|价格日期不明|非实时|需实时更新|需参考/.test(parsed.answer)) issues.push("vague company field placeholder");
     if (countMarkdownTableColumns(parsed.answer) < 12) issues.push("company field table too narrow");
     if (/(^|\n)\s*(?:#{1,6}\s*)?(?:结论|主判断|核心判断|证据等级|反证|我可能错|下一步|后续跟踪|追踪|跟踪指标)[：:]/.test(parsed.answer)) {
       issues.push("company field table has research tail");
