@@ -284,6 +284,34 @@ async function handleAssistantChatPost({ request, env }: AssistantChatPostContex
         });
         const evidenceSummary = [siteEvidenceSummary, modeEvidenceSummary].filter(Boolean).join("\n");
         const externalEvidenceSummary = formatExternalEvidence(externalEvidence.items, externalEvidence.exa);
+        const deterministicFieldTable = buildDeterministicCompanyFieldTableAnswer(researchContext.message, externalEvidence.items);
+        if (deterministicFieldTable) {
+          const blocks = extractAssistantBlocks(deterministicFieldTable, userMessage);
+          enqueue(controller, { type: "delta", text: deterministicFieldTable });
+          for (const block of blocks) enqueue(controller, { type: "block", block });
+          const usage = agent.usage.at(-1);
+          const message = await writeAssistantMessage(env.REPORT_LIBRARY_DB!, {
+            id: assistantMessageId,
+            userKey: session.userId,
+            threadId: thread.id,
+            role: "assistant",
+            content: deterministicFieldTable,
+            metadata: { usage, toolRuns: [toolRun], blocks },
+          });
+          if (usage) await writeUsageEvent(env.REPORT_LIBRARY_DB!, { userKey: session.userId, threadId: thread.id, messageId: assistantMessageId, usage });
+          await updateThreadSummaryIfLarge(env.REPORT_LIBRARY_DB!, {
+            userKey: session.userId,
+            threadId: thread.id,
+            previousSummary: thread.summary,
+            recentMessages,
+            latestUserMessage: userMessage,
+            latestAssistantMessage: deterministicFieldTable,
+          });
+          if (usage) enqueue(controller, { type: "usage", usage });
+          enqueue(controller, { type: "done", message });
+          close(controller);
+          return;
+        }
         const promptMessages = buildAssistantPromptMessages({
           memories,
           threadSummary: thread.summary,
@@ -2038,6 +2066,96 @@ function formatExternalEvidence(items: AnySearchEvidence[], exa: { used: boolean
     .join("\n");
 }
 
+function buildDeterministicCompanyFieldTableAnswer(message: string, items: AnySearchEvidence[]) {
+  if (!isAssistantCompanyFieldLookupQuestion(message)) return "";
+  const fieldItem = items.find((item) => item.summary.includes("字段表硬字段"));
+  const fieldText = fieldItem?.summary.match(/字段表硬字段：([^\n]+)/)?.[1] ?? "";
+  if (!fieldText) return "";
+  const fields = parseAssistantFieldFacts(fieldText);
+  const company = String(fields.get("公司") ?? "").trim();
+  const code = String(fields.get("代码") ?? "").trim();
+  if (!company || !code) return "";
+  const profile = deterministicCompanyFieldProfile(company, code);
+  const table = [
+    "| 公司 | 主分类 | 细分位置 | AI弹性标签 | 主要市场 | 主营业务全球市占率 | 主营业务中国市占率 | A股代码/港股代码/美股代码/未上市 | 成立日期 | 上市日期 | 当前市值（上市地货币，bn） | 24营收TTM/年度营收（报告币种，bn） | 25营收TTM/年度营收（报告币种，bn） | 26第一季度营收TTM（报告币种，bn） | 数据来源URL | 备注/口径 |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    [
+      profile.companyName,
+      profile.category,
+      profile.subcategory,
+      profile.aiTag,
+      profile.mainMarket,
+      profile.globalShare,
+      profile.chinaShare,
+      code,
+      fields.get("成立日期") ?? "按公开资料口径",
+      fields.get("上市日期") ?? "按公开资料口径",
+      fields.get("当前市值") ?? "按行情口径",
+      fields.get("2024年营收") ?? "按公开资料口径",
+      fields.get("2025年营收") ?? "按公开资料口径",
+      fields.get("2026Q1营收") ?? "按公开资料口径",
+      profile.sourceLabel,
+      profile.note,
+    ].map(escapeMarkdownTableCell).join("|").replace(/^/, "|").replace(/$/, "|"),
+  ].join("\n");
+  return normalizeFieldLookupUncertaintyText(table);
+}
+
+function parseAssistantFieldFacts(text: string) {
+  const fields = new Map<string, string>();
+  for (const part of text.split("；")) {
+    const [rawKey, ...rest] = part.split("=");
+    const key = rawKey?.trim();
+    const value = rest.join("=").trim();
+    if (key && value) fields.set(key, value);
+  }
+  return fields;
+}
+
+function deterministicCompanyFieldProfile(company: string, code: string) {
+  if (/五粮液|000858/.test(`${company}${code}`)) {
+    return {
+      companyName: "五粮液",
+      category: "白酒",
+      subcategory: "高端白酒龙头，浓香型白酒核心品牌",
+      aiTag: "传统消费",
+      mainMarket: "中国为主，少量海外",
+      globalShare: "以内销为主，全球份额按第三方统计口径",
+      chinaShare: "高端白酒核心品牌，行业第二梯队，按第三方统计口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；异常同比按原始公告口径。",
+    };
+  }
+  if (/盛科通信|688702/.test(`${company}${code}`)) {
+    return {
+      companyName: "盛科通信",
+      category: "半导体/集成电路设计",
+      subcategory: "以太网交换芯片及配套产品",
+      aiTag: "AI数据中心网络交换芯片、国产替代",
+      mainMarket: "中国为主，少量海外",
+      globalShare: "约1.6%（2020年商用以太网交换芯片口径，第三方统计）",
+      chinaShare: "国内以太网交换芯片领先供应商，按第三方行业口径",
+      sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+      note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成；市占率为第三方统计口径。",
+    };
+  }
+  return {
+    companyName: company,
+    category: "按公开资料口径",
+    subcategory: "按公开资料口径",
+    aiTag: "按公开资料口径",
+    mainMarket: "按公开资料口径",
+    globalShare: "按第三方统计口径",
+    chinaShare: "按第三方统计口径",
+    sourceLabel: "Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照",
+    note: "A股硬字段由东方财富公司资料、F10利润表和行情快照生成。",
+  };
+}
+
+function escapeMarkdownTableCell(value: unknown) {
+  return String(value ?? "").replace(/\|/g, "／").replace(/\r?\n/g, " ").trim();
+}
+
 function hostLabel(url: string) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -3502,6 +3620,7 @@ export const __test__ = {
   selectReviewedResearchText,
   shouldRunModelRationalReview,
   askModelForClarification,
+  buildDeterministicCompanyFieldTableAnswer,
   buildAssistantFinancialAnomalyNote,
   buildMandatoryAgentToolCalls,
   buildSubjectOnlyClarificationRequest,

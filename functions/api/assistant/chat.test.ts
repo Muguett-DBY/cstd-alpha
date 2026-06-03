@@ -1212,6 +1212,32 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toContain("风险预算");
   });
 
+  test("company field lookup can return deterministic A-share field table from hard evidence", () => {
+    const answer = __test__.buildDeterministicCompanyFieldTableAnswer(
+      "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收TTM｜25营收TTM｜26第一季度营收TTM｜数据来源URL｜备注/口径。",
+      [
+        {
+          source: "CSTD Alpha",
+          query: "688702",
+          title: "盛科通信 A股硬字段",
+          url: "",
+          summary:
+            "字段表硬字段：公司=盛科通信；代码=688702；成立日期=2005-01-31；上市日期=2023-09-14；当前市值=109.26bn CNY；2024年营收=1.08bn CNY；2025年营收=1.15bn CNY；2026Q1营收=0.25bn CNY；数据源=Eastmoney company profile + Eastmoney F10 income + quote",
+          sourceType: "official",
+          signalType: "external_search",
+          publishedAt: "2026-06-03",
+          qualityScore: 0.95,
+          weight: 4,
+        },
+      ],
+    );
+
+    expect(answer).toContain("|盛科通信|半导体/集成电路设计|");
+    expect(answer).toContain("|688702|2005-01-31|2023-09-14|109.26bn CNY|1.08bn CNY|1.15bn CNY|0.25bn CNY|");
+    expect(answer).toContain("Eastmoney 公司资料 + Eastmoney F10 利润表 + 行情快照");
+    expect(answer).not.toMatch(/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|请参阅|可参考|需实时更新/);
+  });
+
   test("company field lookup forces financial, quote and external search tools", () => {
     const calls = __test__.buildMandatoryAgentToolCalls(
       "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",
