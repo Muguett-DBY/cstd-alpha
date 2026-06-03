@@ -319,7 +319,7 @@ function evaluatePromptResult(
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
   if (isCompanyFieldTablePrompt(prompt.prompt)) {
     if (!/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing company field table");
-    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认/.test(parsed.answer)) issues.push("vague company field placeholder");
+    if (/待核验|未确认|待确认|待核实|未核实|公开文件未单列|公开披露未细分|缺数据|未获取|未取得|缺乏|无法确认|N\/A|待发|待财报更新|未单独披露|需以官方公告为准/.test(parsed.answer)) issues.push("vague company field placeholder");
     if (countMarkdownTableColumns(parsed.answer) < 12) issues.push("company field table too narrow");
     if (/(^|\n)\s*(?:#{1,6}\s*)?(?:结论|主判断|核心判断|证据等级|反证|我可能错|下一步|后续跟踪|追踪|跟踪指标)[：:]/.test(parsed.answer)) {
       issues.push("company field table has research tail");

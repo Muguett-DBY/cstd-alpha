@@ -1151,6 +1151,31 @@ describe("assistant chat endpoint", () => {
     expect(repaired).not.toMatch(/待财报更新|待发|待核验|未确认|公开文件未单列/);
   });
 
+  test("company field lookup recognizes Shengke Communication and forces A-share financial tools", () => {
+    const calls = __test__.buildMandatoryAgentToolCalls(
+      "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜成立日期｜上市日期｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",
+      "chat",
+      { siteEvidenceSummary: "", modeEvidenceSummary: "" },
+    );
+
+    expect(calls.find((call) => call.name === "read_financial_statements")?.query).toBe("688702");
+    expect(calls.find((call) => call.name === "read_tencent_quote")?.query).toBe("688702");
+  });
+
+  test("field lookup table converts official-announcement wording into abnormal-review wording", () => {
+    const prompt =
+      "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜25营收｜备注/口径。";
+    const table = [
+      "| 公司 | 25营收 | 备注/口径 |",
+      "| --- | --- | --- |",
+      "| 五粮液 | 40.53 | 2025年报同比-54.55%异常，需以官方公告为准 |",
+    ].join("\n");
+    const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
+
+    expect(repaired).toContain("异常波动需原始公告复核");
+    expect(repaired).not.toContain("需以官方公告为准");
+  });
+
   test("company field lookup forces financial, quote and external search tools", () => {
     const calls = __test__.buildMandatoryAgentToolCalls(
       "请严格按下面表头，用一行表格查询五粮液全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值｜24营收｜25营收｜26Q1营收｜数据来源URL｜备注/口径。",

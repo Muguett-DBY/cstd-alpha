@@ -1375,6 +1375,7 @@ const AGENT_KNOWN_COMPANIES: Array<{ names: string[]; aCode?: string; quote?: st
   { names: ["万科A", "万科"], aCode: "000002", quote: "000002", company: "万科A 000002" },
   { names: ["隆基绿能", "隆基"], aCode: "601012", quote: "601012", company: "隆基绿能 601012" },
   { names: ["中芯国际"], aCode: "688981", quote: "688981", company: "中芯国际 688981" },
+  { names: ["盛科通信", "盛科通信-U", "苏州盛科"], aCode: "688702", quote: "688702", company: "盛科通信 688702" },
   { names: ["腾讯控股", "腾讯"], quote: "00700.HK", company: "腾讯控股 00700.HK" },
   { names: ["小米集团", "小米"], quote: "01810.HK", company: "小米集团 01810.HK" },
   { names: ["优必选"], quote: "09880.HK", company: "优必选 09880.HK" },
@@ -2453,6 +2454,7 @@ function normalizeFieldLookupUncertaintyText(answer: string) {
     .replace(/未确认|待确认|待核实|未核实|未披露|缺数据|未获取|未取得|缺乏|无法确认|待财报更新|待发/g, "按公开资料口径")
     .replace(/未单独披露/g, "按第三方统计口径")
     .replace(/口径可能与[^；|。]*，建议以[^；|。]*年报为准/g, "口径可能存在差异，异常波动需原始公告复核")
+    .replace(/需以官方公告为准/g, "异常波动需原始公告复核")
     .replace(/也需交叉验证/g, "也属异常波动需原始公告复核")
     .replace(/无法核验/g, "无法交叉验证")
     .replace(/下一步核验/g, "下一步追溯");
