@@ -406,6 +406,8 @@ async function handleAssistantChatPost({ request, env }: AssistantChatPostContex
         if (repairedText !== assistantText) {
           if (repairedText.startsWith(assistantText)) {
             enqueue(controller, { type: "delta", text: repairedText.slice(assistantText.length) });
+          } else {
+            enqueue(controller, { type: "replace", text: repairedText });
           }
           assistantText = repairedText;
         }
@@ -2325,7 +2327,7 @@ function isLikelyTruncatedResearchAnswer(answer: string) {
 }
 
 function ensureMinimumResearchSections(answer: string, userMessage: string, mode: AssistantMode) {
-  if (isAssistantCompanyFieldLookupQuestion(userMessage)) return ensureFieldLookupAnswerStructure(answer);
+  if (isAssistantCompanyFieldLookupQuestion(userMessage)) return normalizeFieldLookupUncertaintyText(answer.trim());
   if (!shouldEnsureResearchStructure(userMessage)) return answer;
   const parts = [ensureConclusionLead(answer, userMessage).trim()];
   if (/(画表|表格|对比)/.test(userMessage) && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(answer)) {
@@ -2347,26 +2349,10 @@ function ensureMinimumResearchSections(answer: string, userMessage: string, mode
   return parts.join("\n\n");
 }
 
-function ensureFieldLookupAnswerStructure(answer: string) {
-  const trimmed = normalizeFieldLookupUncertaintyText(answer.trim());
-  if (!trimmed) return answer;
-  const parts: string[] = [];
-  if (!/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?(?:结论|口径说明)[：:]/.test(trimmed)) {
-    parts.push("结论：这是公司基础字段查询，已按当前可取得的公开证据整理；能查到的字段直接给值，公开文件没有单列的字段写明披露口径，不用含糊占位。");
-  }
-  parts.push(trimmed);
-  if (!/(关键缺口|公开文件未单列|公开披露未细分|无法计算|反证|口径风险)/.test(trimmed)) {
-    parts.push("关键缺口/反证：若年报、招股书、交易所公告或实时行情口径与上表不一致，应以上述原始来源为准；未细分地区、市占率或 TTM 推算字段不得当作确定事实。");
-  }
-  if (!/(下一步|后续|追溯|跟踪)/.test(trimmed)) {
-    parts.push("下一步追溯：优先追溯最新年报/一季报、招股书、交易所行情页和公司公告；市值用最新交易日收盘价和总股本重算。");
-  }
-  return parts.join("\n\n");
-}
-
 function normalizeFieldLookupUncertaintyText(answer: string) {
   return answer
     .replace(/异常波动待核验/g, "异常波动需原始公告复核")
+    .replace(/异常待核验/g, "异常需原始公告复核")
     .replace(/待核验线索/g, "需原始公告复核线索")
     .replace(/待核验/g, "公开文件未单列")
     .replace(/未确认|待确认|待核实|未核实/g, "公开文件未单列")
@@ -2765,9 +2751,7 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
   const normalized = answer.trim();
   if (!normalized) return normalized;
   if (isAssistantCompanyFieldLookupQuestion(userMessage)) {
-    const fieldNormalized = normalizeFieldLookupUncertaintyText(normalized);
-    const fieldLookupTail = buildFieldLookupAnswerTailIfNeeded(fieldNormalized, userMessage);
-    return fieldLookupTail ? `${fieldNormalized}\n\n${fieldLookupTail}` : fieldNormalized;
+    return normalizeFieldLookupUncertaintyText(normalized);
   }
   if (shouldSkipIncompleteAnswerRepair(userMessage)) return answer;
   const conclusionTail = buildVisibleConclusionTailIfNeeded(normalized, userMessage);
@@ -2796,30 +2780,6 @@ function repairIncompleteAssistantAnswer(answer: string, userMessage: string, mo
     "补充框架：",
     buildConstructiveEvidenceGapAnswer(userMessage, mode),
   ].join("\n");
-}
-
-function buildFieldLookupAnswerTailIfNeeded(answer: string, userMessage: string) {
-  if (!isAssistantCompanyFieldLookupQuestion(userMessage)) return "";
-  const normalizedAnswer = normalizeFieldLookupUncertaintyText(answer);
-  const parts: string[] = [];
-  if (!/(^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?(?:结论|核心发现|核心判断|主判断|整体判断|结论与操作倾向)[：:]/.test(normalizedAnswer)) {
-    parts.push("结论/口径重申：这是公司基础字段查询；表格中有具体值的字段按当前来源口径使用，公开文件未单列或无法计算的字段不能被当作确定事实。");
-  }
-  if (!/(关键缺口\/反证|关键缺口|反证|口径风险|数据有冲突)/.test(normalizedAnswer)) {
-    parts.push("关键缺口/反证：若年报、招股书、交易所公告或实时行情口径与上表不一致，应以上述原始来源为准；市占率、地区收入和 TTM 推算尤其需要原始披露交叉验证。");
-  }
-  if (!/(下一步|后续|跟踪|建议补充|补充检索|优先核对|追溯)/.test(normalizedAnswer)) {
-    parts.push("下一步追溯：优先追溯最新年报/一季报、招股书、交易所行情页、公司公告和行业市占率原始报告；市值用最新交易日收盘价和总股本重算。");
-  }
-  const scope = `${userMessage}\n${normalizedAnswer}`;
-  if (
-    /(五粮液|000858)/.test(scope)
-    && /(405\.29|89\.54|228\.38|80\.63|82\.57|33\.67|-54\.55|-71\.89|会计差错|追溯调整|前董事长留置|销售费用大增)/.test(normalizedAnswer)
-    && !/(异常波动需原始公告复核|单源异常|第二硬源|二次核验|不可直接|需原始公告复核线索)/.test(normalizedAnswer)
-  ) {
-    parts.push("需原始公告复核线索：五粮液相关异常同比、追溯调整或单季财务线索必须用年报/一季报原文或交易所公告作为第二硬源二次核验，不可直接写成确定财务事实。");
-  }
-  return parts.join("\n\n");
 }
 
 function buildVisibleConclusionTailIfNeeded(answer: string, userMessage: string) {

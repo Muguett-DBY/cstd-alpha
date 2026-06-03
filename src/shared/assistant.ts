@@ -154,6 +154,7 @@ export type AssistantChatStreamEvent =
   | { type: "tool_status"; id: string; label: string; status: "running" | "completed" | "failed" }
   | { type: "tool_result"; id: string; status: "completed" | "failed"; summary: string; evidenceCount: number }
   | { type: "delta"; text: string }
+  | { type: "replace"; text: string }
   | { type: "block"; block: AssistantBlock }
   | { type: "choice_request"; request: AssistantChoiceRequest }
   | { type: "memory_candidate"; candidate: AssistantMemoryCandidate }

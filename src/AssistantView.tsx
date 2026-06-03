@@ -415,6 +415,11 @@ export function AssistantView() {
       setToolCalls(new Map());
       setDraft((current) => mergeAssistantDelta(current, event.text));
     }
+    if (event.type === "replace") {
+      setAgentStatus("");
+      setToolCalls(new Map());
+      setDraft(event.text);
+    }
     if (event.type === "block") setDraftBlocks((current) => [...current.filter((item) => item.id !== event.block.id), event.block]);
     if (event.type === "choice_request") {
       setDraft("");

@@ -242,6 +242,7 @@ function parseAssistantSse(raw: string) {
     try {
       const event = JSON.parse(payload) as { type?: string; text?: string; usage?: unknown; error?: string; job?: { id?: string; status?: string } };
       if (event.type === "delta" && typeof event.text === "string") answer += event.text;
+      if (event.type === "replace" && typeof event.text === "string") answer = event.text;
       if (event.type === "choice_request") gotClarification = true;
       if (event.type === "memory_candidate") gotMemoryCandidate = true;
       if (event.type === "deep_research_job") deepJob = event.job;
@@ -316,6 +317,12 @@ function evaluatePromptResult(
   if (prompt.mustUseEvidence && !hasConcreteEvidence(parsed.answer)) issues.push("missing concrete evidence");
   if (hasUnqualifiedKnownAStockAnomaly(prompt.prompt, parsed.answer)) issues.push("unqualified abnormal A-share financial data");
   if (prompt.category === "chart" && !/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing usable table");
+  if (isCompanyFieldTablePrompt(prompt.prompt)) {
+    if (!/\|[^\n]+\|[^\n]+\|\n\|[\s:-]+\|/.test(parsed.answer)) issues.push("missing company field table");
+    if (/待核验|未确认|待确认|待核实|未核实/.test(parsed.answer)) issues.push("vague company field placeholder");
+    if (countMarkdownTableColumns(parsed.answer) < 12) issues.push("company field table too narrow");
+    return issues;
+  }
   issues.push(...evaluateExplicitCountRequirement(prompt.prompt, parsed.answer));
   issues.push(...evaluateTaskContract(prompt, parsed.answer));
   if (prompt.category === "compare") {
@@ -359,7 +366,27 @@ function hasUnqualifiedKnownAStockAnomaly(promptText: string, answer: string) {
   if (!/(五粮液|000858)/.test(scope)) return false;
   const suspicious = /(405\.29|89\.54|228\.38|80\.63|82\.57|33\.67|-54\.55|-71\.89|会计差错|追溯调整|前董事长留置|销售费用大增)/;
   if (!suspicious.test(answer)) return false;
-  return !/(异常波动待核验|单源异常|第二硬源|二次核验|不可直接|待核验线索)/.test(answer);
+  return !/(异常波动待核验|异常波动需原始公告复核|异常需原始公告复核|单源异常|第二硬源|二次核验|不可直接|待核验线索|需原始公告复核线索)/.test(answer);
+}
+
+function isCompanyFieldTablePrompt(promptText: string) {
+  const normalized = promptText.replace(/\s+/g, "");
+  return (
+    /表头.*公司.*主分类.*细分位置.*AI弹性标签.*主要市场.*主营业务.*市占率.*成立日期.*上市日期/.test(normalized) ||
+    /查询.*主要市场.*主营业务.*市占率.*成立日期.*上市日期.*当前市值/.test(normalized)
+  );
+}
+
+function countMarkdownTableColumns(answer: string) {
+  const header = answer.split(/\r?\n/).find((line) => line.includes("|") && !/^[-|\s:]+$/.test(line.trim()));
+  if (!header) return 0;
+  return header
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .filter((cell) => cell.trim())
+    .length;
 }
 
 function evaluateExplicitCountRequirement(promptText: string, answer: string) {

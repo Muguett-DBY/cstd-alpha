@@ -1004,7 +1004,7 @@ describe("assistant chat endpoint", () => {
     expect(__test__.buildVisibleConclusionTailIfNeeded(answer, "茅台当前股价是多少，预测明年股价")).toBe("");
   });
 
-  test("company field lookup answers get a compact conclusion and verification tail", () => {
+  test("company field lookup answers only normalize vague placeholders without adding research tails", () => {
     const prompt =
       "查询盛科通信以下信息:主要市场(美国，欧洲，中国，亚太，南美，中东等等)，主营业务全球市占率，主营业务中国市占率，A股代码/港股代码/美股代码/未上市，成立日期，上市日期，当前市值(上市地货币，bn)24营收TTM/年度营收(报告币种，bn)，25营收TTM/年度营收(报告币种，bn)，26第一季度营收TTM(报告币种，bn)";
     const answer = [
@@ -1017,13 +1017,14 @@ describe("assistant chat endpoint", () => {
     ].join("\n");
     const normalized = __test__.ensureMinimumResearchSections(answer, prompt, "chat");
 
-    expect(normalized).toMatch(/^结论：/);
-    expect(normalized).toContain("关键缺口/反证");
-    expect(normalized).toContain("下一步追溯");
+    expect(normalized).toBe(answer);
+    expect(normalized).not.toContain("结论：");
+    expect(normalized).not.toContain("关键缺口/反证");
+    expect(normalized).not.toContain("下一步追溯");
     expect(normalized).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
   });
 
-  test("streamed company field lookup tables get an appended source-trace tail without vague placeholders", () => {
+  test("streamed company field lookup tables keep table-only output without vague placeholders", () => {
     const prompt =
       "请严格按下面表头，用一行表格查询盛科通信全部字段。表头：公司｜主分类｜细分位置｜AI弹性标签｜主要市场（美国、欧洲、中国、亚太、南美、中东等）｜主营业务全球市占率｜主营业务中国市占率｜A股代码/港股代码/美股代码/未上市｜成立日期｜上市日期｜当前市值（上市地货币，bn）｜24营收TTM/年度营收（报告币种，bn）｜25营收TTM/年度营收（报告币种，bn）｜26第一季度营收TTM（报告币种，bn）｜数据来源URL｜备注/口径。缺数据要写“待核验/未披露”，不能编。";
     const table = [
@@ -1034,9 +1035,9 @@ describe("assistant chat endpoint", () => {
     const repaired = __test__.repairIncompleteAssistantAnswer(table, prompt, "chat");
 
     expect(repaired).toContain("| 盛科通信 | 半导体 | 公开文件未单列 | 2026Q1公开文件未单列 |");
-    expect(repaired).toContain("结论");
-    expect(repaired).toContain("关键缺口/反证");
-    expect(repaired).toContain("下一步追溯");
+    expect(repaired).not.toContain("结论");
+    expect(repaired).not.toContain("关键缺口/反证");
+    expect(repaired).not.toContain("下一步追溯");
     expect(repaired).not.toMatch(/待核验|未确认|待确认|待核实|未核实/);
   });
 
