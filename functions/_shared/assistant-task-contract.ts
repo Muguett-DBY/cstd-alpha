@@ -67,7 +67,7 @@ export function validateAssistantTaskAnswer(text: string, contract: AssistantTas
   if (!text.trim()) return { valid: false, missing: ["回答正文"] };
 
   if (contract.needsDirectRecommendations) {
-    if (!/(推荐口径|筛选口径|推荐结论|排序结论|名单口径)[：:]/.test(text)) missing.push("推荐口径");
+    if (!/(?:\*{0,2}(?:推荐口径|筛选口径|推荐结论|排序结论|名单口径)\*{0,2})[：:]/.test(text)) missing.push("推荐口径");
     if (contract.requestedMarkets.length) {
       for (const market of contract.requestedMarkets) {
         const required = contract.requestedCounts[market] ?? 1;

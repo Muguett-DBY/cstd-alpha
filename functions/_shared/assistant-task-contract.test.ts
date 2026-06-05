@@ -26,6 +26,24 @@ describe("assistant task contracts", () => {
     expect(result.missing).toContain("美股推荐名单至少 10 家");
   });
 
+  test("accepts markdown-bold recommendation labels", () => {
+    const contract = buildAssistantTaskContract("selection", "推荐三家半导体公司");
+    const result = validateAssistantTaskAnswer([
+      "**推荐口径**：优先选择盈利兑现和国产替代主线。",
+      "1. 中际旭创：光模块龙头。",
+      "2. 北方华创：半导体设备龙头。",
+      "3. 海光信息：国产算力芯片。",
+      "| 证据 | 来源 |",
+      "| --- | --- |",
+      "| 财报和产业链线索 | 站内证据/外部搜索 |",
+      "反证条件：若订单或毛利率下滑，排序下调。",
+      "下一步跟踪：跟踪订单、利润率和估值。",
+    ].join("\n"), contract);
+
+    expect(result.missing).not.toContain("推荐口径");
+    expect(result.valid).toBe(true);
+  });
+
   test("rejects stock-price forecasts that do not answer the current price first", () => {
     const contract = buildAssistantTaskContract("forecast", "茅台当前股价是多少，预测明年股价");
     const result = validateAssistantTaskAnswer([
