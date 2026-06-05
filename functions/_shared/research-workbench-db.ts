@@ -1,0 +1,311 @@
+import type { ResearchEntityType, ResearchStage, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
+import { RESEARCH_STAGES } from "../../src/shared/research-workbench";
+import type { CompanyArchetype, ValuationMethod, ValuationResult, ValuationRunStatus } from "../../src/shared/valuation";
+
+export type ResearchNotification = {
+  id: string;
+  itemId?: string;
+  type: string;
+  title: string;
+  body: string;
+  severity: string;
+  status: string;
+  createdAt: string;
+};
+
+export type ValuationRunRow = {
+  id: string;
+  user_key: string;
+  research_item_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  status: ValuationRunStatus;
+  archetype: CompanyArchetype;
+  method: ValuationMethod;
+  currency: string;
+  input_hash: string | null;
+  evidence_hash: string | null;
+  assumptions_json: string;
+  result_json: string | null;
+  object_key: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+type ResearchItemRow = {
+  id: string;
+  user_key: string;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  subtitle: string | null;
+  stage: string;
+  status: string;
+  source: string;
+  evidence_hash: string | null;
+  current_thesis_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+type ResearchNotificationRow = {
+  id: string;
+  item_id: string | null;
+  type: string;
+  title: string;
+  body: string;
+  severity: string;
+  status: string;
+  created_at: string;
+};
+
+export async function ensureResearchWorkbenchSchema(db: D1Database) {
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_items (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, title TEXT NOT NULL, subtitle TEXT,
+      stage TEXT NOT NULL DEFAULT 'screening', status TEXT NOT NULL DEFAULT 'active', source TEXT NOT NULL DEFAULT 'manual',
+      evidence_hash TEXT, current_thesis_version_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT,
+      UNIQUE(user_key, entity_type, entity_id)
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_items_user_stage ON research_items (user_key, stage, updated_at DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_items_entity ON research_items (entity_type, entity_id)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_thesis_versions (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT NOT NULL, version INTEGER NOT NULL, thesis_markdown TEXT NOT NULL,
+      core_citations_json TEXT NOT NULL DEFAULT '[]', counter_evidence_json TEXT NOT NULL DEFAULT '[]', evidence_hash TEXT, created_by TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_research_thesis_item_version ON research_thesis_versions (item_id, version)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_catalysts (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT, due_at TEXT,
+      status TEXT NOT NULL DEFAULT 'open', evidence_refs_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_catalysts_item ON research_catalysts (item_id, status, due_at)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_stage_suggestions (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT NOT NULL, from_stage TEXT NOT NULL, to_stage TEXT NOT NULL, reason TEXT NOT NULL,
+      evidence_refs_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, resolved_at TEXT
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_stage_suggestions_pending ON research_stage_suggestions (user_key, status, created_at DESC)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_notifications (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT, type TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'info', status TEXT NOT NULL DEFAULT 'unread', evidence_refs_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, read_at TEXT
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_notifications_user ON research_notifications (user_key, status, created_at DESC)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS valuation_runs (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, research_item_id TEXT, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued', archetype TEXT NOT NULL, method TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'CNY',
+      input_hash TEXT, evidence_hash TEXT, assumptions_json TEXT NOT NULL DEFAULT '[]', result_json TEXT, object_key TEXT, error_message TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, completed_at TEXT
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_valuation_runs_user ON valuation_runs (user_key, updated_at DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_valuation_runs_entity ON valuation_runs (entity_type, entity_id, updated_at DESC)`),
+  ]);
+}
+
+export async function upsertResearchItem(db: D1Database, input: {
+  userKey: string;
+  entityType: ResearchEntityType;
+  entityId: string;
+  title: string;
+  subtitle?: string;
+  source?: string;
+  evidenceHash?: string;
+  stage?: ResearchStage;
+}) {
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  const id = await sha256(`${input.userKey}:${input.entityType}:${input.entityId}`);
+  const stage = normalizeResearchStage(input.stage) ?? "screening";
+  await db.prepare(
+    `INSERT INTO research_items (
+       id, user_key, entity_type, entity_id, title, subtitle, stage, source, evidence_hash, created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+     ON CONFLICT(user_key, entity_type, entity_id) DO UPDATE SET
+       title = excluded.title,
+       subtitle = excluded.subtitle,
+       source = excluded.source,
+       evidence_hash = COALESCE(excluded.evidence_hash, research_items.evidence_hash),
+       updated_at = excluded.updated_at`,
+  ).bind(id, input.userKey, input.entityType, input.entityId, input.title, input.subtitle ?? null, stage, input.source ?? "manual", input.evidenceHash ?? null, now).run();
+  const item = await readResearchItemById(db, input.userKey, id);
+  if (!item) throw new Error("research item upsert failed");
+  return item;
+}
+
+export async function listResearchItems(db: D1Database, userKey: string) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, user_key, entity_type, entity_id, title, subtitle, stage, status, source, evidence_hash, current_thesis_version_id, created_at, updated_at, archived_at
+     FROM research_items WHERE user_key = ?1 ORDER BY updated_at DESC`,
+  ).bind(userKey).all<ResearchItemRow>();
+  return (result.results ?? []).map(researchItemRowToItem);
+}
+
+export async function readResearchItemById(db: D1Database, userKey: string, id: string) {
+  await ensureResearchWorkbenchSchema(db);
+  const row = await db.prepare(
+    `SELECT id, user_key, entity_type, entity_id, title, subtitle, stage, status, source, evidence_hash, current_thesis_version_id, created_at, updated_at, archived_at
+     FROM research_items WHERE user_key = ?1 AND id = ?2`,
+  ).bind(userKey, id).first<ResearchItemRow>();
+  return row ? researchItemRowToItem(row) : null;
+}
+
+export async function confirmResearchStage(db: D1Database, userKey: string, id: string, stage: ResearchStage) {
+  await ensureResearchWorkbenchSchema(db);
+  const normalized = normalizeResearchStage(stage);
+  if (!normalized) throw new Error("invalid research stage");
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE research_items SET stage = ?3, updated_at = ?4 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, now).run();
+  return readResearchItemById(db, userKey, id);
+}
+
+export async function listResearchNotifications(db: D1Database, userKey: string, limit = 20) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, item_id, type, title, body, severity, status, created_at
+     FROM research_notifications WHERE user_key = ?1 ORDER BY created_at DESC LIMIT ?2`,
+  ).bind(userKey, limit).all<ResearchNotificationRow>();
+  return (result.results ?? []).map((row) => ({
+    id: row.id,
+    itemId: row.item_id ?? undefined,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    severity: row.severity,
+    status: row.status,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function createValuationRun(db: D1Database, input: {
+  userKey: string;
+  researchItemId?: string;
+  entityType: ResearchEntityType;
+  entityId: string;
+  title: string;
+  archetype: CompanyArchetype;
+  method: ValuationMethod;
+  currency?: string;
+  inputHash?: string;
+  evidenceHash?: string;
+}) {
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO valuation_runs (
+      id, user_key, research_item_id, entity_type, entity_id, title, status, archetype, method, currency, input_hash, evidence_hash, created_at, updated_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', ?7, ?8, ?9, ?10, ?11, ?12, ?12)`,
+  ).bind(id, input.userKey, input.researchItemId ?? null, input.entityType, input.entityId, input.title, input.archetype, input.method, input.currency ?? "CNY", input.inputHash ?? null, input.evidenceHash ?? null, now).run();
+  const run = await readValuationRun(db, input.userKey, id);
+  if (!run) throw new Error("valuation run create failed");
+  return run;
+}
+
+export async function readValuationRun(db: D1Database, userKey: string, id: string) {
+  await ensureResearchWorkbenchSchema(db);
+  return db.prepare(
+    `SELECT id, user_key, research_item_id, entity_type, entity_id, title, status, archetype, method, currency, input_hash, evidence_hash, assumptions_json,
+            result_json, object_key, error_message, created_at, updated_at, started_at, completed_at
+     FROM valuation_runs WHERE user_key = ?1 AND id = ?2`,
+  ).bind(userKey, id).first<ValuationRunRow>();
+}
+
+export async function readValuationRunForWorker(db: D1Database, id: string) {
+  await ensureResearchWorkbenchSchema(db);
+  return db.prepare(
+    `SELECT id, user_key, research_item_id, entity_type, entity_id, title, status, archetype, method, currency, input_hash, evidence_hash, assumptions_json,
+            result_json, object_key, error_message, created_at, updated_at, started_at, completed_at
+     FROM valuation_runs WHERE id = ?1`,
+  ).bind(id).first<ValuationRunRow>();
+}
+
+export async function listValuationRuns(db: D1Database, userKey: string, limit = 20) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, user_key, research_item_id, entity_type, entity_id, title, status, archetype, method, currency, input_hash, evidence_hash, assumptions_json,
+            result_json, object_key, error_message, created_at, updated_at, started_at, completed_at
+     FROM valuation_runs WHERE user_key = ?1 ORDER BY updated_at DESC LIMIT ?2`,
+  ).bind(userKey, limit).all<ValuationRunRow>();
+  return result.results ?? [];
+}
+
+export async function markValuationRunRunning(db: D1Database, id: string) {
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE valuation_runs SET status = 'running', started_at = COALESCE(started_at, ?2), updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+}
+
+export async function completeValuationRun(db: D1Database, input: { id: string; result: ValuationResult; objectKey?: string }) {
+  const now = new Date().toISOString();
+  await db.prepare(
+    `UPDATE valuation_runs SET status = 'completed', result_json = ?2, assumptions_json = ?3, object_key = ?4, updated_at = ?5, completed_at = ?5 WHERE id = ?1`,
+  ).bind(input.id, JSON.stringify(input.result), JSON.stringify(input.result.assumptions), input.objectKey ?? null, now).run();
+}
+
+export async function failValuationRun(db: D1Database, id: string, error: unknown) {
+  const now = new Date().toISOString();
+  await db.prepare(`UPDATE valuation_runs SET status = 'failed', error_message = ?2, updated_at = ?3, completed_at = ?3 WHERE id = ?1`).bind(id, safeError(error), now).run();
+}
+
+export function valuationRunToSummary(row: ValuationRunRow) {
+  return {
+    id: row.id,
+    researchItemId: row.research_item_id ?? undefined,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    title: row.title,
+    status: row.status,
+    method: row.method,
+    archetype: row.archetype,
+    currency: row.currency,
+    result: parseJson<ValuationResult>(row.result_json),
+    objectKey: row.object_key ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function researchItemRowToItem(row: ResearchItemRow): ResearchWorkbenchItem {
+  return {
+    id: row.id,
+    userKey: row.user_key,
+    entityType: row.entity_type === "industry" ? "industry" : "company",
+    entityId: row.entity_id,
+    title: row.title,
+    subtitle: row.subtitle ?? undefined,
+    stage: normalizeResearchStage(row.stage) ?? "screening",
+    status: row.status,
+    source: row.source,
+    evidenceHash: row.evidence_hash ?? undefined,
+    currentThesisVersionId: row.current_thesis_version_id ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at ?? undefined,
+  };
+}
+
+function normalizeResearchStage(value: unknown): ResearchStage | null {
+  return RESEARCH_STAGES.includes(value as ResearchStage) ? value as ResearchStage : null;
+}
+
+function parseJson<T>(value: string | null): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function safeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "unknown error");
+}

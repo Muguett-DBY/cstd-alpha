@@ -5,6 +5,10 @@ import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord,
 import "./App.css";
 import { RadarVisualCharts } from "./RadarVisualCharts";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
+import { OpportunityDashboard } from "./OpportunityDashboard";
+import { ResearchWorkspace } from "./ResearchWorkspace";
+import { MarketWorkspace } from "./MarketWorkspace";
+import { ValuationLabView } from "./ValuationLabView";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
@@ -17,10 +21,10 @@ import type { CompanyCandidate, InvestmentReport, ModuleScore, ReportGenerationM
 import type { UserSession, WatchlistRankingEntry } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
-type AppView = "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
+type AppView = "opportunities" | "research" | "market" | "valuation" | "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
 type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
 
-export const DEFAULT_APP_VIEW: AppView = "assistant";
+export const DEFAULT_APP_VIEW: AppView = "opportunities";
 const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
 const WatchlistRankingView = lazy(() => import("./WatchlistRankingView").then((module) => ({ default: module.WatchlistRankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
@@ -57,6 +61,7 @@ function App() {
   const [radarDiagnostics, setRadarDiagnostics] = useState<RadarDiagnostics | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
   const [radarError, setRadarError] = useState("");
+  const [mobileAssistantOnly, setMobileAssistantOnly] = useState(() => (typeof window !== "undefined" ? window.matchMedia("(max-width: 760px)").matches : false));
   const installPrompt = usePwaInstallPrompt();
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
@@ -132,6 +137,14 @@ function App() {
     const id = window.setTimeout(() => void loadRadar(false), 0);
     return () => window.clearTimeout(id);
   }, [activeView, authenticated, loadRadar, radar, radarPhase]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => setMobileAssistantOnly(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -447,14 +460,24 @@ function App() {
   }
 
   const elapsedSeconds = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
+  const renderedView: AppView = mobileAssistantOnly && user?.role === "admin" ? "assistant" : activeView;
+  const isWorkbenchView = renderedView === "opportunities" || renderedView === "research" || renderedView === "market" || renderedView === "valuation" || renderedView === "assistant";
+  const openMarketRanking = (market: "A股" | "美股" | "港股") => {
+    setRankingMarket(market === "A股" ? "a-share" : market === "美股" ? "us" : "hk");
+    setActiveView("ranking");
+  };
+  const openRadarFromMarket = () => {
+    setActiveView("radar");
+    if (!radar && radarPhase === "idle") void loadRadar(false);
+  };
 
   return (
-    <main className={`app-shell view-${activeView}`}>
-      <aside className="input-rail">
+    <main className={`app-shell view-${renderedView} ${mobileAssistantOnly ? "mobile-assistant-only" : ""}`}>
+      <aside className={`input-rail ${isWorkbenchView ? "workbench-nav-rail" : ""}`}>
         <div>
           <p className="brand">CSTD Alpha</p>
-          <h1>中文深度评分报告</h1>
-          <p className="rail-copy">先确认上市主体，再生成完整模板报告，避免同名公司或错误代码。</p>
+          <h1>{isWorkbenchView ? "AI 数据工作台" : "中文深度评分报告"}</h1>
+          <p className="rail-copy">{isWorkbenchView ? "发现机会、进入研究、验证估值，再用助手追问。" : "先确认上市主体，再生成完整模板报告，避免同名公司或错误代码。"}</p>
           <p className="muted">当前账号：{user?.displayName || user?.username}</p>
           <button type="button" className="ghost-button" onClick={() => void submitLogout()}>
             退出登录
@@ -462,58 +485,27 @@ function App() {
         </div>
 
         <nav className="view-tabs" aria-label="工作区">
-          <button type="button" className={activeView === "report" ? "active" : ""} aria-current={activeView === "report" ? "page" : undefined} onClick={() => setActiveView("report")}>
-            生成报告
+          <button type="button" className={renderedView === "opportunities" ? "active" : ""} aria-current={renderedView === "opportunities" ? "page" : undefined} onClick={() => setActiveView("opportunities")}>
+            今日机会
           </button>
-          <button
-            type="button"
-            className={activeView === "ranking" && rankingMarket === "a-share" ? "active" : ""}
-            aria-current={activeView === "ranking" && rankingMarket === "a-share" ? "page" : undefined}
-            onClick={() => {
-              setRankingMarket("a-share");
-              setActiveView("ranking");
-            }}
-          >
-            A 股排行
+          <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} aria-current={renderedView === "research" ? "page" : undefined} onClick={() => setActiveView("research")}>
+            研究
           </button>
-          <button
-            type="button"
-            className={activeView === "ranking" && rankingMarket === "us" ? "active" : ""}
-            aria-current={activeView === "ranking" && rankingMarket === "us" ? "page" : undefined}
-            onClick={() => {
-              setRankingMarket("us");
-              setActiveView("ranking");
-            }}
-          >
-            美股排行
+          <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} aria-current={renderedView === "market" ? "page" : undefined} onClick={() => setActiveView("market")}>
+            市场
           </button>
-          <button
-            type="button"
-            className={activeView === "ranking" && rankingMarket === "hk" ? "active" : ""}
-            aria-current={activeView === "ranking" && rankingMarket === "hk" ? "page" : undefined}
-            onClick={() => {
-              setRankingMarket("hk");
-              setActiveView("ranking");
-            }}
-          >
-            港股排行
-          </button>
-          <button type="button" className={`wide-tab ${activeView === "watchlist-ranking" ? "active" : ""}`} aria-current={activeView === "watchlist-ranking" ? "page" : undefined} onClick={() => setActiveView("watchlist-ranking")}>
-            自选排行
-          </button>
-          <button type="button" className={`wide-tab ${activeView === "mine" ? "active" : ""}`} aria-current={activeView === "mine" ? "page" : undefined} onClick={() => setActiveView("mine")}>
-            我的
-          </button>
-          <button type="button" className={`wide-tab ${activeView === "radar" ? "active" : ""}`} aria-current={activeView === "radar" ? "page" : undefined} onClick={() => setActiveView("radar")}>
-            扫描
+          <button type="button" className={renderedView === "valuation" ? "active" : ""} aria-current={renderedView === "valuation" ? "page" : undefined} onClick={() => setActiveView("valuation")}>
+            估值
           </button>
           {user?.role === "admin" ? (
-            <button type="button" className={`wide-tab ${activeView === "assistant" ? "active" : ""}`} aria-current={activeView === "assistant" ? "page" : undefined} onClick={() => setActiveView("assistant")}>
+            <button type="button" className={renderedView === "assistant" ? "active" : ""} aria-current={renderedView === "assistant" ? "page" : undefined} onClick={() => setActiveView("assistant")}>
               助手
             </button>
           ) : null}
         </nav>
 
+        {!isWorkbenchView ? (
+        <>
         <form onSubmit={submitSearch} className="report-form">
           <label htmlFor="companyQuery">公司名或股票代码</label>
           <input
@@ -584,19 +576,29 @@ function App() {
           evidenceCount={evidenceCount || report?.evidence.length || 0}
         />
         {error ? <p className="error-text">{error}</p> : null}
+        </>
+        ) : null}
       </aside>
 
       <section className="workspace">
         <Suspense fallback={<section className="empty-state"><h2>正在加载视图</h2><p>只加载当前需要的功能模块。</p></section>}>
-          {activeView === "ranking" ? (
+          {renderedView === "opportunities" ? (
+            <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
+          ) : renderedView === "research" ? (
+            <ResearchWorkspace onOpenLegacyMine={() => setActiveView("mine")} onOpenAssistant={() => setActiveView("assistant")} onOpenReport={() => setActiveView("report")} />
+          ) : renderedView === "market" ? (
+            <MarketWorkspace onOpenRanking={openMarketRanking} onOpenWatchlistRanking={() => setActiveView("watchlist-ranking")} onOpenRadar={openRadarFromMarket} />
+          ) : renderedView === "valuation" ? (
+            <ValuationLabView />
+          ) : renderedView === "ranking" ? (
             <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
-          ) : activeView === "watchlist-ranking" ? (
+          ) : renderedView === "watchlist-ranking" ? (
             <WatchlistRankingView onOpenEntry={openWatchlistRankingEntry} />
-          ) : activeView === "mine" ? (
+          ) : renderedView === "mine" ? (
             <MyResearchView user={user} selectedCompany={selectedCompany} onOpenCompany={openCompanyFromMine} />
-          ) : activeView === "radar" ? (
+          ) : renderedView === "radar" ? (
             <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
-          ) : activeView === "assistant" && user?.role === "admin" ? (
+          ) : renderedView === "assistant" && user?.role === "admin" ? (
             <AssistantView />
           ) : (
             <>

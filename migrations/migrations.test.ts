@@ -112,6 +112,27 @@ describe("D1 migrations", () => {
     expect(indexNames(db, "assistant_deep_research_steps")).toContain("idx_assistant_deep_research_steps_job");
   });
 
+  test("research workbench migration stores research objects, thesis versions, notifications, and valuation runs", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0013_research_workbench.sql"))).not.toThrow();
+
+    const researchItems = tableColumns(db, "research_items");
+    for (const column of ["user_key", "entity_type", "entity_id", "stage", "current_thesis_version_id", "evidence_hash"]) {
+      expect(researchItems).toContain(column);
+    }
+    const thesis = tableColumns(db, "research_thesis_versions");
+    for (const column of ["item_id", "version", "thesis_markdown", "core_citations_json", "counter_evidence_json"]) {
+      expect(thesis).toContain(column);
+    }
+    const valuationRuns = tableColumns(db, "valuation_runs");
+    for (const column of ["research_item_id", "archetype", "method", "assumptions_json", "result_json", "object_key"]) {
+      expect(valuationRuns).toContain(column);
+    }
+    expect(indexNames(db, "research_items")).toContain("idx_research_items_user_stage");
+    expect(indexNames(db, "research_notifications")).toContain("idx_research_notifications_user");
+    expect(indexNames(db, "valuation_runs")).toContain("idx_valuation_runs_entity");
+  });
+
   test("lookup index migration adds hot-path query indexes without changing schema", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(readMigration("0002_user_research.sql"));

@@ -24,6 +24,7 @@ import { buildAssistantTaskContract, formatAssistantTaskContract, validateAssist
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "../../functions/_shared/deepseek-cache";
 import { buildDeepSeekFallbackRoutes } from "../../functions/_shared/opencode-go";
 import { buildMandatoryAgentToolCalls, executeAssistantToolCalls } from "../../functions/api/assistant/chat";
+import { processValuationRun } from "../../functions/_shared/valuation-runner";
 import type { AssistantUsage } from "../../src/shared/assistant";
 
 const DEEP_RESEARCH_TOOL_TIMEOUT_MS = 8 * 60 * 1_000;
@@ -39,6 +40,17 @@ type WorkerEnv = AssistantEnv & {
 export default {
   async queue(batch: MessageBatch<AssistantDeepResearchQueueMessage>, env: WorkerEnv) {
     for (const message of batch.messages) {
+      if (message.body.kind === "valuation") {
+        try {
+          await processValuationRun(env, message.body.valuationRunId);
+          message.ack();
+        } catch (error) {
+          console.error("valuation_run_failed", { valuationRunId: message.body.valuationRunId, attempts: message.attempts, error: safeError(error) });
+          if (message.attempts < 2) message.retry({ delaySeconds: 30 });
+          else message.ack();
+        }
+        continue;
+      }
       try {
         await processAssistantDeepResearchJob(env, message.body.jobId);
         message.ack();

@@ -4,6 +4,8 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
+import type { ResearchOpportunitySignal, ResearchStage, ResearchWorkbenchItem } from "./shared/research-workbench";
+import type { ValuationRunSummary } from "./shared/valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -67,6 +69,100 @@ export type RadarScanResult = {
   warning?: string;
   diagnostics?: RadarDiagnostics | null;
 };
+
+export type OpportunitiesResult = {
+  generatedAt: string;
+  opportunities: ResearchOpportunitySignal[];
+  topResearch: ResearchOpportunitySignal[];
+  riskWorsening: ResearchOpportunitySignal[];
+  catalysts: ResearchOpportunitySignal[];
+  funnel: Array<{ stage: ResearchStage; count: number }>;
+  inbox: Array<{ id: string; itemId?: string; type: string; title: string; body: string; severity: string; status: string; createdAt: string }>;
+  researchItems: ResearchWorkbenchItem[];
+};
+
+export type ResearchItemsResult = {
+  items: ResearchWorkbenchItem[];
+};
+
+export type ValuationsResult = {
+  runs: ValuationRunSummary[];
+};
+
+export async function fetchOpportunities(): Promise<OpportunitiesResult> {
+  const response = await fetch("/api/opportunities", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "今日机会读取失败。");
+  return (await response.json()) as OpportunitiesResult;
+}
+
+export async function fetchResearchItems(): Promise<ResearchItemsResult> {
+  const response = await fetch("/api/research-items", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "研究队列读取失败。");
+  return (await response.json()) as ResearchItemsResult;
+}
+
+export async function addResearchItem(input: {
+  entityType: "company" | "industry";
+  entityId: string;
+  title: string;
+  subtitle?: string;
+  source?: string;
+  evidenceHash?: string;
+  stage?: ResearchStage;
+}): Promise<ResearchWorkbenchItem> {
+  const response = await fetch("/api/research-items", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "加入研究队列失败。");
+  const data = (await response.json()) as { item?: ResearchWorkbenchItem };
+  if (!data.item) throw new Error("加入研究队列失败。");
+  return data.item;
+}
+
+export async function updateResearchItemStage(id: string, stage: ResearchStage): Promise<ResearchWorkbenchItem> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ stage }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究阶段更新失败。");
+  const data = (await response.json()) as { item?: ResearchWorkbenchItem };
+  if (!data.item) throw new Error("研究阶段更新失败。");
+  return data.item;
+}
+
+export async function fetchValuations(): Promise<ValuationsResult> {
+  const response = await fetch("/api/valuations", { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "估值历史读取失败。");
+  return (await response.json()) as ValuationsResult;
+}
+
+export async function createValuationRun(input: {
+  researchItemId?: string;
+  entityType: "company" | "industry";
+  entityId: string;
+  title: string;
+  industry?: string;
+  sector?: string;
+  mainBusiness?: string;
+  currency?: string;
+  evidenceHash?: string;
+}): Promise<ValuationRunSummary> {
+  const response = await fetch("/api/valuations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok && response.status !== 202) throw new Error((await readError(response)) || "估值任务创建失败。");
+  const data = (await response.json()) as { run?: ValuationRunSummary };
+  if (!data.run) throw new Error("估值任务创建失败。");
+  return data.run;
+}
 
 export async function fetchRadarScan(): Promise<RadarScanResult> {
   const response = await fetch("/api/radar-scan", { credentials: "include" });

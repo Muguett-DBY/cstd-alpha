@@ -9,7 +9,11 @@ export const ASSISTANT_DEEP_RESEARCH_MAX_MS = 15 * 60 * 1_000;
 export const ASSISTANT_DEEP_RESEARCH_STALE_MS = ASSISTANT_DEEP_RESEARCH_MAX_MS + 60 * 1_000;
 
 export type AssistantDeepResearchQueueMessage = {
+  kind?: "assistant_deep_research";
   jobId: string;
+} | {
+  kind: "valuation";
+  valuationRunId: string;
 };
 
 type DeepResearchRow = {

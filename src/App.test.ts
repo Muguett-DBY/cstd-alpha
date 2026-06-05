@@ -4,8 +4,8 @@ import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarPa
 import type { RadarCitation, RadarIndustryPacket, RadarItem } from "./shared/radar";
 
 describe("app initial workspace", () => {
-  test("opens on the assistant view by default", () => {
-    expect(DEFAULT_APP_VIEW).toBe("assistant");
+  test("opens on the opportunities workbench by default", () => {
+    expect(DEFAULT_APP_VIEW).toBe("opportunities");
   });
 
   test("keeps radar refresh fallback brief when an old scan is still visible", () => {
