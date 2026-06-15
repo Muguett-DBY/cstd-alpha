@@ -137,11 +137,16 @@ export function radarScanToResearchCitations(radar: RadarScan | null | undefined
     ...(packet?.sourceIds ?? []),
     ...sectionItems.flatMap((item) => item.sourceIds ?? []),
   ]);
-  if (!sourceIds.size) return [];
-  const sourceOrder = new Map([...sourceIds].map((id, index) => [id, index]));
-  return (radar.evidenceSources ?? [])
-    .filter((source) => sourceIds.has(source.id))
-    .sort((left, right) => (sourceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (sourceOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+  const sources = radar.evidenceSources ?? [];
+  const matchedSources = sourceIds.size
+    ? sources
+      .filter((source) => sourceIds.has(source.id))
+      .sort((left, right) => {
+        const sourceOrder = [...sourceIds];
+        return sourceOrder.indexOf(left.id) - sourceOrder.indexOf(right.id);
+      })
+    : focusedIndustrySources(sources, industry);
+  return matchedSources
     .map<Omit<ResearchThesisCitation, "id">>((source) => ({
       title: source.title,
       sourceType: source.sourceType,
@@ -217,4 +222,22 @@ function dedupeCitations(citations: Array<Omit<ResearchThesisCitation, "id">>) {
 
 function normalizedIndustryKey(value: string) {
   return value.trim().toLocaleLowerCase().replace(/[\s\-_/、（）()]+/g, "");
+}
+
+function focusedIndustrySources(sources: NonNullable<RadarScan["evidenceSources"]>, industry: string) {
+  const keywords = industry
+    .split(/[\s\-_/、（）()]+/)
+    .map((item) => item.trim().toLocaleLowerCase())
+    .filter((item) => item.length >= 2);
+  if (!keywords.length) return [];
+  return sources
+    .map((source) => {
+      const text = `${source.query} ${source.title} ${source.summary || ""}`.toLocaleLowerCase();
+      const keywordScore = keywords.reduce((score, keyword) => score + (text.includes(keyword) ? 1 : 0), 0);
+      return { source, keywordScore };
+    })
+    .filter((entry) => entry.keywordScore > 0)
+    .sort((left, right) => right.keywordScore - left.keywordScore || (right.source.weight ?? 0) - (left.source.weight ?? 0))
+    .slice(0, 10)
+    .map((entry) => entry.source);
 }

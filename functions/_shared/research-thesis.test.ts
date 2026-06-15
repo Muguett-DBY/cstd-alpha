@@ -195,4 +195,72 @@ describe("research thesis evidence adapters", () => {
     expect(citations.map((item) => item.title)).toEqual(["行业收入增速回升", "头部软件公司披露新增订单"]);
     expect(citations.map((item) => item.sourceType)).toEqual(["hard_data", "announcement"]);
   });
+
+  test("falls back to focused industry keyword matching when a radar packet has no source ids", () => {
+    const citations = radarScanToResearchCitations({
+      id: "radar-2",
+      title: "行业雷达",
+      generatedAt: "2026-06-15T00:00:00.000Z",
+      asOfDate: "2026-06-15",
+      validUntil: "2026-06-16T00:00:00.000Z",
+      model: "deepseek-v4-flash",
+      sourceCount: 3,
+      sourceQueries: [],
+      executiveSummary: [],
+      solidGrowth: [],
+      sustainability: [],
+      bubbleRisks: [],
+      upcomingGrowth: [],
+      decliningIndustries: [],
+      representativeCompanies: [],
+      stageCompanies: [],
+      limitations: [],
+      industryPackets: [
+        {
+          group: "科技成长",
+          industry: "AI应用/软件",
+          status: "scanned",
+          evidenceHash: "packet-hash",
+          sourceCount: 3,
+          evidenceTypes: ["announcement", "news"],
+          signalTypes: ["financial"],
+          evidenceGaps: [],
+        },
+      ],
+      evidenceSources: [
+        {
+          id: "S1",
+          source: "公司公告",
+          query: "AI应用 软件 订单",
+          title: "AI应用软件订单增长",
+          url: "https://example.com/software",
+          summary: "软件企业披露AI应用合同增长。",
+          sourceType: "announcement",
+          weight: 1.2,
+        },
+        {
+          id: "S2",
+          source: "行业统计",
+          query: "企业软件 收入",
+          title: "企业软件收入回升",
+          url: "https://example.com/enterprise-software",
+          summary: "企业软件收入增速回升。",
+          sourceType: "hard_data",
+          weight: 1,
+        },
+        {
+          id: "S3",
+          source: "新闻",
+          query: "AI芯片 产能",
+          title: "AI芯片产能扩张",
+          url: "https://example.com/chip",
+          summary: "晶圆厂增加AI芯片产能。",
+          sourceType: "news",
+          weight: 2,
+        },
+      ],
+    }, "AI应用/软件");
+
+    expect(citations.map((item) => item.title)).toEqual(["AI应用软件订单增长", "企业软件收入回升"]);
+  });
 });
