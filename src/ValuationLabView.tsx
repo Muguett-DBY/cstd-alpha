@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createValuationRun, fetchResearchItems, fetchValuations } from "./api";
 import type { ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
+import { mergeValuationRuns } from "./valuation-state";
 
 export function ValuationLabView() {
   const [runs, setRuns] = useState<ValuationRunSummary[]>([]);
@@ -10,6 +11,10 @@ export function ValuationLabView() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
   const selected = useMemo(() => items.find((item) => item.id === selectedEntityId) ?? items[0], [items, selectedEntityId]);
+  const activeRunIds = useMemo(
+    () => runs.filter((run) => run.status === "queued" || run.status === "running").map((run) => run.id).sort().join(","),
+    [runs],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +35,24 @@ export function ValuationLabView() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeRunIds) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const latest = await fetchValuations();
+        if (!cancelled) setRuns((current) => mergeValuationRuns(current, latest.runs));
+      } catch {
+        // Keep the optimistic task visible and retry on the next interval.
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRunIds]);
 
   async function startValuation() {
     if (!selected) return;
