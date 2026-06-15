@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchOpportunitySignal, ResearchStage, ResearchWorkbenchItem } from "./shared/research-workbench";
+import type { ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -85,6 +85,11 @@ export type ResearchItemsResult = {
   items: ResearchWorkbenchItem[];
 };
 
+export type ResearchThesesResult = {
+  current: ResearchThesisVersion | null;
+  versions: ResearchThesisVersion[];
+};
+
 export type ValuationsResult = {
   runs: ValuationRunSummary[];
 };
@@ -133,6 +138,24 @@ export async function updateResearchItemStage(id: string, stage: ResearchStage):
   const data = (await response.json()) as { item?: ResearchWorkbenchItem };
   if (!data.item) throw new Error("研究阶段更新失败。");
   return data.item;
+}
+
+export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/thesis`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "研究论点读取失败。");
+  return (await response.json()) as ResearchThesesResult;
+}
+
+export async function refreshResearchThesis(id: string, signal?: AbortSignal): Promise<{ thesis: ResearchThesisVersion; item: ResearchWorkbenchItem }> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/thesis`, {
+    method: "POST",
+    credentials: "include",
+    signal,
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究论点生成失败。");
+  const data = (await response.json()) as { thesis?: ResearchThesisVersion; item?: ResearchWorkbenchItem };
+  if (!data.thesis || !data.item) throw new Error("研究论点生成失败。");
+  return { thesis: data.thesis, item: data.item };
 }
 
 export async function fetchValuations(): Promise<ValuationsResult> {

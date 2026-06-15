@@ -50,6 +50,18 @@ export type ResearchWorkbenchItem = {
   archivedAt?: string;
 };
 
+export type ResearchThesisVersion = {
+  id: string;
+  itemId: string;
+  version: number;
+  thesisMarkdown: string;
+  coreCitations: string[];
+  counterEvidence: string[];
+  evidenceHash?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 export type ResearchOpportunityInput = {
   evidenceChange: number;
   catalystProximity: number;

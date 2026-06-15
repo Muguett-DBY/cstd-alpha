@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchResearchItems, updateResearchItemStage } from "./api";
-import { groupResearchTemplates, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchStage, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchResearchItems, fetchResearchTheses, refreshResearchThesis, updateResearchItemStage } from "./api";
+import { parseAssistantMarkdown } from "./assistant-markdown";
+import { groupResearchTemplates, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 
 type Props = {
@@ -15,7 +16,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
   const [assistantCollapsed, setAssistantCollapsed] = useState(false);
+  const [thesisVersions, setThesisVersions] = useState<ResearchThesisVersion[]>([]);
+  const [thesisItemId, setThesisItemId] = useState("");
+  const [displayedThesisId, setDisplayedThesisId] = useState("");
+  const [thesisPhase, setThesisPhase] = useState<"idle" | "loading" | "generating" | "error">("idle");
+  const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
+  const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
+  const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
+  const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
   const templateGroups = useMemo(() => groupResearchTemplates(RESEARCH_TEMPLATES), []);
 
   useEffect(() => {
@@ -37,6 +46,36 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     };
   }, []);
 
+  useEffect(() => {
+    if (!selected?.id) {
+      thesisRequestRef.current?.controller.abort("research-item-cleared");
+      thesisRequestRef.current = null;
+      return;
+    }
+    if (thesisRequestRef.current && thesisRequestRef.current.itemId !== selected.id) {
+      thesisRequestRef.current.controller.abort("research-item-changed");
+      thesisRequestRef.current = null;
+    }
+    let cancelled = false;
+    fetchResearchTheses(selected.id)
+      .then((data) => {
+        if (cancelled) return;
+        setThesisVersions(data.versions);
+        setThesisItemId(selected.id);
+        setDisplayedThesisId(data.current?.id || data.versions[0]?.id || "");
+        setThesisPhase("idle");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setThesisItemId(selected.id);
+        setMessage(error instanceof Error ? error.message : "研究论点读取失败。");
+        setThesisPhase("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id]);
+
   async function changeStage(item: ResearchWorkbenchItem, stage: ResearchStage) {
     try {
       const updated = await updateResearchItemStage(item.id, stage);
@@ -44,6 +83,32 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setMessage(`${updated.title} 已移动到「${RESEARCH_STAGE_LABELS[stage]}」。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "阶段更新失败。");
+    }
+  }
+
+  async function generateThesis(item: ResearchWorkbenchItem) {
+    thesisRequestRef.current?.controller.abort("research-thesis-restarted");
+    const controller = new AbortController();
+    thesisRequestRef.current = { itemId: item.id, controller };
+    const timeout = window.setTimeout(() => controller.abort("research-thesis-timeout"), 245_000);
+    setThesisPhase("generating");
+    setMessage("正在读取最新证据并生成版本化论点，旧版本会继续保留。");
+    try {
+      const result = await refreshResearchThesis(item.id, controller.signal);
+      if (controller.signal.aborted || thesisRequestRef.current?.itemId !== item.id) return;
+      setItems((current) => current.map((entry) => (entry.id === result.item.id ? result.item : entry)));
+      setThesisVersions((current) => [result.thesis, ...current.filter((entry) => entry.id !== result.thesis.id)]);
+      setThesisItemId(item.id);
+      setDisplayedThesisId(result.thesis.id);
+      setThesisPhase("idle");
+      setMessage(`${item.title} 的投资论点已更新为 v${result.thesis.version}。`);
+    } catch (error) {
+      if (controller.signal.aborted && controller.signal.reason !== "research-thesis-timeout") return;
+      setThesisPhase("error");
+      setMessage(controller.signal.reason === "research-thesis-timeout" ? "论点生成超时，已保留当前版本。" : error instanceof Error ? error.message : "研究论点生成失败，已保留当前版本。");
+    } finally {
+      window.clearTimeout(timeout);
+      if (thesisRequestRef.current?.controller === controller) thesisRequestRef.current = null;
     }
   }
 
@@ -105,9 +170,47 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     </button>
                   ))}
                 </div>
-                <div className="thesis-placeholder">
-                  <h3>当前论点</h3>
-                  <p>尚未形成版本化论点。后续点击刷新论点时才会调用 AI。</p>
+                <div className="research-thesis">
+                  <div className="research-thesis-header">
+                    <div>
+                      <p className="eyebrow">版本化研究资产</p>
+                      <h3>当前论点{displayedThesis ? ` · v${displayedThesis.version}` : ""}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      disabled={thesisLoading || thesisPhase === "generating"}
+                      onClick={() => generateThesis(selected)}
+                    >
+                      {thesisPhase === "generating" ? "生成中…" : visibleThesisVersions.length ? "刷新论点" : "生成论点"}
+                    </button>
+                  </div>
+                  {visibleThesisVersions.length > 1 ? (
+                    <label className="thesis-version-select">
+                      <span>历史版本</span>
+                      <select value={displayedThesis?.id || ""} onChange={(event) => setDisplayedThesisId(event.target.value)}>
+                        {visibleThesisVersions.map((thesis) => (
+                          <option key={thesis.id} value={thesis.id}>v{thesis.version} · {formatResearchDate(thesis.createdAt)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {thesisLoading ? <p className="thesis-status">正在读取当前论点…</p> : null}
+                  {displayedThesis ? (
+                    <>
+                      <ResearchThesisContent markdown={displayedThesis.thesisMarkdown} />
+                      <div className="thesis-meta">
+                        <span>{formatResearchDate(displayedThesis.createdAt)}</span>
+                        <span>核心引用 {displayedThesis.coreCitations.length} 条</span>
+                        {displayedThesis.evidenceHash ? <span>证据指纹 {displayedThesis.evidenceHash.slice(0, 10)}</span> : null}
+                      </div>
+                    </>
+                  ) : !thesisLoading ? (
+                    <div className="thesis-empty">
+                      <p>尚未形成版本化论点。</p>
+                      <span>点击生成后，系统会读取公司证据包或行业雷达证据；只有用户主动点击时才调用模型。</span>
+                    </div>
+                  ) : null}
                 </div>
               </>
             ) : (
@@ -146,4 +249,54 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       ) : null}
     </section>
   );
+}
+
+function ResearchThesisContent({ markdown }: { markdown: string }) {
+  const blocks = parseAssistantMarkdown(markdown);
+  return (
+    <div className="research-thesis-content">
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          const Heading = block.level <= 2 ? "h4" : "h5";
+          return <Heading key={`heading-${index}`}>{renderResearchInline(block.text)}</Heading>;
+        }
+        if (block.type === "list") {
+          return (
+            <ul key={`list-${index}`}>
+              {block.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{renderResearchInline(item)}</li>)}
+            </ul>
+          );
+        }
+        if (block.type === "table") {
+          return (
+            <div className="research-thesis-table" key={`table-${index}`}>
+              <table>
+                <thead><tr>{block.headers.map((cell, cellIndex) => <th key={`${cell}-${cellIndex}`}>{renderResearchInline(cell)}</th>)}</tr></thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={`row-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`${cellIndex}-${cell}`}>{renderResearchInline(cell)}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.type === "hr") return <hr key={`rule-${index}`} />;
+        return <p key={`paragraph-${index}`}>{renderResearchInline(block.text)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderResearchInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => (
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
+      : part
+  ));
+}
+
+function formatResearchDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }

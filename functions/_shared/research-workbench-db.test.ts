@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun } from "./research-workbench-db";
+import { claimValuationRun, createResearchThesisVersion } from "./research-workbench-db";
 
 describe("claimValuationRun", () => {
   test("claims only queued or failed runs and reports whether the atomic update won", async () => {
@@ -40,5 +40,105 @@ describe("claimValuationRun", () => {
     } as unknown as D1Database;
 
     await expect(claimValuationRun(db, "run-1")).resolves.toBe(false);
+  });
+});
+
+describe("createResearchThesisVersion", () => {
+  test("stores the next version and updates the research item's current pointer", async () => {
+    const statements: Array<{ sql: string; bindings: unknown[] }> = [];
+    const db = {
+      batch: async () => [],
+      prepare(sql: string) {
+        return {
+          bind(...bindings: unknown[]) {
+            statements.push({ sql, bindings });
+            return {
+              async first() {
+                if (sql.includes("MAX(version)")) return { next_version: 3 };
+                if (sql.includes("FROM research_thesis_versions")) {
+                  return {
+                    id: "thesis-3",
+                    user_key: "admin",
+                    item_id: "research-1",
+                    version: 3,
+                    thesis_markdown: "# 主判断\n看好",
+                    core_citations_json: '["E1"]',
+                    counter_evidence_json: '["需求下滑"]',
+                    evidence_hash: "hash-3",
+                    created_by: "ai",
+                    created_at: "2026-06-15T00:00:00.000Z",
+                  };
+                }
+                return null;
+              },
+              async run() {
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const thesis = await createResearchThesisVersion(db, {
+      userKey: "admin",
+      itemId: "research-1",
+      thesisMarkdown: "# 主判断\n看好",
+      coreCitations: ["E1"],
+      counterEvidence: ["需求下滑"],
+      evidenceHash: "hash-3",
+      createdBy: "ai",
+    });
+
+    expect(thesis.version).toBe(3);
+    expect(thesis.coreCitations).toEqual(["E1"]);
+    expect(statements.some(({ sql }) => sql.includes("INSERT INTO research_thesis_versions"))).toBe(true);
+    expect(statements.some(({ sql }) => sql.includes("current_thesis_version_id"))).toBe(true);
+  });
+
+  test("retries a concurrent version conflict instead of losing the generated thesis", async () => {
+    let batchCalls = 0;
+    const db = {
+      async batch() {
+        batchCalls += 1;
+        if (batchCalls === 2) throw new Error("UNIQUE constraint failed: research_thesis_versions.item_id, research_thesis_versions.version");
+        return [];
+      },
+      prepare(sql: string) {
+        return {
+          bind() {
+            return {
+              async first() {
+                if (!sql.includes("FROM research_thesis_versions")) return null;
+                return {
+                  id: "thesis-retried",
+                  user_key: "admin",
+                  item_id: "research-1",
+                  version: 4,
+                  thesis_markdown: "# 主判断\n中性观察",
+                  core_citations_json: '["E2"]',
+                  counter_evidence_json: '["需求下滑"]',
+                  evidence_hash: "hash-4",
+                  created_by: "ai",
+                  created_at: "2026-06-15T00:00:00.000Z",
+                };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const thesis = await createResearchThesisVersion(db, {
+      userKey: "admin",
+      itemId: "research-1",
+      thesisMarkdown: "# 主判断\n中性观察",
+      coreCitations: ["E2"],
+      counterEvidence: ["需求下滑"],
+      evidenceHash: "hash-4",
+    });
+
+    expect(batchCalls).toBe(3);
+    expect(thesis.version).toBe(4);
   });
 });

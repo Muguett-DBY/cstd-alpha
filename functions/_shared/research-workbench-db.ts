@@ -1,4 +1,4 @@
-import type { ResearchEntityType, ResearchStage, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
+import type { ResearchEntityType, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
 import { RESEARCH_STAGES } from "../../src/shared/research-workbench";
 import type { CompanyArchetype, ValuationMethod, ValuationResult, ValuationRunStatus } from "../../src/shared/valuation";
 
@@ -61,6 +61,19 @@ type ResearchNotificationRow = {
   body: string;
   severity: string;
   status: string;
+  created_at: string;
+};
+
+type ResearchThesisRow = {
+  id: string;
+  user_key: string;
+  item_id: string;
+  version: number;
+  thesis_markdown: string;
+  core_citations_json: string;
+  counter_evidence_json: string;
+  evidence_hash: string | null;
+  created_by: string;
   created_at: string;
 };
 
@@ -160,6 +173,78 @@ export async function confirmResearchStage(db: D1Database, userKey: string, id: 
   const now = new Date().toISOString();
   await db.prepare(`UPDATE research_items SET stage = ?3, updated_at = ?4 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, now).run();
   return readResearchItemById(db, userKey, id);
+}
+
+export async function listResearchThesisVersions(db: D1Database, userKey: string, itemId: string, limit = 20) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, user_key, item_id, version, thesis_markdown, core_citations_json, counter_evidence_json, evidence_hash, created_by, created_at
+     FROM research_thesis_versions WHERE user_key = ?1 AND item_id = ?2 ORDER BY version DESC LIMIT ?3`,
+  ).bind(userKey, itemId, limit).all<ResearchThesisRow>();
+  return (result.results ?? []).map(researchThesisRowToVersion);
+}
+
+export async function readCurrentResearchThesis(db: D1Database, userKey: string, itemId: string) {
+  await ensureResearchWorkbenchSchema(db);
+  const row = await db.prepare(
+    `SELECT tv.id, tv.user_key, tv.item_id, tv.version, tv.thesis_markdown, tv.core_citations_json, tv.counter_evidence_json,
+            tv.evidence_hash, tv.created_by, tv.created_at
+     FROM research_items ri
+     JOIN research_thesis_versions tv ON tv.id = ri.current_thesis_version_id
+     WHERE ri.user_key = ?1 AND ri.id = ?2`,
+  ).bind(userKey, itemId).first<ResearchThesisRow>();
+  return row ? researchThesisRowToVersion(row) : null;
+}
+
+export async function createResearchThesisVersion(db: D1Database, input: {
+  userKey: string;
+  itemId: string;
+  thesisMarkdown: string;
+  coreCitations: string[];
+  counterEvidence: string[];
+  evidenceHash?: string;
+  createdBy?: string;
+}) {
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  let id = "";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    id = crypto.randomUUID();
+    try {
+      await db.batch([
+        db.prepare(
+          `INSERT INTO research_thesis_versions (
+            id, user_key, item_id, version, thesis_markdown, core_citations_json, counter_evidence_json, evidence_hash, created_by, created_at
+          )
+          SELECT ?1, ?2, ?3, COALESCE(MAX(version), 0) + 1, ?4, ?5, ?6, ?7, ?8, ?9
+          FROM research_thesis_versions WHERE item_id = ?3`,
+        ).bind(
+          id,
+          input.userKey,
+          input.itemId,
+          input.thesisMarkdown,
+          JSON.stringify(input.coreCitations),
+          JSON.stringify(input.counterEvidence),
+          input.evidenceHash ?? null,
+          input.createdBy ?? "ai",
+          now,
+        ),
+        db.prepare(
+          `UPDATE research_items SET current_thesis_version_id = ?3, evidence_hash = COALESCE(?4, evidence_hash), updated_at = ?5
+           WHERE user_key = ?1 AND id = ?2`,
+        ).bind(input.userKey, input.itemId, id, input.evidenceHash ?? null, now),
+      ]);
+      break;
+    } catch (error) {
+      if (attempt === 2 || !isThesisVersionConflict(error)) throw error;
+    }
+  }
+  const row = await db.prepare(
+    `SELECT id, user_key, item_id, version, thesis_markdown, core_citations_json, counter_evidence_json, evidence_hash, created_by, created_at
+     FROM research_thesis_versions WHERE user_key = ?1 AND id = ?2`,
+  ).bind(input.userKey, id).first<ResearchThesisRow>();
+  if (!row) throw new Error("research thesis create failed");
+  return researchThesisRowToVersion(row);
 }
 
 export async function listResearchNotifications(db: D1Database, userKey: string, limit = 20) {
@@ -292,6 +377,20 @@ function researchItemRowToItem(row: ResearchItemRow): ResearchWorkbenchItem {
   };
 }
 
+function researchThesisRowToVersion(row: ResearchThesisRow): ResearchThesisVersion {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    version: row.version,
+    thesisMarkdown: row.thesis_markdown,
+    coreCitations: parseJson<string[]>(row.core_citations_json) ?? [],
+    counterEvidence: parseJson<string[]>(row.counter_evidence_json) ?? [],
+    evidenceHash: row.evidence_hash ?? undefined,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  };
+}
+
 function normalizeResearchStage(value: unknown): ResearchStage | null {
   return RESEARCH_STAGES.includes(value as ResearchStage) ? value as ResearchStage : null;
 }
@@ -313,4 +412,9 @@ async function sha256(value: string) {
 
 function safeError(error: unknown) {
   return error instanceof Error ? error.message : String(error || "unknown error");
+}
+
+function isThesisVersionConflict(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /UNIQUE constraint failed.*research_thesis_versions.*(?:item_id|version)/i.test(message);
 }

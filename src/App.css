@@ -903,11 +903,140 @@ button:not(:disabled):active,
   color: white;
 }
 
-.thesis-placeholder {
-  border: 1px dashed var(--line);
+.research-thesis {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   background: #fbfbf8;
+}
+
+.research-thesis-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-thesis-header h3,
+.research-thesis-header p {
+  margin: 0;
+}
+
+.research-thesis-header .primary-action {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.thesis-version-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.thesis-version-select select {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: white;
+  color: var(--ink);
+}
+
+.research-thesis-content {
+  display: grid;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.research-thesis-content h4,
+.research-thesis-content h5,
+.research-thesis-content p,
+.research-thesis-content ul {
+  margin: 0;
+}
+
+.research-thesis-content h4 {
+  border-left: 3px solid var(--teal);
+  padding-left: 9px;
+  font-size: 16px;
+}
+
+.research-thesis-content h5 {
+  font-size: 14px;
+}
+
+.research-thesis-content ul {
+  padding-left: 20px;
+}
+
+.research-thesis-content hr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.research-thesis-table {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.research-thesis-table table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+}
+
+.research-thesis-table th,
+.research-thesis-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.research-thesis-table th {
+  background: #f3f5f2;
+  font-size: 12px;
+}
+
+.thesis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.thesis-empty,
+.thesis-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.thesis-empty p {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.thesis-empty span {
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .template-groups details {
