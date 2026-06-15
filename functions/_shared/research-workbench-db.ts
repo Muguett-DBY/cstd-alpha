@@ -1,4 +1,4 @@
-import type { ResearchEntityType, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
+import type { ResearchCatalyst, ResearchCatalystDraft, ResearchEntityType, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
 import { RESEARCH_STAGES } from "../../src/shared/research-workbench";
 import type { CompanyArchetype, ValuationMethod, ValuationResult, ValuationRunStatus } from "../../src/shared/valuation";
 
@@ -75,6 +75,18 @@ type ResearchThesisRow = {
   evidence_hash: string | null;
   created_by: string;
   created_at: string;
+};
+
+type ResearchCatalystRow = {
+  id: string;
+  item_id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: string;
+  evidence_refs_json: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export async function ensureResearchWorkbenchSchema(db: D1Database) {
@@ -265,6 +277,43 @@ export async function listResearchNotifications(db: D1Database, userKey: string,
   }));
 }
 
+export async function listResearchCatalysts(db: D1Database, userKey: string, itemId: string) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, item_id, title, description, due_at, status, evidence_refs_json, created_at, updated_at
+     FROM research_catalysts
+     WHERE user_key = ?1 AND item_id = ?2
+     ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'watching' THEN 1 ELSE 2 END, COALESCE(due_at, '9999-12-31'), updated_at DESC`,
+  ).bind(userKey, itemId).all<ResearchCatalystRow>();
+  return (result.results ?? []).map(researchCatalystRowToCatalyst);
+}
+
+export async function upsertResearchCatalystDrafts(db: D1Database, input: {
+  userKey: string;
+  itemId: string;
+  drafts: ResearchCatalystDraft[];
+}) {
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  const uniqueDrafts = dedupeCatalystDrafts(input.drafts).slice(0, 12);
+  if (!uniqueDrafts.length) return listResearchCatalysts(db, input.userKey, input.itemId);
+  const statements = await Promise.all(uniqueDrafts.map(async (draft) => {
+    const id = await sha256(`${input.userKey}:${input.itemId}:${draft.title}`);
+    return db.prepare(
+      `INSERT INTO research_catalysts (
+        id, user_key, item_id, title, description, status, evidence_refs_json, created_at, updated_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?7)
+      ON CONFLICT(id) DO UPDATE SET
+        title = excluded.title,
+        description = excluded.description,
+        evidence_refs_json = excluded.evidence_refs_json,
+        updated_at = excluded.updated_at`,
+    ).bind(id, input.userKey, input.itemId, draft.title, draft.description ?? null, JSON.stringify(draft.evidenceRefs), now);
+  }));
+  await db.batch(statements);
+  return listResearchCatalysts(db, input.userKey, input.itemId);
+}
+
 export async function createValuationRun(db: D1Database, input: {
   userKey: string;
   researchItemId?: string;
@@ -389,6 +438,36 @@ function researchThesisRowToVersion(row: ResearchThesisRow): ResearchThesisVersi
     createdBy: row.created_by,
     createdAt: row.created_at,
   };
+}
+
+function researchCatalystRowToCatalyst(row: ResearchCatalystRow): ResearchCatalyst {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    title: row.title,
+    description: row.description ?? undefined,
+    dueAt: row.due_at ?? undefined,
+    status: row.status,
+    evidenceRefs: parseJson<string[]>(row.evidence_refs_json) ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function dedupeCatalystDrafts(drafts: ResearchCatalystDraft[]) {
+  const seen = new Set<string>();
+  const result: ResearchCatalystDraft[] = [];
+  for (const draft of drafts) {
+    const title = draft.title.trim();
+    if (!title || seen.has(title)) continue;
+    seen.add(title);
+    result.push({
+      title,
+      description: draft.description?.trim(),
+      evidenceRefs: Array.from(new Set(draft.evidenceRefs.map((ref) => ref.trim()).filter(Boolean))),
+    });
+  }
+  return result;
 }
 
 function normalizeResearchStage(value: unknown): ResearchStage | null {

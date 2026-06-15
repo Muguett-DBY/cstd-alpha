@@ -62,6 +62,24 @@ export type ResearchThesisVersion = {
   createdAt: string;
 };
 
+export type ResearchCatalyst = {
+  id: string;
+  itemId: string;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  status: string;
+  evidenceRefs: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ResearchCatalystDraft = {
+  title: string;
+  description?: string;
+  evidenceRefs: string[];
+};
+
 export type ResearchOpportunityInput = {
   evidenceChange: number;
   catalystProximity: number;
@@ -219,6 +237,45 @@ export function groupResearchTemplates(templates: ResearchTemplate[]): ResearchT
     .filter((group) => group.templates.length > 0);
 }
 
+export function extractCatalystDraftsFromThesis(markdown: string, fallbackEvidenceRefs: string[] = [], limit = 8): ResearchCatalystDraft[] {
+  const drafts: ResearchCatalystDraft[] = [];
+  let activeSection: "catalyst" | "counter" | "tracking" | null = null;
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const heading = line.replace(/^#{1,6}\s*/, "");
+    if (/^(关键)?催化剂|正向确认|确认信号/.test(heading)) {
+      activeSection = "catalyst";
+      continue;
+    }
+    if (/反证|失效条件|下调条件/.test(heading)) {
+      activeSection = "counter";
+      continue;
+    }
+    if (/跟踪清单|下一步跟踪|跟踪指标/.test(heading)) {
+      activeSection = "tracking";
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(line)) {
+      activeSection = null;
+      continue;
+    }
+    if (!activeSection) continue;
+    const cleaned = line
+      .replace(/^[-*]\s+/, "")
+      .replace(/^\d+[.)、]\s*/, "")
+      .replace(/^>\s*/, "")
+      .trim();
+    if (!cleaned || cleaned.length < 4) continue;
+    const title = catalystTitle(cleaned, activeSection);
+    if (!title || drafts.some((entry) => entry.title === title)) continue;
+    const refs = uniqueEvidenceRefs([...evidenceRefsFromText(cleaned), ...fallbackEvidenceRefs]).slice(0, 5);
+    drafts.push({ title, description: cleaned, evidenceRefs: refs });
+    if (drafts.length >= limit) break;
+  }
+  return drafts;
+}
+
 function templateGroupForText(text: string): TemplateGroupId {
   if (/估值|DCF|安全边际|价格|配置/.test(text)) return "valuation";
   if (/财务|现金流|利润|ROE|负债|资本/.test(text)) return "financial";
@@ -226,4 +283,24 @@ function templateGroupForText(text: string): TemplateGroupId {
   if (/回报|分红|收益|股东/.test(text)) return "return";
   if (/护城河|竞争|商业模式|市场地位|优势/.test(text)) return "moat";
   return "quality";
+}
+
+function catalystTitle(text: string, section: "catalyst" | "counter" | "tracking") {
+  const normalized = text
+    .replace(/\*\*/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/（?E\d+[^）\s]*）?/gi, "")
+    .trim();
+  const firstClause = normalized.split(/[。；;，,]/)[0]?.trim() || normalized;
+  const prefix = section === "counter" ? "反证：" : section === "tracking" ? "跟踪：" : "催化：";
+  const compact = firstClause.slice(0, 42);
+  return compact ? `${prefix}${compact}` : "";
+}
+
+function evidenceRefsFromText(text: string) {
+  return text.match(/\bE\d+\b/g) ?? [];
+}
+
+function uniqueEvidenceRefs(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }

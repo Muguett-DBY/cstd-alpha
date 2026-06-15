@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchResearchItems, fetchResearchTheses, refreshResearchThesis, updateResearchItemStage } from "./api";
+import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { groupResearchTemplates, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { groupResearchTemplates, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchCatalyst, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 
 type Props = {
@@ -20,6 +20,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [thesisItemId, setThesisItemId] = useState("");
   const [displayedThesisId, setDisplayedThesisId] = useState("");
   const [thesisPhase, setThesisPhase] = useState<"idle" | "loading" | "generating" | "error">("idle");
+  const [catalysts, setCatalysts] = useState<ResearchCatalyst[]>([]);
+  const [catalystItemId, setCatalystItemId] = useState("");
+  const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
@@ -76,6 +79,30 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     };
   }, [selected?.id]);
 
+  useEffect(() => {
+    if (!selected?.id) {
+      return;
+    }
+    let cancelled = false;
+    fetchResearchCatalysts(selected.id)
+      .then((data) => {
+        if (cancelled) return;
+        setCatalysts(data.catalysts);
+        setCatalystItemId(selected.id);
+        setCatalystPhase("idle");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCatalysts([]);
+        setCatalystItemId(selected.id);
+        setCatalystPhase("error");
+        setMessage(error instanceof Error ? error.message : "研究跟踪项读取失败。");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id]);
+
   async function changeStage(item: ResearchWorkbenchItem, stage: ResearchStage) {
     try {
       const updated = await updateResearchItemStage(item.id, stage);
@@ -109,6 +136,20 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     } finally {
       window.clearTimeout(timeout);
       if (thesisRequestRef.current?.controller === controller) thesisRequestRef.current = null;
+    }
+  }
+
+  async function syncCatalysts(item: ResearchWorkbenchItem) {
+    setCatalystPhase("syncing");
+    try {
+      const result = await syncResearchCatalystsFromThesis(item.id);
+      setCatalysts(result.catalysts);
+      setCatalystItemId(item.id);
+      setCatalystPhase("idle");
+      setMessage(`${item.title} 已同步 ${result.created ?? result.catalysts.length} 个催化剂、反证和跟踪项。`);
+    } catch (error) {
+      setCatalystPhase("error");
+      setMessage(error instanceof Error ? error.message : "研究跟踪项同步失败。");
     }
   }
 
@@ -209,6 +250,42 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <div className="thesis-empty">
                       <p>尚未形成版本化论点。</p>
                       <span>点击生成后，系统会读取公司证据包或行业雷达证据；只有用户主动点击时才调用模型。</span>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="research-catalysts">
+                  <div className="research-thesis-header">
+                    <div>
+                      <p className="eyebrow">催化剂与反证跟踪</p>
+                      <h3>跟踪项{catalystItemId === selected.id ? ` · ${catalysts.length}` : ""}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={!displayedThesis || catalystPhase === "loading" || catalystPhase === "syncing"}
+                      onClick={() => syncCatalysts(selected)}
+                    >
+                      {catalystPhase === "syncing" ? "同步中…" : "从论点同步"}
+                    </button>
+                  </div>
+                  {catalystPhase === "loading" ? <p className="thesis-status">正在读取跟踪项…</p> : null}
+                  {catalystItemId === selected.id && catalysts.length ? (
+                    <div className="catalyst-list">
+                      {catalysts.slice(0, 8).map((entry) => (
+                        <article key={entry.id}>
+                          <strong>{entry.title}</strong>
+                          {entry.description ? <p>{entry.description}</p> : null}
+                          <div>
+                            <span>{entry.status === "open" ? "跟踪中" : entry.status}</span>
+                            {entry.evidenceRefs.length ? <span>{entry.evidenceRefs.join(" / ")}</span> : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : catalystPhase !== "loading" ? (
+                    <div className="thesis-empty">
+                      <p>暂无跟踪项。</p>
+                      <span>生成论点后点击同步，将关键催化剂、反证和跟踪清单沉淀为可复核事项。</span>
                     </div>
                   ) : null}
                 </div>

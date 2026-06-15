@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { calculateResearchOpportunityScore, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking } from "./shared/research-workbench";
+import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking } from "./shared/research-workbench";
 import type { RadarIndustryPacket } from "./shared/radar";
 import type { ResearchTemplate, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -70,6 +70,34 @@ describe("research workbench scoring", () => {
 
     expect(groups.map((group) => group.id)).toEqual(["moat", "valuation", "risk"]);
     expect(groups.find((group) => group.id === "valuation")?.templates[0]?.title).toBe("估值判断");
+  });
+
+  test("extracts catalyst, counterevidence and tracking items from a versioned thesis", () => {
+    const drafts = extractCatalystDraftsFromThesis(`# 主判断
+中性观察。
+
+## 核心逻辑
+这段不应该生成跟踪项。
+
+## 关键催化剂
+- AI 一体机订单放量，验证收入加速（E1）。
+- 并购整合完成，软硬协同兑现（E2）。
+
+## 反证与失效条件
+1. 订单延期或取消，说明需求不及预期（E3）。
+
+## 跟踪清单
+- 月度跟踪新签订单和毛利率。
+`, ["E9"]);
+
+    expect(drafts.map((draft) => draft.title)).toEqual([
+      "催化：AI 一体机订单放量",
+      "催化：并购整合完成",
+      "反证：订单延期或取消",
+      "跟踪：月度跟踪新签订单和毛利率",
+    ]);
+    expect(drafts[0].evidenceRefs).toEqual(["E1", "E9"]);
+    expect(drafts[2].evidenceRefs).toEqual(["E3", "E9"]);
   });
 });
 

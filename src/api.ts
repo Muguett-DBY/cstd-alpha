@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
+import type { ResearchCatalyst, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -90,6 +90,10 @@ export type ResearchThesesResult = {
   versions: ResearchThesisVersion[];
 };
 
+export type ResearchCatalystsResult = {
+  catalysts: ResearchCatalyst[];
+};
+
 export type ValuationsResult = {
   runs: ValuationRunSummary[];
 };
@@ -156,6 +160,21 @@ export async function refreshResearchThesis(id: string, signal?: AbortSignal): P
   const data = (await response.json()) as { thesis?: ResearchThesisVersion; item?: ResearchWorkbenchItem };
   if (!data.thesis || !data.item) throw new Error("研究论点生成失败。");
   return { thesis: data.thesis, item: data.item };
+}
+
+export async function fetchResearchCatalysts(id: string): Promise<ResearchCatalystsResult> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/catalysts`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项读取失败。");
+  return (await response.json()) as ResearchCatalystsResult;
+}
+
+export async function syncResearchCatalystsFromThesis(id: string): Promise<ResearchCatalystsResult & { created?: number }> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/catalysts`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项同步失败。");
+  return (await response.json()) as ResearchCatalystsResult & { created?: number };
 }
 
 export async function fetchValuations(): Promise<ValuationsResult> {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun, createResearchThesisVersion } from "./research-workbench-db";
+import { claimValuationRun, createResearchThesisVersion, upsertResearchCatalystDrafts } from "./research-workbench-db";
 
 describe("claimValuationRun", () => {
   test("claims only queued or failed runs and reports whether the atomic update won", async () => {
@@ -140,5 +140,62 @@ describe("createResearchThesisVersion", () => {
 
     expect(batchCalls).toBe(3);
     expect(thesis.version).toBe(4);
+  });
+});
+
+describe("upsertResearchCatalystDrafts", () => {
+  test("stores deterministic catalyst tracking items and returns normalized rows", async () => {
+    const statements: Array<{ sql: string; bindings: unknown[] }> = [];
+    const batchSizes: number[] = [];
+    const db = {
+      async batch(batchStatements: unknown[]) {
+        batchSizes.push(batchStatements.length);
+        return [];
+      },
+      prepare(sql: string) {
+        return {
+          bind(...bindings: unknown[]) {
+            statements.push({ sql, bindings });
+            return {
+              async all() {
+                if (!sql.includes("FROM research_catalysts")) return { results: [] };
+                return {
+                  results: [
+                    {
+                      id: "cat-1",
+                      item_id: "research-1",
+                      title: "催化：订单放量",
+                      description: "订单放量验证收入加速（E1）。",
+                      due_at: null,
+                      status: "open",
+                      evidence_refs_json: '["E1"]',
+                      created_at: "2026-06-15T00:00:00.000Z",
+                      updated_at: "2026-06-15T00:00:00.000Z",
+                    },
+                  ],
+                };
+              },
+              async run() {
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const catalysts = await upsertResearchCatalystDrafts(db, {
+      userKey: "admin",
+      itemId: "research-1",
+      drafts: [
+        { title: "催化：订单放量", description: "订单放量验证收入加速（E1）。", evidenceRefs: ["E1"] },
+        { title: "催化：订单放量", description: "重复项应去重。", evidenceRefs: ["E1"] },
+        { title: "反证：订单延期", description: "订单延期说明需求不及预期（E2）。", evidenceRefs: ["E2"] },
+      ],
+    });
+
+    expect(statements.some(({ sql }) => sql.includes("INSERT INTO research_catalysts"))).toBe(true);
+    expect(batchSizes).toContain(2);
+    expect(catalysts[0]).toMatchObject({ title: "催化：订单放量", evidenceRefs: ["E1"], status: "open" });
   });
 });
