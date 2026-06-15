@@ -233,9 +233,14 @@ export async function listValuationRuns(db: D1Database, userKey: string, limit =
   return result.results ?? [];
 }
 
-export async function markValuationRunRunning(db: D1Database, id: string) {
+export async function claimValuationRun(db: D1Database, id: string) {
   const now = new Date().toISOString();
-  await db.prepare(`UPDATE valuation_runs SET status = 'running', started_at = COALESCE(started_at, ?2), updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+  const result = await db.prepare(
+    `UPDATE valuation_runs
+     SET status = 'running', started_at = COALESCE(started_at, ?2), updated_at = ?2
+     WHERE id = ?1 AND status IN ('queued', 'failed')`,
+  ).bind(id, now).run();
+  return (result.meta?.changes ?? 0) > 0;
 }
 
 export async function completeValuationRun(db: D1Database, input: { id: string; result: ValuationResult; objectKey?: string }) {

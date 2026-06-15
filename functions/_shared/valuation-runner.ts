@@ -1,6 +1,6 @@
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "./deepseek-cache";
 import { buildDeepSeekFallbackRoutes } from "./opencode-go";
-import { completeValuationRun, failValuationRun, markValuationRunRunning, readValuationRunForWorker, type ValuationRunRow } from "./research-workbench-db";
+import { claimValuationRun, completeValuationRun, failValuationRun, readValuationRunForWorker, type ValuationRunRow } from "./research-workbench-db";
 import { computeCyclicalMidCycle, computeFinancialDdm, computeOperatingDcf } from "./valuation-engine";
 import type { AssistantEnv } from "./assistant-db";
 import type { ValuationResult } from "../../src/shared/valuation";
@@ -61,7 +61,7 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
   const run = await readValuationRunForWorker(env.REPORT_LIBRARY_DB, valuationRunId);
   if (!run || run.status === "completed") return;
   try {
-    await markValuationRunRunning(env.REPORT_LIBRARY_DB, valuationRunId);
+    if (!await claimValuationRun(env.REPORT_LIBRARY_DB, valuationRunId)) return;
     const evidencePackage = await readValuationEvidencePackage(env, run);
     const evidence = prepareValuationEvidenceContext(evidencePackage);
     const assumptions = await generateValuationAssumptions(env, run, evidence.promptText);
