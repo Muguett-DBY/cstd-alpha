@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { hasActiveValuationRuns, mergeValuationRuns } from "./valuation-state";
+import { filterValuationRunsForDisplay, hasActiveValuationRuns, mergeValuationRuns } from "./valuation-state";
 
 describe("valuation state", () => {
   test("polls only while at least one valuation is queued or running", () => {
@@ -20,6 +20,26 @@ describe("valuation state", () => {
     ];
 
     expect(mergeValuationRuns(current, latest)).toEqual(latest);
+  });
+
+  test("hides completed legacy valuations that predate grounded methodology metadata", () => {
+    const legacy = valuationRun("completed", "legacy");
+    legacy.result = {
+      method: "dcf_3_statement",
+      archetype: "operating",
+      currency: "CNY",
+      asOf: "2026-06-01",
+      assumptions: [],
+      scenarios: [],
+    };
+    const grounded = valuationRun("completed", "grounded");
+    grounded.result = {
+      ...legacy.result,
+      methodologyVersion: 2,
+    };
+    const failed = valuationRun("failed", "failed");
+
+    expect(filterValuationRunsForDisplay([legacy, grounded, failed])).toEqual([grounded, failed]);
   });
 });
 

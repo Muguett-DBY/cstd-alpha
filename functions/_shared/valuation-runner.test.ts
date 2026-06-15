@@ -221,6 +221,16 @@ describe("computeValuationFromAssumptions", () => {
     expect(result.scenarios[1].perShareValue).toBeGreaterThan(0);
   });
 
+  test("marks successful valuations with the grounded methodology version", () => {
+    const result = computeValuationFromAssumptions(
+      makeRun({ evidence_hash: "evidence-v2" }),
+      { confidence: 0.5, operating: { revenueGrowth: { low: 0.03, base: 0.07, high: 0.11 }, ebitMargin: { low: 0.1, base: 0.15, high: 0.2 } } },
+      { baseRevenue: 2000, sharesOutstanding: 150 },
+    );
+
+    expect(result.methodologyVersion).toBe(2);
+  });
+
   test("throws even with anchors when essential input still missing", () => {
     expect(() => computeValuationFromAssumptions(
       makeRun(),

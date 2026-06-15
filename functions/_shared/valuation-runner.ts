@@ -91,7 +91,7 @@ export function computeValuationFromAssumptions(
   const asOf = new Date().toISOString().slice(0, 10);
   if (run.method === "ddm_residual_income") {
     const financial = merged.financial ?? {};
-    return computeFinancialDdm({
+    return markGroundedMethodology(computeFinancialDdm({
       currency,
       asOf,
       bookValue: positiveNumber(financial.bookValue, 0),
@@ -101,11 +101,11 @@ export function computeValuationFromAssumptions(
       costOfEquity: normalizeTriple(financial.costOfEquity, { low: 0.085, base: 0.1, high: 0.115 }),
       terminalGrowthRate: normalizeTriple(financial.terminalGrowthRate, { low: 0.005, base: 0.015, high: 0.025 }),
       evidenceHash: run.evidence_hash ?? undefined,
-    }, run.archetype === "insurance" ? "insurance" : "bank");
+    }, run.archetype === "insurance" ? "insurance" : "bank"));
   }
   if (run.method === "mid_cycle_nav") {
     const cyclical = merged.cyclical ?? {};
-    return computeCyclicalMidCycle({
+    return markGroundedMethodology(computeCyclicalMidCycle({
       currency,
       asOf,
       midCycleEbitda: normalizeTriple(cyclical.midCycleEbitda, { low: 60, base: 100, high: 140 }),
@@ -114,10 +114,10 @@ export function computeValuationFromAssumptions(
       replacementAssetValue: cyclical.replacementAssetValue ? normalizeTriple(cyclical.replacementAssetValue, { low: 300, base: 400, high: 500 }) : undefined,
       evEbitdaMultiple: normalizeTriple(cyclical.evEbitdaMultiple, { low: 4, base: 6, high: 8 }),
       evidenceHash: run.evidence_hash ?? undefined,
-    });
+    }));
   }
   const operating = merged.operating ?? {};
-  return computeOperatingDcf({
+  return markGroundedMethodology(computeOperatingDcf({
     currency,
     asOf,
     baseRevenue: positiveNumber(operating.baseRevenue, 0),
@@ -133,7 +133,11 @@ export function computeValuationFromAssumptions(
     terminalGrowthRate: normalizeTriple(operating.terminalGrowthRate, { low: 0.015, base: 0.025, high: 0.035 }),
     peerEvEbitda: operating.peerEvEbitda ? normalizeTriple(operating.peerEvEbitda, { low: 10, base: 14, high: 18 }) : undefined,
     evidenceHash: run.evidence_hash ?? undefined,
-  });
+  }));
+}
+
+function markGroundedMethodology(result: ValuationResult): ValuationResult {
+  return { ...result, methodologyVersion: 2 };
 }
 
 export function extractValuationAnchors(evidenceText: string): ValuationAnchors {

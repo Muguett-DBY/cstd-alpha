@@ -37,6 +37,7 @@ export type ThreeStatementForecastRow = {
 };
 
 export type ValuationResult = {
+  methodologyVersion?: number;
   method: ValuationMethod;
   archetype: CompanyArchetype;
   currency: string;

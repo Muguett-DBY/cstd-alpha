@@ -7,3 +7,7 @@ export function hasActiveValuationRuns(runs: ValuationRunSummary[]) {
 export function mergeValuationRuns(_current: ValuationRunSummary[], latest: ValuationRunSummary[]) {
   return latest;
 }
+
+export function filterValuationRunsForDisplay(runs: ValuationRunSummary[]) {
+  return runs.filter((run) => run.status !== "completed" || (run.result?.methodologyVersion ?? 0) >= 2);
+}

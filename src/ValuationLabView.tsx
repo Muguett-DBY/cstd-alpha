@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createValuationRun, fetchResearchItems, fetchValuations } from "./api";
 import type { ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { mergeValuationRuns } from "./valuation-state";
+import { filterValuationRunsForDisplay, mergeValuationRuns } from "./valuation-state";
 
 export function ValuationLabView() {
   const [runs, setRuns] = useState<ValuationRunSummary[]>([]);
@@ -15,6 +15,7 @@ export function ValuationLabView() {
     () => runs.filter((run) => run.status === "queued" || run.status === "running").map((run) => run.id).sort().join(","),
     [runs],
   );
+  const displayRuns = useMemo(() => filterValuationRunsForDisplay(runs), [runs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +107,7 @@ export function ValuationLabView() {
               <h2>估值版本</h2>
               <p>运行完成后展示三情景、关键假设、敏感性和同业区间。</p>
             </header>
-            {runs.length ? runs.map((run) => <ValuationRunCard key={run.id} run={run} />) : <div className="workbench-empty compact">暂无估值记录。</div>}
+            {displayRuns.length ? displayRuns.map((run) => <ValuationRunCard key={run.id} run={run} />) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
           </main>
         </div>
       ) : null}
