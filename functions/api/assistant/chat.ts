@@ -755,7 +755,7 @@ function shouldRunAssistantAgentLoop(env: AssistantEnv, message: string, mode: A
 }
 
 export function shouldReplanAssistantAgentLoopAfterEvidence(itemsBeforeRound: number, itemsAfterRound: number, round: number, maxRounds: number) {
-  return itemsAfterRound > itemsBeforeRound && itemsAfterRound < 2 && round < maxRounds;
+  return itemsAfterRound > itemsBeforeRound && round < maxRounds;
 }
 
 function assistantToolCallKey(call: AssistantSearchToolCall) {

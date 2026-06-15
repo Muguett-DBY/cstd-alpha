@@ -713,12 +713,12 @@ function findSecTickerEntry(value: unknown, symbol: string) {
   return SEC_TICKER_OVERRIDES[normalizedSymbol];
 }
 
-function buildFundamentalsUrl(symbol: string) {
+export function buildFundamentalsUrl(symbol: string) {
   const now = Math.floor(Date.now() / 1000);
-  const fiveYearsAgo = now - 60 * 60 * 24 * 365 * 5;
+  const twelveYearsAgo = now - 60 * 60 * 24 * 365 * 12;
   return `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(
     symbol,
-  )}?type=${YAHOO_FUNDAMENTAL_TYPES.join(",")}&merge=false&period1=${fiveYearsAgo}&period2=${now}`;
+  )}?type=${YAHOO_FUNDAMENTAL_TYPES.join(",")}&merge=false&period1=${twelveYearsAgo}&period2=${now}`;
 }
 
 function eastmoneyKlineUrl(secid: string, priceMode: PriceMode) {

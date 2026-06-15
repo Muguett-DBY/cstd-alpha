@@ -275,6 +275,7 @@ describe("assistant chat endpoint", () => {
           results: [{ title: "贵州茅台批价与业绩预估", url: "https://example.com/maotai", content: "券商预计低个位数增长，批价承压。", score: 0.8 }],
         }),
       )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "final_ready" } }], usage: { total_tokens: 30 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(finalStream, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1560,6 +1561,7 @@ describe("assistant chat endpoint", () => {
         ),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "CATL overseas risk", url: "https://example.com/catl", highlights: ["海外竞争和政策风险。"] }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "final_ready" } }], usage: { total_tokens: 30 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：Exa无可用结果，先观察。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -1628,6 +1630,7 @@ describe("assistant chat endpoint", () => {
           { status: 200 },
         ),
       )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "final_ready" } }], usage: { total_tokens: 30 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：低个位数增长更合理。\n证据等级：中低。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -1655,8 +1658,8 @@ describe("assistant chat endpoint", () => {
     expect(routerBody.tools?.[0]?.function?.name).toBe("search_anysearch");
     expect(routerBody.tool_choice).toBe("auto");
     expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.anysearch.com/v1/search")).toBe(true);
-    expect(body).toContain("模型调用工具");
-    expect(body).toContain("AnySearch");
+    expect(body).toContain('"step":"plan_tools"');
+    expect(body).toContain('"round":2');
   });
 
   test("lets the model call Tavily as a finance search tool", async () => {
@@ -1688,6 +1691,7 @@ describe("assistant chat endpoint", () => {
           results: [{ title: "腾讯回购和利润修复", url: "https://example.com/tencent-buyback", content: "腾讯回购与利润修复仍需现金流验证。", score: 0.76 }],
         }),
       )
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: "final_ready" } }], usage: { total_tokens: 30 } }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: "结论：腾讯投资吸引力需要区分利润修复、回购和估值修复。证据等级：中。核心理由：Tavily返回了外部线索。反证：现金流不足。下一步跟踪：回购金额。" } }], usage: { total_tokens: 140 } }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -1972,8 +1976,10 @@ describe("assistant chat endpoint", () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "不需要搜索" } }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ requestId: "exa_req", results: [{ title: "SMIC mature node value", url: "https://example.com/smic", highlights: ["成熟制程国产替代。"] }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "final_ready" } }], usage: { total_tokens: 30 } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "结论：观察。\n证据等级：中。\n反证：若制裁加码则下修。" } }], usage: { total_tokens: 120 } }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ passed: true }) } }], usage: { total_tokens: 30 } }), { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "其他" } }], usage: { total_tokens: 10 } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost({
@@ -1997,7 +2003,8 @@ describe("assistant chat endpoint", () => {
 
     const body = await response.text();
     expect(fetchMock.mock.calls.some((call) => call[0] === "https://api.exa.ai/search")).toBe(true);
-    expect(body).toContain("模型调用工具");
+    expect(body).toContain('"step":"plan_tools"');
+    expect(body).toContain('"round":2');
   });
 
   test("classifies Exa high-value trigger conservatively", () => {
@@ -2074,7 +2081,7 @@ describe("assistant chat endpoint", () => {
 
   test("replans after collecting evidence instead of stopping after the first successful tool", () => {
     expect(shouldReplanAssistantAgentLoopAfterEvidence(0, 1, 1, 6)).toBe(true);
-    expect(shouldReplanAssistantAgentLoopAfterEvidence(1, 2, 1, 6)).toBe(false);
+    expect(shouldReplanAssistantAgentLoopAfterEvidence(1, 2, 1, 6)).toBe(true);
     expect(shouldReplanAssistantAgentLoopAfterEvidence(4, 4, 1, 6)).toBe(false);
     expect(shouldReplanAssistantAgentLoopAfterEvidence(4, 5, 6, 6)).toBe(false);
   });

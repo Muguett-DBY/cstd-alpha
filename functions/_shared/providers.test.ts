@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildFinancialTenYearFromEastmoney, buildFinancialTenYearFromSecFacts, fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
+import { buildFinancialTenYearFromEastmoney, buildFinancialTenYearFromSecFacts, buildFundamentalsUrl, fetchChartBundle, fetchPublicCompanyEvidence, searchCompanyCandidates } from "./providers";
 
 describe("public data providers", () => {
   test("prioritizes Eastmoney Chinese market candidates before Yahoo fallback", async () => {
@@ -1317,3 +1317,15 @@ function secMicrosoftFacts() {
     },
   };
 }
+
+test("buildFundamentalsUrl requests a 10-year window to reliably slice ten annual periods", () => {
+  const url = buildFundamentalsUrl("AAPL");
+  const params = new URL(url).searchParams;
+  const period1 = Number(params.get("period1"));
+  const period2 = Number(params.get("period2"));
+  const spanYears = (period2 - period1) / (365 * 24 * 3600);
+  expect(spanYears).toBeGreaterThanOrEqual(11.5);
+  expect(spanYears).toBeLessThanOrEqual(12.5);
+  expect(params.get("type")).toContain("trailingTotalRevenue");
+  expect(params.get("type")).toContain("quarterlyStockholdersEquity");
+});
