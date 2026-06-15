@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildResearchThesisMessages, buildResearchThesisRequest, normalizeResearchThesis } from "./research-thesis";
-import { companyPackageToResearchEvidence, industryRowsToResearchEvidence } from "./research-thesis-evidence";
+import { companyPackageToResearchEvidence, industryRowsToResearchEvidence, radarScanToResearchCitations } from "./research-thesis-evidence";
 
 describe("research thesis generation", () => {
   test("builds a max-reasoning request grounded in the supplied evidence", () => {
@@ -45,6 +45,7 @@ describe("research thesis generation", () => {
     expect(JSON.stringify(body.messages)).toContain("2026Q1 财报");
     expect(JSON.stringify(body.messages)).toContain("E1");
     expect(JSON.stringify(body.messages)).toContain("反证");
+    expect(JSON.stringify(body.messages)).toContain("不得把规则评分");
   });
 
   test("normalizes a complete thesis result", () => {
@@ -133,5 +134,65 @@ describe("research thesis evidence adapters", () => {
 
     expect(evidence.summary).toContain("扎实增长");
     expect(evidence.citations.map((item) => item.sourceType)).toEqual(["hard_data", "indicator"]);
+  });
+
+  test("uses the radar packet source ids to recover concrete industry evidence", () => {
+    const citations = radarScanToResearchCitations({
+      id: "radar-1",
+      title: "行业雷达",
+      generatedAt: "2026-06-15T00:00:00.000Z",
+      asOfDate: "2026-06-15",
+      validUntil: "2026-06-16T00:00:00.000Z",
+      model: "deepseek-v4-flash",
+      sourceCount: 2,
+      sourceQueries: [],
+      executiveSummary: [],
+      solidGrowth: [],
+      sustainability: [],
+      bubbleRisks: [],
+      upcomingGrowth: [],
+      decliningIndustries: [],
+      representativeCompanies: [],
+      stageCompanies: [],
+      limitations: [],
+      industryPackets: [
+        {
+          group: "科技成长",
+          industry: "AI应用/软件",
+          status: "scanned",
+          evidenceHash: "packet-hash",
+          sourceCount: 2,
+          evidenceTypes: ["announcement", "hard_data"],
+          signalTypes: ["financial", "demand"],
+          evidenceGaps: [],
+          sourceIds: ["S2", "S1"],
+        },
+      ],
+      evidenceSources: [
+        {
+          id: "S1",
+          source: "公司公告",
+          query: "AI 软件订单",
+          title: "头部软件公司披露新增订单",
+          url: "https://example.com/order",
+          summary: "新增订单同比增长 30%。",
+          sourceType: "announcement",
+          weight: 1,
+        },
+        {
+          id: "S2",
+          source: "行业统计",
+          query: "AI 软件收入",
+          title: "行业收入增速回升",
+          url: "https://example.com/industry",
+          summary: "行业收入增速从 8% 回升至 15%。",
+          sourceType: "hard_data",
+          weight: 1,
+        },
+      ],
+    }, "AI应用/软件");
+
+    expect(citations.map((item) => item.title)).toEqual(["行业收入增速回升", "头部软件公司披露新增订单"]);
+    expect(citations.map((item) => item.sourceType)).toEqual(["hard_data", "announcement"]);
   });
 });

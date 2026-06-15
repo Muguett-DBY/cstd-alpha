@@ -3,6 +3,7 @@ import { getOrCreateCompanyEvidencePackage, type CompanyEvidencePackage } from "
 import type { AssistantEnv } from "./assistant-db";
 import type { WatchlistRow } from "./user-research-db";
 import type { ResearchThesisCitation, ResearchThesisEvidence } from "./research-thesis";
+import type { RadarScan } from "../../src/shared/radar";
 
 type IndustryPacketRow = {
   industry_id: string | null;
@@ -46,7 +47,7 @@ export async function loadResearchThesisEvidence(
     const pkg = await getOrCreateCompanyEvidencePackage(env, userKey, watchlist, signal);
     return companyPackageToResearchEvidence(pkg);
   }
-  return readIndustryResearchEvidence(env.REPORT_LIBRARY_DB, item);
+  return readIndustryResearchEvidence(env, item);
 }
 
 export function companyPackageToResearchEvidence(pkg: CompanyEvidencePackage): ResearchThesisEvidence {
@@ -73,11 +74,13 @@ export function companyPackageToResearchEvidence(pkg: CompanyEvidencePackage): R
 export function industryRowsToResearchEvidence({
   title,
   packet,
+  radarCitations = [],
   sourceRows,
   indicatorRows,
 }: {
   title: string;
   packet: Omit<IndustryPacketRow, "industry_id"> | null;
+  radarCitations?: Array<Omit<ResearchThesisCitation, "id">>;
   sourceRows: IndustryEvidenceRow[];
   indicatorRows: IndustryIndicatorRow[];
 }): ResearchThesisEvidence {
@@ -94,7 +97,9 @@ export function industryRowsToResearchEvidence({
     summary: `${row.indicator_name}=${formatNumber(row.value)}；来源=${row.source || "结构化指标库"}`,
     ...(row.period ? { publishedAt: row.period } : {}),
   }));
-  const citations = [...sourceCitations, ...indicatorCitations].map((item, index) => ({ id: `E${index + 1}`, ...item }));
+  const citations = dedupeCitations([...radarCitations, ...sourceCitations, ...indicatorCitations])
+    .slice(0, 32)
+    .map((item, index) => ({ id: `E${index + 1}`, ...item }));
   const asOf = packet?.run_time || sourceRows[0]?.published_at || new Date().toISOString();
   const packetSummary = packet
     ? `阶段=${packet.stage}；结论=${packet.conclusion || "无"}；增长=${formatNumber(packet.growth_score)}；动量=${formatNumber(packet.momentum_score)}；风险=${formatNumber(packet.risk)}；置信=${formatNumber(packet.confidence)}；证据评分=${formatNumber(packet.evidence_score)}；全量证据=${packet.evidence_count}条`
@@ -114,7 +119,41 @@ async function readWatchlistRow(db: D1Database, userKey: string, id: string) {
   ).bind(userKey, id).first<WatchlistRow>();
 }
 
-async function readIndustryResearchEvidence(db: D1Database, item: ResearchWorkbenchItem) {
+export function radarScanToResearchCitations(radar: RadarScan | null | undefined, industry: string) {
+  if (!radar) return [];
+  const industryKey = normalizedIndustryKey(industry);
+  const packet = radar.industryPackets?.find((entry) => normalizedIndustryKey(entry.industry) === industryKey);
+  const sectionItems = [
+    ...radar.solidGrowth,
+    ...radar.sustainability,
+    ...radar.bubbleRisks,
+    ...radar.upcomingGrowth,
+    ...radar.decliningIndustries,
+  ].filter((item) =>
+    normalizedIndustryKey(item.title) === industryKey
+    || item.industries.some((name) => normalizedIndustryKey(name) === industryKey),
+  );
+  const sourceIds = new Set([
+    ...(packet?.sourceIds ?? []),
+    ...sectionItems.flatMap((item) => item.sourceIds ?? []),
+  ]);
+  if (!sourceIds.size) return [];
+  const sourceOrder = new Map([...sourceIds].map((id, index) => [id, index]));
+  return (radar.evidenceSources ?? [])
+    .filter((source) => sourceIds.has(source.id))
+    .sort((left, right) => (sourceOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (sourceOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+    .map<Omit<ResearchThesisCitation, "id">>((source) => ({
+      title: source.title,
+      sourceType: source.sourceType,
+      summary: source.summary || source.query || "来源未提供摘要。",
+      ...(source.url ? { url: source.url } : {}),
+      ...(source.publishedAt ? { publishedAt: source.publishedAt } : {}),
+    }));
+}
+
+async function readIndustryResearchEvidence(env: AssistantEnv, item: ResearchWorkbenchItem) {
+  const db = env.REPORT_LIBRARY_DB;
+  if (!db) throw new Error("REPORT_LIBRARY_DB is not configured.");
   const packet = await db.prepare(
     `SELECT ri.industry_id, ri.stage, ri.conclusion, ri.confidence, ri.risk, ri.growth_score, ri.momentum_score,
             ri.evidence_score, ri.evidence_count, rr.run_time
@@ -126,7 +165,7 @@ async function readIndustryResearchEvidence(db: D1Database, item: ResearchWorkbe
      ORDER BY ri.evidence_score DESC LIMIT 1`,
   ).bind(item.title, item.entityId).first<IndustryPacketRow>().catch(() => null);
   const industryId = packet?.industry_id || item.entityId;
-  const [sources, indicators] = await Promise.all([
+  const [sources, indicators, cachedRadar] = await Promise.all([
     db.prepare(
       `SELECT title, source_type, content, url, published_at, confidence
        FROM evidence_items WHERE related_industry_id = ?1
@@ -137,13 +176,24 @@ async function readIndustryResearchEvidence(db: D1Database, item: ResearchWorkbe
        FROM indicator_values WHERE entity_type = 'industry' AND entity_id = ?1
        ORDER BY created_at DESC LIMIT 16`,
     ).bind(industryId).all<IndustryIndicatorRow>().catch(() => ({ results: [] })),
+    readLatestRadarScan(env.REPORT_CACHE),
   ]);
   return industryRowsToResearchEvidence({
     title: item.title,
     packet,
+    radarCitations: radarScanToResearchCitations(cachedRadar, item.title),
     sourceRows: sources.results ?? [],
     indicatorRows: indicators.results ?? [],
   });
+}
+
+async function readLatestRadarScan(cache?: KVNamespace) {
+  if (!cache) return null;
+  for (const key of ["radar-scan:v2:latest", "radar-scan:v1:latest"]) {
+    const payload = await cache.get<{ radar?: RadarScan }>(key, "json").catch(() => null);
+    if (payload?.radar) return payload.radar;
+  }
+  return null;
 }
 
 function boundedJson(value: unknown, maxChars: number) {
@@ -153,4 +203,18 @@ function boundedJson(value: unknown, maxChars: number) {
 
 function formatNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "NA";
+}
+
+function dedupeCitations(citations: Array<Omit<ResearchThesisCitation, "id">>) {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    const key = `${citation.url || ""}|${citation.title}|${citation.summary}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizedIndustryKey(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/[\s\-_/、（）()]+/g, "");
 }
