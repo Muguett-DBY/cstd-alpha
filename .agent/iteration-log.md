@@ -1,19 +1,19 @@
 # CSTD Alpha - Iteration Log
 
-## Round 31 — 2026-06-18
+## Round 32 — 2026-06-18
 
-**承接上一轮方向:** R30 建议 App.tsx 拆分、D1 清理、研究工作台拖拽排序
+**承接上一轮方向:** R31 建议 App.tsx 拆分、D1 清理、研究工作台拖拽排序
 
 **本轮决策:**
 - App.tsx 拆分范围过大（RadarView ~1200 行），单轮风险高，保留到下一轮
-- 本轮选择"报告页公司概览卡片"作为用户可见增量
-- 本轮额外修复 CandidateModal 焦点陷阱
+- 本轮选择"最近搜索历史"作为用户可见增量
+- 本轮额外修复报告页公司概览卡片与 ScoreStrip 集成
 
 **完成内容:**
-- 报告页头部新增公司概览卡片：显示 CQS、IAS、结论、估值判断
-- 使用 teal 边框和 surface 背景区分
-- 候选弹窗焦点陷阱：Tab/Shift+Tab 循环、首项自动聚焦
-- CSS 新增 .company-profile、.profile-item 样式
+- 公司搜索新增最近搜索历史：聚焦输入框时显示最近 8 条搜索记录
+- 搜索成功后自动保存记录到 localStorage
+- 点击最近搜索记录直接填充输入
+- CSS 新增 .suggestion-label 样式
 
 **验证:**
 - npm test: 756 passed ✅
@@ -23,7 +23,7 @@
 
 **遗留风险:**
 - App.tsx 仍有 2500+ 行，RadarView 拆分是下一轮重点
-- 公司概览卡片未与现有 ScoreStrip 集成
+- 最近搜索历史存储在 localStorage，无上限
 
 **下一轮方向:**
 1. App.tsx 拆分 — 将 RadarView (~1200行) 抽离为独立文件
@@ -55,3 +55,4 @@
 | R29 | Batch Thesis Generation | 研究工作台批量论点生成 |
 | R30 | CSV Export | 研究工作台 CSV 导出 |
 | R31 | Company Profile Card + Focus Trap | 报告页公司概览卡片 + 弹窗焦点修复 |
+| R32 | Recent Search History | 公司搜索最近历史记录 |

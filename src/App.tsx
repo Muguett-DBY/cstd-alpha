@@ -43,6 +43,9 @@ function App() {
   const [query, setQuery] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState<CompanyCandidate[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("cstd-alpha:recent-searches") || "[]"); } catch { return []; }
+  });
   const suggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
@@ -247,6 +250,11 @@ function App() {
       setCandidates(nextCandidates);
       setPhase("selecting");
       if (nextCandidates.length === 0) setError("没有找到候选公司，请尝试输入股票代码或更完整的公司名。");
+      setRecentSearches((prev) => {
+        const next = [query.trim(), ...prev.filter((s) => s !== query.trim())].slice(0, 8);
+        localStorage.setItem("cstd-alpha:recent-searches", JSON.stringify(next));
+        return next;
+      });
     } catch (err) {
       setPhase("error");
       setError(errorMessage(err, "公司搜索失败。"));
@@ -586,7 +594,7 @@ function App() {
                 setShowSuggestions(event.target.value.trim().length >= 2);
                 if (event.target.value.trim().length < 2) setSearchSuggestions([]);
               }}
-              onFocus={() => { if (searchSuggestions.length) setShowSuggestions(true); }}
+              onFocus={() => { if (!query.trim() && recentSearches.length) { setShowSuggestions(true); setSearchSuggestions([]); } else if (searchSuggestions.length) { setShowSuggestions(true); } }}
               onBlur={() => { setTimeout(() => setShowSuggestions(false), 200); }}
               placeholder="例如：万科A、苹果、腾讯、贵州茅台"
               required
@@ -597,9 +605,12 @@ function App() {
               </button>
             ) : null}
           </div>
-          {showSuggestions && searchSuggestions.length ? (
+          {showSuggestions && (searchSuggestions.length || (!query.trim() && recentSearches.length)) ? (
             <div className="search-suggestions">
-              {searchSuggestions.map((item) => (
+              {!query.trim() && recentSearches.length && !searchSuggestions.length ? (
+                <div className="suggestion-label">最近搜索</div>
+              ) : null}
+              {searchSuggestions.length ? searchSuggestions.map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -616,6 +627,20 @@ function App() {
                   <strong>{item.name}</strong>
                   <span>{item.code}</span>
                   <small>{item.listingPlace}</small>
+                </button>
+              )) : recentSearches.map((search) => (
+                <button
+                  key={search}
+                  type="button"
+                  className="suggestion-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setQuery(search);
+                    setShowSuggestions(false);
+                  }}
+                >
+                  <strong>{search}</strong>
+                  <small>最近搜索</small>
                 </button>
               ))}
             </div>
