@@ -213,7 +213,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   padding: 0 12px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   box-sizing: border-box;
 }
@@ -525,7 +525,7 @@ button:not(:disabled):active,
   overflow-y: auto;
   border-right: 1px solid var(--line);
   padding: clamp(20px, 2vw, 28px);
-  background: #f7f7f4;
+  background: color-mix(in srgb, var(--bg) 60%, var(--surface));
   scrollbar-gutter: stable;
 }
 
@@ -731,7 +731,7 @@ button:not(:disabled):active,
   min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -1233,7 +1233,7 @@ button:not(:disabled):active,
 
 .research-catalysts .catalyst-filter button {
   align-items: center;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
@@ -1296,7 +1296,7 @@ button:not(:disabled):active,
 .research-catalysts .catalyst-actions button {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
   cursor: pointer;
   font-size: 11px;
@@ -1749,7 +1749,7 @@ button:not(:disabled):active,
   gap: 12px;
   min-height: 58px;
   border-color: var(--line);
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   text-align: left;
 }
@@ -1833,7 +1833,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 18px;
-  background: #fffdf8;
+  background: var(--surface);
 }
 
 .chart-dashboard header {
@@ -2310,7 +2310,7 @@ button:not(:disabled):active,
   height: calc(100dvh - 58px);
   overflow: hidden;
   padding: 0;
-  background: #fff;
+  background: var(--surface);
 }
 
 .assistant-workspace {
@@ -2395,7 +2395,7 @@ button:not(:disabled):active,
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: #fff;
+  background: var(--surface);
   box-shadow: none;
 }
 
@@ -2515,7 +2515,7 @@ button:not(:disabled):active,
   gap: 20px;
   overflow-y: auto;
   padding: 30px clamp(18px, 7vw, 86px) 24px;
-  background: #fff;
+  background: var(--surface);
   scroll-behavior: smooth;
 }
 
@@ -2821,7 +2821,7 @@ button:not(:disabled):active,
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .assistant-inline-table-wrap table {
@@ -2873,7 +2873,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .assistant-table-block strong,
@@ -2935,7 +2935,7 @@ button:not(:disabled):active,
   max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -4052,7 +4052,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: clamp(18px, 2vw, 30px);
-  background: #fffdf8;
+  background: var(--surface);
   color: var(--body);
   font-size: 16px;
   line-height: 1.82;
@@ -6367,7 +6367,7 @@ button:not(:disabled):active,
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
-    background: #fff;
+    background: var(--surface);
   }
 
   .app-shell.view-assistant .input-rail {
@@ -6386,7 +6386,7 @@ button:not(:disabled):active,
     height: 100dvh;
     max-width: none;
     margin: 0;
-    background: #fff;
+    background: var(--surface);
   }
 
   .app-shell.view-assistant .assistant-mobile-bar {
@@ -6568,7 +6568,7 @@ button:not(:disabled):active,
     min-height: 26px;
     border: 1px solid var(--line);
     border-radius: 999px;
-    background: #fff;
+    background: var(--surface);
     color: var(--muted);
     padding: 3px 8px;
     font-size: 12px;
@@ -6801,7 +6801,7 @@ button:not(:disabled):active,
   padding: 28px;
   border: 1px solid #d7dfda;
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 20px 60px rgb(17 24 39 / 8%);
 }
 

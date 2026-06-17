@@ -869,6 +869,12 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
           下载报告
         </button>
+        <button type="button" className="secondary-button" onClick={() => {
+          const text = `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`;
+          navigator.clipboard.writeText(text).then(() => showToast("摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+        }}>
+          复制摘要
+        </button>
       </header>
 
       <section className="score-strip">
@@ -1105,6 +1111,7 @@ function EmptyState() {
     <section className="empty-state">
       <h2>先选择具体上市公司</h2>
       <p>输入公司名后会先弹出候选项，确认公司名、代码和上市地点，再生成完整评分报告。</p>
+      <p className="muted">快捷键：Ctrl+1 今日机会 / Ctrl+2 研究 / Ctrl+3 市场 / Ctrl+4 估值</p>
     </section>
   );
 }
