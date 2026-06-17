@@ -1,6 +1,17 @@
 # CSTD Alpha
 
-中文优先的私人公司研究工具。输入公司名后先确认上市主体，再用公开财务数据和 DeepSeek Flash Max 生成“公司质量评分（CQS）+ 投资吸引力评分（IAS）”深度评分报告。
+中文优先的私人公司研究工具。输入公司名后先确认上市主体，再用公开财务数据和 DeepSeek Flash Max 生成"公司质量评分（CQS）+ 投资吸引力评分（IAS）"深度评分报告。
+
+## 功能
+
+- **今日机会**：从证据变化里筛出值得研究的机会，雷达矩阵 + 五阶段漏斗
+- **研究工作台**：管理研究队列，生成版本化投资论点，跟踪催化剂和反证条件
+- **市场工作台**：排行榜（A股/美股/港股）、自选股排行、行业雷达扫描
+- **估值实验室**：AI 生成估值假设，公式计算三情景估值结果
+- **报告生成**：深度评分报告（20 项评分 + 模块评分 + 十年财务 + 估值分析 + 风险矩阵）
+- **报告导出**：一键下载 Word 格式报告
+- **我的**：自选股管理、模板专项报告、公司新闻
+- **助手**（管理员）：对话式研究助手，支持深度研究、语音输入、代码执行
 
 ## 工作流
 
@@ -9,7 +20,8 @@
 3. 用户选择候选公司后，Cloudflare Pages Function 读取公开行情和财务数据。
 4. 在线公司报告、模板报告、自选排行和雷达分析统一按 OpenCode Go、OpenCode Zen Free 的顺序调用 DeepSeek Flash Max，不再使用官方 DeepSeek API fallback；行业雷达由 GitHub Actions 定时滚动生成公开证据库，用户手动点击刷新时再触发后台 Action 调用模型做深度综合。
 5. 前端实时显示 NDJSON 进度流；已生成报告写入 D1/R2 报告库后可秒开。
-6. 登录用户可把公司加入“我的”，进入公司工作台生成 10 个模板专项深度报告或全面分析。
+6. 登录用户可把公司加入"我的"，进入公司工作台生成 10 个模板专项深度报告或全面分析。
+7. 报告页支持一键下载 Word 格式报告（含图表）。
 
 批量导入报告库仍可使用 OpenCode CLI 或 OpenCode Go API 生成报告，再导入 D1/R2 报告库。线上模型调用仅保留 OpenCode Go 和 OpenCode Zen Free 两级 fallback，避免误走官方 DeepSeek API。
 
@@ -20,9 +32,12 @@
 - `GET/POST/DELETE /api/session`：固定账号登录、读取和退出。
 - `GET/POST/DELETE /api/watchlist`：按 `user_id` 隔离的自选股。
 - `GET/POST /api/template-analysis`：模板专项报告元数据存在 D1，正文 Markdown 存在 R2。
-- `POST /api/company-evidence-refresh`：受 `COMPANY_EVIDENCE_REFRESH_TOKEN` 保护的公司证据包刷新入口，供 GitHub Actions 每日刷新“我的”自选股证据包。
+- `POST /api/company-evidence-refresh`：受 `COMPANY_EVIDENCE_REFRESH_TOKEN` 保护的公司证据包刷新入口，供 GitHub Actions 每日刷新"我的"自选股证据包。
 - `GET/POST /api/template-analysis-job`：受 `TEMPLATE_ANALYSIS_WORKER_TOKEN` 保护的后台模板分析任务接口，供 GitHub Actions 读取 queued/running 任务并回写结果。
 - `GET/POST /api/radar-scan`：读取或刷新行业雷达；`POST` 只创建后台分析 job 并触发 GitHub Action，页面继续显示旧缓存并轮询 job 状态，DeepSeek 不在 Cloudflare Pages 请求内运行。
+- `GET/POST /api/watchlist-ranking`：自选股评分排行。
+- `GET/POST /api/valuations`：估值任务管理。
+- `GET/POST /api/research-items`：研究队列管理。
 
 ## 本地开发
 

@@ -271,7 +271,7 @@ button:not(:disabled):active,
 .ghost-button,
 .secondary-button,
 .actions a {
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -287,7 +287,7 @@ button:not(:disabled):active,
 }
 
 .segmented-control button {
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -306,7 +306,7 @@ button:not(:disabled):active,
 
 .view-tabs button {
   border-color: var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -660,7 +660,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-  background: white;
+  background: var(--surface);
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -680,7 +680,7 @@ button:not(:disabled):active,
 
 .secondary-action {
   border-color: var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -880,7 +880,7 @@ button:not(:disabled):active,
 .ghost-action {
   min-height: 34px;
   border-color: var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
   font-size: 13px;
 }
@@ -932,7 +932,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-  background: white;
+  background: var(--surface);
 }
 
 .hero-kpi strong {
@@ -1047,7 +1047,7 @@ button:not(:disabled):active,
   border-left: 3px solid transparent;
   border-radius: 8px;
   padding: 10px;
-  background: white;
+  background: var(--surface);
   text-align: left;
 }
 
@@ -1072,7 +1072,7 @@ button:not(:disabled):active,
 .stage-actions button {
   min-height: 34px;
   border-color: var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
   font-size: 13px;
 }
@@ -1126,7 +1126,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0 8px;
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -1170,7 +1170,7 @@ button:not(:disabled):active,
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: white;
+  background: var(--surface);
 }
 
 .research-thesis-table table {
@@ -1264,7 +1264,7 @@ button:not(:disabled):active,
 .research-catalysts .catalyst-list article {
   display: grid;
   gap: 6px;
-  background: white;
+  background: var(--surface);
 }
 
 .research-catalysts .catalyst-list p {
@@ -1347,7 +1347,7 @@ button:not(:disabled):active,
 .collapse-link {
   min-height: 32px;
   border-color: var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -1451,7 +1451,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 9px;
-  background: white;
+  background: var(--surface);
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
@@ -1468,7 +1468,7 @@ button:not(:disabled):active,
 .financial-mini-table {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .scenario-strip div {
@@ -1628,7 +1628,7 @@ button:not(:disabled):active,
 .selected-company button {
   margin-top: 12px;
   width: 100%;
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -2363,7 +2363,7 @@ button:not(:disabled):active,
   display: grid;
   gap: 4px;
   padding: 12px;
-  background: white;
+  background: var(--surface);
   color: var(--muted);
   font-weight: 700;
 }
@@ -2607,7 +2607,7 @@ button:not(:disabled):active,
   flex: 0 0 auto;
   border-color: color-mix(in srgb, var(--red) 22%, var(--line));
   padding: 0 10px;
-  background: white;
+  background: var(--surface);
   color: var(--red);
   font-size: 12px;
 }
@@ -3563,7 +3563,7 @@ button:not(:disabled):active,
   border: 1px solid #d7e6e2;
   border-radius: 10px;
   padding: 8px;
-  background: white;
+  background: var(--surface);
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
@@ -4093,7 +4093,7 @@ button:not(:disabled):active,
   margin: 4px 0 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .markdown-table-wrap table {
@@ -4571,7 +4571,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
-  background: white;
+  background: var(--surface);
 }
 
 .radar-signal-bars span::before {
@@ -4686,7 +4686,7 @@ button:not(:disabled):active,
   height: 26px;
   place-items: center;
   border-radius: 999px;
-  background: white;
+  background: var(--surface);
   color: var(--muted);
   font-size: 13px;
 }
@@ -5040,7 +5040,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .radar-confidence-meter span,
@@ -5230,7 +5230,7 @@ button:not(:disabled):active,
 .radar-list-card span {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: white;
+  background: var(--surface);
   padding: 5px 9px;
   color: var(--ink);
   font-size: 13px;
@@ -5295,7 +5295,7 @@ button:not(:disabled):active,
   gap: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
   padding: 10px;
   color: inherit;
   text-decoration: none;
@@ -5701,7 +5701,7 @@ button:not(:disabled):active,
 .radar-stage-bucket {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -5749,7 +5749,7 @@ button:not(:disabled):active,
   border: 1px solid color-mix(in srgb, var(--stage-color) 28%, var(--line));
   border-radius: 999px;
   padding: 5px 8px;
-  background: white;
+  background: var(--surface);
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
@@ -5855,7 +5855,7 @@ button:not(:disabled):active,
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .radar-industry-row {
@@ -5868,7 +5868,7 @@ button:not(:disabled):active,
   border: 0;
   border-top: 1px solid var(--line);
   padding: 12px 14px;
-  background: white;
+  background: var(--surface);
   color: var(--body);
   cursor: pointer;
   font: inherit;
@@ -6047,7 +6047,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px;
-  background: white;
+  background: var(--surface);
 }
 
 .radar-drawer-panel h4 {
@@ -6147,7 +6147,7 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px;
-  background: white;
+  background: var(--surface);
 }
 
 .radar-card-mini-charts span {

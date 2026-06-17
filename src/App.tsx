@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
+import { downloadReportDocx } from "./docx/export-report";
 import "./App.css";
 import { RadarVisualCharts } from "./RadarVisualCharts";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
@@ -655,7 +656,7 @@ function App() {
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
                 <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
               ) : null}
-              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} /> : <EmptyState />}
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} /> : <EmptyState />}
             </>
           )}
         </Suspense>
@@ -834,7 +835,7 @@ function ProgressPanel({
   );
 }
 
-function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean }) {
+function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
 
   return (
@@ -865,6 +866,9 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted }: { repo
             {isWatchlisted ? "已加入自选" : "加入自选"}
           </button>
         ) : null}
+        <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
+          下载报告
+        </button>
       </header>
 
       <section className="score-strip">
