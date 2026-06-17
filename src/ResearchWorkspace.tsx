@@ -35,6 +35,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [thesisFilter, setThesisFilter] = useState<"all" | "with" | "without">("all");
   const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">("recent");
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
@@ -180,6 +182,43 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       showToast(`${updated.title} 已移动到「${RESEARCH_STAGE_LABELS[stage]}」。`, "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "阶段更新失败。");
+    }
+  }
+
+  function toggleSelectItem(id: string) {
+    setSelectedItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedItemIds(new Set(filteredItems.map((i) => i.id)));
+  }
+
+  function clearSelection() {
+    setSelectedItemIds(new Set());
+  }
+
+  async function batchChangeStage(targetStage: ResearchStage) {
+    const ids = Array.from(selectedItemIds);
+    if (!ids.length) return;
+    setBatchProcessing(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => updateResearchItemStage(id, targetStage)));
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (succeeded > 0) {
+        setItems((current) => current.map((entry) => ids.includes(entry.id) ? { ...entry, stage: targetStage } : entry));
+        showToast(`已将 ${succeeded} 项移动到「${RESEARCH_STAGE_LABELS[targetStage]}」${failed ? `，${failed} 项失败` : ""}。`, succeeded > 0 ? "success" : "error");
+      }
+      if (failed > 0) showToast(`${failed} 项阶段更新失败。`, "error");
+      clearSelection();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "批量操作失败。");
+    } finally {
+      setBatchProcessing(false);
     }
   }
 
@@ -338,14 +377,16 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
                     {stageItems.length ? stageItems.map((item) => {
                       const valuation = valuationByItem.get(item.id);
+                      const isSelected = selectedItemIds.has(item.id);
                       return (
                         <button
                           type="button"
-                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
+                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
                           key={item.id}
-                          onClick={() => setSelectedId(item.id)}
+                          onClick={(e) => { if (e.shiftKey) { toggleSelectItem(item.id); } else { setSelectedId(item.id); } }}
                         >
                           <div className="card-header">
+                            <input type="checkbox" checked={isSelected} onChange={() => toggleSelectItem(item.id)} onClick={(e) => e.stopPropagation()} aria-label={`选择 ${item.title}`} className="card-checkbox" />
                             <strong>{item.title}</strong>
                             <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
                           </div>
@@ -371,6 +412,17 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 );
               })}
             </div>
+            {selectedItemIds.size > 0 ? (
+              <div className="batch-action-bar">
+                <span>已选 {selectedItemIds.size} 项</span>
+                <button type="button" className="ghost-button" onClick={selectAllVisible}>全选当前筛选</button>
+                <button type="button" className="ghost-button" onClick={clearSelection}>取消选择</button>
+                <select onChange={(e) => { if (e.target.value) { void batchChangeStage(e.target.value as ResearchStage); e.target.value = ""; } }} disabled={batchProcessing} defaultValue="">
+                  <option value="" disabled>批量移动到...</option>
+                  {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
+                </select>
+              </div>
+            ) : null}
           </div>
 
           <aside className="terminal-panel research-detail">
