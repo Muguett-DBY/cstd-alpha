@@ -71,6 +71,26 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   }, [valuationRuns]);
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      if (filteredItems.length === 0) return;
+      const currentIdx = filteredItems.findIndex((i) => i.id === selectedId);
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        const next = currentIdx < filteredItems.length - 1 ? currentIdx + 1 : 0;
+        setSelectedId(filteredItems[next].id);
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const prev = currentIdx > 0 ? currentIdx - 1 : filteredItems.length - 1;
+        setSelectedId(filteredItems[prev].id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filteredItems, selectedId]);
+
+  useEffect(() => {
     let cancelled = false;
     Promise.all([fetchResearchItems(), fetchValuations()])
       .then(([researchData, valuationData]) => {
@@ -318,7 +338,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             <header className="panel-header">
               <div>
                 <h2>研究队列</h2>
-                <p>AI 只提出建议，阶段变化必须由你确认。</p>
+                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 切换</span></p>
               </div>
               <label className="research-queue-search">
                 <span>搜索</span>
