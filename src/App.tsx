@@ -41,6 +41,9 @@ function App() {
   const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<CompanyCandidate[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -168,6 +171,18 @@ function App() {
       window.removeEventListener("online", goOnline);
     };
   }, []);
+
+  useEffect(() => {
+    if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current);
+    if (!query.trim() || query.trim().length < 2) return;
+    suggestionsTimerRef.current = setTimeout(() => {
+      searchCompanies(query.trim()).then((results) => {
+        setSearchSuggestions(results.slice(0, 8));
+        setShowSuggestions(results.length > 0);
+      }).catch(() => {});
+    }, 300);
+    return () => { if (suggestionsTimerRef.current) clearTimeout(suggestionsTimerRef.current); };
+  }, [query]);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -567,16 +582,43 @@ function App() {
               onChange={(event) => {
                 setQuery(event.target.value);
                 setSelectedCompany(null);
+                setShowSuggestions(event.target.value.trim().length >= 2);
+                if (event.target.value.trim().length < 2) setSearchSuggestions([]);
               }}
+              onFocus={() => { if (searchSuggestions.length) setShowSuggestions(true); }}
+              onBlur={() => { setTimeout(() => setShowSuggestions(false), 200); }}
               placeholder="例如：万科A、苹果、腾讯、贵州茅台"
               required
             />
             {query ? (
-              <button type="button" className="search-clear" onClick={() => { setQuery(""); setSelectedCompany(null); }} aria-label="清除搜索">
+              <button type="button" className="search-clear" onClick={() => { setQuery(""); setSelectedCompany(null); setSearchSuggestions([]); setShowSuggestions(false); }} aria-label="清除搜索">
                 ×
               </button>
             ) : null}
           </div>
+          {showSuggestions && searchSuggestions.length ? (
+            <div className="search-suggestions">
+              {searchSuggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="suggestion-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setQuery(item.name);
+                    setSelectedCompany(item);
+                    setShowSuggestions(false);
+                    setSearchSuggestions([]);
+                    setPhase("idle");
+                  }}
+                >
+                  <strong>{item.name}</strong>
+                  <span>{item.code}</span>
+                  <small>{item.listingPlace}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button type="submit" disabled={phase === "searching" || phase === "generating"}>
             {phase === "searching" ? "正在搜索..." : "搜索并选择公司"}
           </button>
