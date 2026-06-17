@@ -84,6 +84,10 @@ export const RESEARCH_CATALYST_STATUS_LABELS: Record<ResearchCatalystStatus, str
   invalid: "已失效",
 };
 
+export type ResearchCatalystStatusFilter = ResearchCatalystStatus | "all";
+
+export type ResearchCatalystStatusSummary = Record<ResearchCatalystStatusFilter, number>;
+
 export type ResearchCatalystDraft = {
   title: string;
   description?: string;
@@ -284,6 +288,24 @@ export function extractCatalystDraftsFromThesis(markdown: string, fallbackEviden
     if (drafts.length >= limit) break;
   }
   return drafts;
+}
+
+export function summarizeResearchCatalystStatuses(catalysts: ResearchCatalyst[]): ResearchCatalystStatusSummary {
+  const summary: ResearchCatalystStatusSummary = {
+    all: catalysts.length,
+    open: 0,
+    confirmed: 0,
+    invalid: 0,
+  };
+  for (const catalyst of catalysts) {
+    summary[catalyst.status] += 1;
+  }
+  return summary;
+}
+
+export function filterResearchCatalystsByStatus(catalysts: ResearchCatalyst[], status: ResearchCatalystStatusFilter) {
+  if (status === "all") return catalysts;
+  return catalysts.filter((catalyst) => catalyst.status === status);
 }
 
 function templateGroupForText(text: string): TemplateGroupId {

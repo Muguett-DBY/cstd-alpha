@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking } from "./shared/research-workbench";
+import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
 import type { RadarIndustryPacket } from "./shared/radar";
 import type { ResearchTemplate, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -99,6 +99,24 @@ describe("research workbench scoring", () => {
     expect(drafts[0].evidenceRefs).toEqual(["E1", "E9"]);
     expect(drafts[2].evidenceRefs).toEqual(["E3", "E9"]);
   });
+
+  test("summarizes and filters catalyst tracking items by status", () => {
+    const catalysts = [
+      catalyst("cat-1", "open"),
+      catalyst("cat-2", "confirmed"),
+      catalyst("cat-3", "invalid"),
+      catalyst("cat-4", "open"),
+    ];
+
+    expect(summarizeResearchCatalystStatuses(catalysts)).toEqual({
+      all: 4,
+      open: 2,
+      confirmed: 1,
+      invalid: 1,
+    });
+    expect(filterResearchCatalystsByStatus(catalysts, "open").map((entry) => entry.id)).toEqual(["cat-1", "cat-4"]);
+    expect(filterResearchCatalystsByStatus(catalysts, "all").map((entry) => entry.id)).toEqual(["cat-1", "cat-2", "cat-3", "cat-4"]);
+  });
 });
 
 function template(title: string, focus: string): ResearchTemplate {
@@ -110,5 +128,17 @@ function template(title: string, focus: string): ResearchTemplate {
     prompt: focus,
     fullPrompt: focus,
     enabled: true,
+  };
+}
+
+function catalyst(id: string, status: "open" | "confirmed" | "invalid") {
+  return {
+    id,
+    itemId: "research-1",
+    title: id,
+    status,
+    evidenceRefs: [],
+    createdAt: "2026-06-15T00:00:00.000Z",
+    updatedAt: "2026-06-15T00:00:00.000Z",
   };
 }

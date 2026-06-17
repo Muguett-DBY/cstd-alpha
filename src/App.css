@@ -1044,6 +1044,43 @@ button:not(:disabled):active,
   padding: 0;
 }
 
+.research-catalysts .catalyst-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.research-catalysts .catalyst-filter button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 11px;
+}
+
+.research-catalysts .catalyst-filter button.active {
+  background: rgba(16, 128, 116, 0.1);
+  border-color: rgba(16, 128, 116, 0.42);
+  color: var(--accent);
+}
+
+.research-catalysts .catalyst-filter button span {
+  background: rgba(20, 26, 32, 0.08);
+  border-radius: 999px;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
 .research-catalysts .catalyst-list article {
   display: grid;
   gap: 6px;

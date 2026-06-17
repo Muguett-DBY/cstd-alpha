@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { filterResearchCatalystsByStatus, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 
 type Props = {
@@ -24,12 +24,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalystItemId, setCatalystItemId] = useState("");
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const [updatingCatalystId, setUpdatingCatalystId] = useState("");
+  const [catalystStatusFilter, setCatalystStatusFilter] = useState<ResearchCatalystStatusFilter>("all");
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
   const templateGroups = useMemo(() => groupResearchTemplates(RESEARCH_TEMPLATES), []);
+  const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
+  const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,29 +287,48 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   </div>
                   {catalystPhase === "loading" ? <p className="thesis-status">正在读取跟踪项…</p> : null}
                   {catalystItemId === selected.id && catalysts.length ? (
-                    <div className="catalyst-list">
-                      {catalysts.slice(0, 8).map((entry) => (
-                        <article key={entry.id}>
-                          <strong>{entry.title}</strong>
-                          {entry.description ? <p>{entry.description}</p> : null}
-                          <div>
-                            <span>{RESEARCH_CATALYST_STATUS_LABELS[entry.status]}</span>
-                            {entry.evidenceRefs.length ? <span>{entry.evidenceRefs.join(" / ")}</span> : null}
-                          </div>
-                          <div className="catalyst-actions">
-                            {entry.status !== "confirmed" ? (
-                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "confirmed")}>标记确认</button>
-                            ) : null}
-                            {entry.status !== "invalid" ? (
-                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "invalid")}>标记失效</button>
-                            ) : null}
-                            {entry.status !== "open" ? (
-                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "open")}>恢复跟踪</button>
-                            ) : null}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
+                    <>
+                      <div className="catalyst-filter">
+                        <button type="button" className={catalystStatusFilter === "all" ? "active" : ""} onClick={() => setCatalystStatusFilter("all")}>
+                          全部 <span>{catalystStatusSummary.all}</span>
+                        </button>
+                        {RESEARCH_CATALYST_STATUSES.map((status) => (
+                          <button key={status} type="button" className={catalystStatusFilter === status ? "active" : ""} onClick={() => setCatalystStatusFilter(status)}>
+                            {RESEARCH_CATALYST_STATUS_LABELS[status]} <span>{catalystStatusSummary[status]}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {filteredCatalysts.length ? (
+                        <div className="catalyst-list">
+                          {filteredCatalysts.slice(0, 8).map((entry) => (
+                            <article key={entry.id}>
+                              <strong>{entry.title}</strong>
+                              {entry.description ? <p>{entry.description}</p> : null}
+                              <div>
+                                <span>{RESEARCH_CATALYST_STATUS_LABELS[entry.status]}</span>
+                                {entry.evidenceRefs.length ? <span>{entry.evidenceRefs.join(" / ")}</span> : null}
+                              </div>
+                              <div className="catalyst-actions">
+                                {entry.status !== "confirmed" ? (
+                                  <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "confirmed")}>标记确认</button>
+                                ) : null}
+                                {entry.status !== "invalid" ? (
+                                  <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "invalid")}>标记失效</button>
+                                ) : null}
+                                {entry.status !== "open" ? (
+                                  <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "open")}>恢复跟踪</button>
+                                ) : null}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="thesis-empty compact">
+                          <p>当前状态下暂无跟踪项。</p>
+                          <span>切换到其他状态，或从论点同步新的催化剂和反证。</span>
+                        </div>
+                      )}
+                    </>
                   ) : catalystPhase !== "loading" ? (
                     <div className="thesis-empty">
                       <p>暂无跟踪项。</p>
