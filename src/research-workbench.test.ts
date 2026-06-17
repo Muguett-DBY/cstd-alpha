@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
+import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
 import type { RadarIndustryPacket } from "./shared/radar";
 import type { ResearchTemplate, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -117,6 +117,20 @@ describe("research workbench scoring", () => {
     expect(filterResearchCatalystsByStatus(catalysts, "open").map((entry) => entry.id)).toEqual(["cat-1", "cat-4"]);
     expect(filterResearchCatalystsByStatus(catalysts, "all").map((entry) => entry.id)).toEqual(["cat-1", "cat-2", "cat-3", "cat-4"]);
   });
+
+  test("filters research queue items by title, subtitle and entity type", () => {
+    const items = [
+      researchItem("r1", "贵州茅台", "600519 / SH-A", "company"),
+      researchItem("r2", "AI应用/软件", "雷达行业", "industry"),
+      researchItem("r3", "白云山", "00874 / 港股", "company"),
+    ];
+
+    expect(filterResearchWorkbenchItems(items, "").map((item) => item.id)).toEqual(["r1", "r2", "r3"]);
+    expect(filterResearchWorkbenchItems(items, "600519").map((item) => item.id)).toEqual(["r1"]);
+    expect(filterResearchWorkbenchItems(items, "港股").map((item) => item.id)).toEqual(["r3"]);
+    expect(filterResearchWorkbenchItems(items, "行业").map((item) => item.id)).toEqual(["r2"]);
+    expect(filterResearchWorkbenchItems(items, "不存在")).toEqual([]);
+  });
 });
 
 function template(title: string, focus: string): ResearchTemplate {
@@ -138,6 +152,22 @@ function catalyst(id: string, status: "open" | "confirmed" | "invalid") {
     title: id,
     status,
     evidenceRefs: [],
+    createdAt: "2026-06-15T00:00:00.000Z",
+    updatedAt: "2026-06-15T00:00:00.000Z",
+  };
+}
+
+function researchItem(id: string, title: string, subtitle: string, entityType: "company" | "industry") {
+  return {
+    id,
+    userKey: "admin",
+    entityType,
+    entityId: id,
+    title,
+    subtitle,
+    stage: "screening" as const,
+    status: "active",
+    source: "manual",
     createdAt: "2026-06-15T00:00:00.000Z",
     updatedAt: "2026-06-15T00:00:00.000Z",
   };

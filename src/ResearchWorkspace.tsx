@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { filterResearchCatalystsByStatus, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 
 type Props = {
@@ -15,6 +15,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [selectedId, setSelectedId] = useState("");
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [queueQuery, setQueueQuery] = useState("");
   const [assistantCollapsed, setAssistantCollapsed] = useState(false);
   const [thesisVersions, setThesisVersions] = useState<ResearchThesisVersion[]>([]);
   const [thesisItemId, setThesisItemId] = useState("");
@@ -31,6 +32,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
   const templateGroups = useMemo(() => groupResearchTemplates(RESEARCH_TEMPLATES), []);
+  const filteredItems = useMemo(() => filterResearchWorkbenchItems(items, queueQuery), [items, queueQuery]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
 
@@ -189,15 +191,22 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         <div className={`research-layout ${assistantCollapsed ? "assistant-collapsed" : ""}`}>
           <div className="terminal-panel research-queue">
             <header className="panel-header">
-              <h2>研究队列</h2>
-              <p>AI 只提出建议，阶段变化必须由你确认。</p>
+              <div>
+                <h2>研究队列</h2>
+                <p>AI 只提出建议，阶段变化必须由你确认。</p>
+              </div>
+              <label className="research-queue-search">
+                <span>搜索</span>
+                <input value={queueQuery} onChange={(event) => setQueueQuery(event.currentTarget.value)} placeholder="公司、代码、行业" />
+              </label>
             </header>
             <div className="stage-board">
               {RESEARCH_STAGES.map((stage) => {
-                const stageItems = items.filter((item) => item.stage === stage);
+                const stageTotal = items.filter((item) => item.stage === stage).length;
+                const stageItems = filteredItems.filter((item) => item.stage === stage);
                 return (
                   <section className="stage-column" key={stage}>
-                    <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{stageItems.length}</span></h3>
+                    <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
                     {stageItems.length ? stageItems.map((item) => (
                       <button
                         type="button"
@@ -208,7 +217,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                         <strong>{item.title}</strong>
                         <span>{item.subtitle || item.entityType}</span>
                       </button>
-                    )) : <p className="stage-empty">暂无</p>}
+                    )) : <p className="stage-empty">{queueQuery && stageTotal ? "无匹配" : "暂无"}</p>}
                   </section>
                 );
               })}

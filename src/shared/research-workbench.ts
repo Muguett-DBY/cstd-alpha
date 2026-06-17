@@ -308,6 +308,18 @@ export function filterResearchCatalystsByStatus(catalysts: ResearchCatalyst[], s
   return catalysts.filter((catalyst) => catalyst.status === status);
 }
 
+export function filterResearchWorkbenchItems(items: ResearchWorkbenchItem[], query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return items;
+  return items.filter((item) => normalizeSearchText([
+    item.title,
+    item.subtitle,
+    item.entityId,
+    item.entityType,
+    item.source,
+  ].filter(Boolean).join(" ")).includes(normalizedQuery));
+}
+
 function templateGroupForText(text: string): TemplateGroupId {
   if (/估值|DCF|安全边际|价格|配置/.test(text)) return "valuation";
   if (/财务|现金流|利润|ROE|负债|资本/.test(text)) return "financial";
@@ -335,4 +347,8 @@ function evidenceRefsFromText(text: string) {
 
 function uniqueEvidenceRefs(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function normalizeSearchText(value: string) {
+  return value.trim().toLowerCase();
 }
