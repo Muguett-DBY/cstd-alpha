@@ -955,6 +955,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
 
       <section className="score-items" id="detailed-scores">
         <h3>20 项详细评分</h3>
+        <p className="muted">点击展开查看每项评分的详细证据和扣分点。低分项自动高亮。</p>
         {report.scoreItems20.map((item, index) => (
           <ScoreItemCard key={item.id} item={item} index={index + 1} />
         ))}
@@ -1008,31 +1009,35 @@ function ModuleRow({ module }: { module: ModuleScore }) {
 }
 
 function ScoreItemCard({ item, index }: { item: ScoreItem; index: number }) {
+  const isLowScore = item.score < 50;
   return (
-    <section className="score-item-card">
-      <header>
-        <span>{index}</span>
-        <div>
-          <h4>{item.title}</h4>
-          <p>{item.moduleName} / 权重 {item.weight}%</p>
+    <details className={`score-item-card ${isLowScore ? "low-score" : ""}`}>
+      <summary>
+        <span className="score-index">{index}</span>
+        <div className="score-summary-text">
+          <strong>{item.title}</strong>
+          <span>{item.moduleName} / 权重 {item.weight}%</span>
         </div>
-        <strong>
-          {item.score}/100（{item.label}）
-        </strong>
-      </header>
-      <p>{item.reason}</p>
-      <div className="item-columns">
-        <div>
-          <span>核心证据</span>
-          <ul>{listItems(item.evidence)}</ul>
+        <span className="score-badge">
+          {item.score}/100
+          <small>{item.label}</small>
+        </span>
+      </summary>
+      <div className="score-item-body">
+        <p>{item.reason}</p>
+        <div className="item-columns">
+          <div>
+            <span>核心证据</span>
+            <ul>{listItems(item.evidence)}</ul>
+          </div>
+          <div>
+            <span>主要扣分点</span>
+            <ul>{listItems(item.deductions)}</ul>
+          </div>
         </div>
-        <div>
-          <span>主要扣分点</span>
-          <ul>{listItems(item.deductions)}</ul>
-        </div>
+        {item.recentChange ? <small>{item.recentChange}</small> : null}
       </div>
-      <small>{item.recentChange}</small>
-    </section>
+    </details>
   );
 }
 
