@@ -1,16 +1,19 @@
 # CSTD Alpha - Iteration Log
 
-## Round 30 — 2026-06-18
+## Round 31 — 2026-06-18
 
-**承接上一轮方向:** R29 建议 App.tsx 拆分、D1 清理、研究工作台导出功能
+**承接上一轮方向:** R30 建议 App.tsx 拆分、D1 清理、研究工作台拖拽排序
 
-**本轮完成:**
-- 研究工作台导出 CSV：批量操作栏新增"导出 CSV"按钮
-- 导出当前筛选后的研究项列表为 CSV 文件
-- CSV 包含：名称、实体类型、副标题、阶段、来源、论点、证据、创建/更新时间
-- UTF-8 BOM 编码确保中文在 Excel 中正确显示
-- 文件名包含日期：研究队列_YYYY-MM-DD.csv
-- Toast 显示导出成功
+**本轮决策:**
+- App.tsx 拆分范围过大（RadarView ~1200 行），单轮风险高，保留到下一轮
+- 本轮选择"报告页公司概览卡片"作为用户可见增量
+- 本轮额外修复 CandidateModal 焦点陷阱
+
+**完成内容:**
+- 报告页头部新增公司概览卡片：显示 CQS、IAS、结论、估值判断
+- 使用 teal 边框和 surface 背景区分
+- 候选弹窗焦点陷阱：Tab/Shift+Tab 循环、首项自动聚焦
+- CSS 新增 .company-profile、.profile-item 样式
 
 **验证:**
 - npm test: 756 passed ✅
@@ -20,12 +23,12 @@
 
 **遗留风险:**
 - App.tsx 仍有 2500+ 行，RadarView 拆分是下一轮重点
-- CSV 导出不包含论点内容（仅元数据）
+- 公司概览卡片未与现有 ScoreStrip 集成
 
 **下一轮方向:**
 1. App.tsx 拆分 — 将 RadarView (~1200行) 抽离为独立文件
 2. D1 登录记录自动清理 — 增加定时清理机制
-3. 研究工作台增强 — 添加研究项拖拽排序
+3. 研究工作台拖拽排序 — 支持拖拽研究项调整顺序
 
 ---
 
@@ -51,3 +54,4 @@
 | R28 | Keyboard Shortcuts + CSS Fix | 研究工作台键盘导航 + CSS 变量修复 |
 | R29 | Batch Thesis Generation | 研究工作台批量论点生成 |
 | R30 | CSV Export | 研究工作台 CSV 导出 |
+| R31 | Company Profile Card + Focus Trap | 报告页公司概览卡片 + 弹窗焦点修复 |
