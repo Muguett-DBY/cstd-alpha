@@ -837,9 +837,45 @@ function ProgressPanel({
 
 function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
+  const [activeSection, setActiveSection] = useState("scores");
+
+  useEffect(() => {
+    const sections = document.querySelectorAll<HTMLElement>(".report [id]");
+    if (!sections.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+            break;
+          }
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: 0 },
+    );
+    for (const section of sections) observer.observe(section);
+    return () => observer.disconnect();
+  }, [report]);
+
+  const navItems = [
+    { id: "scores", label: "评分" },
+    { id: "conclusion", label: "结论" },
+    { id: "modules", label: "模块" },
+    { id: "detailed-scores", label: "详细评分" },
+    { id: "financials", label: "财务" },
+    { id: "valuation", label: "估值" },
+    { id: "risks", label: "风险" },
+    { id: "evidence", label: "证据" },
+  ];
 
   return (
     <article className="report">
+      <nav className="report-section-nav" aria-label="报告章节">
+        {navItems.map((item) => (
+          <a key={item.id} href={`#${item.id}`} className={activeSection === item.id ? "active" : ""}>{item.label}</a>
+        ))}
+      </nav>
+
       <header className="report-header">
         <div>
           <p className="eyebrow">
@@ -877,7 +913,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         </button>
       </header>
 
-      <section className="score-strip">
+      <section className="score-strip" id="scores">
         <ScoreTile label="公司质量评分（CQS）" value={report.cqs} />
         <ScoreTile label="投资吸引力评分（IAS）" value={report.ias} />
         <div className="decision">
@@ -894,9 +930,9 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         <InfoTile title="公司等级" value={report.accountRules.companyGrade} />
       </section>
 
-      <ReportBlock title="一页结论与评分仪表盘" body={report.fullSections.onePageConclusion} />
+      <ReportBlock title="一页结论与评分仪表盘" body={report.fullSections.onePageConclusion} id="conclusion" />
 
-      <section className="module-table">
+      <section className="module-table" id="modules">
         <div className="table-row table-head">
           <span>模块</span>
           <span>权重</span>
@@ -909,7 +945,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         ))}
       </section>
 
-      <section className="score-items">
+      <section className="score-items" id="detailed-scores">
         <h3>20 项详细评分</h3>
         {report.scoreItems20.map((item, index) => (
           <ScoreItemCard key={item.id} item={item} index={index + 1} />
@@ -997,7 +1033,7 @@ function FinancialTable({ report }: { report: InvestmentReport }) {
   const gridTemplateColumns = `150px repeat(${years.length}, minmax(84px, 1fr)) 104px`;
   const minWidth = `${150 + years.length * 84 + 104}px`;
   return (
-    <section className="wide-section">
+    <section className="wide-section" id="financials">
       <h3>十年财务数据总表</h3>
       {report.financialTenYear.rows.length && years.length ? (
         <div className="financial-table">
@@ -1028,7 +1064,7 @@ function FinancialTable({ report }: { report: InvestmentReport }) {
 
 function ValuationSection({ report }: { report: InvestmentReport }) {
   return (
-    <section className="wide-section">
+    <section className="wide-section" id="valuation">
       <h3>估值分析</h3>
       <div className="dashboard-grid">
         <InfoTile title="当前价格" value={report.valuationAnalysis.currentPrice} />
@@ -1057,7 +1093,7 @@ function ValuationSection({ report }: { report: InvestmentReport }) {
 
 function RiskSection({ report }: { report: InvestmentReport }) {
   return (
-    <section className="wide-section">
+    <section className="wide-section" id="risks">
       <h3>风险清单与反证条件</h3>
       <div className="risk-list">
         {report.riskMatrix.length ? (
@@ -1079,9 +1115,9 @@ function RiskSection({ report }: { report: InvestmentReport }) {
   );
 }
 
-function ReportBlock({ title, body }: { title: string; body: string }) {
+function ReportBlock({ title, body, id }: { title: string; body: string; id?: string }) {
   return (
-    <section className="report-section">
+    <section className="report-section" id={id}>
       <h3>{title}</h3>
       {splitReportParagraphs(body).map((paragraph, index) => (
         <p key={`${title}-${index}`}>{paragraph}</p>
@@ -1092,7 +1128,7 @@ function ReportBlock({ title, body }: { title: string; body: string }) {
 
 function EvidenceList({ report }: { report: InvestmentReport }) {
   return (
-    <section className="evidence-list">
+    <section className="evidence-list" id="evidence">
       <h3>证据来源</h3>
       {report.evidence.map((item) => (
         <a key={`${item.source}-${item.url}-${item.title}`} href={item.url || undefined} target="_blank" rel="noreferrer">

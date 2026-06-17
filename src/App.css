@@ -4727,12 +4727,49 @@ button:not(:disabled):active,
   font-size: 13px;
   font-weight: 800;
   text-decoration: none;
-  background: #fbfbf8;
+  background: var(--surface);
 }
 
 .radar-section-nav a:hover {
   border-color: var(--teal);
   color: var(--teal);
+}
+
+.report-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+.report-section-nav a {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--surface);
+  transition: all 0.14s ease;
+}
+
+.report-section-nav a:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.report-section-nav a.active {
+  background: var(--teal);
+  color: white;
+  border-color: var(--teal);
 }
 
 .radar-refresh-notice {
