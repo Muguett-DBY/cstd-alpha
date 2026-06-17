@@ -547,16 +547,23 @@ function App() {
         <>
         <form onSubmit={submitSearch} className="report-form">
           <label htmlFor="companyQuery">公司名或股票代码</label>
-          <input
-            id="companyQuery"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setSelectedCompany(null);
-            }}
-            placeholder="例如：万科A、苹果、腾讯、贵州茅台"
-            required
-          />
+          <div className="search-input-wrap">
+            <input
+              id="companyQuery"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSelectedCompany(null);
+              }}
+              placeholder="例如：万科A、苹果、腾讯、贵州茅台"
+              required
+            />
+            {query ? (
+              <button type="button" className="search-clear" onClick={() => { setQuery(""); setSelectedCompany(null); }} aria-label="清除搜索">
+                ×
+              </button>
+            ) : null}
+          </div>
           <button type="submit" disabled={phase === "searching" || phase === "generating"}>
             {phase === "searching" ? "正在搜索..." : "搜索并选择公司"}
           </button>
@@ -711,16 +718,26 @@ function CandidateModal({
   onSelect: (candidate: CompanyCandidate) => void;
   onClose: () => void;
 }) {
-  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    backdropRef.current?.focus();
+    const firstButton = modalRef.current?.querySelector<HTMLElement>("button");
+    firstButton?.focus();
   }, []);
 
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") { onClose(); return; }
+    if (event.key !== "Tab") return;
+    const focusable = modalRef.current?.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+
   return (
-    <div ref={backdropRef} className="modal-backdrop" role="presentation" tabIndex={-1} onKeyDown={(event) => {
-      if (event.key === "Escape") onClose();
-    }}>
-      <section className="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-title">
+    <div className="modal-backdrop" role="presentation" tabIndex={-1} onKeyDown={handleKeyDown}>
+      <section ref={modalRef} className="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-title">
         <header>
           <div>
             <p className="brand">确认上市主体</p>
@@ -1475,15 +1492,14 @@ function RadarIndustryTable({ packets, onSelectIndustry }: { packets: RadarIndus
   const [expanded, setExpanded] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "priority", desc: true }]);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
-  const rows = useMemo(() => {
-    return radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all" }).allRows;
-  }, [packets, query, stage]);
   const defaultVisibleCount = 10;
-  const hasActiveFilter = stage !== "all" || Boolean(query.trim());
-  const visibleRows = useMemo(
-    () => radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }).visibleRows,
-    [expanded, packets, query, stage],
+  const displayPlan = useMemo(
+    () => radarPacketDisplayPlan(packets, { query, stage: stage as RadarIndustryStage | "all", expanded, defaultVisibleCount }),
+    [packets, query, stage, expanded],
   );
+  const rows = displayPlan.allRows;
+  const hasActiveFilter = stage !== "all" || Boolean(query.trim());
+  const visibleRows = displayPlan.visibleRows;
   const columns = useMemo(
     () => [
       radarIndustryColumnHelper.accessor("industry", {
