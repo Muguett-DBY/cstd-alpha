@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createValuationRun, fetchResearchItems, fetchValuations } from "./api";
 import type { ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { filterValuationRunsForDisplay, mergeValuationRuns } from "./valuation-state";
+import { filterValuationRunsForDisplay, mergeValuationRuns, valuationAssumptionsForDisplay } from "./valuation-state";
 
 export function ValuationLabView() {
   const [runs, setRuns] = useState<ValuationRunSummary[]>([]);
@@ -117,6 +117,7 @@ export function ValuationLabView() {
 
 function ValuationRunCard({ run }: { run: ValuationRunSummary }) {
   const scenarios = run.result?.scenarios ?? [];
+  const assumptions = valuationAssumptionsForDisplay(run);
   return (
     <article className={`valuation-run-card ${run.status}`}>
       <div className="valuation-run-head">
@@ -137,6 +138,18 @@ function ValuationRunCard({ run }: { run: ValuationRunSummary }) {
               </div>
             ))}
           </div>
+          {assumptions.length ? (
+            <div className="valuation-assumptions">
+              <span>关键假设</span>
+              <div>
+                {assumptions.map((assumption) => (
+                  <small key={assumption.key} title={assumption.meta}>
+                    {assumption.label} <strong>{assumption.value}</strong>
+                  </small>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {run.result?.forecastRows?.length ? (
             <div className="valuation-table-wrap">
               <table className="financial-mini-table">

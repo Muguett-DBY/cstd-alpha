@@ -1318,6 +1318,51 @@ button:not(:disabled):active,
   font-size: 24px;
 }
 
+.valuation-assumptions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: start;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.valuation-assumptions > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.valuation-assumptions div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.valuation-assumptions small {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid rgba(23, 130, 116, 0.22);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(23, 130, 116, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.valuation-assumptions strong {
+  color: var(--ink);
+  font-size: inherit;
+}
+
 .valuation-table-wrap {
   margin-top: 12px;
   overflow-x: auto;
