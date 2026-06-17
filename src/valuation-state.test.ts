@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { filterValuationRunsForDisplay, hasActiveValuationRuns, mergeValuationRuns, valuationAssumptionsForDisplay } from "./valuation-state";
+import {
+  filterValuationRunsForDisplay,
+  hasActiveValuationRuns,
+  mergeValuationRuns,
+  retryValuationInputFromRun,
+  valuationAssumptionsForDisplay,
+} from "./valuation-state";
 
 describe("valuation state", () => {
   test("polls only while at least one valuation is queued or running", () => {
@@ -65,6 +71,34 @@ describe("valuation state", () => {
       { key: "terminalGrowthRate", label: "永续增长率", value: "2.5%", meta: "置信 62% / 证据 1" },
       { key: "peerEvEbitda", label: "同业倍数", value: "11.5x", meta: "锁定 / 置信 48% / 证据 1" },
     ]);
+  });
+
+  test("builds a retry payload from a failed valuation run", () => {
+    const run = valuationRun("failed", "failed-retry");
+    run.researchItemId = "research-1";
+    run.entityType = "industry";
+    run.entityId = "industry-ai";
+    run.title = "AI应用/软件";
+    run.currency = "CNY";
+    run.result = {
+      method: "dcf_3_statement",
+      archetype: "operating",
+      currency: "CNY",
+      asOf: "2026-06-18",
+      assumptions: [],
+      scenarios: [],
+      evidenceHash: "evidence-hash-1",
+      methodologyVersion: 2,
+    };
+
+    expect(retryValuationInputFromRun(run)).toEqual({
+      researchItemId: "research-1",
+      entityType: "industry",
+      entityId: "industry-ai",
+      title: "AI应用/软件",
+      currency: "CNY",
+      evidenceHash: "evidence-hash-1",
+    });
   });
 });
 

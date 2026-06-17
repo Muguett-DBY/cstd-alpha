@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { createValuationRun, fetchResearchItems, fetchValuations } from "./api";
 import type { ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { filterValuationRunsForDisplay, mergeValuationRuns, valuationAssumptionsForDisplay } from "./valuation-state";
+import {
+  filterValuationRunsForDisplay,
+  mergeValuationRuns,
+  retryValuationInputFromRun,
+  valuationAssumptionsForDisplay,
+} from "./valuation-state";
 
 export function ValuationLabView() {
   const [runs, setRuns] = useState<ValuationRunSummary[]>([]);
@@ -74,6 +79,16 @@ export function ValuationLabView() {
     }
   }
 
+  async function retryValuation(run: ValuationRunSummary) {
+    try {
+      const nextRun = await createValuationRun(retryValuationInputFromRun(run));
+      setRuns((current) => [nextRun, ...current]);
+      setMessage(`${run.title} 估值任务已重新进入后台队列。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "估值任务重新创建失败。");
+    }
+  }
+
   return (
     <section className="workbench-page valuation-page">
       <div className="workbench-hero compact">
@@ -107,7 +122,9 @@ export function ValuationLabView() {
               <h2>估值版本</h2>
               <p>运行完成后展示三情景、关键假设、敏感性和同业区间。</p>
             </header>
-            {displayRuns.length ? displayRuns.map((run) => <ValuationRunCard key={run.id} run={run} />) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
+            {displayRuns.length ? displayRuns.map((run) => (
+              <ValuationRunCard key={run.id} run={run} onRetry={retryValuation} />
+            )) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
           </main>
         </div>
       ) : null}
@@ -115,7 +132,7 @@ export function ValuationLabView() {
   );
 }
 
-function ValuationRunCard({ run }: { run: ValuationRunSummary }) {
+function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?: (run: ValuationRunSummary) => void }) {
   const scenarios = run.result?.scenarios ?? [];
   const assumptions = valuationAssumptionsForDisplay(run);
   return (
@@ -164,7 +181,12 @@ function ValuationRunCard({ run }: { run: ValuationRunSummary }) {
           ) : null}
         </>
       ) : (
-        <p className="valuation-pending">{run.status === "failed" ? "估值任务失败，可稍后重试。" : "估值任务正在后台运行。"}</p>
+        <div className="valuation-pending">
+          <p>{run.status === "failed" ? "估值任务失败，可以直接重新创建任务。" : "估值任务正在后台运行。"}</p>
+          {run.status === "failed" ? (
+            <button type="button" className="secondary-action compact-action" onClick={() => onRetry?.(run)}>重新创建估值</button>
+          ) : null}
+        </div>
       )}
     </article>
   );

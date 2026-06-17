@@ -1269,6 +1269,26 @@ button:not(:disabled):active,
   margin-top: 12px;
 }
 
+.valuation-pending {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.valuation-pending p {
+  margin: 0;
+}
+
+.compact-action {
+  min-height: 34px;
+  padding: 7px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .valuation-run-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1411,6 +1431,11 @@ button:not(:disabled):active,
   .opportunity-columns,
   .scenario-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .valuation-pending {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

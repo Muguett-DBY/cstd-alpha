@@ -7,6 +7,15 @@ export type ValuationAssumptionDisplay = {
   meta: string;
 };
 
+export type ValuationRetryInput = {
+  researchItemId?: string;
+  entityType: ValuationRunSummary["entityType"];
+  entityId: string;
+  title: string;
+  currency: string;
+  evidenceHash?: string;
+};
+
 const ASSUMPTION_DISPLAY_ORDER = [
   "revenueGrowth",
   "ebitMargin",
@@ -43,6 +52,17 @@ export function valuationAssumptionsForDisplay(run: ValuationRunSummary, limit =
       value: formatAssumptionValue(assumption),
       meta: formatAssumptionMeta(assumption),
     }));
+}
+
+export function retryValuationInputFromRun(run: ValuationRunSummary): ValuationRetryInput {
+  return {
+    researchItemId: run.researchItemId,
+    entityType: run.entityType,
+    entityId: run.entityId,
+    title: run.title,
+    currency: run.currency,
+    evidenceHash: run.result?.evidenceHash,
+  };
 }
 
 function assumptionOrder(key: string) {
