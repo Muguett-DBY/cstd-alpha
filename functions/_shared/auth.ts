@@ -2,6 +2,8 @@ const COOKIE_NAME = "cstd_alpha_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const PASSWORD_ITERATIONS = 600_000;
 const MAX_PASSWORD_VERIFY_ITERATIONS = 2_000_000;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export type AuthEnv = {
   AUTH_SECRET: string;
@@ -59,6 +61,16 @@ export async function ensureAuthSchema(db: D1Database) {
       )`,
     ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id, expires_at DESC)`),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT NOT NULL,
+        username TEXT NOT NULL,
+        attempted_at TEXT NOT NULL
+      )`,
+    ),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts (ip, attempted_at)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts (username, attempted_at)`),
   ]);
 }
 
@@ -194,6 +206,24 @@ export function publicUser(session: Pick<UserSession, "userId" | "username" | "d
 
 export async function cleanupExpiredSessions(db: D1Database, now = new Date()) {
   await db.prepare(`DELETE FROM auth_sessions WHERE expires_at <= ?1`).bind(now.toISOString()).run();
+}
+
+export async function checkLoginRateLimit(db: D1Database, ip: string, username: string, now = new Date()) {
+  const windowStart = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const ipRow = await db.prepare(`SELECT COUNT(*) AS count FROM login_attempts WHERE ip = ?1 AND attempted_at > ?2`).bind(ip, windowStart).first<{ count: number }>();
+  if ((ipRow?.count ?? 0) >= RATE_LIMIT_MAX_ATTEMPTS) return { allowed: false, message: "登录尝试过于频繁，请稍后再试。" };
+  const userRow = await db.prepare(`SELECT COUNT(*) AS count FROM login_attempts WHERE username = ?1 AND attempted_at > ?2`).bind(username, windowStart).first<{ count: number }>();
+  if ((userRow?.count ?? 0) >= RATE_LIMIT_MAX_ATTEMPTS) return { allowed: false, message: "该账号登录尝试过于频繁，请稍后再试。" };
+  return { allowed: true };
+}
+
+export async function recordLoginAttempt(db: D1Database, ip: string, username: string, now = new Date()) {
+  await db.prepare(`INSERT INTO login_attempts (ip, username, attempted_at) VALUES (?1, ?2, ?3)`).bind(ip, username, now.toISOString()).run();
+}
+
+export async function cleanupOldLoginAttempts(db: D1Database, now = new Date()) {
+  const cutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS * 2).toISOString();
+  await db.prepare(`DELETE FROM login_attempts WHERE attempted_at <= ?1`).bind(cutoff).run();
 }
 
 export function parseCookie(cookieHeader: string, name: string) {

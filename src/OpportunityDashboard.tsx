@@ -24,9 +24,7 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
         setMessage(error instanceof Error ? error.message : "今日机会读取失败。");
         setPhase("error");
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const matrixItems = useMemo(() => (data?.opportunities ?? []).slice(0, 36), [data]);
@@ -65,7 +63,12 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
 
       {message ? <div className="workbench-notice">{message}</div> : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取机会快照…</div> : null}
-      {phase === "error" ? <div className="workbench-empty error">{message}</div> : null}
+      {phase === "error" ? (
+        <div className="workbench-empty error">
+          <p>{message}</p>
+          <button type="button" className="secondary-button" onClick={() => { setPhase("loading"); setMessage(""); void fetchOpportunities().then((next) => { setData(next); setPhase("ready"); }).catch((error) => { setMessage(error instanceof Error ? error.message : "今日机会读取失败。"); setPhase("error"); }); }}>重试</button>
+        </div>
+      ) : null}
       {phase === "ready" && data ? (
         <>
           <div className="opportunity-grid">

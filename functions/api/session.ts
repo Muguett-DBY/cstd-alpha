@@ -1,4 +1,4 @@
-import { authenticateUser, clearSessionCookie, createAuthSession, createUser, ensureAuthSchema, publicUser, readSessionCookie, revokeSession } from "../_shared/auth";
+import { authenticateUser, checkLoginRateLimit, cleanupOldLoginAttempts, clearSessionCookie, createAuthSession, createUser, ensureAuthSchema, publicUser, readSessionCookie, recordLoginAttempt, revokeSession } from "../_shared/auth";
 
 type Env = {
   AUTH_SECRET: string;
@@ -20,13 +20,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!username || !password) return json({ error: "请输入账号和密码。" }, 400);
   if (username.length > 80 || password.length > 256) return json({ error: "账号或密码格式不正确。" }, 400);
 
+  const ip = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const now = new Date();
+  const rateLimit = await checkLoginRateLimit(env.REPORT_LIBRARY_DB, ip, username.toLowerCase(), now);
+  if (!rateLimit.allowed) return json({ error: rateLimit.message }, 429);
+
   let user = await authenticateUser(env.REPORT_LIBRARY_DB, username, password);
   if (!user && env.REPORT_PASSWORD && password === env.REPORT_PASSWORD && (await userCount(env.REPORT_LIBRARY_DB)) === 0) {
     user = await createUser(env.REPORT_LIBRARY_DB, { username, password, displayName: username, role: "admin" });
   }
-  if (!user) return json({ error: "账号或密码不正确。" }, 401);
+  if (!user) {
+    await recordLoginAttempt(env.REPORT_LIBRARY_DB, ip, username.toLowerCase(), now);
+    if (Math.random() < 0.1) await cleanupOldLoginAttempts(env.REPORT_LIBRARY_DB, now).catch(() => {});
+    return json({ error: "账号或密码不正确。" }, 401);
+  }
 
-  const { cookie, session } = await createAuthSession(env.REPORT_LIBRARY_DB, user, new Date(), isSecureRequest(request));
+  const { cookie, session } = await createAuthSession(env.REPORT_LIBRARY_DB, user, now, isSecureRequest(request));
   return json({ authenticated: true, user: publicUser(session) }, 200, { "set-cookie": cookie });
 };
 

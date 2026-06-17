@@ -62,7 +62,7 @@ self.addEventListener("fetch", (event) => {
         return response;
       }).catch(() => cached);
 
-      return fetchPromise.then((response) => response || cached);
+      return fetchPromise.then((response) => (response && response.ok) ? response : cached || response);
     }),
   );
 });

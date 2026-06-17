@@ -50,9 +50,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         setMessage(error instanceof Error ? error.message : "研究队列读取失败。");
         setPhase("error");
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -187,7 +185,12 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       </div>
       {message ? <div className="workbench-notice">{message}</div> : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取研究队列…</div> : null}
-      {phase === "error" ? <div className="workbench-empty error">{message}</div> : null}
+      {phase === "error" ? (
+        <div className="workbench-empty error">
+          <p>{message}</p>
+          <button type="button" className="secondary-button" onClick={() => { setPhase("loading"); setMessage(""); void fetchResearchItems().then((data) => { setItems(data.items); setSelectedId((current) => current || data.items[0]?.id || ""); setPhase("ready"); }).catch((error) => { setMessage(error instanceof Error ? error.message : "研究队列读取失败。"); setPhase("error"); }); }}>重试</button>
+        </div>
+      ) : null}
       {phase === "ready" ? (
         <div className={`research-layout ${assistantCollapsed ? "assistant-collapsed" : ""}`}>
           <div className="terminal-panel research-queue">

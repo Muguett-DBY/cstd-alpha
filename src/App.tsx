@@ -36,6 +36,7 @@ function App() {
   const [checking, setChecking] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
@@ -64,9 +65,13 @@ function App() {
   const installPrompt = usePwaInstallPrompt();
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
+  const radarRef = useRef(radar);
+
+  useEffect(() => { radarRef.current = radar; }, [radar]);
+
   const loadRadar = useCallback(
     async (forceRefresh: boolean) => {
-      const hasExistingRadar = Boolean(radar);
+      const hasExistingRadar = Boolean(radarRef.current);
       setRadarPhase(forceRefresh && hasExistingRadar ? "refreshing" : "loading");
       setRadarError("");
       try {
@@ -86,7 +91,7 @@ function App() {
         setRadarError(radarRefreshFallbackMessage(hasExistingRadar, err));
       }
     },
-    [radar],
+    [],
   );
 
   useEffect(() => {
@@ -98,19 +103,16 @@ function App() {
           setRadarJob(result.job ?? null);
           setRadarDiagnostics(result.diagnostics ?? null);
           if (result.job?.status === "queued" || result.job?.status === "running") {
-            setRadarPhase(result.radar || radar ? "refreshing" : "loading");
+            setRadarPhase((prev) => prev === "loading" ? "loading" : "refreshing");
           } else {
-            setRadarPhase(result.radar || radar ? "ready" : "error");
+            setRadarPhase(result.radar ? "ready" : "error");
           }
           setRadarError(result.warning ?? result.radar?.refreshWarning ?? "");
         })
-        .catch((err) => {
-          setRadarPhase(radar ? "ready" : "error");
-          setRadarError(radarRefreshFallbackMessage(Boolean(radar), err));
-        });
+        .catch(() => {});
     }, 5000);
     return () => window.clearInterval(id);
-  }, [activeView, radar, radarJob?.status]);
+  }, [activeView, radarJob?.status]);
 
   useEffect(() => {
     void checkSession()
@@ -142,6 +144,7 @@ function App() {
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    setIsLoggingIn(true);
     try {
       const session = await login(password, username);
       setUser(session);
@@ -150,6 +153,8 @@ function App() {
       if (activeView === "radar" && !radar) setRadarPhase("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败。");
+    } finally {
+      setIsLoggingIn(false);
     }
   }
 
@@ -444,7 +449,7 @@ function App() {
               autoComplete="current-password"
               required
             />
-            <button type="submit">进入</button>
+            <button type="submit" disabled={isLoggingIn}>{isLoggingIn ? "验证中..." : "进入"}</button>
           </form>
           {error ? <p className="error-text">{error}</p> : null}
         </section>

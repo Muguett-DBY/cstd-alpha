@@ -37,9 +37,7 @@ export function ValuationLabView() {
         setMessage(error instanceof Error ? error.message : "估值实验室读取失败。");
         setPhase("error");
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -101,7 +99,12 @@ export function ValuationLabView() {
       </div>
       {message ? <div className="workbench-notice">{message}</div> : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取估值历史…</div> : null}
-      {phase === "error" ? <div className="workbench-empty error">{message}</div> : null}
+      {phase === "error" ? (
+        <div className="workbench-empty error">
+          <p>{message}</p>
+          <button type="button" className="secondary-button" onClick={() => { setPhase("loading"); setMessage(""); void Promise.all([fetchValuations(), fetchResearchItems()]).then(([valuationData, researchData]) => { setRuns(valuationData.runs); setItems(researchData.items); setSelectedEntityId((current) => current || researchData.items[0]?.id || ""); setPhase("ready"); }).catch((error) => { setMessage(error instanceof Error ? error.message : "估值实验室读取失败。"); setPhase("error"); }); }}>重试</button>
+        </div>
+      ) : null}
       {phase === "ready" ? (
         <div className="valuation-layout">
           <aside className="terminal-panel valuation-picker">
