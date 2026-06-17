@@ -215,12 +215,24 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     {stageItems.length ? stageItems.map((item) => (
                       <button
                         type="button"
-                        className={`research-card ${selected?.id === item.id ? "selected" : ""}`}
+                        className={`research-card ${selected?.id === item.id ? "selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
                         key={item.id}
                         onClick={() => setSelectedId(item.id)}
                       >
-                        <strong>{item.title}</strong>
-                        <span>{item.subtitle || item.entityType}</span>
+                        <div className="card-header">
+                          <strong>{item.title}</strong>
+                          <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
+                        </div>
+                        <span className="card-subtitle">{item.subtitle || item.entityType}</span>
+                        <div className="card-meta">
+                          <span className={`card-thesis ${item.currentThesisVersionId ? "has-thesis" : ""}`}>
+                            {item.currentThesisVersionId ? "论点" : "无论点"}
+                          </span>
+                          <span className={`card-evidence ${item.evidenceHash ? "has-evidence" : ""}`}>
+                            {item.evidenceHash ? "证据" : "无证据"}
+                          </span>
+                          <span className="card-time">{relativeTime(item.updatedAt)}</span>
+                        </div>
                       </button>
                     )) : <p className="stage-empty">{queueQuery && stageTotal ? "无匹配" : "暂无"}</p>}
                   </section>
@@ -432,6 +444,15 @@ function renderResearchInline(text: string) {
       ? <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
       : part
   ));
+}
+
+function relativeTime(value: string) {
+  const diff = Date.now() - new Date(value).getTime();
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`;
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}天前`;
+  return `${Math.floor(diff / 604_800_000)}周前`;
 }
 
 function formatResearchDate(value: string) {
