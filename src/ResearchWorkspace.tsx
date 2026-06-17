@@ -264,6 +264,25 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
+  function exportFilteredCSV() {
+    const rows = [["名称", "实体类型", "副标题", "阶段", "来源", "有论点", "有证据", "创建时间", "更新时间"]];
+    for (const item of filteredItems) {
+      rows.push([item.title, item.entityType, item.subtitle || "", RESEARCH_STAGE_LABELS[item.stage as keyof typeof RESEARCH_STAGE_LABELS] || item.stage, item.source, item.currentThesisVersionId ? "是" : "否", item.evidenceHash ? "是" : "否", item.createdAt, item.updatedAt]);
+    }
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `研究队列_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`已导出 ${filteredItems.length} 项研究数据。`, "success");
+  }
+
   async function generateThesis(item: ResearchWorkbenchItem) {
     thesisRequestRef.current?.controller.abort("research-thesis-restarted");
     const controller = new AbortController();
@@ -466,6 +485,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 <button type="button" className="ghost-button" onClick={() => void batchGenerateThesis()} disabled={batchProcessing}>
                   {batchProcessing ? "生成中..." : "批量生成论点"}
                 </button>
+                <button type="button" className="ghost-button" onClick={() => exportFilteredCSV()}>导出 CSV</button>
               </div>
             ) : null}
           </div>
