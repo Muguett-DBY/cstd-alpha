@@ -1046,8 +1046,8 @@ function FinancialTable({ report }: { report: InvestmentReport }) {
   const gridTemplateColumns = `150px repeat(${years.length}, minmax(84px, 1fr)) 104px`;
   const minWidth = `${150 + years.length * 84 + 104}px`;
   return (
-    <section className="wide-section" id="financials">
-      <h3>十年财务数据总表</h3>
+    <details className="wide-section" id="financials" open>
+      <summary><h3>十年财务数据总表</h3></summary>
       {report.financialTenYear.rows.length && years.length ? (
         <div className="financial-table">
           <div className="financial-row financial-head" style={{ gridTemplateColumns, minWidth }}>
@@ -1071,7 +1071,7 @@ function FinancialTable({ report }: { report: InvestmentReport }) {
         <p>数据不足：公开接口未返回可直接入表的十年财务数据。</p>
       )}
       <p>{report.financialTenYear.interpretation}</p>
-    </section>
+    </details>
   );
 }
 
@@ -1106,8 +1106,8 @@ function ValuationSection({ report }: { report: InvestmentReport }) {
 
 function RiskSection({ report }: { report: InvestmentReport }) {
   return (
-    <section className="wide-section" id="risks">
-      <h3>风险清单与反证条件</h3>
+    <details className="wide-section" id="risks">
+      <summary><h3>风险清单与反证条件</h3></summary>
       <div className="risk-list">
         {report.riskMatrix.length ? (
           report.riskMatrix.map((risk) => (
@@ -1124,7 +1124,7 @@ function RiskSection({ report }: { report: InvestmentReport }) {
           <p>数据不足：模型未提供完整风险矩阵。</p>
         )}
       </div>
-    </section>
+    </details>
   );
 }
 

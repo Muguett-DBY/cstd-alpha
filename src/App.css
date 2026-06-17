@@ -4585,7 +4585,20 @@ button:not(:disabled):active,
 .report-section {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface);
+}
+
+.wide-section summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0;
+}
+
+.wide-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.wide-section summary h3 {
+  margin: 0;
 }
 
 .module-table {
