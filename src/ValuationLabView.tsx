@@ -94,7 +94,7 @@ export function ValuationLabView() {
         <div>
           <p className="eyebrow">估值实验室</p>
           <h1>由 AI 生成假设，公式负责计算结果</h1>
-          <p className="hero-copy">普通企业、银行保险和周期资源会自动切换方法；每次估值都保存为版本。</p>
+          <p className="hero-copy">普通企业、银行保险和周期资源会自动切换方法；每次估值都保存为版本。估值任务也可以从研究工作台直接创建。</p>
         </div>
         <button type="button" className="primary-action" onClick={startValuation} disabled={!selected}>创建估值任务</button>
       </div>

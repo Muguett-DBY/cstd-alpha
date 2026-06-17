@@ -1206,6 +1206,87 @@ button:not(:disabled):active,
   font-size: 10px;
 }
 
+.card-valuation {
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.card-valuation.has-valuation {
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  color: var(--teal);
+}
+
+.card-valuation.valuation-pending {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  color: var(--amber);
+}
+
+.valuation-summary {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.valuation-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.valuation-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.valuation-badge.completed {
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  color: var(--teal);
+}
+
+.valuation-badge.running,
+.valuation-badge.queued {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  color: var(--amber);
+}
+
+.valuation-badge.failed {
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+  color: var(--red);
+}
+
+.valuation-method {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.valuation-results {
+  display: flex;
+  gap: 10px;
+}
+
+.valuation-scenario {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  min-width: 80px;
+}
+
+.valuation-scenario span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.valuation-scenario strong {
+  font-size: 16px;
+  color: var(--ink);
+}
+
 .stage-empty {
   margin: 0;
   color: var(--muted);

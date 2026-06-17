@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
+import { createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
+import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
 
 type Props = {
@@ -27,6 +28,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const [updatingCatalystId, setUpdatingCatalystId] = useState("");
   const [catalystStatusFilter, setCatalystStatusFilter] = useState<ResearchCatalystStatusFilter>("all");
+  const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
@@ -36,14 +38,24 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const filteredItems = useMemo(() => filterResearchWorkbenchItems(items, queueQuery), [items, queueQuery]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
+  const valuationByItem = useMemo(() => {
+    const map = new Map<string, ValuationRunSummary>();
+    for (const run of valuationRuns) {
+      if (run.researchItemId && (!map.has(run.researchItemId) || run.updatedAt > (map.get(run.researchItemId)?.updatedAt ?? ""))) {
+        map.set(run.researchItemId, run);
+      }
+    }
+    return map;
+  }, [valuationRuns]);
 
   useEffect(() => {
     let cancelled = false;
-    fetchResearchItems()
-      .then((data) => {
+    Promise.all([fetchResearchItems(), fetchValuations()])
+      .then(([researchData, valuationData]) => {
         if (cancelled) return;
-        setItems(data.items);
-        setSelectedId((current) => current || data.items[0]?.id || "");
+        setItems(researchData.items);
+        setSelectedId((current) => current || researchData.items[0]?.id || "");
+        setValuationRuns(valuationData.runs);
         setPhase("ready");
       })
       .catch((error) => {
@@ -212,29 +224,37 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 return (
                   <section className="stage-column" key={stage}>
                     <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
-                    {stageItems.length ? stageItems.map((item) => (
-                      <button
-                        type="button"
-                        className={`research-card ${selected?.id === item.id ? "selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
-                        key={item.id}
-                        onClick={() => setSelectedId(item.id)}
-                      >
-                        <div className="card-header">
-                          <strong>{item.title}</strong>
-                          <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
-                        </div>
-                        <span className="card-subtitle">{item.subtitle || item.entityType}</span>
-                        <div className="card-meta">
-                          <span className={`card-thesis ${item.currentThesisVersionId ? "has-thesis" : ""}`}>
-                            {item.currentThesisVersionId ? "论点" : "无论点"}
-                          </span>
-                          <span className={`card-evidence ${item.evidenceHash ? "has-evidence" : ""}`}>
-                            {item.evidenceHash ? "证据" : "无证据"}
-                          </span>
-                          <span className="card-time">{relativeTime(item.updatedAt)}</span>
-                        </div>
-                      </button>
-                    )) : <p className="stage-empty">{queueQuery && stageTotal ? "无匹配" : "暂无"}</p>}
+                    {stageItems.length ? stageItems.map((item) => {
+                      const valuation = valuationByItem.get(item.id);
+                      return (
+                        <button
+                          type="button"
+                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
+                          key={item.id}
+                          onClick={() => setSelectedId(item.id)}
+                        >
+                          <div className="card-header">
+                            <strong>{item.title}</strong>
+                            <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
+                          </div>
+                          <span className="card-subtitle">{item.subtitle || item.entityType}</span>
+                          <div className="card-meta">
+                            <span className={`card-thesis ${item.currentThesisVersionId ? "has-thesis" : ""}`}>
+                              {item.currentThesisVersionId ? "论点" : "无论点"}
+                            </span>
+                            <span className={`card-evidence ${item.evidenceHash ? "has-evidence" : ""}`}>
+                              {item.evidenceHash ? "证据" : "无证据"}
+                            </span>
+                            {valuation ? (
+                              <span className={`card-valuation ${valuation.status === "completed" ? "has-valuation" : valuation.status === "running" || valuation.status === "queued" ? "valuation-pending" : ""}`}>
+                                {valuation.status === "completed" && valuation.result ? `${valuation.currency} ${formatValuationPrice(valuation.result.scenarios.find((s) => s.scenario === "base")?.perShareValue)}` : valuation.status === "running" || valuation.status === "queued" ? "估值中" : valuation.status === "failed" ? "估值失败" : "估值"}
+                              </span>
+                            ) : null}
+                            <span className="card-time">{relativeTime(item.updatedAt)}</span>
+                          </div>
+                        </button>
+                      );
+                    }) : <p className="stage-empty">{queueQuery && stageTotal ? "无匹配" : "暂无"}</p>}
                   </section>
                 );
               })}
@@ -362,6 +382,50 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     </div>
                   ) : null}
                 </div>
+                {selected && (() => {
+                  const valuation = valuationByItem.get(selected.id);
+                  return (
+                    <div className="thesis-panel">
+                      <h3>估值状态</h3>
+                      {valuation ? (
+                        <div className="valuation-summary">
+                          <div className="valuation-status">
+                            <span className={`valuation-badge ${valuation.status}`}>{valuation.status === "completed" ? "已完成" : valuation.status === "running" ? "进行中" : valuation.status === "queued" ? "排队中" : valuation.status === "failed" ? "失败" : valuation.status}</span>
+                            <span className="valuation-method">{valuation.method === "dcf_3_statement" ? "DCF三表" : valuation.method === "ddm_residual_income" ? "DDM/剩余收益" : "中周期NAV"}</span>
+                          </div>
+                          {valuation.status === "completed" && valuation.result ? (
+                            <div className="valuation-results">
+                              {valuation.result.scenarios.map((scenario) => (
+                                <div key={scenario.scenario} className="valuation-scenario">
+                                  <span>{scenario.scenario === "bear" ? "保守" : scenario.scenario === "bull" ? "乐观" : "中性"}</span>
+                                  <strong>{valuation.currency} {formatValuationPrice(scenario.perShareValue)}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="thesis-empty">
+                          <p>尚未创建估值任务。</p>
+                          <button type="button" className="secondary-button" onClick={async () => {
+                            try {
+                              const run = await createValuationRun({
+                                researchItemId: selected.id,
+                                entityType: selected.entityType,
+                                entityId: selected.entityId,
+                                title: selected.title,
+                              });
+                              setValuationRuns((current) => [run, ...current]);
+                              showToast(`${selected.title} 估值任务已创建。`, "success");
+                            } catch (error) {
+                              showToast(error instanceof Error ? error.message : "估值任务创建失败。", "error");
+                            }
+                          }}>创建估值任务</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <div className="workbench-empty compact">从今日机会加入行业或公司后，会出现在这里。</div>
@@ -453,6 +517,11 @@ function relativeTime(value: string) {
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`;
   if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}天前`;
   return `${Math.floor(diff / 604_800_000)}周前`;
+}
+
+function formatValuationPrice(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return "—";
+  return value >= 1000 ? `${Math.round(value)}` : value.toFixed(2);
 }
 
 function formatResearchDate(value: string) {
