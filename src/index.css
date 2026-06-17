@@ -5,6 +5,7 @@
   --body: #2f3337;
   --muted: #66706b;
   --line: #d9ddd8;
+  --line-strong: #c5cbc4;
   --teal: #0f766e;
   --amber: #c27a12;
   --red: #b42318;
@@ -37,4 +38,15 @@ button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

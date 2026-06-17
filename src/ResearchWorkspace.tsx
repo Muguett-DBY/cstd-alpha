@@ -152,7 +152,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setCatalysts(result.catalysts);
       setCatalystItemId(item.id);
       setCatalystPhase("idle");
-      setMessage(`${item.title} 已同步 ${result.created ?? result.catalysts.length} 个催化剂、反证和跟踪项。`);
+      const createdNote = result.created !== undefined ? `新增 ${result.created} 个` : `共 ${result.catalysts.length} 个`;
+      setMessage(`${item.title} 已同步 ${createdNote} 催化剂、反证和跟踪项。`);
     } catch (error) {
       setCatalystPhase("error");
       setMessage(error instanceof Error ? error.message : "研究跟踪项同步失败。");

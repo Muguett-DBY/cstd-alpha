@@ -69,7 +69,7 @@ export function ValuationLabView() {
         entityId: selected.entityId,
         title: selected.title,
         industry: selected.subtitle,
-        currency: inferCurrency(selected.subtitle),
+        currency: inferCurrency(selected.entityId, selected.subtitle),
         evidenceHash: selected.evidenceHash,
       });
       setRuns((current) => [run, ...current]);
@@ -218,9 +218,10 @@ function scenarioLabel(value: string) {
   return "中性";
 }
 
-function inferCurrency(subtitle?: string) {
-  if (/港股|HK|H股/i.test(subtitle ?? "")) return "HKD";
-  if (/美股|NASDAQ|NYSE|USD/i.test(subtitle ?? "")) return "USD";
+function inferCurrency(entityId?: string, subtitle?: string) {
+  const id = entityId ?? subtitle ?? "";
+  if (/^\d{1,5}$/.test(id) || /港股|HK|H股|港交所/i.test(id)) return "HKD";
+  if (/^[A-Z]{1,5}\.?[A-Z]?$/.test(id) || /美股|NASDAQ|NYSE|USD/i.test(id)) return "USD";
   return "CNY";
 }
 

@@ -13,17 +13,21 @@ export function WatchlistRankingView({ onOpenEntry }: Props) {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    void reload();
+    let cancelled = false;
+    void reload(cancelled);
+    return () => { cancelled = true; };
   }, []);
 
-  async function reload() {
+   async function reload(cancelled?: boolean) {
     setPhase("loading");
     setError("");
     try {
       const data = await fetchWatchlistRanking();
+      if (cancelled) return;
       setEntries(data.entries);
       setPhase("ready");
     } catch (err) {
+      if (cancelled) return;
       setError(err instanceof Error ? err.message : "自选股排行读取失败。");
       setPhase("error");
     }
@@ -92,6 +96,13 @@ export function WatchlistRankingView({ onOpenEntry }: Props) {
       </div>
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
+      {phase === "error" ? (
+        <p className="error-text">
+          <button type="button" className="ghost-button" onClick={() => void reload()}>
+            重试
+          </button>
+        </p>
+      ) : null}
 
       <div className="ranking-table" role="table" aria-label="自选股评分排行">
         <div className="ranking-row watchlist-ranking-row ranking-row-head" role="row">
