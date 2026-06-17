@@ -447,6 +447,64 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             ))}
           </aside>
 
+          <aside className="terminal-panel activity-feed">
+            <header className="panel-header">
+              <h2>最近动态</h2>
+              <p>{selected ? `${selected.title} 的最新进展` : "选中研究项后显示动态"}</p>
+            </header>
+            {selected ? (
+              <div className="activity-list">
+                {selected.currentThesisVersionId ? (
+                  <div className="activity-item">
+                    <span className="activity-dot thesis" />
+                    <div>
+                      <strong>论文已生成</strong>
+                      <p>{relativeTime(selected.updatedAt)}</p>
+                    </div>
+                  </div>
+                ) : null}
+                {catalystItemId === selected.id && catalysts.filter((c) => c.status === "confirmed").length > 0 ? (
+                  <div className="activity-item">
+                    <span className="activity-dot confirmed" />
+                    <div>
+                      <strong>{catalysts.filter((c) => c.status === "confirmed").length} 项催化剂已确认</strong>
+                      <p>{relativeTime(catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]?.updatedAt || selected.updatedAt)}</p>
+                    </div>
+                  </div>
+                ) : null}
+                {valuationByItem.get(selected.id) ? (
+                  <div className="activity-item">
+                    <span className="activity-dot valuation" />
+                    <div>
+                      <strong>估值{valuationByItem.get(selected.id)?.status === "completed" ? "已完成" : "进行中"}</strong>
+                      <p>{relativeTime(valuationByItem.get(selected.id)?.updatedAt || selected.updatedAt)}</p>
+                    </div>
+                  </div>
+                ) : null}
+                {selected.evidenceHash ? (
+                  <div className="activity-item">
+                    <span className="activity-dot evidence" />
+                    <div>
+                      <strong>证据包已采集</strong>
+                      <p>{relativeTime(selected.updatedAt)}</p>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="activity-item">
+                  <span className="activity-dot info" />
+                  <div>
+                    <strong>研究项创建</strong>
+                    <p>{relativeTime(selected.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="thesis-empty">
+                <p>选中一个研究项后显示其最新进展。</p>
+              </div>
+            )}
+          </aside>
+
           <aside className="terminal-panel linked-assistant">
             <button type="button" className="collapse-link" onClick={() => setAssistantCollapsed((current) => !current)}>
               {assistantCollapsed ? "展开关联助手" : "收起关联助手"}

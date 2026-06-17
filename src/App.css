@@ -1591,6 +1591,50 @@ button:not(:disabled):active,
   opacity: 0.55;
 }
 
+.activity-feed {
+  padding: 18px;
+}
+
+.activity-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.activity-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 40%, var(--surface));
+}
+
+.activity-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+}
+
+.activity-dot.thesis { background: var(--teal); }
+.activity-dot.confirmed { background: #2e7d32; }
+.activity-dot.valuation { background: var(--blue); }
+.activity-dot.evidence { background: var(--amber); }
+.activity-dot.info { background: var(--muted); }
+
+.activity-item strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.activity-item p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .template-groups details {
   border-top: 1px solid var(--line);
   padding: 12px 16px;
