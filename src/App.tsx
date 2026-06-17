@@ -938,6 +938,12 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
           </p>
           <h2>{report.company.name}</h2>
           <p className="muted">{report.oneSentence}</p>
+          <div className="company-profile">
+            <span className="profile-item"><strong>CQS</strong> {report.cqs}</span>
+            <span className="profile-item"><strong>IAS</strong> {report.ias}</span>
+            <span className="profile-item"><strong>结论</strong> {report.conclusion}</span>
+            <span className="profile-item"><strong>估值</strong> {report.summaryDashboard.valuationView}</span>
+          </div>
           {metrics ? (
             <p className="muted">
               {metrics.cacheHit
