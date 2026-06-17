@@ -1085,6 +1085,34 @@ button:not(:disabled):active,
   background: var(--amber);
 }
 
+.research-metrics-bar {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--teal) 4%, var(--surface));
+}
+
+.research-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 70px;
+}
+
+.research-metric strong {
+  font-size: 20px;
+  color: var(--teal);
+}
+
+.research-metric span {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .research-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.65fr);
