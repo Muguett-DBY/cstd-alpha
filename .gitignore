@@ -9,6 +9,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+coverage/
 __pycache__/
 *.pyc
 .wrangler
