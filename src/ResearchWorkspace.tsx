@@ -242,6 +242,28 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
+  async function batchGenerateThesis() {
+    const ids = Array.from(selectedItemIds);
+    if (!ids.length) return;
+    setBatchProcessing(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => refreshResearchThesis(id)));
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (succeeded > 0) {
+        const data = await fetchResearchItems();
+        setItems(data.items);
+        showToast(`已为 ${succeeded} 项生成论点${failed ? `，${failed} 项失败` : ""}。`, succeeded > 0 ? "success" : "error");
+      }
+      if (failed > 0) showToast(`${failed} 项论点生成失败。`, "error");
+      clearSelection();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "批量生成论点失败。");
+    } finally {
+      setBatchProcessing(false);
+    }
+  }
+
   async function generateThesis(item: ResearchWorkbenchItem) {
     thesisRequestRef.current?.controller.abort("research-thesis-restarted");
     const controller = new AbortController();
@@ -441,6 +463,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   <option value="" disabled>批量移动到...</option>
                   {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
                 </select>
+                <button type="button" className="ghost-button" onClick={() => void batchGenerateThesis()} disabled={batchProcessing}>
+                  {batchProcessing ? "生成中..." : "批量生成论点"}
+                </button>
               </div>
             ) : null}
           </div>
