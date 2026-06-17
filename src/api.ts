@@ -688,20 +688,29 @@ async function* readSse(response: Response): AsyncGenerator<Record<string, unkno
     const events = buffer.split("\n\n");
     buffer = events.pop() ?? "";
     for (const event of events) {
-      for (const line of event.split(/\r?\n/)) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (!data) continue;
-        yield JSON.parse(data) as Record<string, unknown>;
+      const lines = event.split(/\r?\n/);
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          const data = line.slice(5);
+          if (data.trim()) dataLines.push(data);
+        }
       }
+      if (!dataLines.length) continue;
+      yield JSON.parse(dataLines.join("\n").trim()) as Record<string, unknown>;
     }
   }
   buffer += decoder.decode();
   if (buffer.trim()) {
-    for (const line of buffer.split(/\r?\n/)) {
-      if (!line.startsWith("data:")) continue;
-      yield JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+    const lines = buffer.split(/\r?\n/);
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith("data:")) {
+        const data = line.slice(5);
+        if (data.trim()) dataLines.push(data);
+      }
     }
+    if (dataLines.length) yield JSON.parse(dataLines.join("\n").trim()) as Record<string, unknown>;
   }
 }
 

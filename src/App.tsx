@@ -43,7 +43,6 @@ function App() {
   const [progress, setProgress] = useState<ReportProgress[]>([]);
   const [evidenceCount, setEvidenceCount] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [initialReportEntry] = useState(() => loadLastReportEntry());
   const [report, setReport] = useState<InvestmentReport | null>(() => initialReportEntry?.report ?? null);
@@ -121,12 +120,6 @@ function App() {
       })
       .finally(() => setChecking(false));
   }, []);
-
-  useEffect(() => {
-    if (!startedAt) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [startedAt]);
 
   useEffect(() => {
     selectedCompanyRef.current = selectedCompany;
@@ -459,7 +452,6 @@ function App() {
     );
   }
 
-  const elapsedSeconds = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
   const renderedView: AppView = mobileAssistantOnly && user?.role === "admin" ? "assistant" : activeView;
   const isWorkbenchView = renderedView === "opportunities" || renderedView === "research" || renderedView === "market" || renderedView === "valuation" || renderedView === "assistant";
   const openMarketRanking = (market: "A股" | "美股" | "港股") => {
@@ -473,6 +465,7 @@ function App() {
 
   return (
     <main className={`app-shell view-${renderedView} ${mobileAssistantOnly ? "mobile-assistant-only" : ""}`}>
+      <a href="#workspace" className="skip-link">跳转到工作区</a>
       <aside className={`input-rail ${isWorkbenchView ? "workbench-nav-rail" : ""}`}>
         <div>
           <p className="brand">CSTD Alpha</p>
@@ -571,7 +564,7 @@ function App() {
         <ProgressPanel
           progress={progress}
           phase={phase}
-          elapsedSeconds={elapsedSeconds}
+          startedAt={startedAt}
           completedElapsedMs={reportMetrics?.elapsedMs}
           evidenceCount={evidenceCount || report?.evidence.length || 0}
         />
@@ -580,7 +573,7 @@ function App() {
         ) : null}
       </aside>
 
-      <section className="workspace">
+      <section id="workspace" className="workspace">
         <Suspense fallback={<section className="empty-state"><h2>正在加载视图</h2><p>只加载当前需要的功能模块。</p></section>}>
           {renderedView === "opportunities" ? (
             <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
@@ -701,20 +694,30 @@ function isReportCancelled(error: unknown) {
 function ProgressPanel({
   progress,
   phase,
-  elapsedSeconds,
+  startedAt,
   completedElapsedMs,
   evidenceCount,
 }: {
   progress: ReportProgress[];
   phase: Phase;
-  elapsedSeconds: number;
+  startedAt: number | null;
   completedElapsedMs?: number;
   evidenceCount: number;
 }) {
+  const [elapsedMs, setElapsedMs] = useState(0);
   const latest = progress.at(-1);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const id = window.setInterval(() => {
+      setElapsedMs(Date.now() - startedAt);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [startedAt]);
+
   const statusText =
     phase === "generating"
-      ? formatDuration(elapsedSeconds * 1000)
+      ? formatDuration(elapsedMs)
       : phase === "ready"
         ? completedElapsedMs !== undefined
           ? `完成 / ${formatDuration(completedElapsedMs)}`

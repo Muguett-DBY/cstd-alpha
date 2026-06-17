@@ -1,3 +1,20 @@
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 8px;
+  z-index: 80;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: white;
+  font-weight: 750;
+  border-radius: 0 0 8px 8px;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
 .loading-screen,
 .auth-page {
   min-height: 100vh;
