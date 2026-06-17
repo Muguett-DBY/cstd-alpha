@@ -1159,6 +1159,60 @@ button:not(:disabled):active,
   font-weight: 600;
 }
 
+.quick-add-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-add-suggestions {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.quick-add-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  min-height: auto;
+  font: inherit;
+}
+
+.quick-add-item:last-child {
+  border-bottom: 0;
+}
+
+.quick-add-item:hover {
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface));
+}
+
+.quick-add-item strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.quick-add-item span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.quick-add-item small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
 .filter-bar {
   display: flex;
   gap: 12px;

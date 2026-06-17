@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
+import { addResearchItem, createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
@@ -18,6 +18,10 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
   const [queueQuery, setQueueQuery] = useState("");
+  const [quickAddQuery, setQuickAddQuery] = useState("");
+  const [quickAddSuggestions, setQuickAddSuggestions] = useState<Array<{ id: string; name: string; code: string; listingPlace: string; source: string }>>([]);
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const quickAddTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [assistantCollapsed, setAssistantCollapsed] = useState(false);
   const [thesisVersions, setThesisVersions] = useState<ResearchThesisVersion[]>([]);
   const [thesisItemId, setThesisItemId] = useState("");
@@ -135,6 +139,39 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       cancelled = true;
     };
   }, [selected?.id]);
+
+  useEffect(() => {
+    if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current);
+    if (!quickAddQuery.trim() || quickAddQuery.trim().length < 2) return;
+    quickAddTimerRef.current = setTimeout(() => {
+      searchCompanies(quickAddQuery.trim()).then((results) => {
+        setQuickAddSuggestions(results.slice(0, 6));
+        setQuickAddLoading(false);
+      }).catch(() => setQuickAddLoading(false));
+    }, 300);
+    return () => { if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current); };
+  }, [quickAddQuery]);
+
+  async function quickAddCompany(company: { id: string; name: string; code: string; listingPlace: string; source: string }) {
+    try {
+      await addResearchItem({
+        entityType: "company",
+        entityId: company.id,
+        title: company.name,
+        subtitle: `${company.code} / ${company.listingPlace}`,
+        source: company.source,
+        stage: "screening",
+      });
+      const data = await fetchResearchItems();
+      setItems(data.items);
+      setSelectedId(company.id);
+      setQuickAddQuery("");
+      setQuickAddSuggestions([]);
+      showToast(`${company.name} 已加入研究队列。`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "加入研究队列失败。", "error");
+    }
+  }
 
   async function changeStage(item: ResearchWorkbenchItem, stage: ResearchStage) {
     try {
@@ -273,6 +310,24 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   <option value="stage">按阶段</option>
                 </select>
               </div>
+            </div>
+            <div className="quick-add-section">
+              <label className="research-queue-search">
+                <span>快速添加</span>
+                <input value={quickAddQuery} onChange={(event) => { setQuickAddQuery(event.target.value); if (event.target.value.trim().length < 2) { setQuickAddSuggestions([]); setQuickAddLoading(false); } else { setQuickAddLoading(true); } }} placeholder="搜索公司名称或代码添加到研究队列" />
+              </label>
+              {quickAddLoading ? <span className="muted" style={{ fontSize: 12 }}>搜索中...</span> : null}
+              {quickAddSuggestions.length > 0 ? (
+                <div className="quick-add-suggestions">
+                  {quickAddSuggestions.map((company) => (
+                    <button key={company.id} type="button" className="quick-add-item" onClick={() => void quickAddCompany(company)}>
+                      <strong>{company.name}</strong>
+                      <span>{company.code}</span>
+                      <small>{company.listingPlace}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="stage-board">
               {RESEARCH_STAGES.map((stage) => {
