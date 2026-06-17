@@ -3,6 +3,7 @@ import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refres
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
+import { showToast } from "./toast-state";
 
 type Props = {
   onOpenLegacyMine: () => void;
@@ -111,7 +112,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     try {
       const updated = await updateResearchItemStage(item.id, stage);
       setItems((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      setMessage(`${updated.title} 已移动到「${RESEARCH_STAGE_LABELS[stage]}」。`);
+      showToast(`${updated.title} 已移动到「${RESEARCH_STAGE_LABELS[stage]}」。`, "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "阶段更新失败。");
     }
@@ -123,7 +124,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     thesisRequestRef.current = { itemId: item.id, controller };
     const timeout = window.setTimeout(() => controller.abort("research-thesis-timeout"), 245_000);
     setThesisPhase("generating");
-    setMessage("正在读取最新证据并生成版本化论点，旧版本会继续保留。");
+    showToast("正在读取最新证据并生成版本化论点...", "info");
     try {
       const result = await refreshResearchThesis(item.id, controller.signal);
       if (controller.signal.aborted || thesisRequestRef.current?.itemId !== item.id) return;
@@ -132,7 +133,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setThesisItemId(item.id);
       setDisplayedThesisId(result.thesis.id);
       setThesisPhase("idle");
-      setMessage(`${item.title} 的投资论点已更新为 v${result.thesis.version}。`);
+      showToast(`${item.title} 的投资论点已更新为 v${result.thesis.version}。`, "success");
     } catch (error) {
       if (controller.signal.aborted && controller.signal.reason !== "research-thesis-timeout") return;
       setThesisPhase("error");
@@ -151,7 +152,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setCatalystItemId(item.id);
       setCatalystPhase("idle");
       const createdNote = result.created !== undefined ? `新增 ${result.created} 个` : `共 ${result.catalysts.length} 个`;
-      setMessage(`${item.title} 已同步 ${createdNote} 催化剂、反证和跟踪项。`);
+      showToast(`${item.title} 已同步 ${createdNote} 催化剂、反证和跟踪项。`, "success");
     } catch (error) {
       setCatalystPhase("error");
       setMessage(error instanceof Error ? error.message : "研究跟踪项同步失败。");
@@ -163,7 +164,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     try {
       const updated = await updateResearchCatalystStatus(item.id, catalyst.id, status);
       setCatalysts((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      setMessage(`${catalyst.title} 已标记为「${RESEARCH_CATALYST_STATUS_LABELS[status]}」。`);
+      showToast(`${catalyst.title} 已标记为「${RESEARCH_CATALYST_STATUS_LABELS[status]}」。`, "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "研究跟踪项状态更新失败。");
     } finally {

@@ -9,6 +9,7 @@ import { OpportunityDashboard } from "./OpportunityDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { MarketWorkspace } from "./MarketWorkspace";
 import { ValuationLabView } from "./ValuationLabView";
+import { ToastContainer } from "./Toast";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
@@ -140,6 +141,19 @@ function App() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+
+  useEffect(() => {
+    const viewMap: Record<string, AppView> = { "1": "opportunities", "2": "research", "3": "market", "4": "valuation", "5": "assistant" };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      const view = viewMap[event.key];
+      if (view === "assistant" && user?.role !== "admin") return;
+      if (view) { event.preventDefault(); setActiveView(view); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [user?.role]);
 
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -484,20 +498,20 @@ function App() {
 
         <nav className="view-tabs" aria-label="工作区">
           <button type="button" className={renderedView === "opportunities" ? "active" : ""} aria-current={renderedView === "opportunities" ? "page" : undefined} onClick={() => setActiveView("opportunities")}>
-            今日机会
+            今日机会<kbd>1</kbd>
           </button>
           <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} aria-current={renderedView === "research" ? "page" : undefined} onClick={() => setActiveView("research")}>
-            研究
+            研究<kbd>2</kbd>
           </button>
           <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} aria-current={renderedView === "market" ? "page" : undefined} onClick={() => setActiveView("market")}>
-            市场
+            市场<kbd>3</kbd>
           </button>
           <button type="button" className={renderedView === "valuation" ? "active" : ""} aria-current={renderedView === "valuation" ? "page" : undefined} onClick={() => setActiveView("valuation")}>
-            估值
+            估值<kbd>4</kbd>
           </button>
           {user?.role === "admin" ? (
             <button type="button" className={renderedView === "assistant" ? "active" : ""} aria-current={renderedView === "assistant" ? "page" : undefined} onClick={() => setActiveView("assistant")}>
-              助手
+              助手<kbd>5</kbd>
             </button>
           ) : null}
         </nav>
@@ -579,7 +593,7 @@ function App() {
       </aside>
 
       <section id="workspace" className="workspace">
-        <Suspense fallback={<section className="empty-state"><h2>正在加载视图</h2><p>只加载当前需要的功能模块。</p></section>}>
+        <Suspense fallback={<section className="empty-state"><div className="button-spinner" /><h2>正在加载</h2></section>}>
           {renderedView === "opportunities" ? (
             <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
           ) : renderedView === "research" ? (
@@ -620,6 +634,7 @@ function App() {
         />
       ) : null}
       <InstallPromptBanner visible={installPrompt.visible} onInstall={() => void installPrompt.install()} onDismiss={installPrompt.dismiss} />
+      <ToastContainer />
     </main>
   );
 }

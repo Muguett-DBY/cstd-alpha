@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, fetchOpportunities, type OpportunitiesResult } from "./api";
 import { RESEARCH_STAGE_LABELS, type ResearchOpportunitySignal } from "./shared/research-workbench";
+import { showToast } from "./toast-state";
 
 type Props = {
   onOpenResearch: () => void;
@@ -39,10 +40,10 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
         source: item.source,
         stage: item.stage,
       });
-      setMessage(`${item.title} 已加入研究队列。`);
+      showToast(`${item.title} 已加入研究队列。`, "success");
       onOpenResearch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "加入研究队列失败。");
+      showToast(error instanceof Error ? error.message : "加入研究队列失败。", "error");
     }
   }
 
@@ -61,7 +62,6 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
         </div>
       </div>
 
-      {message ? <div className="workbench-notice">{message}</div> : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取机会快照…</div> : null}
       {phase === "error" ? (
         <div className="workbench-empty error">

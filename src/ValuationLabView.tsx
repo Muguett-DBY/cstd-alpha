@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createValuationRun, fetchResearchItems, fetchValuations } from "./api";
+import { showToast } from "./toast-state";
 import type { ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import {
@@ -71,7 +72,7 @@ export function ValuationLabView() {
         evidenceHash: selected.evidenceHash,
       });
       setRuns((current) => [run, ...current]);
-      setMessage(`${selected.title} 估值任务已进入后台队列。`);
+        showToast(`${selected.title} 估值任务已进入后台队列。`, "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "估值任务创建失败。");
     }
@@ -81,7 +82,7 @@ export function ValuationLabView() {
     try {
       const nextRun = await createValuationRun(retryValuationInputFromRun(run));
       setRuns((current) => [nextRun, ...current]);
-      setMessage(`${run.title} 估值任务已重新进入后台队列。`);
+      showToast(`${run.title} 估值任务已重新进入后台队列。`, "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "估值任务重新创建失败。");
     }
