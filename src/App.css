@@ -1894,6 +1894,50 @@ button:not(:disabled):active,
   padding: 18px;
 }
 
+.hot-topics-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.hot-topic-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.hot-topic-type {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hot-topic-item.growth .hot-topic-type {
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  color: var(--teal);
+}
+
+.hot-topic-item.bubble .hot-topic-type {
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  color: var(--amber);
+}
+
+.hot-topic-item.upcoming .hot-topic-type {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  color: var(--blue);
+}
+
+.hot-topic-item strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
 .market-stats {
   display: flex;
   gap: 16px;
