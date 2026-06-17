@@ -468,14 +468,22 @@ function App() {
     setCacheNotice("已从自选股排行打开公司，可在“我的”里查看模板或重新评分。");
   }
 
-  if (checking) return <div className="loading-screen">CSTD Alpha</div>;
+  if (checking) return (
+    <main className="loading-screen">
+      <img src="/app-icon.svg" alt="CSTD Alpha" className="loading-icon" />
+      <p className="brand">CSTD Alpha</p>
+      <div className="loading-spinner" />
+    </main>
+  );
 
   if (!authenticated) {
     return (
       <main className="auth-page">
         <section className="auth-panel" aria-labelledby="auth-title">
+          <img src="/app-icon.svg" alt="CSTD Alpha" className="auth-icon" />
           <p className="brand">CSTD Alpha</p>
           <h1 id="auth-title">私人公司深度研究工具</h1>
+          <p className="auth-tagline">AI 驱动的深度研究，从公司质量评分到投资吸引力分析</p>
           <form onSubmit={submitLogin} className="auth-form">
             <label htmlFor="username">账号</label>
             <input
