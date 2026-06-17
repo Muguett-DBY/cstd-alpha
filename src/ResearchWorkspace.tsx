@@ -28,6 +28,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const [updatingCatalystId, setUpdatingCatalystId] = useState("");
   const [catalystStatusFilter, setCatalystStatusFilter] = useState<ResearchCatalystStatusFilter>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [thesisFilter, setThesisFilter] = useState<"all" | "with" | "without">("all");
+  const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">("recent");
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
@@ -35,7 +38,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
   const templateGroups = useMemo(() => groupResearchTemplates(RESEARCH_TEMPLATES), []);
-  const filteredItems = useMemo(() => filterResearchWorkbenchItems(items, queueQuery), [items, queueQuery]);
+  const filteredItems = useMemo(() => {
+    let result = filterResearchWorkbenchItems(items, queueQuery);
+    if (stageFilter !== "all") result = result.filter((i) => i.stage === stageFilter);
+    if (thesisFilter === "with") result = result.filter((i) => i.currentThesisVersionId);
+    if (thesisFilter === "without") result = result.filter((i) => !i.currentThesisVersionId);
+    if (sortOrder === "recent") result = [...result].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    else if (sortOrder === "name") result = [...result].sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+    else if (sortOrder === "stage") {
+      const stageOrder: Record<string, number> = { screening: 0, deepResearch: 1, awaitingCatalyst: 2, opinionFormed: 3, archived: 4 };
+      result = [...result].sort((a, b) => (stageOrder[a.stage] ?? 99) - (stageOrder[b.stage] ?? 99));
+    }
+    return result;
+  }, [items, queueQuery, stageFilter, thesisFilter, sortOrder]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
   const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -234,6 +249,31 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 <input value={queueQuery} onChange={(event) => setQueueQuery(event.currentTarget.value)} placeholder="公司、代码、行业" />
               </label>
             </header>
+            <div className="filter-bar">
+              <div className="filter-group">
+                <span className="filter-label">阶段</span>
+                <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                  <option value="all">全部阶段</option>
+                  {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
+                </select>
+              </div>
+              <div className="filter-group">
+                <span className="filter-label">论点</span>
+                <select value={thesisFilter} onChange={(e) => setThesisFilter(e.target.value as typeof thesisFilter)}>
+                  <option value="all">全部</option>
+                  <option value="with">已有论点</option>
+                  <option value="without">未生成</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <span className="filter-label">排序</span>
+                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
+                  <option value="recent">最近更新</option>
+                  <option value="name">按名称</option>
+                  <option value="stage">按阶段</option>
+                </select>
+              </div>
+            </div>
             <div className="stage-board">
               {RESEARCH_STAGES.map((stage) => {
                 const stageTotal = items.filter((item) => item.stage === stage).length;
