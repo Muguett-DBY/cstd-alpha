@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchItemStage } from "./api";
+import { fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, refreshResearchThesis, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { groupResearchTemplates, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchCatalyst, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 
 type Props = {
@@ -23,6 +23,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalysts, setCatalysts] = useState<ResearchCatalyst[]>([]);
   const [catalystItemId, setCatalystItemId] = useState("");
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
+  const [updatingCatalystId, setUpdatingCatalystId] = useState("");
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
@@ -153,6 +154,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
+  async function changeCatalystStatus(item: ResearchWorkbenchItem, catalyst: ResearchCatalyst, status: ResearchCatalystStatus) {
+    setUpdatingCatalystId(catalyst.id);
+    try {
+      const updated = await updateResearchCatalystStatus(item.id, catalyst.id, status);
+      setCatalysts((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      setMessage(`${catalyst.title} 已标记为「${RESEARCH_CATALYST_STATUS_LABELS[status]}」。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "研究跟踪项状态更新失败。");
+    } finally {
+      setUpdatingCatalystId("");
+    }
+  }
+
   return (
     <section className="workbench-page research-page">
       <div className="workbench-hero compact">
@@ -276,8 +290,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                           <strong>{entry.title}</strong>
                           {entry.description ? <p>{entry.description}</p> : null}
                           <div>
-                            <span>{entry.status === "open" ? "跟踪中" : entry.status}</span>
+                            <span>{RESEARCH_CATALYST_STATUS_LABELS[entry.status]}</span>
                             {entry.evidenceRefs.length ? <span>{entry.evidenceRefs.join(" / ")}</span> : null}
+                          </div>
+                          <div className="catalyst-actions">
+                            {entry.status !== "confirmed" ? (
+                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "confirmed")}>标记确认</button>
+                            ) : null}
+                            {entry.status !== "invalid" ? (
+                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "invalid")}>标记失效</button>
+                            ) : null}
+                            {entry.status !== "open" ? (
+                              <button type="button" disabled={updatingCatalystId === entry.id} onClick={() => changeCatalystStatus(selected, entry, "open")}>恢复跟踪</button>
+                            ) : null}
                           </div>
                         </article>
                       ))}

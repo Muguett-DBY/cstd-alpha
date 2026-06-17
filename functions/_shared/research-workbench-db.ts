@@ -1,5 +1,5 @@
-import type { ResearchCatalyst, ResearchCatalystDraft, ResearchEntityType, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
-import { RESEARCH_STAGES } from "../../src/shared/research-workbench";
+import type { ResearchCatalyst, ResearchCatalystDraft, ResearchCatalystStatus, ResearchEntityType, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "../../src/shared/research-workbench";
+import { RESEARCH_CATALYST_STATUSES, RESEARCH_STAGES } from "../../src/shared/research-workbench";
 import type { CompanyArchetype, ValuationMethod, ValuationResult, ValuationRunStatus } from "../../src/shared/valuation";
 
 export type ResearchNotification = {
@@ -314,6 +314,29 @@ export async function upsertResearchCatalystDrafts(db: D1Database, input: {
   return listResearchCatalysts(db, input.userKey, input.itemId);
 }
 
+export async function updateResearchCatalystStatus(db: D1Database, input: {
+  userKey: string;
+  itemId: string;
+  catalystId: string;
+  status: string;
+}) {
+  const status = normalizeResearchCatalystStatus(input.status);
+  if (!status) throw new Error("invalid research catalyst status");
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  await db.prepare(
+    `UPDATE research_catalysts
+     SET status = ?4, updated_at = ?5
+     WHERE user_key = ?1 AND item_id = ?2 AND id = ?3`,
+  ).bind(input.userKey, input.itemId, input.catalystId, status, now).run();
+  const row = await db.prepare(
+    `SELECT id, item_id, title, description, due_at, status, evidence_refs_json, created_at, updated_at
+     FROM research_catalysts
+     WHERE user_key = ?1 AND item_id = ?2 AND id = ?3`,
+  ).bind(input.userKey, input.itemId, input.catalystId).first<ResearchCatalystRow>();
+  return row ? researchCatalystRowToCatalyst(row) : null;
+}
+
 export async function createValuationRun(db: D1Database, input: {
   userKey: string;
   researchItemId?: string;
@@ -447,7 +470,7 @@ function researchCatalystRowToCatalyst(row: ResearchCatalystRow): ResearchCataly
     title: row.title,
     description: row.description ?? undefined,
     dueAt: row.due_at ?? undefined,
-    status: row.status,
+    status: normalizeResearchCatalystStatus(row.status) ?? "open",
     evidenceRefs: parseJson<string[]>(row.evidence_refs_json) ?? [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -472,6 +495,10 @@ function dedupeCatalystDrafts(drafts: ResearchCatalystDraft[]) {
 
 function normalizeResearchStage(value: unknown): ResearchStage | null {
   return RESEARCH_STAGES.includes(value as ResearchStage) ? value as ResearchStage : null;
+}
+
+function normalizeResearchCatalystStatus(value: unknown): ResearchCatalystStatus | null {
+  return RESEARCH_CATALYST_STATUSES.includes(value as ResearchCatalystStatus) ? value as ResearchCatalystStatus : null;
 }
 
 function parseJson<T>(value: string | null): T | undefined {

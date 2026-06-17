@@ -4,6 +4,7 @@ import {
   listResearchCatalysts,
   readCurrentResearchThesis,
   readResearchItemById,
+  updateResearchCatalystStatus,
   upsertResearchCatalystDrafts,
 } from "../../../_shared/research-workbench-db";
 import { extractCatalystDraftsFromThesis } from "../../../../src/shared/research-workbench";
@@ -40,4 +41,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     drafts,
   });
   return json({ catalysts, created: drafts.length });
+};
+
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { response, session } = await requireAdminSession(request, env);
+  if (response) return response;
+  if (!session) return json({ error: "Unauthorized." }, 401);
+  if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
+  const itemId = String(params.id || "");
+  const item = await readResearchItemById(env.REPORT_LIBRARY_DB, session.userId, itemId);
+  if (!item) return json({ error: "Research item not found." }, 404);
+  const body = await request.json().catch(() => ({})) as { catalystId?: string; status?: string };
+  if (!body.catalystId || !body.status) return json({ error: "catalystId and status are required." }, 400);
+  try {
+    const catalyst = await updateResearchCatalystStatus(env.REPORT_LIBRARY_DB, {
+      userKey: session.userId,
+      itemId,
+      catalystId: body.catalystId,
+      status: body.status,
+    });
+    if (!catalyst) return json({ error: "Research catalyst not found." }, 404);
+    return json({ catalyst });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "研究跟踪项状态更新失败。";
+    return json({ error: message === "invalid research catalyst status" ? "不支持的跟踪项状态。" : message }, 400);
+  }
 };

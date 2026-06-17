@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchCatalyst, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
+import type { ResearchCatalyst, ResearchCatalystStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -175,6 +175,19 @@ export async function syncResearchCatalystsFromThesis(id: string): Promise<Resea
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项同步失败。");
   return (await response.json()) as ResearchCatalystsResult & { created?: number };
+}
+
+export async function updateResearchCatalystStatus(id: string, catalystId: string, status: ResearchCatalystStatus): Promise<ResearchCatalyst> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/catalysts`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ catalystId, status }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项状态更新失败。");
+  const data = (await response.json()) as { catalyst?: ResearchCatalyst };
+  if (!data.catalyst) throw new Error("研究跟踪项状态更新失败。");
+  return data.catalyst;
 }
 
 export async function fetchValuations(): Promise<ValuationsResult> {

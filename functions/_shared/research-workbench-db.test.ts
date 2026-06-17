@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun, createResearchThesisVersion, upsertResearchCatalystDrafts } from "./research-workbench-db";
+import { claimValuationRun, createResearchThesisVersion, updateResearchCatalystStatus, upsertResearchCatalystDrafts } from "./research-workbench-db";
 
 describe("claimValuationRun", () => {
   test("claims only queued or failed runs and reports whether the atomic update won", async () => {
@@ -197,5 +197,77 @@ describe("upsertResearchCatalystDrafts", () => {
     expect(statements.some(({ sql }) => sql.includes("INSERT INTO research_catalysts"))).toBe(true);
     expect(batchSizes).toContain(2);
     expect(catalysts[0]).toMatchObject({ title: "催化：订单放量", evidenceRefs: ["E1"], status: "open" });
+  });
+});
+
+describe("updateResearchCatalystStatus", () => {
+  test("updates a catalyst status only for the current user and returns the normalized row", async () => {
+    const statements: Array<{ sql: string; bindings: unknown[] }> = [];
+    const db = {
+      async batch() {
+        return [];
+      },
+      prepare(sql: string) {
+        return {
+          bind(...bindings: unknown[]) {
+            statements.push({ sql, bindings });
+            return {
+              async first() {
+                if (!sql.includes("FROM research_catalysts")) return null;
+                return {
+                  id: "cat-1",
+                  item_id: "research-1",
+                  title: "反证：订单延期",
+                  description: "订单延期说明需求不及预期（E2）。",
+                  due_at: null,
+                  status: "confirmed",
+                  evidence_refs_json: '["E2"]',
+                  created_at: "2026-06-15T00:00:00.000Z",
+                  updated_at: "2026-06-16T00:00:00.000Z",
+                };
+              },
+              async run() {
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    const catalyst = await updateResearchCatalystStatus(db, {
+      userKey: "admin",
+      itemId: "research-1",
+      catalystId: "cat-1",
+      status: "confirmed",
+    });
+
+    expect(statements.some(({ sql }) => sql.includes("UPDATE research_catalysts"))).toBe(true);
+    expect(statements.find(({ sql }) => sql.includes("UPDATE research_catalysts"))?.bindings).toEqual([
+      "admin",
+      "research-1",
+      "cat-1",
+      "confirmed",
+      expect.any(String),
+    ]);
+    expect(catalyst).toMatchObject({ id: "cat-1", status: "confirmed", evidenceRefs: ["E2"] });
+  });
+
+  test("rejects unsupported catalyst status values", async () => {
+    const db = {
+      async batch() {
+        return [];
+      },
+      prepare() {
+        throw new Error("should not query db for invalid status");
+      },
+    } as unknown as D1Database;
+
+    await expect(updateResearchCatalystStatus(db, {
+      userKey: "admin",
+      itemId: "research-1",
+      catalystId: "cat-1",
+      status: "done",
+    })).rejects.toThrow("invalid research catalyst status");
   });
 });

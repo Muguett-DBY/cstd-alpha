@@ -68,10 +68,20 @@ export type ResearchCatalyst = {
   title: string;
   description?: string;
   dueAt?: string;
-  status: string;
+  status: ResearchCatalystStatus;
   evidenceRefs: string[];
   createdAt: string;
   updatedAt: string;
+};
+
+export const RESEARCH_CATALYST_STATUSES = ["open", "confirmed", "invalid"] as const;
+
+export type ResearchCatalystStatus = (typeof RESEARCH_CATALYST_STATUSES)[number];
+
+export const RESEARCH_CATALYST_STATUS_LABELS: Record<ResearchCatalystStatus, string> = {
+  open: "跟踪中",
+  confirmed: "已确认",
+  invalid: "已失效",
 };
 
 export type ResearchCatalystDraft = {

@@ -1072,6 +1072,31 @@ button:not(:disabled):active,
   font-weight: 800;
 }
 
+.research-catalysts .catalyst-actions {
+  gap: 6px;
+}
+
+.research-catalysts .catalyst-actions button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 9px;
+}
+
+.research-catalysts .catalyst-actions button:hover:not(:disabled) {
+  border-color: rgba(16, 128, 116, 0.45);
+  color: var(--accent);
+}
+
+.research-catalysts .catalyst-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .template-groups details {
   border-top: 1px solid var(--line);
   padding: 12px 16px;
