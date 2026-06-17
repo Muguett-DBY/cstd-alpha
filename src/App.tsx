@@ -157,6 +157,17 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [user?.role]);
 
+  useEffect(() => {
+    const goOffline = () => showToast("网络连接已断开，部分功能暂时不可用。", "error", 8000);
+    const goOnline = () => showToast("网络已恢复。", "success", 3000);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
   async function submitLogin(event: React.FormEvent) {
     event.preventDefault();
     setError("");
@@ -168,7 +179,7 @@ function App() {
       setRadarError("");
       if (activeView === "radar" && !radar) setRadarPhase("idle");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登录失败。");
+      setError(errorMessage(err, "登录失败。"));
     } finally {
       setIsLoggingIn(false);
     }
@@ -201,7 +212,7 @@ function App() {
       setIsInWatchlist(true);
       showToast(`${selectedCompany.name} 已加入自选股。`, "success");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "加入自选失败。", "error");
+      showToast(errorMessage(err, "加入自选失败。"), "error");
     }
   }
 
@@ -221,7 +232,7 @@ function App() {
       if (nextCandidates.length === 0) setError("没有找到候选公司，请尝试输入股票代码或更完整的公司名。");
     } catch (err) {
       setPhase("error");
-      setError(err instanceof Error ? err.message : "公司搜索失败。");
+      setError(errorMessage(err, "公司搜索失败。"));
     }
   }
 
@@ -292,7 +303,7 @@ function App() {
         setError("已停止等待，后台仍会继续生成；稍后再次点击生成会自动复用共享缓存。");
       } else {
         setPhase("error");
-        setError(err instanceof Error ? err.message : "报告生成失败。");
+        setError(errorMessage(err, "报告生成失败。"));
       }
     } finally {
       setStartedAt(null);
@@ -334,7 +345,7 @@ function App() {
       setChartPhase("ready");
     } catch (err) {
       setChartPhase("error");
-      setChartError(err instanceof Error ? err.message : "图表数据生成失败。");
+      setChartError(errorMessage(err, "图表数据生成失败。"));
     }
   }
 
@@ -401,7 +412,7 @@ function App() {
         setReport(null);
         setReportMetrics(null);
         setPhase("error");
-        setError(err instanceof Error ? err.message : "报告库读取失败。");
+        setError(errorMessage(err, "报告库读取失败。"));
       }
       return;
     }
@@ -649,9 +660,25 @@ function App() {
           }}
         />
       ) : null}
+      <BackToTop />
       <InstallPromptBanner visible={installPrompt.visible} onInstall={() => void installPrompt.install()} onDismiss={installPrompt.dismiss} />
       <ToastContainer />
     </main>
+  );
+}
+
+function BackToTop() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 400);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  if (!visible) return null;
+  return (
+    <button type="button" className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="回到顶部">
+      ↑
+    </button>
   );
 }
 
@@ -2364,5 +2391,9 @@ const fullSectionTitles = {
   finalConclusion: "最终投资结论",
   accountRules: "账户管理与仓位规则",
 } as const;
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export default App;
