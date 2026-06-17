@@ -934,7 +934,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
 
 function ScoreTile({ label, value }: { label: string; value: number }) {
   return (
-    <div className="score-tile">
+    <div className="score-tile" onClick={() => navigator.clipboard.writeText(String(value)).then(() => showToast(`${label}: ${value}`, "success")).catch(() => {})} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigator.clipboard.writeText(String(value)).then(() => showToast(`${label}: ${value}`, "success")).catch(() => {}); } }}>
       <span>{label}</span>
       <strong>{value}</strong>
       <meter min="0" max="100" value={value} />
@@ -1163,9 +1163,22 @@ function RadarView({
       {jobRunning || refreshing ? <p className="cache-notice radar-refresh-notice">{job?.message || "后台深度分析中，当前页面继续显示上次稳定结果。"}</p> : null}
 
       {!radar && loading ? (
-        <section className="empty-state radar-empty">
-          <h2>正在生成行业雷达</h2>
-          <p>正在读取公开新闻源并让模型做稳定产业归类，首次扫描可能需要一些时间。</p>
+        <section className="radar-skeleton" aria-label="正在加载雷达数据">
+          <div className="skeleton-header">
+            <div className="skeleton-bar skeleton-title" />
+            <div className="skeleton-bar skeleton-subtitle" />
+          </div>
+          <div className="skeleton-grid">
+            <div className="skeleton-card"><div className="skeleton-bar" /><div className="skeleton-bar short" /></div>
+            <div className="skeleton-card"><div className="skeleton-bar" /><div className="skeleton-bar short" /></div>
+            <div className="skeleton-card"><div className="skeleton-bar" /><div className="skeleton-bar short" /></div>
+            <div className="skeleton-card"><div className="skeleton-bar" /><div className="skeleton-bar short" /></div>
+          </div>
+          <div className="skeleton-table">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="skeleton-row"><div className="skeleton-bar" /><div className="skeleton-bar short" /><div className="skeleton-bar short" /></div>
+            ))}
+          </div>
         </section>
       ) : null}
 

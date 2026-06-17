@@ -4174,6 +4174,10 @@ button:not(:disabled):active,
     transform 0.14s ease;
 }
 
+.score-tile {
+  cursor: pointer;
+}
+
 .score-tile:hover,
 .decision:hover,
 .info-tile:hover {
@@ -5503,6 +5507,79 @@ button:not(:disabled):active,
   justify-content: center;
   color: var(--muted);
   font-size: 14px;
+}
+
+.radar-skeleton {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.skeleton-header {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.skeleton-bar {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--line) 25%, color-mix(in srgb, var(--line) 60%, var(--surface)) 50%, var(--line) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-title {
+  width: 60%;
+  height: 20px;
+}
+
+.skeleton-subtitle {
+  width: 40%;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.skeleton-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.skeleton-card .short {
+  width: 60%;
+}
+
+.skeleton-table {
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.skeleton-row .skeleton-bar {
+  flex: 1;
+}
+
+.skeleton-row .short {
+  flex: 0 0 80px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .radar-stage-chart {
