@@ -32,6 +32,12 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
     decline: radar.decliningIndustries?.length ?? 0,
   } : null;
 
+  const hotTopics = radar ? [
+    ...radar.solidGrowth?.slice(0, 3).map((item) => ({ title: item.title, type: "增长", color: "growth" as const })) ?? [],
+    ...radar.bubbleRisks?.slice(0, 2).map((item) => ({ title: item.title, type: "泡沫", color: "bubble" as const })) ?? [],
+    ...radar.upcomingGrowth?.slice(0, 2).map((item) => ({ title: item.title, type: "即将增长", color: "upcoming" as const })) ?? [],
+  ].slice(0, 7) : [];
+
   const topRanked = [...rankingEntries]
     .filter((e) => e.status === "completed")
     .sort((a, b) => (b.overallScore ?? -1) - (a.overallScore ?? -1))
@@ -58,6 +64,23 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
             <div className="market-stat growth"><strong>{radarStats.growth}</strong><span>扎实增长</span></div>
             <div className="market-stat bubble"><strong>{radarStats.bubble}</strong><span>泡沫风险</span></div>
             <div className="market-stat decline"><strong>{radarStats.decline}</strong><span>衰退</span></div>
+          </div>
+        </div>
+      ) : null}
+
+      {hotTopics.length > 0 ? (
+        <div className="terminal-panel market-overview">
+          <header className="panel-header">
+            <h2>今日热点</h2>
+            <p>雷达扫描发现的关键行业动态。</p>
+          </header>
+          <div className="hot-topics-grid">
+            {hotTopics.map((topic, index) => (
+              <div key={index} className={`hot-topic-item ${topic.color}`}>
+                <span className="hot-topic-type">{topic.type}</span>
+                <strong>{topic.title}</strong>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
