@@ -1,19 +1,14 @@
 # CSTD Alpha - Iteration Log
 
-## Round 28 — 2026-06-18
+## Round 29 — 2026-06-18
 
-**承接上一轮方向:** R27 建议 App.tsx 拆分、D1 清理、批量论点生成
+**承接上一轮方向:** R28 建议 App.tsx 拆分、D1 清理、批量论点生成
 
-**本轮决策:**
-- App.tsx 拆分范围过大（RadarView ~1200 行），单轮风险高，保留到下一轮
-- 本轮选择"研究工作台键盘快捷键"作为用户可见增量
-- 本轮额外修复 CSS `--line-strong` 变量未定义问题
-
-**完成内容:**
-- 研究工作台新增 Ctrl+←/→ 键盘快捷键，在研究项之间快速切换
-- 研究队列头部显示键盘快捷键提示
-- 修复 App.css 中 `.radar-diagnostics` 使用的 `--line-strong` CSS 变量未定义问题
-- 将 `--line-strong` 定义添加到 index.css
+**本轮完成:**
+- 批量论点生成：研究工作台批量操作栏新增"批量生成论点"按钮
+- 选中多个研究项后点击按钮，Promise.allSettled 并行生成论点
+- 显示成功/失败数量 toast，失败项自动刷新队列
+- D1 登录记录清理已有实现（10% 概率清理），无需额外改动
 
 **验证:**
 - npm test: 756 passed ✅
@@ -22,13 +17,13 @@
 - git push origin main: 成功 ✅
 
 **遗留风险:**
+- 批量论点生成是并行的，大量项可能触发 API 限流
 - App.tsx 仍有 2500+ 行，RadarView 拆分是下一轮重点
-- D1 登录记录清理仍未执行
 
 **下一轮方向:**
 1. App.tsx 拆分 — 将 RadarView (~1200行) 抽离为独立文件
-2. D1 登录记录自动清理 — 定期清理过期 login_attempts
-3. 研究工作台批量论点生成 — 选中多项后批量生成论点
+2. D1 登录记录自动清理 — 增加定时清理机制
+3. 研究工作台导出功能 — 支持导出研究队列为 CSV/JSON
 
 ---
 
@@ -52,3 +47,4 @@
 | R26 | Quick Add Research Item | 研究工作台快速添加研究项 |
 | R27 | Batch Stage Operations | 研究队列批量阶段变更 |
 | R28 | Keyboard Shortcuts + CSS Fix | 研究工作台键盘导航 + CSS 变量修复 |
+| R29 | Batch Thesis Generation | 研究工作台批量论点生成 |
