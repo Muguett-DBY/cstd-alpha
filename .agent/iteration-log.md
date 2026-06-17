@@ -1,15 +1,19 @@
 # CSTD Alpha - Iteration Log
 
-## Round 27 — 2026-06-18
+## Round 28 — 2026-06-18
 
-**承接上一轮方向:** R26 建议研究工作台批量操作
+**承接上一轮方向:** R27 建议 App.tsx 拆分、D1 清理、批量论点生成
 
-**本轮完成:**
-- 研究队列看板卡片新增复选框，Shift+点击切换选中状态
-- 批量操作栏：显示选中数量、全选当前筛选、取消选择、批量移动阶段
-- 使用 Promise.allSettled 并行处理，显示成功/失败数量
-- 选中卡片使用 teal 边框高亮
-- 阶段变更后自动刷新队列并清空选择
+**本轮决策:**
+- App.tsx 拆分范围过大（RadarView ~1200 行），单轮风险高，保留到下一轮
+- 本轮选择"研究工作台键盘快捷键"作为用户可见增量
+- 本轮额外修复 CSS `--line-strong` 变量未定义问题
+
+**完成内容:**
+- 研究工作台新增 Ctrl+←/→ 键盘快捷键，在研究项之间快速切换
+- 研究队列头部显示键盘快捷键提示
+- 修复 App.css 中 `.radar-diagnostics` 使用的 `--line-strong` CSS 变量未定义问题
+- 将 `--line-strong` 定义添加到 index.css
 
 **验证:**
 - npm test: 756 passed ✅
@@ -18,11 +22,11 @@
 - git push origin main: 成功 ✅
 
 **遗留风险:**
-- 批量操作仅支持阶段变更，不支持批量删除或批量生成论点
-- Shift+点击在移动端不可用（触摸设备无 shift 键）
+- App.tsx 仍有 2500+ 行，RadarView 拆分是下一轮重点
+- D1 登录记录清理仍未执行
 
 **下一轮方向:**
-1. App.tsx 拆分 — 将 RadarView 等内联组件抽离为独立文件
+1. App.tsx 拆分 — 将 RadarView (~1200行) 抽离为独立文件
 2. D1 登录记录自动清理 — 定期清理过期 login_attempts
 3. 研究工作台批量论点生成 — 选中多项后批量生成论点
 
@@ -47,3 +51,4 @@
 | R25 | Market Workspace Upgrade | 市场工作台数据内容升级 |
 | R26 | Quick Add Research Item | 研究工作台快速添加研究项 |
 | R27 | Batch Stage Operations | 研究队列批量阶段变更 |
+| R28 | Keyboard Shortcuts + CSS Fix | 研究工作台键盘导航 + CSS 变量修复 |
