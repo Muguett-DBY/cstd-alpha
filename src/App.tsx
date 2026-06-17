@@ -62,6 +62,7 @@ function App() {
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>(DEFAULT_APP_VIEW);
   const [isInWatchlist, setIsInWatchlist] = useState(false);
+  const [comparisonReport, setComparisonReport] = useState<InvestmentReport | null>(null);
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
   const [radarJob, setRadarJob] = useState<RadarAnalysisJob | null>(null);
@@ -706,7 +707,11 @@ function App() {
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
                 <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
               ) : null}
-              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} /> : <EmptyState />}
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} onSaveComparison={() => {
+                if (comparisonReport?.company.name === report.company.name) { showToast("已取消对比。", "info"); setComparisonReport(null); }
+                else if (comparisonReport) { showToast(`对比已更新：${report.company.name} vs ${comparisonReport.company.name}`, "success"); setComparisonReport(report); }
+                else { showToast(`${report.company.name} 已保存为对比基准。`, "success"); setComparisonReport(report); }
+              }} comparisonReport={comparisonReport} /> : <EmptyState />}
             </>
           )}
         </Suspense>
@@ -885,7 +890,7 @@ function ProgressPanel({
   );
 }
 
-function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle }) {
+function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
   const [activeSection, setActiveSection] = useState("scores");
 
@@ -961,7 +966,52 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         }}>
           复制摘要
         </button>
+        {onSaveComparison ? (
+          <button type="button" className="secondary-button" onClick={onSaveComparison}>
+            {comparisonReport ? "对比中" : "保存对比"}
+          </button>
+        ) : null}
       </header>
+
+      {comparisonReport ? (
+        <section className="report-comparison">
+          <h3>对比视图</h3>
+          <div className="comparison-grid">
+            <div className="comparison-col">
+              <h4>{report.company.name}</h4>
+              <p className="muted">{report.company.ticker || "未知代码"}</p>
+            </div>
+            <div className="comparison-col">
+              <h4>{comparisonReport.company.name}</h4>
+              <p className="muted">{comparisonReport.company.ticker || "未知代码"}</p>
+            </div>
+          </div>
+          <div className="comparison-grid">
+            <div className="comparison-col">
+              <div className="comparison-metric"><span>CQS</span><strong>{report.cqs}</strong></div>
+              <div className="comparison-metric"><span>IAS</span><strong>{report.ias}</strong></div>
+              <div className="comparison-metric"><span>结论</span><strong>{report.conclusion}</strong></div>
+            </div>
+            <div className="comparison-col">
+              <div className="comparison-metric"><span>CQS</span><strong>{comparisonReport.cqs}</strong></div>
+              <div className="comparison-metric"><span>IAS</span><strong>{comparisonReport.ias}</strong></div>
+              <div className="comparison-metric"><span>结论</span><strong>{comparisonReport.conclusion}</strong></div>
+            </div>
+          </div>
+          <div className="comparison-grid">
+            <div className="comparison-col">
+              <div className="comparison-metric"><span>估值判断</span><span>{report.summaryDashboard.valuationView}</span></div>
+              <div className="comparison-metric"><span>建议仓位</span><span>{report.summaryDashboard.positionAdvice}</span></div>
+              <div className="comparison-metric"><span>投资期限</span><span>{report.summaryDashboard.investmentHorizon}</span></div>
+            </div>
+            <div className="comparison-col">
+              <div className="comparison-metric"><span>估值判断</span><span>{comparisonReport.summaryDashboard.valuationView}</span></div>
+              <div className="comparison-metric"><span>建议仓位</span><span>{comparisonReport.summaryDashboard.positionAdvice}</span></div>
+              <div className="comparison-metric"><span>投资期限</span><span>{comparisonReport.summaryDashboard.investmentHorizon}</span></div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="score-strip" id="scores">
         <ScoreTile label="公司质量评分（CQS）" value={report.cqs} />

@@ -2237,6 +2237,62 @@ button:not(:disabled):active,
   gap: 10px;
 }
 
+.report-comparison {
+  padding: 18px;
+  border: 2px solid var(--teal);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--teal) 3%, var(--surface));
+  margin-bottom: 16px;
+}
+
+.report-comparison h3 {
+  margin: 0 0 12px;
+  color: var(--teal);
+  font-size: 16px;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.comparison-grid:last-child {
+  margin-bottom: 0;
+}
+
+.comparison-col h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.comparison-col .muted {
+  margin: 2px 0 8px;
+}
+
+.comparison-metric {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.comparison-metric:last-child {
+  border-bottom: 0;
+}
+
+.comparison-metric span {
+  color: var(--muted);
+}
+
+.comparison-metric strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .score-strip,
 .dashboard-grid {
   display: grid;
