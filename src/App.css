@@ -3361,7 +3361,7 @@ button:not(:disabled):active,
 }
 
 .template-completion-actions span {
-  color: #0f766e;
+  color: var(--teal);
   font-size: 0.92rem;
   font-weight: 700;
 }

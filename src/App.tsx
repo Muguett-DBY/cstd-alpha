@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
+import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
 import "./App.css";
 import { RadarVisualCharts } from "./RadarVisualCharts";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
@@ -10,6 +10,7 @@ import { ResearchWorkspace } from "./ResearchWorkspace";
 import { MarketWorkspace } from "./MarketWorkspace";
 import { ValuationLabView } from "./ValuationLabView";
 import { ToastContainer } from "./Toast";
+import { showToast } from "./toast-state";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
@@ -56,6 +57,7 @@ function App() {
   const [cacheNotice, setCacheNotice] = useState("");
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>(DEFAULT_APP_VIEW);
+  const [isInWatchlist, setIsInWatchlist] = useState(false);
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
   const [radarJob, setRadarJob] = useState<RadarAnalysisJob | null>(null);
@@ -190,6 +192,17 @@ function App() {
     setCacheNotice("");
     clearLocalReportStorage();
     clearImportedRankingReports();
+  }
+
+  async function addToWatchlist() {
+    if (!selectedCompany) return;
+    try {
+      await addWatchlistItem({ company: selectedCompany });
+      setIsInWatchlist(true);
+      showToast(`${selectedCompany.name} 已加入自选股。`, "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "加入自选失败。", "error");
+    }
   }
 
   async function submitSearch(event: React.FormEvent) {
@@ -331,6 +344,7 @@ function App() {
     setQuery(entry.name);
     setChartBundle(null);
     setChartError("");
+    setIsInWatchlist(false);
     setActiveView("report");
     if (entry.report) {
       setReport(entry.report);
@@ -404,6 +418,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
+    setIsInWatchlist(false);
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -427,6 +442,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
+    setIsInWatchlist(false);
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -617,7 +633,7 @@ function App() {
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
                 <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
               ) : null}
-              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} /> : <EmptyState />}
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} /> : <EmptyState />}
             </>
           )}
         </Suspense>
@@ -770,7 +786,7 @@ function ProgressPanel({
   );
 }
 
-function ReportView({ report, metrics }: { report: InvestmentReport; metrics?: ReportGenerationMetrics }) {
+function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
 
   return (
@@ -796,6 +812,11 @@ function ReportView({ report, metrics }: { report: InvestmentReport; metrics?: R
             </p>
           ) : null}
         </div>
+        {onAddToWatchlist ? (
+          <button type="button" className="secondary-button" onClick={onAddToWatchlist} disabled={isWatchlisted}>
+            {isWatchlisted ? "已加入自选" : "加入自选"}
+          </button>
+        ) : null}
       </header>
 
       <section className="score-strip">

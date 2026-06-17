@@ -137,6 +137,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   async function deleteItem(item: WatchlistItem) {
+    if (!window.confirm(`确定移除「${item.company.name}」？`)) return;
     setError("");
     setNotice("");
     try {
