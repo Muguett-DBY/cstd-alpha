@@ -65,6 +65,18 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
             <div className="market-stat bubble"><strong>{radarStats.bubble}</strong><span>泡沫风险</span></div>
             <div className="market-stat decline"><strong>{radarStats.decline}</strong><span>衰退</span></div>
           </div>
+          <div className="market-health">
+            <div className="market-health-bar">
+              <span style={{ width: radarStats.total ? `${(radarStats.growth / radarStats.total) * 100}%` : "0%" }} className="health-fill growth" />
+              <span style={{ width: radarStats.total ? `${(radarStats.bubble / radarStats.total) * 100}%` : "0%" }} className="health-fill bubble" />
+              <span style={{ width: radarStats.total ? `${(radarStats.decline / radarStats.total) * 100}%` : "0%" }} className="health-fill decline" />
+            </div>
+            <div className="market-health-labels">
+              <span>增长 {radarStats.growth}</span>
+              <span>泡沫 {radarStats.bubble}</span>
+              <span>衰退 {radarStats.decline}</span>
+            </div>
+          </div>
         </div>
       ) : null}
 

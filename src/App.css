@@ -1938,6 +1938,42 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 
+.market-health {
+  margin-top: 12px;
+}
+
+.market-health-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.health-fill {
+  height: 100%;
+}
+
+.health-fill.growth {
+  background: var(--teal);
+}
+
+.health-fill.bubble {
+  background: var(--amber);
+}
+
+.health-fill.decline {
+  background: var(--red);
+}
+
+.market-health-labels {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .market-stats {
   display: flex;
   gap: 16px;
