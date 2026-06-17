@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, fetchOpportunities, type OpportunitiesResult } from "./api";
-import { RESEARCH_STAGE_LABELS, type ResearchOpportunitySignal } from "./shared/research-workbench";
+import { RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchOpportunitySignal } from "./shared/research-workbench";
 import { showToast } from "./toast-state";
 
 type Props = {
@@ -29,6 +29,20 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
   }, []);
 
   const matrixItems = useMemo(() => (data?.opportunities ?? []).slice(0, 36), [data]);
+
+  const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const portfolioHealth = useMemo(() => {
+    if (!data) return null;
+    const items = data.researchItems;
+    const total = items.length;
+    const withThesis = items.filter((i) => i.currentThesisVersionId).length;
+    const withEvidence = items.filter((i) => i.evidenceHash).length;
+    const recentlyUpdated = items.filter((i) => new Date(i.updatedAt).getTime() > recentCutoff).length;
+    const active = items.filter((i) => i.stage !== "archived").length;
+    const completeness = total > 0 ? Math.round(((withThesis + withEvidence) / (total * 2)) * 100) : 0;
+    return { total, active, withThesis, withEvidence, recentlyUpdated, completeness };
+  }, [data, recentCutoff]);
 
   async function queueResearch(item: ResearchOpportunitySignal) {
     try {
@@ -71,6 +85,47 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
       ) : null}
       {phase === "ready" && data ? (
         <>
+          {portfolioHealth && portfolioHealth.total > 0 ? (
+            <div className="terminal-panel portfolio-health">
+              <PanelHeader title="研究概况" subtitle="你的研究组合健康度概览。" />
+              <div className="health-metrics">
+                <div className="health-metric">
+                  <strong>{portfolioHealth.total}</strong>
+                  <span>研究项</span>
+                  <small>{portfolioHealth.active} 项进行中</small>
+                </div>
+                <div className="health-metric">
+                  <strong>{portfolioHealth.withThesis}</strong>
+                  <span>已生成论点</span>
+                  <small>{portfolioHealth.total > 0 ? Math.round((portfolioHealth.withThesis / portfolioHealth.total) * 100) : 0}%</small>
+                </div>
+                <div className="health-metric">
+                  <strong>{portfolioHealth.withEvidence}</strong>
+                  <span>已采集证据</span>
+                  <small>{portfolioHealth.total > 0 ? Math.round((portfolioHealth.withEvidence / portfolioHealth.total) * 100) : 0}%</small>
+                </div>
+                <div className="health-metric">
+                  <strong>{portfolioHealth.recentlyUpdated}</strong>
+                  <span>7 天内更新</span>
+                  <small>最近活跃</small>
+                </div>
+                <div className="health-metric highlight">
+                  <strong>{portfolioHealth.completeness}%</strong>
+                  <span>完成度</span>
+                  <meter min="0" max="100" value={portfolioHealth.completeness} />
+                </div>
+              </div>
+              <div className="health-stages">
+                {RESEARCH_STAGES.map((stage) => {
+                  const count = data.researchItems.filter((i) => i.stage === stage).length;
+                  return count > 0 ? (
+                    <span key={stage} className="stage-pill">{RESEARCH_STAGE_LABELS[stage]} {count}</span>
+                  ) : null;
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className="opportunity-grid">
             <div className="terminal-panel matrix-panel">
               <PanelHeader title="机会与风险矩阵" subtitle="横轴为研究价值，纵轴为风险；气泡大小代表证据强度。" />
