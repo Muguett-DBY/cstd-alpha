@@ -38,6 +38,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const filteredItems = useMemo(() => filterResearchWorkbenchItems(items, queueQuery), [items, queueQuery]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
+  const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
   const valuationByItem = useMemo(() => {
     const map = new Map<string, ValuationRunSummary>();
     for (const run of valuationRuns) {
@@ -197,6 +198,22 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         </div>
       </div>
       {message ? <div className="workbench-notice">{message}</div> : null}
+      {phase === "ready" && items.length > 0 ? (() => {
+        const total = items.length;
+        const withThesis = items.filter((i) => i.currentThesisVersionId).length;
+        const active = items.filter((i) => i.stage !== "archived").length;
+        const withValuation = valuationRuns.filter((r) => r.status === "completed").length;
+        const recentlyUpdated = items.filter((i) => new Date(i.updatedAt).getTime() > recentCutoff).length;
+        return (
+          <div className="research-metrics-bar">
+            <div className="research-metric"><strong>{total}</strong><span>研究项</span></div>
+            <div className="research-metric"><strong>{active}</strong><span>进行中</span></div>
+            <div className="research-metric"><strong>{withThesis}</strong><span>已生成论点</span></div>
+            <div className="research-metric"><strong>{withValuation}</strong><span>已完成估值</span></div>
+            <div className="research-metric"><strong>{recentlyUpdated}</strong><span>7天内更新</span></div>
+          </div>
+        );
+      })() : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取研究队列…</div> : null}
       {phase === "error" ? (
         <div className="workbench-empty error">
