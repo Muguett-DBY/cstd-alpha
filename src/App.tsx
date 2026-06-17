@@ -218,7 +218,7 @@ function App() {
 
   async function submitSearch(event: React.FormEvent) {
     event.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || phase === "searching") return;
     setError("");
     setCacheNotice("");
     setChartError("");
@@ -237,12 +237,15 @@ function App() {
   }
 
   async function submitReport(forceRefresh = false) {
+    if (phase === "generating") return;
     if (!selectedCompany) {
       setError("请先从候选列表中选择具体公司。");
       setPhase("selecting");
       return;
     }
     const requestCompany = selectedCompany;
+
+    if (reportAbortController) reportAbortController.abort();
 
     setError("");
     setCacheNotice("");
@@ -312,6 +315,7 @@ function App() {
   }
 
   async function submitChart(nextPriceMode = priceMode, forceRefresh = false) {
+    if (chartPhase === "loading") return;
     if (!selectedCompany) {
       setChartError("请先从候选列表中选择具体公司。");
       setPhase("selecting");
@@ -806,7 +810,7 @@ function ProgressPanel({
           ? "失败"
           : "待开始";
   return (
-    <section className="progress-panel">
+    <section className="progress-panel" aria-live="polite" aria-atomic="true">
       <div className="progress-head">
         <span>生成状态</span>
         <strong>{statusText}</strong>
