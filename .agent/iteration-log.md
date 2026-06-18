@@ -1,5 +1,35 @@
 # CSTD Alpha - Iteration Log
 
+## Round 49 — 2026-06-18 (Adaptive Theme + PDF Export)
+
+**承接方向:** Round 48 的暗色模式、报告 PDF 导出；两项均已完成。
+
+**旗舰主改动:** 全站 `系统 / 浅色 / 深色` 三态主题，偏好持久化、系统主题联动、首屏预注入防闪烁，并补齐主要工作区深色设计令牌与可访问对比度。
+
+**新增用户增量:** 报告页新增“导出 PDF”，打印时仅保留报告、展开折叠内容、应用 A4 分页样式并在结束或失败后恢复页面状态；Word 下载入口同步明确。
+
+**配套改进:**
+- 抽离可复用 `ThemeControl`、主题状态模块和 PDF 打印生命周期模块。
+- PDF 打印异常可自动清理，避免页面残留打印模式。
+- 未新增运行时依赖，主题在 React 加载前解析，避免额外加载和明显闪烁。
+
+**验证:**
+- `npm test`: 64 files / 763 tests passed
+- `npm run lint`: passed
+- `npm run typecheck:functions`: passed
+- `npm run build`: passed
+- Browser QA: 桌面 + 390×844 移动端，浅色/深色切换与刷新持久化通过
+- GitHub Actions: `Deploy Cloudflare Pages` run `27760795453` passed（Test/Lint/Typecheck/Build/Deploy）
+
+**遗留风险:**
+- 本地无测试账号，浏览器未逐页检查登录后的全部深色页面；设计令牌、构建和自动测试已覆盖基础回归。
+- PDF 依赖浏览器打印对话框，不同浏览器的页眉页脚选项仍由用户控制。
+
+**下一轮方向:**
+1. 旗舰：研究工作台批量拖拽视觉反馈升级，并补齐键盘可访问排序。
+2. 对登录后的机会/研究/市场/估值/报告页做完整暗色模式视觉巡检，清理残余硬编码浅色。
+3. 拆分 ECharts 主包加载，降低首屏 JavaScript 体积。
+
 ## Round 48 — 2026-06-18 (System Health Check + Fixes)
 
 **本轮类型:** 全项目体检 + 问题修复（非功能迭代）
@@ -77,3 +107,4 @@
 | R46 | Report Page Visual Upgrade | 报告页信息层级重构 + 分数可视化增强 |
 | R47 | Mobile Navigation + Report Share | 移动端底部导航栏 + 报告快速分享 |
 | R48 | System Health Check + Fixes | 全项目体检 + 4 项 P0/P1/P2 问题修复 |
+| R49 | Adaptive Theme + PDF Export | 全站三态主题 + 报告 PDF 打印导出 |
