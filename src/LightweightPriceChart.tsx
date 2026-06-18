@@ -21,17 +21,21 @@ export function LightweightPriceChart({ series }: LightweightPriceChartProps) {
       .filter((point) => point.time && Number.isFinite(point.value)) as Array<{ time: string; value: number }>;
     void import("lightweight-charts").then((module) => {
       if (!ref.current || disposed || !data.length) return;
+      const style = getComputedStyle(document.documentElement);
+      const textColor = style.getPropertyValue("--body").trim() || "#2f3337";
+      const gridColor = style.getPropertyValue("--line").trim() || "#d9ddd8";
+      const lineColor = style.getPropertyValue("--teal").trim() || "#0f766e";
       chart = module.createChart(ref.current, {
         autoSize: true,
         height: 220,
-        layout: { background: { color: "transparent" }, textColor: "#465450" },
-        grid: { vertLines: { color: "#edf1ef" }, horzLines: { color: "#edf1ef" } },
+        layout: { background: { color: "transparent" }, textColor },
+        grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
         rightPriceScale: { borderVisible: false },
         timeScale: { borderVisible: false, timeVisible: false },
         crosshair: { mode: 1 },
       }) as LightweightChartApi;
       const line = chart.addSeries(module.LineSeries, {
-        color: "#255f54",
+        color: lineColor,
         lineWidth: 2,
         lastValueVisible: true,
         priceLineVisible: false,

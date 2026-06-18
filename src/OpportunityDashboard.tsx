@@ -192,14 +192,25 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
   );
 }
 
+async function loadOpportunityECharts() {
+  const [core, charts, components, renderers] = await Promise.all([
+    import("echarts/core"),
+    import("echarts/charts"),
+    import("echarts/components"),
+    import("echarts/renderers"),
+  ]);
+  core.use([charts.ScatterChart, components.GridComponent, components.TooltipComponent, renderers.CanvasRenderer]);
+  return core;
+}
+
 function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySignal[]; onSelect: (item: ResearchOpportunitySignal) => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let disposed = false;
-    let chart: import("echarts").ECharts | undefined;
+    let chart: import("echarts/core").EChartsType | undefined;
     if (!ref.current) return undefined;
-    void import("echarts").then((echarts) => {
+    void loadOpportunityECharts().then((echarts) => {
       if (disposed || !ref.current) return;
       chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
       chart.setOption({
@@ -212,8 +223,8 @@ function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySign
             return `${data[3]}<br/>研究价值 ${data[0]} / 风险 ${data[1]}<br/>${data[4]}`;
           },
         },
-        xAxis: { name: "研究价值", min: 0, max: 100, splitLine: { lineStyle: { color: "#edf1ee" } } },
-        yAxis: { name: "风险", min: 0, max: 100, splitLine: { lineStyle: { color: "#edf1ee" } } },
+        xAxis: { name: "研究价值", min: 0, max: 100, splitLine: { lineStyle: { color: "var(--line)" } } },
+        yAxis: { name: "风险", min: 0, max: 100, splitLine: { lineStyle: { color: "var(--line)" } } },
         series: [{
           type: "scatter",
           symbolSize: (value: [number, number, number]) => Math.max(16, Math.min(54, value[2] / 2.2)),
@@ -221,11 +232,11 @@ function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySign
           itemStyle: {
             color: (params: { data?: [number, number] }) => {
               const data = params.data;
-              if (!data) return "#2f6f8f";
-              if (data[0] >= 70 && data[1] < 55) return "#c9492c";
+              if (!data) return "var(--blue)";
+              if (data[0] >= 70 && data[1] < 55) return "var(--red)";
               if (data[1] >= 70) return "#7b4ea3";
-              if (data[0] >= 60) return "#d08b21";
-              return "#2f6f8f";
+              if (data[0] >= 60) return "var(--amber)";
+              return "var(--blue)";
             },
             opacity: 0.82,
           },
@@ -317,3 +328,5 @@ function formatDate(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString("zh-CN") : value;
 }
+
+export default OpportunityDashboard;
