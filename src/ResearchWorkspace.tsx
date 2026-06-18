@@ -301,6 +301,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     const insertIndex = newTargetOrder.indexOf(targetId);
     newTargetOrder.splice(isCrossStage ? insertIndex + 0 : insertIndex, 0, sourceId);
 
+    const previousItemOrder = { ...itemOrder };
+    const previousItems = isCrossStage ? items : null;
+
     const new_itemOrder = { ...itemOrder };
     if (isCrossStage) {
       new_itemOrder[sourceItem.stage] = newSourceOrder;
@@ -321,7 +324,11 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: targetStage as ResearchStage } : entry));
     }
 
-    void reorderResearchItems(updates).catch(() => { showToast("排序保存失败，请刷新重试。", "error"); });
+    void reorderResearchItems(updates).catch(() => {
+      saveItemOrder(previousItemOrder);
+      if (previousItems) setItems(previousItems);
+      showToast("排序保存失败，已恢复原顺序。", "error");
+    });
   }
 
   function handleDragEnd() {
