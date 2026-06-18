@@ -1,35 +1,35 @@
 # CSTD Alpha - Iteration Log
 
-## Round 37 — 2026-06-18
+## Round 38 — 2026-06-18
 
-**承接上一轮方向:** R36 建议 App.tsx 拆分（RadarView ~1200行）作为 #1 优先方向
+**承接上一轮方向:** R37 建议 D1 登录记录自动清理 + 研究工作台拖拽排序
 
 **本轮决策:**
-- R36 再次建议 App.tsx 拆分，已连续 17 轮 deferred，本轮必须完成
-- 选择 RadarView 提取作为旗舰主改动——这是 App.tsx 最大的独立模块
-- App.tsx 从 2679 行降至 1343 行（-50%），显著提升可维护性
+- D1 登录清理：将 probabilistic cleanup (10% random) 改为 deterministic (每 20 次清理一次)，并在成功登录时也清理
+- login_attempts 清理窗口从 2 分钟扩大到 10 分钟，避免旧记录堆积
+- 研究工作台拖拽排序：纯前端实现（localStorage 持久化），无需后端 API 变更
 
 **完成内容:**
-- 新建 src/RadarView.tsx（1210 行），包含全部 28 个 Radar 组件 + 辅助函数
-- App.tsx 清理：移除 RadarPhase 类型定义、Radar 相关代码、未使用的 imports
-- 移除 TanStack table/virtual、RadarVisualCharts、radar-ui 工具函数等不再需要的导入
-- 保留 listItems 工具函数（ReportView 仍在使用）
-- 保留 radarRefreshFallbackMessage（App 主流程仍在使用）
+- D1 登录清理：cleanupOldLoginAttempts 改为确定性触发（每 20 次失败尝试），成功登录时也清理
+- 新增 shouldCleanupLoginAttempts() 函数 + 测试
+- 研究工作台拖拽排序：卡片支持 drag/drop，同阶段内可拖拽调整顺序
+- 拖拽顺序通过 localStorage 持久化（key: cstd_research_item_order）
+- 拖拽视觉反馈：拖动中卡片半透明，目标位置显示顶部边框高亮
 
 **验证:**
-- npm test: 756 passed ✅
+- npm test: 757 passed ✅（+1 新测试）
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
 
 **遗留风险:**
-- App.tsx 仍有 1343 行，但已从 "巨大" 降至 "中等"
-- D1 登录记录自动清理、研究工作台拖拽排序仍未做
+- 拖拽排序仅限同阶段内，跨阶段拖拽暂不支持（需要后端 API 支持）
+- App.tsx 仍有 1343 行，可继续拆分
 
 **下一轮方向:**
-1. D1 登录记录自动清理 — 增加定时清理机制
-2. 研究工作台拖拽排序 — 支持拖拽研究项调整顺序
-3. 继续 App.tsx 进一步拆分（如 ReportView 提取）
+1. 研究工作台跨阶段拖拽 — 需要后端 API 支持 sort_order 字段
+2. 继续 App.tsx 进一步拆分（如 ReportView 提取）
+3. 研究工作台移动端体验优化
 
 ---
 
@@ -62,3 +62,4 @@
 | R35 | Project Health Check | 竞争条件修复 + 错误边界 + RadarView 拆分 |
 | R36 | Financial Table Enhancement | 财务表排序/年份筛选 + 快速跳转按钮组 |
 | R37 | App.tsx RadarView Extraction | RadarView 提取为独立文件，App.tsx -50% |
+| R38 | D1 Login Cleanup + Drag-and-Drop | 登录清理确定性化 + 研究队列拖拽排序 |

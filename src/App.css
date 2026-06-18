@@ -1390,6 +1390,24 @@ button:not(:disabled):active,
   border-left-color: var(--amber);
 }
 
+.research-card.dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+.research-card.drag-over {
+  border-top: 2px solid var(--teal);
+  margin-top: -1px;
+}
+
+.research-card[draggable="true"] {
+  cursor: grab;
+}
+
+.research-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .card-header {
   display: flex;
   align-items: baseline;
