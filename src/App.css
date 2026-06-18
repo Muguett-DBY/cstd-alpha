@@ -1938,6 +1938,48 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 
+.recent-reports {
+  padding: 18px;
+}
+
+.recent-reports-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.recent-report-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.recent-report-info strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.recent-report-info span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.recent-report-scores {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.recent-report-scores span {
+  font-weight: 600;
+}
+
 .market-health {
   margin-top: 12px;
 }
