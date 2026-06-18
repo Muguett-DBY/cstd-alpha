@@ -172,10 +172,11 @@ function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySign
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    let disposed = false;
     let chart: import("echarts").ECharts | undefined;
     if (!ref.current) return undefined;
     void import("echarts").then((echarts) => {
-      if (!ref.current) return;
+      if (disposed || !ref.current) return;
       chart = echarts.init(ref.current, undefined, { renderer: "canvas" });
       chart.setOption({
         grid: { left: 48, right: 24, top: 28, bottom: 42 },
@@ -214,6 +215,7 @@ function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySign
     const resize = () => chart?.resize();
     window.addEventListener("resize", resize);
     return () => {
+      disposed = true;
       window.removeEventListener("resize", resize);
       chart?.dispose();
     };
