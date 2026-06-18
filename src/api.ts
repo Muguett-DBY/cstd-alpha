@@ -164,6 +164,23 @@ export async function deleteResearchItems(ids: string[]): Promise<void> {
   if (!response.ok) throw new Error((await readError(response)) || "研究项删除失败。");
 }
 
+export type ActivityEvent = {
+  id: string;
+  itemId: string;
+  eventType: string;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export async function fetchActivityEvents(itemId: string, limit = 20): Promise<ActivityEvent[]> {
+  const response = await fetch(`/api/research-items/${encodeURIComponent(itemId)}/activity?limit=${limit}`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "活动事件读取失败。");
+  const data = (await response.json()) as { events?: ActivityEvent[] };
+  return data.events ?? [];
+}
+
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/thesis`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "研究论点读取失败。");

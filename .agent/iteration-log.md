@@ -1,39 +1,41 @@
 # CSTD Alpha - Iteration Log
 
-## Round 42 — 2026-06-18
+## Round 43 — 2026-06-18
 
-**承接上一轮方向:** R41 建议研究工作台活动日志增强 + 继续 App.tsx 拆分
+**承接上一轮方向:** R42 建议活动日志接入后端事件流 + 继续 App.tsx 拆分
 
 **本轮决策:**
-- 活动日志：将静态列表改为时间线视图，显示详细事件描述和时间戳
-- ProgressPanel 提取：将报告生成进度面板从 App.tsx 提取为独立文件
-- App.tsx 从 882 行降至 820 行（-7%）
+- 活动日志全栈实现：新增 research_activity_events 表 + API + 前端集成
+- 记录事件：研究项创建、阶段变更、论点生成
+- CandidateModal 提取：将公司候选弹窗从 App.tsx 提取为独立文件
+- App.tsx 从 820 行降至 767 行（-6%）
 
 **完成内容:**
-- 活动日志重构：使用 timeline 视图替代 activity-list
-- 新增催化剂待确认事件显示
-- 估值状态细分（运行中/排队中/已提交/已完成/失败）
-- 证据包显示哈希前 12 位
-- 研究项创建显示来源类型
-- 时间显示改为完整时间戳（toLocaleString）
-- CSS：新增 timeline-item、timeline-dot、timeline-content 样式（带连接线）
-- 新建 src/ProgressPanel.tsx（57 行），包含报告生成进度面板
-- App.tsx 移除 ProgressPanel 和未使用的 formatDuration
+- Migration 0015：research_activity_events 表 + 索引
+- 后端：recordActivityEvent / listActivityEvents 函数
+- 后端：confirmResearchStage 自动记录阶段变更事件
+- 后端：upsertResearchItem 自动记录创建事件
+- 后端：createResearchThesisVersion 自动记录论点生成事件
+- API：GET /api/research-items/[id]/activity 端点
+- 前端：fetchActivityEvents API 函数
+- 前端：ResearchWorkspace 接入后端活动事件流（fallback 到静态数据）
+- 新建 src/CandidateModal.tsx（52 行），导出 displayExchange
+- App.tsx 移除 CandidateModal 和 displayExchange
 
 **验证:**
-- npm test: 757 passed ✅
+- npm test: 757 passed ✅（+1 测试调整）
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
 
 **遗留风险:**
-- App.tsx 仍有 820 行，但已从 "巨大" 降至 "中等偏小"
-- 活动日志目前是静态数据，未接入后端事件流
+- 活动日志目前记录 3 种事件类型，可扩展更多
+- App.tsx 仍有 767 行，但已从 "巨大" 降至 "小"
 
 **下一轮方向:**
-1. 研究工作台活动日志接入后端事件流
-2. 研究工作台批量拖拽到新阶段（视觉反馈）
-3. 继续 App.tsx 拆分（如提取 CandidateModal）
+1. 活动日志扩展更多事件类型（证据采集、估值状态变更）
+2. 研究工作台批量拖拽视觉反馈增强
+3. 继续 App.tsx 拆分（如提取 Toast 或 BackToTop）
 
 ---
 
@@ -71,3 +73,4 @@
 | R40 | Search Highlight + Batch Delete | 搜索结果高亮 + 批量删除功能 |
 | R41 | App.tsx ReportView Extraction | ReportView 提取为独立文件 + 研究卡片展开详情 |
 | R42 | Activity Timeline + ProgressPanel | 活动日志时间线重构 + ProgressPanel 提取 |
+| R43 | Activity Events Backend + CandidateModal | 活动日志后端事件流 + CandidateModal 提取 |

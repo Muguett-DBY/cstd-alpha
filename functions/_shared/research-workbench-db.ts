@@ -129,6 +129,12 @@ export async function ensureResearchWorkbenchSchema(db: D1Database) {
     )`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_valuation_runs_user ON valuation_runs (user_key, updated_at DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_valuation_runs_entity ON valuation_runs (entity_type, entity_id, updated_at DESC)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS research_activity_events (
+      id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT NOT NULL, event_type TEXT NOT NULL,
+      title TEXT NOT NULL, description TEXT, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_activity_events_item ON research_activity_events (item_id, created_at DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_activity_events_user ON research_activity_events (user_key, created_at DESC)`),
   ]);
 }
 
@@ -159,6 +165,15 @@ export async function upsertResearchItem(db: D1Database, input: {
   ).bind(id, input.userKey, input.entityType, input.entityId, input.title, input.subtitle ?? null, stage, input.source ?? "manual", input.evidenceHash ?? null, now).run();
   const item = await readResearchItemById(db, input.userKey, id);
   if (!item) throw new Error("research item upsert failed");
+  if (item.createdAt === now) {
+    await recordActivityEvent(db, input.userKey, {
+      itemId: id,
+      eventType: "created",
+      title: "研究项创建",
+      description: `来源: ${input.source ?? "manual"}`,
+      metadata: { source: input.source ?? "manual", entityType: input.entityType },
+    }).catch(() => {});
+  }
   return item;
 }
 
@@ -185,10 +200,20 @@ export async function confirmResearchStage(db: D1Database, userKey: string, id: 
   const normalized = normalizeResearchStage(stage);
   if (!normalized) throw new Error("invalid research stage");
   const now = new Date().toISOString();
+  const old = await db.prepare(`SELECT stage FROM research_items WHERE user_key = ?1 AND id = ?2`).bind(userKey, id).first<{ stage: string }>();
   if (typeof sortOrder === "number") {
     await db.prepare(`UPDATE research_items SET stage = ?3, sort_order = ?4, updated_at = ?5 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, sortOrder, now).run();
   } else {
     await db.prepare(`UPDATE research_items SET stage = ?3, updated_at = ?4 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, now).run();
+  }
+  if (old && old.stage !== normalized) {
+    await recordActivityEvent(db, userKey, {
+      itemId: id,
+      eventType: "stage_change",
+      title: `阶段变更`,
+      description: `从「${old.stage}」移动到「${normalized}」`,
+      metadata: { from: old.stage, to: normalized },
+    }).catch(() => {});
   }
   return readResearchItemById(db, userKey, id);
 }
@@ -207,6 +232,49 @@ export async function deleteResearchItems(db: D1Database, userKey: string, ids: 
   if (!ids.length) return;
   const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
   await db.prepare(`DELETE FROM research_items WHERE user_key = ?1 AND id IN (${placeholders})`).bind(userKey, ...ids).run();
+}
+
+export type ActivityEvent = {
+  id: string;
+  itemId: string;
+  eventType: string;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export async function recordActivityEvent(db: D1Database, userKey: string, input: {
+  itemId: string;
+  eventType: string;
+  title: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  await ensureResearchWorkbenchSchema(db);
+  const id = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO research_activity_events (id, user_key, item_id, event_type, title, description, metadata_json, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+  ).bind(id, userKey, input.itemId, input.eventType, input.title, input.description ?? null, JSON.stringify(input.metadata ?? {}), now).run();
+}
+
+export async function listActivityEvents(db: D1Database, userKey: string, itemId: string, limit = 20) {
+  await ensureResearchWorkbenchSchema(db);
+  const result = await db.prepare(
+    `SELECT id, item_id, event_type, title, description, metadata_json, created_at
+     FROM research_activity_events WHERE user_key = ?1 AND item_id = ?2 ORDER BY created_at DESC LIMIT ?3`,
+  ).bind(userKey, itemId, limit).all<{ id: string; item_id: string; event_type: string; title: string; description: string | null; metadata_json: string; created_at: string }>();
+  return (result.results ?? []).map((row) => ({
+    id: row.id,
+    itemId: row.item_id,
+    eventType: row.event_type,
+    title: row.title,
+    description: row.description,
+    metadata: JSON.parse(row.metadata_json || "{}") as Record<string, unknown>,
+    createdAt: row.created_at,
+  }));
 }
 
 export async function listResearchThesisVersions(db: D1Database, userKey: string, itemId: string, limit = 20) {
@@ -278,6 +346,13 @@ export async function createResearchThesisVersion(db: D1Database, input: {
      FROM research_thesis_versions WHERE user_key = ?1 AND id = ?2`,
   ).bind(input.userKey, id).first<ResearchThesisRow>();
   if (!row) throw new Error("research thesis create failed");
+  await recordActivityEvent(db, input.userKey, {
+    itemId: input.itemId,
+    eventType: "thesis_generated",
+    title: "论点已生成",
+    description: `版本 ${row.version}，由 ${input.createdBy ?? "ai"} 生成`,
+    metadata: { version: row.version, createdBy: input.createdBy ?? "ai", thesisId: id },
+  }).catch(() => {});
   return researchThesisRowToVersion(row);
 }
 

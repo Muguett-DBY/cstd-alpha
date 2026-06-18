@@ -138,7 +138,7 @@ describe("createResearchThesisVersion", () => {
       evidenceHash: "hash-4",
     });
 
-    expect(batchCalls).toBe(3);
+    expect(batchCalls).toBe(4);
     expect(thesis.version).toBe(4);
   });
 });

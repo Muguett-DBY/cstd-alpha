@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addResearchItem, createValuationRun, deleteResearchItems, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
+import { addResearchItem, createValuationRun, deleteResearchItems, fetchActivityEvents, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage, type ActivityEvent } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
@@ -47,6 +47,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
@@ -103,6 +105,12 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [filteredItems, selectedId]);
+
+  useEffect(() => {
+    if (!selected?.id) { setActivityEvents([]); return; }
+    setActivityLoading(true);
+    void fetchActivityEvents(selected.id).then((events) => { setActivityEvents(events); setActivityLoading(false); }).catch(() => { setActivityLoading(false); });
+  }, [selected?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -831,67 +839,48 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             </header>
             {selected ? (
               <div className="activity-timeline">
-                {selected.currentThesisVersionId ? (
-                  <div className="timeline-item" onClick={() => {}}>
-                    <span className="timeline-dot thesis" />
+                {activityLoading ? <p className="muted" style={{ fontSize: 12, padding: 8 }}>加载中...</p> : null}
+                {activityEvents.length > 0 ? activityEvents.map((event) => (
+                  <div key={event.id} className="timeline-item">
+                    <span className={`timeline-dot ${event.eventType === "thesis_generated" ? "thesis" : event.eventType === "stage_change" ? "confirmed" : event.eventType === "evidence_collected" ? "evidence" : event.eventType === "valuation_updated" ? "valuation" : "created"}`} />
                     <div className="timeline-content">
-                      <strong>论点已生成</strong>
-                      <p>研究论点已完成分析</p>
-                      <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                      <strong>{event.title}</strong>
+                      {event.description ? <p>{event.description}</p> : null}
+                      <time>{new Date(event.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
-                ) : null}
-                {catalystItemId === selected.id && catalysts.filter((c) => c.status === "confirmed").length > 0 ? (
-                  <div className="timeline-item">
-                    <span className="timeline-dot confirmed" />
-                    <div className="timeline-content">
-                      <strong>{catalysts.filter((c) => c.status === "confirmed").length} 项催化剂已确认</strong>
-                      <p>{catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3).map((c) => c.title).join("、")}</p>
-                      <time>{new Date(catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]?.updatedAt || selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                )) : !activityLoading ? (
+                  <>
+                    {selected.currentThesisVersionId ? (
+                      <div className="timeline-item">
+                        <span className="timeline-dot thesis" />
+                        <div className="timeline-content">
+                          <strong>论点已生成</strong>
+                          <p>研究论点已完成分析</p>
+                          <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.evidenceHash ? (
+                      <div className="timeline-item">
+                        <span className="timeline-dot evidence" />
+                        <div className="timeline-content">
+                          <strong>证据包已采集</strong>
+                          <p>证据哈希: {selected.evidenceHash.slice(0, 12)}...</p>
+                          <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="timeline-item">
+                      <span className="timeline-dot created" />
+                      <div className="timeline-content">
+                        <strong>研究项创建</strong>
+                        <p>来源: {selected.source === "radar" ? "雷达扫描" : selected.source === "watchlist" ? "自选股" : selected.source}</p>
+                        <time>{new Date(selected.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 ) : null}
-                {catalystItemId === selected.id && catalysts.filter((c) => c.status === "open").length > 0 ? (
-                  <div className="timeline-item">
-                    <span className="timeline-dot open" />
-                    <div className="timeline-content">
-                      <strong>{catalysts.filter((c) => c.status === "open").length} 项催化剂待确认</strong>
-                      <p>等待触发事件确认</p>
-                    </div>
-                  </div>
-                ) : null}
-                {valuationByItem.get(selected.id) ? (
-                  <div className="timeline-item">
-                    <span className="timeline-dot valuation" />
-                    <div className="timeline-content">
-                      <strong>估值{valuationByItem.get(selected.id)?.status === "completed" ? "已完成" : valuationByItem.get(selected.id)?.status === "running" ? "运行中" : valuationByItem.get(selected.id)?.status === "queued" ? "排队中" : "已提交"}</strong>
-                      {valuationByItem.get(selected.id)?.status === "completed" && valuationByItem.get(selected.id)?.result ? (
-                        <p>{valuationByItem.get(selected.id)!.currency} {formatValuationPrice(valuationByItem.get(selected.id)!.result!.scenarios.find((s) => s.scenario === "base")?.perShareValue)}</p>
-                      ) : (
-                        <p>{valuationByItem.get(selected.id)?.status === "failed" ? "估值失败" : "等待分析完成"}</p>
-                      )}
-                      <time>{new Date(valuationByItem.get(selected.id)?.updatedAt || selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
-                    </div>
-                  </div>
-                ) : null}
-                {selected.evidenceHash ? (
-                  <div className="timeline-item">
-                    <span className="timeline-dot evidence" />
-                    <div className="timeline-content">
-                      <strong>证据包已采集</strong>
-                      <p>证据哈希: {selected.evidenceHash.slice(0, 12)}...</p>
-                      <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="timeline-item">
-                  <span className="timeline-dot created" />
-                  <div className="timeline-content">
-                    <strong>研究项创建</strong>
-                    <p>来源: {selected.source === "radar" ? "雷达扫描" : selected.source === "watchlist" ? "自选股" : selected.source}</p>
-                    <time>{new Date(selected.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="thesis-empty">
