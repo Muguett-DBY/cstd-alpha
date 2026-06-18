@@ -14,6 +14,8 @@ import { MarketWorkspace } from "./MarketWorkspace";
 import { ValuationLabView } from "./ValuationLabView";
 import { ToastContainer } from "./Toast";
 import { showToast } from "./toast-state";
+import { ThemeControl } from "./ThemeControl";
+import { useThemePreference } from "./theme";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
@@ -35,6 +37,7 @@ const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({
 const AssistantView = lazy(() => import("./AssistantView").then((module) => ({ default: module.AssistantView })));
 
 function App() {
+  const theme = useThemePreference();
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<UserSession | null>(null);
   const [checking, setChecking] = useState(true);
@@ -504,6 +507,9 @@ function App() {
   if (!authenticated) {
     return (
       <main className="auth-page">
+        <div className="auth-theme-control">
+          <ThemeControl value={theme.preference} onChange={theme.setPreference} compact />
+        </div>
         <section className="auth-panel" aria-labelledby="auth-title">
           <img src="/app-icon.svg" alt="CSTD Alpha" className="auth-icon" />
           <p className="brand">CSTD Alpha</p>
@@ -556,9 +562,12 @@ function App() {
           <h1>{isWorkbenchView ? "AI 数据工作台" : "中文深度评分报告"}</h1>
           <p className="rail-copy">{isWorkbenchView ? "发现机会、进入研究、验证估值，再用助手追问。" : "先确认上市主体，再生成完整模板报告，避免同名公司或错误代码。"}</p>
           <p className="muted">当前账号：{user?.displayName || user?.username}</p>
-          <button type="button" className="ghost-button" onClick={() => void submitLogout()}>
-            退出登录
-          </button>
+          <div className="rail-utilities">
+            <ThemeControl value={theme.preference} onChange={theme.setPreference} compact />
+            <button type="button" className="ghost-button" onClick={() => void submitLogout()}>
+              退出登录
+            </button>
+          </div>
         </div>
 
         <nav className="view-tabs" aria-label="工作区">
