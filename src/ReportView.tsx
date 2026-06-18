@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { downloadReportDocx } from "./docx/export-report";
+import { printReportAsPdf } from "./pdf/export-report";
 import { showToast } from "./toast-state";
 import type { ChartBundle } from "./shared/chart";
 import type { InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
@@ -150,44 +151,56 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
             </p>
           ) : null}
         </div>
-        {onAddToWatchlist ? (
-          <button type="button" className="secondary-button" onClick={onAddToWatchlist} disabled={isWatchlisted}>
-            {isWatchlisted ? "已加入自选" : "加入自选"}
+        <div className="report-actions">
+          {onAddToWatchlist ? (
+            <button type="button" className="secondary-button" onClick={onAddToWatchlist} disabled={isWatchlisted}>
+              {isWatchlisted ? "已加入自选" : "加入自选"}
+            </button>
+          ) : null}
+          <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
+            下载 Word
           </button>
-        ) : null}
-        <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
-          下载报告
-        </button>
-        <button type="button" className="secondary-button" onClick={() => {
-          const text = `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`;
-          navigator.clipboard.writeText(text).then(() => showToast("摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
-        }}>
-          复制摘要
-        </button>
-        <button type="button" className="secondary-button" onClick={() => {
-          const shareData = {
-            title: `${report.company.name} 投资分析报告`,
-            text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
-          };
-          if (navigator.share) {
-            navigator.share(shareData).catch((err) => {
-              if (err?.name !== "AbortError") {
-                navigator.clipboard.writeText(shareData.text)
-                  .then(() => showToast("分享失败，摘要已复制到剪贴板。", "success"))
-                  .catch(() => showToast("分享失败，请手动复制。", "error"));
-              }
-            });
-          } else {
-            navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
-          }
-        }}>
-          分享
-        </button>
-        {onSaveComparison ? (
-          <button type="button" className="secondary-button" onClick={onSaveComparison}>
-            {comparisonReport ? "对比中" : "保存对比"}
+          <button type="button" className="secondary-button" onClick={() => {
+            try {
+              printReportAsPdf(report);
+              showToast("已打开打印窗口，可选择“另存为 PDF”。", "success");
+            } catch {
+              showToast("无法打开打印窗口，请检查浏览器打印权限。", "error");
+            }
+          }}>
+            导出 PDF
           </button>
-        ) : null}
+          <button type="button" className="secondary-button" onClick={() => {
+            const text = `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`;
+            navigator.clipboard.writeText(text).then(() => showToast("摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+          }}>
+            复制摘要
+          </button>
+          <button type="button" className="secondary-button" onClick={() => {
+            const shareData = {
+              title: `${report.company.name} 投资分析报告`,
+              text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
+            };
+            if (navigator.share) {
+              navigator.share(shareData).catch((err) => {
+                if (err?.name !== "AbortError") {
+                  navigator.clipboard.writeText(shareData.text)
+                    .then(() => showToast("分享失败，摘要已复制到剪贴板。", "success"))
+                    .catch(() => showToast("分享失败，请手动复制。", "error"));
+                }
+              });
+            } else {
+              navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+            }
+          }}>
+            分享
+          </button>
+          {onSaveComparison ? (
+            <button type="button" className="secondary-button" onClick={onSaveComparison}>
+              {comparisonReport ? "对比中" : "保存对比"}
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {comparisonReport ? (
