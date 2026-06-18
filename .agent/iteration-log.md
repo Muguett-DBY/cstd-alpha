@@ -1,20 +1,24 @@
 # CSTD Alpha - Iteration Log
 
-## Round 41 — 2026-06-18
+## Round 42 — 2026-06-18
 
-**承接上一轮方向:** R40 建议 App.tsx 进一步拆分（ReportView 提取）
+**承接上一轮方向:** R41 建议研究工作台活动日志增强 + 继续 App.tsx 拆分
 
 **本轮决策:**
-- ReportView 提取：将报告页组件 + 辅助函数提取为独立文件
-- App.tsx 从 1433 行降至 882 行（-38%）
-- 新增研究卡片展开详情预览：点击展开按钮查看元数据
+- 活动日志：将静态列表改为时间线视图，显示详细事件描述和时间戳
+- ProgressPanel 提取：将报告生成进度面板从 App.tsx 提取为独立文件
+- App.tsx 从 882 行降至 820 行（-7%）
 
 **完成内容:**
-- 新建 src/ReportView.tsx（462 行），包含 ReportView + 12 个辅助组件
-- App.tsx 清理：移除 ReportView 及所有辅助函数，保留 formatDuration 等通用工具
-- 修复提取过程中发现的类型问题（ModuleScore.label/summary、valuationAnalysis、riskMatrix）
-- 研究卡片新增展开/收起按钮，点击可查看实体类型、来源、论点版本、证据哈希、更新时间
-- CSS：新增 .card-expand-toggle、.card-detail-preview、.detail-row 样式
+- 活动日志重构：使用 timeline 视图替代 activity-list
+- 新增催化剂待确认事件显示
+- 估值状态细分（运行中/排队中/已提交/已完成/失败）
+- 证据包显示哈希前 12 位
+- 研究项创建显示来源类型
+- 时间显示改为完整时间戳（toLocaleString）
+- CSS：新增 timeline-item、timeline-dot、timeline-content 样式（带连接线）
+- 新建 src/ProgressPanel.tsx（57 行），包含报告生成进度面板
+- App.tsx 移除 ProgressPanel 和未使用的 formatDuration
 
 **验证:**
 - npm test: 757 passed ✅
@@ -23,13 +27,13 @@
 - GitHub Actions: ✅ 全部通过
 
 **遗留风险:**
-- App.tsx 仍有 882 行，但已从 "巨大" 降至 "中等"
-- 展开详情仅显示元数据，未加载完整论点/证据内容
+- App.tsx 仍有 820 行，但已从 "巨大" 降至 "中等偏小"
+- 活动日志目前是静态数据，未接入后端事件流
 
 **下一轮方向:**
-1. 研究工作台批量拖拽到新阶段
-2. 研究工作台活动日志增强
-3. 继续 App.tsx 拆分（如提取 ProgressPanel）
+1. 研究工作台活动日志接入后端事件流
+2. 研究工作台批量拖拽到新阶段（视觉反馈）
+3. 继续 App.tsx 拆分（如提取 CandidateModal）
 
 ---
 
@@ -66,3 +70,4 @@
 | R39 | Cross-Stage Drag-and-Drop | 跨阶段拖拽 + sort_order 后端支持 + 移动端适配 |
 | R40 | Search Highlight + Batch Delete | 搜索结果高亮 + 批量删除功能 |
 | R41 | App.tsx ReportView Extraction | ReportView 提取为独立文件 + 研究卡片展开详情 |
+| R42 | Activity Timeline + ProgressPanel | 活动日志时间线重构 + ProgressPanel 提取 |
