@@ -1,29 +1,30 @@
 # CSTD Alpha - Iteration Log
 
-## Round 34 — 2026-06-18
+## Round 36 — 2026-06-18
 
-**承接上一轮方向:** R33 建议 App.tsx 拆分、D1 清理、研究工作台拖拽排序
+**承接上一轮方向:** R35 建议 App.tsx 拆分（RadarView ~1200行）、D1 清理、研究工作台拖拽排序
 
 **本轮决策:**
-- App.tsx 拆分范围过大（RadarView ~1200 行），单轮风险高，保留到下一轮
-- 本轮选择"市场健康度可视化"作为用户可见增量
-- 本轮额外修复报告页公司概览卡片与 ScoreStrip 集成
+- App.tsx 拆分范围仍然过大，本轮选择"报告页财务表交互增强"作为旗舰主改动
+- 财务表是用户消费报告时最常查看的部分，增强后用户能明显感受到报告更专业
+- 额外新增报告页快速跳转按钮组，提升报告导航效率
 
 **完成内容:**
-- 市场工作区新增市场健康度可视化条
-- 显示增长/泡沫/衰退的比例分布
-- 使用已有雷达数据，无需新增 API
-- CSS 新增 .market-health、.market-health-bar、.health-fill 样式
+- FinancialTable 增强：排序（指标名/趋势值）+ 年份范围选择器
+- 用户可按指标名或最新年份值排序，升序/降序切换
+- 用户可选择年份范围（如只看最近3年），减少信息过载
+- 报告导航栏下方新增快速跳转按钮组（结论/CQS/IAS/评分板/估值/风险）
+- 一键跳转到关键评分区，无需手动滚动
+- 锚点 ID 同步更新（modules → scoreboard）
 
 **验证:**
 - npm test: 756 passed ✅
-- npm run lint: 0 errors ✅
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 
 **遗留风险:**
 - App.tsx 仍有 2600+ 行，RadarView 拆分是下一轮重点
-- 健康度可视化依赖雷达数据，无雷达时不显示
+- 财务表排序仅支持单列排序，未来可支持多列排序
 
 **下一轮方向:**
 1. App.tsx 拆分 — 将 RadarView (~1200行) 抽离为独立文件
@@ -58,3 +59,5 @@
 | R32 | Recent Search History | 公司搜索最近历史记录 |
 | R33 | Market Hot Topics | 市场工作区今日热点 |
 | R34 | Market Health Visualization | 市场健康度可视化条 |
+| R35 | Project Health Check | 竞争条件修复 + 错误边界 + RadarView 拆分 |
+| R36 | Financial Table Enhancement | 财务表排序/年份筛选 + 快速跳转按钮组 |

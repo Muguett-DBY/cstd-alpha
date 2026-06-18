@@ -943,7 +943,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
   const navItems = [
     { id: "scores", label: "评分" },
     { id: "conclusion", label: "结论" },
-    { id: "modules", label: "模块" },
+    { id: "scoreboard", label: "模块" },
     { id: "detailed-scores", label: "详细评分" },
     { id: "financials", label: "财务" },
     { id: "valuation", label: "估值" },
@@ -959,6 +959,15 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
         ))}
       </nav>
 
+      <div className="quick-jump-bar">
+        <a href="#conclusion" className="quick-jump-pill">结论</a>
+        <a href="#cqs" className="quick-jump-pill">CQS</a>
+        <a href="#ias" className="quick-jump-pill">IAS</a>
+        <a href="#scoreboard" className="quick-jump-pill">评分板</a>
+        <a href="#valuation" className="quick-jump-pill">估值</a>
+        <a href="#risks" className="quick-jump-pill">风险</a>
+      </div>
+
       <header className="report-header">
         <div>
           <p className="eyebrow">
@@ -967,8 +976,8 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
           <h2>{report.company.name}</h2>
           <p className="muted">{report.oneSentence}</p>
           <div className="company-profile">
-            <span className="profile-item"><strong>CQS</strong> {report.cqs}</span>
-            <span className="profile-item"><strong>IAS</strong> {report.ias}</span>
+            <span className="profile-item" id="cqs"><strong>CQS</strong> {report.cqs}</span>
+            <span className="profile-item" id="ias"><strong>IAS</strong> {report.ias}</span>
             <span className="profile-item"><strong>结论</strong> {report.conclusion}</span>
             <span className="profile-item"><strong>估值</strong> {report.summaryDashboard.valuationView}</span>
           </div>
@@ -1066,7 +1075,7 @@ function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBun
 
       <ReportBlock title="一页结论与评分仪表盘" body={report.fullSections.onePageConclusion} id="conclusion" />
 
-      <section className="module-table" id="modules">
+      <section className="module-table" id="scoreboard">
         <div className="table-row table-head">
           <span>模块</span>
           <span>权重</span>
@@ -1168,31 +1177,83 @@ function ScoreItemCard({ item, index }: { item: ScoreItem; index: number }) {
 }
 
 function FinancialTable({ report }: { report: InvestmentReport }) {
-  const years = Array.from(new Set(report.financialTenYear.rows.flatMap((row) => Object.keys(row.values)))).slice(-10);
+  const allYears = Array.from(new Set(report.financialTenYear.rows.flatMap((row) => Object.keys(row.values)))).slice(-10);
+  const [sortField, setSortField] = useState<"metric" | "latest">("metric");
+  const [sortAsc, setSortAsc] = useState(true);
+  const [yearRange, setYearRange] = useState<{ start: number; end: number }>({ start: 0, end: allYears.length - 1 });
+  const years = allYears.slice(yearRange.start, yearRange.end + 1);
   const gridTemplateColumns = `150px repeat(${years.length}, minmax(84px, 1fr)) 104px`;
   const minWidth = `${150 + years.length * 84 + 104}px`;
+
+  const sortedRows = useMemo(() => {
+    const rows = [...report.financialTenYear.rows];
+    if (sortField === "metric") {
+      rows.sort((a, b) => sortAsc ? a.metric.localeCompare(b.metric) : b.metric.localeCompare(a.metric));
+    } else {
+      const latest = years[years.length - 1];
+      rows.sort((a, b) => {
+        const aVal = parseFloat(a.values[latest] || "0");
+        const bVal = parseFloat(b.values[latest] || "0");
+        return sortAsc ? aVal - bVal : bVal - aVal;
+      });
+    }
+    return rows;
+  }, [report.financialTenYear.rows, sortField, sortAsc, years]);
+
+  const handleYearRangeStart = (val: string) => {
+    const idx = parseInt(val, 10);
+    setYearRange((prev) => ({ start: Math.min(idx, prev.end), end: prev.end }));
+  };
+  const handleYearRangeEnd = (val: string) => {
+    const idx = parseInt(val, 10);
+    setYearRange((prev) => ({ start: prev.start, end: Math.max(idx, prev.start) }));
+  };
+
+  const toggleSort = (field: "metric" | "latest") => {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(true); }
+  };
+
   return (
     <details className="wide-section" id="financials" open>
       <summary><h3>十年财务数据总表</h3></summary>
       {report.financialTenYear.rows.length && years.length ? (
-        <div className="financial-table">
-          <div className="financial-row financial-head" style={{ gridTemplateColumns, minWidth }}>
-            <span>指标</span>
-            {years.map((year) => (
-              <span key={year}>{year}</span>
-            ))}
-            <span>趋势</span>
-          </div>
-          {report.financialTenYear.rows.map((row) => (
-            <div key={row.metric} className="financial-row" style={{ gridTemplateColumns, minWidth }}>
-              <span>{row.metric}</span>
-              {years.map((year) => (
-                <span key={year}>{row.values[year] || "-"}</span>
-              ))}
-              <span>{row.trend}</span>
+        <>
+          <div className="financial-controls">
+            <div className="year-range-selector">
+              <label>年份范围：</label>
+              <select value={yearRange.start} onChange={(e) => handleYearRangeStart(e.target.value)}>
+                {allYears.map((y, i) => <option key={y} value={i} disabled={i > yearRange.end}>{y}</option>)}
+              </select>
+              <span>至</span>
+              <select value={yearRange.end} onChange={(e) => handleYearRangeEnd(e.target.value)}>
+                {allYears.map((y, i) => <option key={y} value={i} disabled={i < yearRange.start}>{y}</option>)}
+              </select>
             </div>
-          ))}
-        </div>
+          </div>
+          <div className="financial-table">
+            <div className="financial-row financial-head" style={{ gridTemplateColumns, minWidth }}>
+              <span className="sortable-header" onClick={() => toggleSort("metric")} style={{ cursor: "pointer" }}>
+                指标 {sortField === "metric" ? (sortAsc ? "↑" : "↓") : ""}
+              </span>
+              {years.map((year) => (
+                <span key={year}>{year}</span>
+              ))}
+              <span className="sortable-header" onClick={() => toggleSort("latest")} style={{ cursor: "pointer" }}>
+                趋势 {sortField === "latest" ? (sortAsc ? "↑" : "↓") : ""}
+              </span>
+            </div>
+            {sortedRows.map((row) => (
+              <div key={row.metric} className="financial-row" style={{ gridTemplateColumns, minWidth }}>
+                <span>{row.metric}</span>
+                {years.map((year) => (
+                  <span key={year}>{row.values[year] || "-"}</span>
+                ))}
+                <span>{row.trend}</span>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <p>数据不足：公开接口未返回可直接入表的十年财务数据。</p>
       )}
