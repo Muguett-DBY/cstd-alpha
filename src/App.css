@@ -1589,6 +1589,7 @@ button:not(:disabled):active,
   background: var(--surface);
   text-align: left;
   box-shadow: var(--shadow-sm);
+  position: relative;
 }
 
 .research-card.selected {
@@ -1608,12 +1609,49 @@ button:not(:disabled):active,
 .research-card.dragging {
   opacity: 0.4;
   border-style: dashed;
+  transform: scale(0.98);
 }
 
 .research-card.drag-over {
   border-color: var(--teal);
+  box-shadow: 0 -3px 0 var(--teal), var(--shadow-md);
+}
+
+.research-card.drag-over.drag-before {
   transform: translateY(2px);
   box-shadow: 0 -3px 0 var(--teal), var(--shadow-md);
+}
+
+.research-card.drag-over.drag-before::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--teal);
+  border-radius: 2px;
+}
+
+.research-card.drag-over.drag-after {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 0 var(--teal), var(--shadow-md);
+}
+
+.research-card.drag-over.drag-after::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--teal);
+  border-radius: 2px;
+}
+
+.research-card.drag-over.drag-inside {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface));
 }
 
 .research-card[draggable="true"] {
