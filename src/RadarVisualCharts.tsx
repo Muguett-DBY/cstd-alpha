@@ -67,8 +67,8 @@ function RadarBubbleChart({ packets, onSelectIndustry }: RadarVisualChartsProps)
               return `${item.name}<br/>阶段：${item.stage}<br/>增长动量：${item.value[0]}<br/>风险压力：${item.value[1]}<br/>证据：${item.value[3]} 条<br/>分组：${item.group || "未分组"}`;
             },
           },
-          xAxis: { name: "增长动量", min: 0, max: 100, splitLine: { lineStyle: { color: "#e3e8e5" } } },
-          yAxis: { name: "风险压力", min: 0, max: 100, splitLine: { lineStyle: { color: "#e3e8e5" } } },
+          xAxis: { name: "增长动量", min: 0, max: 100, splitLine: { lineStyle: { color: "var(--line)" } } },
+          yAxis: { name: "风险压力", min: 0, max: 100, splitLine: { lineStyle: { color: "var(--line)" } } },
           series: [
             {
               type: "scatter",
@@ -78,7 +78,7 @@ function RadarBubbleChart({ packets, onSelectIndustry }: RadarVisualChartsProps)
                 show: true,
                 formatter: "{b}",
                 position: "right",
-                color: "#111418",
+                color: "var(--ink)",
                 fontSize: 11,
               },
               emphasis: { focus: "self" },
@@ -129,8 +129,8 @@ function RadarStageDistribution({ packets, onSelectIndustry }: RadarVisualCharts
           animation: false,
           tooltip: { trigger: "item" },
           grid: { top: 28, right: 18, bottom: 28, left: 78 },
-          xAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#e3e8e5" } } },
-          yAxis: { type: "category", data: buckets.map((bucket) => bucket.stage), axisLabel: { color: "#2d3a37" } },
+          xAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "var(--line)" } } },
+          yAxis: { type: "category", data: buckets.map((bucket) => bucket.stage), axisLabel: { color: "var(--body)" } },
           series: [
             {
               type: "bar",

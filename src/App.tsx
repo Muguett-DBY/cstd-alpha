@@ -8,7 +8,7 @@ import { ProgressPanel } from "./ProgressPanel";
 import { CandidateModal } from "./CandidateModal";
 import { displayExchange } from "./company-utils";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
-import { OpportunityDashboard } from "./OpportunityDashboard";
+const OpportunityDashboard = lazy(() => import("./OpportunityDashboard").then((module) => ({ default: module.OpportunityDashboard })));
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { MarketWorkspace } from "./MarketWorkspace";
 import { ValuationLabView } from "./ValuationLabView";

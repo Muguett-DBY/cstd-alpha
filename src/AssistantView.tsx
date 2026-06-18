@@ -791,15 +791,35 @@ function CollapsibleAssistantChart({ block }: { block: AssistantChartBlock }) {
   );
 }
 
+async function loadAssistantECharts() {
+  const [core, charts, components, renderers] = await Promise.all([
+    import("echarts/core"),
+    import("echarts/charts"),
+    import("echarts/components"),
+    import("echarts/renderers"),
+  ]);
+  core.use([
+    charts.PieChart,
+    charts.LineChart,
+    charts.BarChart,
+    charts.ScatterChart,
+    components.GridComponent,
+    components.TooltipComponent,
+    components.LegendComponent,
+    renderers.CanvasRenderer,
+  ]);
+  return core;
+}
+
 function AssistantChart({ block }: { block: AssistantChartBlock }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!ref.current) return undefined;
     let disposed = false;
-    let chart: import("echarts").ECharts | undefined;
+    let chart: import("echarts/core").EChartsType | undefined;
     const resize = () => chart?.resize();
-    void import("echarts")
+    void loadAssistantECharts()
       .then((echarts) => {
         if (!ref.current || disposed) return;
         chart = echarts.init(ref.current);
@@ -822,7 +842,7 @@ function AssistantChart({ block }: { block: AssistantChartBlock }) {
   );
 }
 
-function applyAssistantChartOptions(chart: import("echarts").ECharts, block: AssistantChartBlock) {
+function applyAssistantChartOptions(chart: import("echarts/core").EChartsType, block: AssistantChartBlock) {
   if (block.chartType === "pie") {
     chart.setOption({
       animation: false,
