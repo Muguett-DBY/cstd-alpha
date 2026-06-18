@@ -756,6 +756,30 @@ function App() {
         />
       ) : null}
       <BackToTop />
+      <nav className="mobile-bottom-nav" aria-label="移动端导航">
+        <button type="button" className={renderedView === "opportunities" ? "active" : ""} onClick={() => setActiveView("opportunities")}>
+          <span className="nav-icon">📊</span>
+          <span className="nav-label">机会</span>
+        </button>
+        <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} onClick={() => setActiveView("research")}>
+          <span className="nav-icon">🔬</span>
+          <span className="nav-label">研究</span>
+        </button>
+        <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} onClick={() => setActiveView("market")}>
+          <span className="nav-icon">📈</span>
+          <span className="nav-label">市场</span>
+        </button>
+        <button type="button" className={renderedView === "valuation" ? "active" : ""} onClick={() => setActiveView("valuation")}>
+          <span className="nav-icon">💰</span>
+          <span className="nav-label">估值</span>
+        </button>
+        {user?.role === "admin" ? (
+          <button type="button" className={renderedView === "assistant" ? "active" : ""} onClick={() => setActiveView("assistant")}>
+            <span className="nav-icon">🤖</span>
+            <span className="nav-label">助手</span>
+          </button>
+        ) : null}
+      </nav>
       <InstallPromptBanner visible={installPrompt.visible} onInstall={() => void installPrompt.install()} onDismiss={installPrompt.dismiss} />
       <ToastContainer />
     </main>

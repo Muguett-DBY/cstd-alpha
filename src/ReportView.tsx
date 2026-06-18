@@ -164,6 +164,19 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
         }}>
           复制摘要
         </button>
+        <button type="button" className="secondary-button" onClick={() => {
+          const shareData = {
+            title: `${report.company.name} 投资分析报告`,
+            text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
+          };
+          if (navigator.share) {
+            navigator.share(shareData).catch(() => {});
+          } else {
+            navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+          }
+        }}>
+          分享
+        </button>
         {onSaveComparison ? (
           <button type="button" className="secondary-button" onClick={onSaveComparison}>
             {comparisonReport ? "对比中" : "保存对比"}
