@@ -5,6 +5,7 @@ import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupRes
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
+import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./research-queue-order";
 
 type Props = {
   onOpenLegacyMine: () => void;
@@ -84,6 +85,18 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
     return map;
   }, [valuationRuns]);
+  const selectedItems = useMemo(() => items.filter((item) => selectedItemIds.has(item.id)), [items, selectedItemIds]);
+  const selectedStageSummary = useMemo(() => {
+    const counts = selectedItems.reduce<Record<string, number>>((acc, item) => {
+      acc[item.stage] = (acc[item.stage] ?? 0) + 1;
+      return acc;
+    }, {});
+    return RESEARCH_STAGES
+      .filter((stage) => counts[stage])
+      .map((stage) => `${RESEARCH_STAGE_LABELS[stage]} ${counts[stage]}`)
+      .join(" / ");
+  }, [selectedItems]);
+  const draggedItem = useMemo(() => items.find((item) => item.id === draggedItemId), [draggedItemId, items]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -256,6 +269,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   function handleDragOver(e: React.DragEvent, targetId: string) {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
     if (targetId !== draggedItemId) setDragOverItemId(targetId);
   }
@@ -266,65 +280,52 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   function handleDrop(e: React.DragEvent, targetStage: string, targetId: string) {
     e.preventDefault();
+    e.stopPropagation();
     const sourceId = e.dataTransfer.getData("text/plain");
     setDraggedItemId(null);
     setDragOverItemId(null);
-    if (!sourceId || sourceId === targetId) return;
-
-    const sourceItem = items.find((i) => i.id === sourceId);
-    const targetItem = items.find((i) => i.id === targetId);
-    if (!sourceItem || !targetItem) return;
-
-    const isCrossStage = sourceItem.stage !== targetStage;
-    const stageId = targetStage;
-
-    const sourceStageItems = isCrossStage
-      ? filteredItems.filter((i) => i.stage === sourceItem.stage && i.id !== sourceId)
-      : filteredItems.filter((i) => i.stage === sourceItem.stage);
-    const targetStageItems = isCrossStage
-      ? filteredItems.filter((i) => i.stage === targetStage)
-      : sourceStageItems;
-
-    const sourceOrder = itemOrder[sourceItem.stage] ?? sourceStageItems.map((i) => i.id);
-    const targetOrder = isCrossStage ? (itemOrder[targetStage] ?? targetStageItems.map((i) => i.id)) : sourceOrder;
-
-    const fromIndex = sourceOrder.indexOf(sourceId);
-    const toIndex = targetOrder.indexOf(targetId);
-    if (toIndex === -1) return;
-
-    const newSourceOrder = isCrossStage ? sourceOrder.filter((id) => id !== sourceId) : [...sourceOrder];
-    const newTargetOrder = isCrossStage ? [...targetOrder] : newSourceOrder;
-
-    if (!isCrossStage) {
-      newTargetOrder.splice(fromIndex, 1);
-    }
-    const insertIndex = newTargetOrder.indexOf(targetId);
-    newTargetOrder.splice(isCrossStage ? insertIndex + 0 : insertIndex, 0, sourceId);
+    const move = moveResearchItemBeforeTarget({ items, itemOrder, sourceId, targetId, targetStage });
+    if (!move) return;
 
     const previousItemOrder = { ...itemOrder };
-    const previousItems = isCrossStage ? items : null;
+    const previousItems = move.sourceStage !== move.targetStage ? items : null;
+    saveItemOrder(move.nextOrder);
 
-    const new_itemOrder = { ...itemOrder };
-    if (isCrossStage) {
-      new_itemOrder[sourceItem.stage] = newSourceOrder;
+    if (move.sourceStage !== move.targetStage) {
+      setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: move.targetStage as ResearchStage } : entry));
     }
-    new_itemOrder[stageId] = newTargetOrder;
-    saveItemOrder(new_itemOrder);
 
-    const updates: Array<{ id: string; stage: string; sortOrder: number }> = [];
-    if (isCrossStage) {
-      updates.push({ id: sourceId, stage: targetStage, sortOrder: newTargetOrder.indexOf(sourceId) });
-      newSourceOrder.forEach((id, index) => updates.push({ id, stage: sourceItem.stage, sortOrder: index }));
-    }
-    newTargetOrder.forEach((id, index) => {
-      if (!updates.some((u) => u.id === id)) updates.push({ id, stage: targetStage, sortOrder: index });
+    void reorderResearchItems(move.updates).catch(() => {
+      saveItemOrder(previousItemOrder);
+      if (previousItems) setItems(previousItems);
+      showToast("排序保存失败，已恢复原顺序。", "error");
     });
+  }
 
-    if (isCrossStage) {
-      setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: targetStage as ResearchStage } : entry));
+  function handleStageDragOver(e: React.DragEvent, targetStage: string) {
+    if (!draggedItemId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverItemId(`stage:${targetStage}`);
+  }
+
+  function handleDropToStage(e: React.DragEvent, targetStage: ResearchStage) {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain");
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+    const move = moveResearchItemToStageEnd({ items, itemOrder, sourceId, targetStage });
+    if (!move) return;
+
+    const previousItemOrder = { ...itemOrder };
+    const previousItems = move.sourceStage !== move.targetStage ? items : null;
+    saveItemOrder(move.nextOrder);
+
+    if (move.sourceStage !== move.targetStage) {
+      setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: move.targetStage as ResearchStage } : entry));
     }
 
-    void reorderResearchItems(updates).catch(() => {
+    void reorderResearchItems(move.updates).catch(() => {
       saveItemOrder(previousItemOrder);
       if (previousItems) setItems(previousItems);
       showToast("排序保存失败，已恢复原顺序。", "error");
@@ -484,6 +485,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         <div>
           <p className="eyebrow">研究工作区</p>
           <h1>从机会进入论点，再跟踪催化剂和反证</h1>
+          <p className="hero-copy">用阶段看板收敛研究对象，在同一视图完成筛选、排序、批量推进和证据复核。</p>
         </div>
         <div className="hero-actions">
           <button type="button" className="primary-action" onClick={onOpenLegacyMine}>打开模板研究</button>
@@ -517,58 +519,65 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       {phase === "ready" ? (
         <div className={`research-layout ${assistantCollapsed ? "assistant-collapsed" : ""}`}>
           <div className="terminal-panel research-queue">
-            <header className="panel-header">
+            <header className="panel-header research-queue-head">
               <div>
                 <h2>研究队列</h2>
                 <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 切换</span></p>
               </div>
-              <label className="research-queue-search">
-                <span>搜索</span>
+            </header>
+            <div className="queue-command-panel" aria-label="研究队列控制台">
+              <label className="research-queue-search queue-search-primary">
+                <span>搜索队列</span>
                 <input value={queueQuery} onChange={(event) => setQueueQuery(event.currentTarget.value)} placeholder="公司、代码、行业" />
               </label>
-            </header>
-            <div className="filter-bar">
-              <div className="filter-group">
-                <span className="filter-label">阶段</span>
-                <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-                  <option value="all">全部阶段</option>
-                  {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
-                </select>
+              <div className="filter-bar">
+                <div className="filter-group">
+                  <span className="filter-label">阶段</span>
+                  <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                    <option value="all">全部阶段</option>
+                    {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <span className="filter-label">论点</span>
+                  <select value={thesisFilter} onChange={(e) => setThesisFilter(e.target.value as typeof thesisFilter)}>
+                    <option value="all">全部</option>
+                    <option value="with">已有论点</option>
+                    <option value="without">未生成</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <span className="filter-label">排序</span>
+                  <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
+                    <option value="recent">最近更新</option>
+                    <option value="name">按名称</option>
+                    <option value="stage">按阶段</option>
+                  </select>
+                </div>
               </div>
-              <div className="filter-group">
-                <span className="filter-label">论点</span>
-                <select value={thesisFilter} onChange={(e) => setThesisFilter(e.target.value as typeof thesisFilter)}>
-                  <option value="all">全部</option>
-                  <option value="with">已有论点</option>
-                  <option value="without">未生成</option>
-                </select>
-              </div>
-              <div className="filter-group">
-                <span className="filter-label">排序</span>
-                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
-                  <option value="recent">最近更新</option>
-                  <option value="name">按名称</option>
-                  <option value="stage">按阶段</option>
-                </select>
+              <div className="quick-add-section">
+                <label className="research-queue-search">
+                  <span>快速添加</span>
+                  <input value={quickAddQuery} onChange={(event) => { setQuickAddQuery(event.target.value); if (event.target.value.trim().length < 2) { setQuickAddSuggestions([]); setQuickAddLoading(false); } else { setQuickAddLoading(true); } }} placeholder="搜索公司名称或代码添加到研究队列" />
+                </label>
+                {quickAddLoading ? <span className="inline-loading">搜索中...</span> : null}
+                {quickAddSuggestions.length > 0 ? (
+                  <div className="quick-add-suggestions">
+                    {quickAddSuggestions.map((company) => (
+                      <button key={company.id} type="button" className="quick-add-item" onClick={() => void quickAddCompany(company)}>
+                        <strong>{company.name}</strong>
+                        <span>{company.code}</span>
+                        <small>{company.listingPlace}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div className="quick-add-section">
-              <label className="research-queue-search">
-                <span>快速添加</span>
-                <input value={quickAddQuery} onChange={(event) => { setQuickAddQuery(event.target.value); if (event.target.value.trim().length < 2) { setQuickAddSuggestions([]); setQuickAddLoading(false); } else { setQuickAddLoading(true); } }} placeholder="搜索公司名称或代码添加到研究队列" />
-              </label>
-              {quickAddLoading ? <span className="muted" style={{ fontSize: 12 }}>搜索中...</span> : null}
-              {quickAddSuggestions.length > 0 ? (
-                <div className="quick-add-suggestions">
-                  {quickAddSuggestions.map((company) => (
-                    <button key={company.id} type="button" className="quick-add-item" onClick={() => void quickAddCompany(company)}>
-                      <strong>{company.name}</strong>
-                      <span>{company.code}</span>
-                      <small>{company.listingPlace}</small>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            <div className="queue-board-status" role="status" aria-live="polite">
+              <span><strong>{filteredItems.length}</strong> / {items.length} 项可见</span>
+              {selectedItemIds.size ? <span>已选 {selectedItemIds.size} 项{selectedStageSummary ? ` · ${selectedStageSummary}` : ""}</span> : <span>勾选卡片进入批量操作</span>}
+              {draggedItem ? <span className="drag-status">正在移动「{draggedItem.title}」：可放到阶段列或目标卡片。</span> : null}
             </div>
             <div className="stage-board">
               {RESEARCH_STAGES.map((stage) => {
@@ -576,8 +585,18 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 const stageItems = filteredItems.filter((item) => item.stage === stage);
                 const orderedItems = getStageItemOrder(stage, stageItems);
                 return (
-                  <section className="stage-column" key={stage}>
-                    <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
+                  <section
+                    className={`stage-column ${dragOverItemId === `stage:${stage}` ? "stage-drop-target" : ""} ${orderedItems.length ? "" : "is-empty"}`}
+                    key={stage}
+                    onDragOver={(e) => handleStageDragOver(e, stage)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDropToStage(e, stage)}
+                    aria-label={`${RESEARCH_STAGE_LABELS[stage]}阶段，${stageTotal}项`}
+                  >
+                    <div className="stage-column-head">
+                      <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
+                      <small>{orderedItems.length ? "拖动卡片调整优先级" : "可拖入此阶段"}</small>
+                    </div>
                     {orderedItems.length ? orderedItems.map((item) => {
                       const valuation = valuationByItem.get(item.id);
                       const isSelected = selectedItemIds.has(item.id);
@@ -592,9 +611,12 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                           onDragEnd={handleDragEnd}
                           className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""} ${draggedItemId === item.id ? "dragging" : ""} ${dragOverItemId === item.id ? "drag-over" : ""}`}
                           key={item.id}
+                          aria-pressed={selected?.id === item.id}
+                          aria-label={`${item.title}，${RESEARCH_STAGE_LABELS[item.stage]}，${isSelected ? "已选择" : "未选择"}`}
                           onClick={(e) => { if (e.shiftKey) { toggleSelectItem(item.id); } else { setSelectedId(item.id); } }}
                         >
                           <div className="card-header">
+                            <span className="card-drag-handle" aria-hidden="true" />
                             <input type="checkbox" checked={isSelected} onChange={() => toggleSelectItem(item.id)} onClick={(e) => e.stopPropagation()} aria-label={`选择 ${item.title}`} className="card-checkbox" />
                             <strong>{highlightMatch(item.title, queueQuery)}</strong>
                             <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
@@ -634,11 +656,14 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               })}
             </div>
             {selectedItemIds.size > 0 ? (
-              <div className="batch-action-bar">
-                <span>已选 {selectedItemIds.size} 项</span>
+              <div className="batch-action-bar" role="region" aria-label="批量操作">
+                <div className="batch-action-summary">
+                  <strong>批量操作</strong>
+                  <span>已选 {selectedItemIds.size} 项{selectedStageSummary ? ` · ${selectedStageSummary}` : ""}</span>
+                </div>
                 <button type="button" className="ghost-button" onClick={selectAllVisible}>全选当前筛选</button>
                 <button type="button" className="ghost-button" onClick={clearSelection}>取消选择</button>
-                <select onChange={(e) => { if (e.target.value) { void batchChangeStage(e.target.value as ResearchStage); e.target.value = ""; } }} disabled={batchProcessing} defaultValue="">
+                <select aria-label="批量移动阶段" onChange={(e) => { if (e.target.value) { void batchChangeStage(e.target.value as ResearchStage); e.target.value = ""; } }} disabled={batchProcessing} defaultValue="">
                   <option value="" disabled>批量移动到...</option>
                   {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
                 </select>
@@ -656,9 +681,16 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
           <aside className="terminal-panel research-detail">
             {selected ? (
               <>
-                <p className="eyebrow">{selected.entityType === "company" ? "公司研究" : "行业研究"}</p>
-                <h2>{selected.title}</h2>
-                <p>{selected.subtitle || "等待补充研究论点。"}</p>
+                <div className="research-detail-hero">
+                  <p className="eyebrow">{selected.entityType === "company" ? "公司研究" : "行业研究"}</p>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.subtitle || "等待补充研究论点。"}</p>
+                  <div className="detail-state-row" aria-label="当前研究状态">
+                    <span>{RESEARCH_STAGE_LABELS[selected.stage]}</span>
+                    <span className={selected.currentThesisVersionId ? "is-positive" : ""}>{selected.currentThesisVersionId ? "已沉淀论点" : "待生成论点"}</span>
+                    <span className={selected.evidenceHash ? "is-positive" : ""}>{selected.evidenceHash ? "有证据包" : "待采集证据"}</span>
+                  </div>
+                </div>
                 <div className="stage-actions">
                   {RESEARCH_STAGES.map((stage) => (
                     <button key={stage} type="button" className={selected.stage === stage ? "active" : ""} onClick={() => changeStage(selected, stage)}>
@@ -846,7 +878,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             </header>
             {selected ? (
               <div className="activity-timeline">
-                {selected && activityEvents.length === 0 ? <p className="muted" style={{ fontSize: 12, padding: 8 }}>加载中...</p> : null}
+                {selected && activityEvents.length === 0 ? <p className="activity-loading">正在读取最近动态...</p> : null}
                 {activityEvents.length > 0 ? activityEvents.map((event) => (
                   <div key={event.id} className="timeline-item">
                     <span className={`timeline-dot ${event.eventType === "thesis_generated" ? "thesis" : event.eventType === "stage_change" ? "confirmed" : event.eventType === "evidence_collected" ? "evidence" : event.eventType === "valuation_updated" ? "valuation" : "created"}`} />
