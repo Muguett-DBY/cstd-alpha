@@ -44,8 +44,26 @@
 
 ### 阶段 3/6: UIUX
 
-**状态:** 🔄 执行中
+**状态:** ✅ 完成
 **使用的 Prompt:** AGENT_UIUX_MAIN.txt
+**时间:** 2026-06-18
+
+**完成内容:**
+- 研究队列阶段看板滚动条样式美化（webkit + firefox）
+- 研究卡片 hover 微动效和 focus-visible 可访问性状态
+- 移动端批量操作栏触控优化（44px 最小高度、圆角、阴影）
+- 论点空状态视觉升级（虚线边框、居中对齐、层级分明）
+
+**Commit:** `feat: upgrade research queue UX with scroll indicators, card hover states, and mobile batch bar`
+**Push:** ✅ 已推送到 main
+**CI:** ✅ Deploy Cloudflare Pages passed (run 27768238821)
+
+---
+
+### 阶段 4/6: IMPROVE (第3次)
+
+**状态:** 🔄 执行中
+**使用的 Prompt:** AGENT_IMPROVE_MAIN.txt
 
 ---
 

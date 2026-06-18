@@ -1928,11 +1928,11 @@ button:not(:disabled):active,
 
 .research-detail-hero {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin: -2px -2px 14px;
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 10px;
+  padding: 16px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--teal) 8%, var(--surface)), transparent 56%),
     var(--surface);
@@ -1941,29 +1941,34 @@ button:not(:disabled):active,
 .research-detail-hero h2 {
   margin: 0;
   color: var(--ink);
-  font-size: clamp(24px, 2.2vw, 34px);
-  line-height: 1.08;
+  font-size: clamp(22px, 2.2vw, 32px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .research-detail-hero p {
   margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .detail-state-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .detail-state-row span {
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   background: var(--surface-subtle);
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
 }
 
 .detail-state-row .is-positive {
@@ -1975,22 +1980,34 @@ button:not(:disabled):active,
 .stage-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
+  gap: 6px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
 }
 
 .stage-actions button {
-  min-height: 34px;
+  min-height: 36px;
   border-color: var(--line);
   background: var(--surface);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.stage-actions button:hover:not(.active) {
+  border-color: var(--teal);
+  color: var(--teal);
 }
 
 .stage-actions button.active {
   border-color: var(--teal);
   background: var(--teal);
   color: var(--on-accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--teal) 20%, transparent);
 }
 
 .research-thesis,
@@ -1998,8 +2015,8 @@ button:not(:disabled):active,
   display: grid;
   gap: 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 10px;
+  padding: 16px;
   background: var(--surface-subtle);
 }
 
@@ -2015,9 +2032,15 @@ button:not(:disabled):active,
   margin: 0;
 }
 
+.research-thesis-header h3 {
+  font-size: 15px;
+  color: var(--ink);
+}
+
 .research-thesis-header .primary-action {
   min-height: 36px;
   padding: 0 14px;
+  font-size: 13px;
 }
 
 .thesis-version-select {
