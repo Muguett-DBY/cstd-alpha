@@ -1,31 +1,38 @@
 # CSTD Alpha - Iteration Log
 
-## Round 47 — 2026-06-18 (Mobile Navigation + Report Share)
+## Round 48 — 2026-06-18 (System Health Check + Fixes)
 
-**承接上一轮方向:** R46 建议移动端导航体验优化
+**本轮类型:** 全项目体检 + 问题修复（非功能迭代）
 
-**旗舰级主改动:** 移动端底部导航栏
+**检查范围:**
+- 构建与依赖（build, typecheck, lint）
+- GitHub Actions / CI 配置
+- TypeScript 类型安全
+- 功能流程（移动端导航、拖拽排序、分享功能）
+- 安全与数据风险（.env, console.log, SQL 注入）
+- 代码质量与可维护性
+- iOS 适配（safe-area-inset）
 
-**完成内容:**
+**发现并修复的问题:**
 
-1. **移动端底部导航栏**
-   - 固定在屏幕底部的 5 个标签页（机会/研究/市场/估值/助手）
-   - 仅在 720px 以下显示，桌面端隐藏
-   - 毛玻璃背景 + iOS safe-area 适配
-   - 当前活动标签 teal 高亮
-   - 工作区添加底部 padding 防止内容被遮挡
-
-2. **报告快速分享**
-   - 新增"分享"按钮，使用 Web Share API
-   - 不支持的浏览器回退到剪贴板复制
-   - 分享内容包含公司名、评分、结论和摘要
+| # | 文件 | 问题 | 严重度 | 修复 |
+|---|------|------|--------|------|
+| 1 | index.html | 缺少 viewport-fit=cover，iOS safe-area-inset 失效 | P0 | 添加 viewport-fit=cover |
+| 2 | App.css | install-prompt 和 back-to-top 与底部导航重叠 | P1 | 移动端重新定位到导航栏上方 |
+| 3 | ResearchWorkspace.tsx | 拖拽排序失败时无回滚，本地状态与服务端不一致 | P1 | 保存前一状态，失败时恢复 |
+| 4 | ReportView.tsx | Web Share API 失败时静默吞掉错误 | P2 | 失败时回退到剪贴板复制 |
 
 **验证:**
 - npm test: 757 passed ✅
 - npm run lint: 0 errors ✅
+- npm run typecheck:functions: 通过 ✅
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
+
+**仍存在的已知问题（低优先级）:**
+- Activity events fetch 无 AbortController（P3，网络浪费但功能正常）
+- localStorage itemOrder 无清理机制（P3，过期 ID 被静默忽略）
 
 **下一轮建议:**
 1. 暗色模式支持
@@ -69,3 +76,4 @@
 | R45 | Design System + Visual Upgrade | 设计系统基础统一 + 视觉体验升级 |
 | R46 | Report Page Visual Upgrade | 报告页信息层级重构 + 分数可视化增强 |
 | R47 | Mobile Navigation + Report Share | 移动端底部导航栏 + 报告快速分享 |
+| R48 | System Health Check + Fixes | 全项目体检 + 4 项 P0/P1/P2 问题修复 |
