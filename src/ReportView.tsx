@@ -170,7 +170,13 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
             text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
           };
           if (navigator.share) {
-            navigator.share(shareData).catch(() => {});
+            navigator.share(shareData).catch((err) => {
+              if (err?.name !== "AbortError") {
+                navigator.clipboard.writeText(shareData.text)
+                  .then(() => showToast("分享失败，摘要已复制到剪贴板。", "success"))
+                  .catch(() => showToast("分享失败，请手动复制。", "error"));
+              }
+            });
           } else {
             navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
           }

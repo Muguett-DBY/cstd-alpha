@@ -2530,6 +2530,10 @@ button:not(:disabled):active,
     padding-bottom: 70px;
   }
 
+  .back-to-top {
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
   .stage-board {
     grid-template-columns: 1fr;
     overflow-x: visible;
@@ -8212,7 +8216,7 @@ button:not(:disabled):active,
   .install-prompt {
     left: 12px;
     right: 12px;
-    bottom: 12px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     grid-template-columns: 1fr;
   }
 
