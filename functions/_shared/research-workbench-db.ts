@@ -230,6 +230,7 @@ export async function reorderResearchItems(db: D1Database, userKey: string, upda
 export async function deleteResearchItems(db: D1Database, userKey: string, ids: string[]) {
   await ensureResearchWorkbenchSchema(db);
   if (!ids.length) return;
+  if (ids.length > 100) throw new Error("too many ids to delete");
   const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
   await db.prepare(`DELETE FROM research_items WHERE user_key = ?1 AND id IN (${placeholders})`).bind(userKey, ...ids).run();
 }
@@ -252,7 +253,7 @@ export async function recordActivityEvent(db: D1Database, userKey: string, input
   metadata?: Record<string, unknown>;
 }) {
   await ensureResearchWorkbenchSchema(db);
-  const id = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `evt_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   await db.prepare(
     `INSERT INTO research_activity_events (id, user_key, item_id, event_type, title, description, metadata_json, created_at)

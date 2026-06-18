@@ -28,8 +28,14 @@ export function CandidateModal({
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   return (
-    <div className="modal-backdrop" role="presentation" tabIndex={-1} onKeyDown={handleKeyDown}>
+    <div className="modal-backdrop" role="presentation" tabIndex={-1} onKeyDown={handleKeyDown} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section ref={modalRef} className="candidate-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-title">
         <header>
           <div>

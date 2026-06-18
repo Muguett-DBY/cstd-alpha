@@ -48,7 +48,6 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
-  const [activityLoading, setActivityLoading] = useState(false);
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
@@ -109,7 +108,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   useEffect(() => {
     if (!selected?.id) return;
     let cancelled = false;
-    void fetchActivityEvents(selected.id).then((events) => { if (!cancelled) { setActivityEvents(events); setActivityLoading(false); } }).catch(() => { if (!cancelled) setActivityLoading(false); });
+    void fetchActivityEvents(selected.id).then((events) => { if (!cancelled) setActivityEvents(events); });
     return () => { cancelled = true; };
   }, [selected?.id]);
 
@@ -322,7 +321,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: targetStage as ResearchStage } : entry));
     }
 
-    void reorderResearchItems(updates).catch(() => {});
+    void reorderResearchItems(updates).catch(() => { showToast("排序保存失败，请刷新重试。", "error"); });
   }
 
   function handleDragEnd() {
@@ -840,7 +839,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             </header>
             {selected ? (
               <div className="activity-timeline">
-                {activityLoading ? <p className="muted" style={{ fontSize: 12, padding: 8 }}>加载中...</p> : null}
+                {selected && activityEvents.length === 0 ? <p className="muted" style={{ fontSize: 12, padding: 8 }}>加载中...</p> : null}
                 {activityEvents.length > 0 ? activityEvents.map((event) => (
                   <div key={event.id} className="timeline-item">
                     <span className={`timeline-dot ${event.eventType === "thesis_generated" ? "thesis" : event.eventType === "stage_change" ? "confirmed" : event.eventType === "evidence_collected" ? "evidence" : event.eventType === "valuation_updated" ? "valuation" : "created"}`} />
@@ -850,7 +849,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                       <time>{new Date(event.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
-                )) : !activityLoading ? (
+                )) : activityEvents.length === 0 ? (
                   <>
                     {selected.currentThesisVersionId ? (
                       <div className="timeline-item">
