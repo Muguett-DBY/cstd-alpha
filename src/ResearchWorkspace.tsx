@@ -46,6 +46,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [itemOrder, setItemOrder] = useState<Record<string, string[]>>(() => {
@@ -596,7 +598,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                               </span>
                             ) : null}
                             <span className="card-time">{relativeTime(item.updatedAt)}</span>
+                            <button type="button" className="card-expand-toggle" onClick={(e) => { e.stopPropagation(); setExpandedCardId(expandedCardId === item.id ? null : item.id); }} aria-label={expandedCardId === item.id ? "收起详情" : "展开详情"}>
+                              {expandedCardId === item.id ? "▲" : "▼"}
+                            </button>
                           </div>
+                          {expandedCardId === item.id ? (
+                            <div className="card-detail-preview">
+                              <div className="detail-row"><span>类型</span><span>{item.entityType}</span></div>
+                              <div className="detail-row"><span>来源</span><span>{item.source}</span></div>
+                              {item.currentThesisVersionId ? <div className="detail-row"><span>论点版本</span><span>{item.currentThesisVersionId.slice(0, 8)}...</span></div> : null}
+                              {item.evidenceHash ? <div className="detail-row"><span>证据哈希</span><span>{item.evidenceHash.slice(0, 8)}...</span></div> : null}
+                              <div className="detail-row"><span>更新时间</span><span>{new Date(item.updatedAt).toLocaleString("zh-CN", { hour12: false })}</span></div>
+                            </div>
+                          ) : null}
                         </button>
                       );
                     }) : <p className="stage-empty">{queueQuery && stageTotal ? "无匹配" : "暂无"}</p>}
