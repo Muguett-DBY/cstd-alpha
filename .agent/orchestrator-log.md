@@ -27,8 +27,25 @@
 
 ### 阶段 2/6: IMPROVE (第2次)
 
-**状态:** 🔄 执行中
+**状态:** ✅ 完成
 **使用的 Prompt:** AGENT_IMPROVE_MAIN.txt
+**时间:** 2026-06-18
+
+**完成内容:**
+- 暗色模式设计令牌统一：将 8 处硬编码颜色替换为 CSS 变量
+- 新增 `--info-soft` 设计令牌（浅色/深色）
+- 覆盖范围：template-card 状态、coverage 状态、risk/confidence 徽章、toast 成功色
+
+**Commit:** `feat: unify dark mode design tokens for status badges and risk indicators`
+**Push:** ✅ 已推送到 main
+**CI:** ✅ Deploy Cloudflare Pages passed (run 27767950131)
+
+---
+
+### 阶段 3/6: UIUX
+
+**状态:** 🔄 执行中
+**使用的 Prompt:** AGENT_UIUX_MAIN.txt
 
 ---
 

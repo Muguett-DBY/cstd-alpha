@@ -450,7 +450,7 @@ button:not(:disabled):active,
 
 .segmented-control button.active {
   border-color: var(--teal);
-  background: #e6f4f1;
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
   color: var(--teal);
 }
 
@@ -1181,7 +1181,7 @@ button:not(:disabled):active,
 .funnel-row div {
   overflow: hidden;
   border-radius: 999px;
-  background: #e8ece8;
+  background: var(--meter-track);
 }
 
 .funnel-row i {
@@ -1501,6 +1501,21 @@ button:not(:disabled):active,
   overflow-x: auto;
   padding: 0 14px 14px;
   scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.stage-board::-webkit-scrollbar {
+  height: 6px;
+}
+
+.stage-board::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stage-board::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
 }
 
 .queue-board-status {
@@ -1604,6 +1619,17 @@ button:not(:disabled):active,
 
 .research-card.source-watchlist {
   border-left-color: var(--amber);
+}
+
+.research-card:hover:not(.dragging) {
+  border-color: color-mix(in srgb, var(--teal) 20%, var(--line));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.research-card:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 
 .research-card.dragging {
@@ -2093,15 +2119,25 @@ button:not(:disabled):active,
   color: var(--muted);
 }
 
+.thesis-empty {
+  padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  text-align: center;
+}
+
 .thesis-empty p {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   color: var(--ink);
   font-weight: 800;
+  font-size: 14px;
 }
 
 .thesis-empty span {
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
+  color: var(--muted);
 }
 
 .research-catalysts .catalyst-list {
@@ -3665,7 +3701,7 @@ button:not(:disabled):active,
 }
 
 .ranking-row:not(.ranking-row-head):hover {
-  background: #f5fbf8;
+  background: color-mix(in srgb, var(--teal) 5%, var(--surface));
   box-shadow: inset 3px 0 0 var(--teal);
 }
 
@@ -4986,7 +5022,7 @@ button:not(:disabled):active,
 
 .watchlist-filter input {
   min-height: 40px;
-  background: #fbfffd;
+  background: var(--surface-subtle);
 }
 
 .my-list article {
@@ -5015,7 +5051,7 @@ button:not(:disabled):active,
 
 .my-list article:not(.active):hover {
   border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
-  background: #fbfffd;
+  background: var(--surface-row-hover);
   transform: translateY(-1px);
 }
 
@@ -6862,13 +6898,13 @@ button:not(:disabled):active,
 }
 
 .confidence-中 {
-  color: #315f88;
-  background: #eaf4ff;
+  color: var(--blue);
+  background: var(--blue-soft);
 }
 
 .confidence-高 {
-  color: #18725d;
-  background: #e6f4f1;
+  color: var(--teal);
+  background: var(--success-soft);
 }
 
 .radar-card dl {
@@ -7723,7 +7759,7 @@ button:not(:disabled):active,
 
 .radar-industry-row.is-head {
   cursor: default;
-  background: #f3f5f3;
+  background: var(--surface-header);
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
@@ -8263,11 +8299,16 @@ button:not(:disabled):active,
     grid-template-columns: 1fr;
     align-items: stretch;
     margin-inline: 10px;
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.12);
   }
 
   .batch-action-bar button,
   .batch-action-bar select {
     width: 100%;
+    min-height: 44px;
+    font-size: 14px;
   }
 
   .research-detail {
@@ -8342,7 +8383,7 @@ button:not(:disabled):active,
     min-height: 36px;
     border: 0;
     border-radius: 999px;
-    background: #f4f6f5;
+    background: var(--surface-subtle);
     color: var(--ink);
     font-size: 18px;
     font-weight: 850;
@@ -8704,14 +8745,14 @@ button:not(:disabled):active,
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #f4f7f5;
-  color: #101418;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 .app-crash-card {
   width: min(520px, 100%);
   padding: 28px;
-  border: 1px solid #d7dfda;
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 0 20px 60px rgb(17 24 39 / 8%);
