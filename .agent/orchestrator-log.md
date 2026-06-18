@@ -128,4 +128,23 @@
 
 ---
 
+### 额外改进: ECharts Bundle Optimization
+
+**时间:** 2026-06-18
+**完成内容:**
+- 将 `OpportunityDashboard` 改为 lazy loaded（与 AssistantView 等一致）
+- 将 `OpportunityDashboard`、`AssistantView`、`RadarVisualCharts` 中的 ECharts full bundle import 改为 tree-shaken ESM imports
+- 修复 `LightweightPriceChart.tsx`、`RadarVisualCharts.tsx`、`OpportunityDashboard.tsx` 中的硬编码颜色，改用 CSS 变量
+- 新增 `--blue-soft`、`--disabled-surface`、`--meter-track`、`--score-track` 设计令牌
+
+**构建产物体积变化:**
+- `vendor-echarts`: 1,128.15 kB → 1,084.67 kB (减少 43.48 kB, gzip -16.51 kB)
+- `index`: 481.74 kB → 473.06 kB (减少 8.68 kB, gzip -2.48 kB)
+
+**Commit:** `feat: optimize echarts bundle with tree-shaken imports and lazy loading`
+**Push:** ✅ 已推送到 main
+**CI:** ✅ Deploy Cloudflare Pages passed (run 27769043057)
+
+---
+
 ## 执行记录

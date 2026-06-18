@@ -34,6 +34,12 @@
 - **验证:** build passed, CI passed
 - **Commit:** `feat: polish research metrics bar and workbench hero typography`
 
+### 额外改进 — ECharts Bundle Optimization
+- **旗舰:** ECharts tree-shaken ESM imports + OpportunityDashboard lazy loading
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **构建产物:** vendor-echarts -43.48 kB, index -8.68 kB
+- **Commit:** `feat: optimize echarts bundle with tree-shaken imports and lazy loading`
+
 ---
 
 ## Round 49 — 2026-06-18 (Adaptive Theme + PDF Export)
@@ -65,6 +71,16 @@
 1. 旗舰：研究工作台批量拖拽视觉反馈升级，并补齐键盘可访问排序。
 2. 对登录后的机会/研究/市场/估值/报告页做完整暗色模式视觉巡检，清理残余硬编码浅色。
 3. 拆分 ECharts 主包加载，降低首屏 JavaScript 体积。
+
+**Round 50 完成情况:**
+- 方向1（拖拽+键盘排序）✅ 已完成
+- 方向2（暗色模式巡检）✅ 已完成（部分，App.css 中 15+ 处硬编码颜色已替换为 CSS 变量）
+- 方向3（ECharts 拆分）✅ 已完成（tree-shaken imports + lazy loading，vendor-echarts -43 kB）
+
+**下一轮建议方向:**
+1. 对更多页面（研究/市场/估值/报告）做完整暗色模式视觉巡检，清理剩余硬编码颜色
+2. 拆分 `vendor-docx` 包（416 kB），改为按需加载
+3. 研究工作台批量操作增强（批量删除、批量生成论点的 UX 优化）
 
 ## Round 48 — 2026-06-18 (System Health Check + Fixes)
 
