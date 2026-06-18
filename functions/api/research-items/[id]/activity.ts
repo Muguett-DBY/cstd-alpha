@@ -1,6 +1,6 @@
-import { requireAdminSession, type AssistantEnv } from "../../_shared/assistant-db";
-import { json } from "../../_shared/user-research-db";
-import { listActivityEvents } from "../../_shared/research-workbench-db";
+import { requireAdminSession, type AssistantEnv } from "../../../_shared/assistant-db";
+import { json } from "../../../_shared/user-research-db";
+import { listActivityEvents } from "../../../_shared/research-workbench-db";
 
 type Env = AssistantEnv & {
   REPORT_LIBRARY_DB?: D1Database;
