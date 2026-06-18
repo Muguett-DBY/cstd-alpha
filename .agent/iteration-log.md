@@ -1,45 +1,47 @@
 # CSTD Alpha - Iteration Log
 
-## Round 43 — 2026-06-18
+## Round 44 — 2026-06-18 (System Health Check)
 
-**承接上一轮方向:** R42 建议活动日志接入后端事件流 + 继续 App.tsx 拆分
+**本轮类型:** 全项目体检 + 问题修复（非功能迭代）
 
-**本轮决策:**
-- 活动日志全栈实现：新增 research_activity_events 表 + API + 前端集成
-- 记录事件：研究项创建、阶段变更、论点生成
-- CandidateModal 提取：将公司候选弹窗从 App.tsx 提取为独立文件
-- App.tsx 从 820 行降至 767 行（-6%）
+**检查范围:**
+- 构建与依赖（build, typecheck, lint）
+- GitHub Actions / CI 配置
+- TypeScript 类型安全
+- 功能流程（活动日志、拖拽排序、模态框）
+- 安全与数据风险（.env, console.log, SQL 注入）
+- 代码质量与可维护性
 
-**完成内容:**
-- Migration 0015：research_activity_events 表 + 索引
-- 后端：recordActivityEvent / listActivityEvents 函数
-- 后端：confirmResearchStage 自动记录阶段变更事件
-- 后端：upsertResearchItem 自动记录创建事件
-- 后端：createResearchThesisVersion 自动记录论点生成事件
-- API：GET /api/research-items/[id]/activity 端点
-- 前端：fetchActivityEvents API 函数
-- 前端：ResearchWorkspace 接入后端活动事件流（fallback 到静态数据）
-- 新建 src/CandidateModal.tsx（52 行），导出 displayExchange
-- App.tsx 移除 CandidateModal 和 displayExchange
+**发现并修复的问题:**
+
+| # | 文件 | 问题 | 严重度 | 修复 |
+|---|------|------|--------|------|
+| 1 | ResearchWorkspace.tsx | 活动日志 loading 状态从未显示 | P1 | 改用事件数组为空判断 |
+| 2 | ResearchWorkspace.tsx | 拖拽排序失败静默吞掉错误 | P1 | 添加 toast 通知 |
+| 3 | CandidateModal.tsx | 点击遮罩无法关闭弹窗 | P1 | 添加 backdrop onClick |
+| 4 | CandidateModal.tsx | 弹窗打开时背景仍可滚动 | P2 | 添加 body scroll lock |
+| 5 | activity.ts | parseInt 返回 NaN 传入 SQL LIMIT | P2 | 添加 Number.isFinite 校验 |
+| 6 | activity.ts | params.id 可能是数组 | P2 | 添加 Array.isArray 归一化 |
+| 7 | research-workbench-db.ts | 活动事件 ID 使用 Math.random() | P2 | 改用 crypto.randomUUID() |
+| 8 | research-workbench-db.ts | deleteResearchItems 无上限保护 | P2 | 添加 100 条上限检查 |
 
 **验证:**
-- npm test: 757 passed ✅（+1 测试调整）
+- npm test: 757 passed ✅
+- npm run lint: 0 errors ✅
+- npm run typecheck:functions: 通过 ✅
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
 
-**遗留风险:**
-- 活动日志目前记录 3 种事件类型，可扩展更多
-- App.tsx 仍有 767 行，但已从 "巨大" 降至 "小"
+**仍存在的已知问题（低优先级）:**
+- App.tsx 中 AbortController 存储在 useState 中（P2，反模式但功能正常）
+- 雷达轮询静默吞掉认证错误（P2，不影响核心流程）
+- 论点版本批量操作非事务性（P2，D1 限制）
 
-**下一轮方向:**
-1. 活动日志扩展更多事件类型（证据采集、估值状态变更）
-2. 研究工作台批量拖拽视觉反馈增强
-3. 继续 App.tsx 拆分（如提取 Toast 或 BackToTop）
-
----
-
-## 历史迭代记录
+**下一轮建议:**
+1. 继续功能迭代（研究工作台拖拽视觉反馈、活动日志扩展事件类型）
+2. 继续 App.tsx 拆分
+3. 性能优化（echarts chunk 拆分）
 
 | 轮次 | 旗舰主改动 | 关键用户增量 |
 |------|-----------|-------------|
@@ -74,3 +76,4 @@
 | R41 | App.tsx ReportView Extraction | ReportView 提取为独立文件 + 研究卡片展开详情 |
 | R42 | Activity Timeline + ProgressPanel | 活动日志时间线重构 + ProgressPanel 提取 |
 | R43 | Activity Events Backend + CandidateModal | 活动日志后端事件流 + CandidateModal 提取 |
+| R44 | System Health Check + Fixes | 全项目体检 + 8 项 P1/P2 问题修复 |
