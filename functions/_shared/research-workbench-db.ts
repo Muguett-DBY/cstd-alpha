@@ -202,6 +202,13 @@ export async function reorderResearchItems(db: D1Database, userKey: string, upda
   await db.batch(statements);
 }
 
+export async function deleteResearchItems(db: D1Database, userKey: string, ids: string[]) {
+  await ensureResearchWorkbenchSchema(db);
+  if (!ids.length) return;
+  const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
+  await db.prepare(`DELETE FROM research_items WHERE user_key = ?1 AND id IN (${placeholders})`).bind(userKey, ...ids).run();
+}
+
 export async function listResearchThesisVersions(db: D1Database, userKey: string, itemId: string, limit = 20) {
   await ensureResearchWorkbenchSchema(db);
   const result = await db.prepare(

@@ -1408,6 +1408,22 @@ button:not(:disabled):active,
   cursor: grabbing;
 }
 
+.search-highlight {
+  background: color-mix(in srgb, var(--amber) 30%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.danger-button {
+  color: #b91c1c;
+  border-color: color-mix(in srgb, #b91c1c 30%, var(--line));
+}
+
+.danger-button:hover {
+  background: color-mix(in srgb, #b91c1c 8%, var(--surface));
+  border-color: #b91c1c;
+}
+
 .card-header {
   display: flex;
   align-items: baseline;
