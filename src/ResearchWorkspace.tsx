@@ -108,9 +108,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   useEffect(() => {
     if (!selected?.id) return;
-    setActivityLoading(true);
-    setActivityEvents([]);
-    void fetchActivityEvents(selected.id).then((events) => { setActivityEvents(events); setActivityLoading(false); }).catch(() => { setActivityLoading(false); });
+    let cancelled = false;
+    void fetchActivityEvents(selected.id).then((events) => { if (!cancelled) { setActivityEvents(events); setActivityLoading(false); } }).catch(() => { if (!cancelled) setActivityLoading(false); });
+    return () => { cancelled = true; };
   }, [selected?.id]);
 
   useEffect(() => {
