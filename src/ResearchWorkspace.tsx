@@ -107,8 +107,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   }, [filteredItems, selectedId]);
 
   useEffect(() => {
-    if (!selected?.id) { setActivityEvents([]); return; }
+    if (!selected?.id) return;
     setActivityLoading(true);
+    setActivityEvents([]);
     void fetchActivityEvents(selected.id).then((events) => { setActivityEvents(events); setActivityLoading(false); }).catch(() => { setActivityLoading(false); });
   }, [selected?.id]);
 
