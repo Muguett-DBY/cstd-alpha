@@ -154,6 +154,16 @@ export async function reorderResearchItems(updates: Array<{ id: string; stage: s
   if (!response.ok) throw new Error((await readError(response)) || "研究项排序失败。");
 }
 
+export async function deleteResearchItems(ids: string[]): Promise<void> {
+  const response = await fetch("/api/research-items/delete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ ids }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究项删除失败。");
+}
+
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/thesis`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "研究论点读取失败。");

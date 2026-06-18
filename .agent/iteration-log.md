@@ -1,25 +1,21 @@
 # CSTD Alpha - Iteration Log
 
-## Round 39 — 2026-06-18
+## Round 40 — 2026-06-18
 
-**承接上一轮方向:** R38 建议研究工作台跨阶段拖拽（需要后端 API 支持 sort_order 字段）
+**承接上一轮方向:** R39 建议搜索结果高亮 + 批量操作增强
 
 **本轮决策:**
-- 跨阶段拖拽是 R38 留下的核心未完成项，需要全栈改动
-- 后端：新增 sort_order 列 + reorder API + 更新查询排序
-- 前端：移除 "同阶段限制"，支持跨阶段拖放并同步到后端
-- 额外：研究队列移动端响应式优化（720px 以下单列布局）
+- 搜索高亮：在研究队列搜索时高亮匹配的标题和子标题文字
+- 批量删除：新增后端 delete API + 前端批量删除按钮（带确认弹窗）
+- 两个改动都直接提升研究工作台的使用效率
 
 **完成内容:**
-- Migration 0014：research_items 新增 sort_order 列 + 索引
-- 后端：listResearchItems 改为按 sort_order ASC 排序
-- 后端：confirmResearchStage 支持可选 sortOrder 参数
-- 后端：新增 reorderResearchItems 批量排序函数
-- 后端：新增 /api/research-items/reorder 批量排序端点
-- 前端：updateResearchItemStage 支持 sortOrder 参数
-- 前端：新增 reorderResearchItems API 函数
-- 前端：handleDrop 支持跨阶段拖放，实时更新本地状态 + 异步同步后端
-- CSS：研究队列 720px 以下单列布局 + 筛选栏纵向排列
+- 搜索高亮：新增 highlightMatch 函数，搜索时标题和子标题匹配文字用 <mark> 高亮
+- CSS：新增 .search-highlight 样式（琥珀色背景）
+- 批量删除后端：deleteResearchItems 函数 + POST /api/research-items/delete 端点
+- 批量删除前端：deleteResearchItems API 函数 + batchDeleteItems handler
+- 批量删除 UI：批量操作栏新增红色"批量删除"按钮（带确认弹窗）
+- CSS：新增 .danger-button 样式（红色边框和文字）
 
 **验证:**
 - npm test: 757 passed ✅
@@ -29,12 +25,12 @@
 
 **遗留风险:**
 - App.tsx 仍有 1343 行，可继续拆分
-- 跨阶段拖放依赖乐观更新，后端失败时前端状态可能不一致
+- 批量删除操作不可撤销，仅通过确认弹窗保护
 
 **下一轮方向:**
 1. 继续 App.tsx 进一步拆分（如 ReportView 提取）
-2. 研究工作台批量操作增强（批量拖拽、批量删除）
-3. 研究工作台搜索结果高亮
+2. 研究工作台批量操作增强（批量拖拽到新阶段）
+3. 研究工作台活动日志增强
 
 ---
 
@@ -69,3 +65,4 @@
 | R37 | App.tsx RadarView Extraction | RadarView 提取为独立文件，App.tsx -50% |
 | R38 | D1 Login Cleanup + Drag-and-Drop | 登录清理确定性化 + 研究队列拖拽排序 |
 | R39 | Cross-Stage Drag-and-Drop | 跨阶段拖拽 + sort_order 后端支持 + 移动端适配 |
+| R40 | Search Highlight + Batch Delete | 搜索结果高亮 + 批量删除功能 |

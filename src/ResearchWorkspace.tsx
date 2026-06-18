@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addResearchItem, createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
+import { addResearchItem, createValuationRun, deleteResearchItems, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
@@ -11,6 +11,13 @@ type Props = {
   onOpenAssistant: () => void;
   onOpenReport: () => void;
 };
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? <mark key={i} className="search-highlight">{part}</mark> : part);
+}
 
 export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenReport }: Props) {
   const [items, setItems] = useState<ResearchWorkbenchItem[]>([]);
@@ -342,6 +349,23 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
+  async function batchDeleteItems() {
+    const ids = Array.from(selectedItemIds);
+    if (!ids.length) return;
+    if (!window.confirm(`确定删除 ${ids.length} 个研究项？此操作不可撤销。`)) return;
+    setBatchProcessing(true);
+    try {
+      await deleteResearchItems(ids);
+      setItems((current) => current.filter((entry) => !ids.includes(entry.id)));
+      showToast(`已删除 ${ids.length} 个研究项。`, "success");
+      clearSelection();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "批量删除失败。");
+    } finally {
+      setBatchProcessing(false);
+    }
+  }
+
   async function batchGenerateThesis() {
     const ids = Array.from(selectedItemIds);
     if (!ids.length) return;
@@ -555,10 +579,10 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                         >
                           <div className="card-header">
                             <input type="checkbox" checked={isSelected} onChange={() => toggleSelectItem(item.id)} onClick={(e) => e.stopPropagation()} aria-label={`选择 ${item.title}`} className="card-checkbox" />
-                            <strong>{item.title}</strong>
+                            <strong>{highlightMatch(item.title, queueQuery)}</strong>
                             <span className="card-source">{item.source === "radar" ? "雷达" : item.source === "watchlist" ? "自选" : item.source}</span>
                           </div>
-                          <span className="card-subtitle">{item.subtitle || item.entityType}</span>
+                          <span className="card-subtitle">{highlightMatch(item.subtitle || item.entityType, queueQuery)}</span>
                           <div className="card-meta">
                             <span className={`card-thesis ${item.currentThesisVersionId ? "has-thesis" : ""}`}>
                               {item.currentThesisVersionId ? "论点" : "无论点"}
@@ -593,6 +617,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   {batchProcessing ? "生成中..." : "批量生成论点"}
                 </button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredCSV()}>导出 CSV</button>
+                <button type="button" className="ghost-button danger-button" onClick={() => void batchDeleteItems()} disabled={batchProcessing}>
+                  {batchProcessing ? "删除中..." : "批量删除"}
+                </button>
               </div>
             ) : null}
           </div>
