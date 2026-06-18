@@ -52,6 +52,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<"before" | "after" | "inside" | null>(null);
   const [itemOrder, setItemOrder] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem("cstd_research_item_order") || "{}"); } catch { return {}; }
   });
@@ -98,25 +99,111 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   }, [selectedItems]);
   const draggedItem = useMemo(() => items.find((item) => item.id === draggedItemId), [draggedItemId, items]);
 
+  const saveItemOrder = useCallback((order: Record<string, string[]>) => {
+    setItemOrder(order);
+    try { localStorage.setItem("cstd_research_item_order", JSON.stringify(order)); } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
       if (filteredItems.length === 0) return;
       const currentIdx = filteredItems.findIndex((i) => i.id === selectedId);
-      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-        event.preventDefault();
-        const next = currentIdx < filteredItems.length - 1 ? currentIdx + 1 : 0;
-        setSelectedId(filteredItems[next].id);
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-        event.preventDefault();
-        const prev = currentIdx > 0 ? currentIdx - 1 : filteredItems.length - 1;
-        setSelectedId(filteredItems[prev].id);
+      
+      // Ctrl+Arrow: Navigate between cards
+      if (event.ctrlKey && !event.altKey && !event.metaKey) {
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+          event.preventDefault();
+          const next = currentIdx < filteredItems.length - 1 ? currentIdx + 1 : 0;
+          setSelectedId(filteredItems[next].id);
+        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const prev = currentIdx > 0 ? currentIdx - 1 : filteredItems.length - 1;
+          setSelectedId(filteredItems[prev].id);
+        }
+        return;
+      }
+      
+      // Alt+Arrow: Move selected card (keyboard reorder)
+      if (event.altKey && !event.ctrlKey && !event.metaKey && selectedId) {
+        const selectedItem = filteredItems.find((i) => i.id === selectedId);
+        if (!selectedItem) return;
+        
+        const stageItems = filteredItems.filter((i) => i.stage === selectedItem.stage);
+        const stageIdx = stageItems.findIndex((i) => i.id === selectedId);
+        
+        if (event.key === "ArrowUp" && stageIdx > 0) {
+          event.preventDefault();
+          const targetId = stageItems[stageIdx - 1].id;
+          const move = moveResearchItemBeforeTarget({ items, itemOrder, sourceId: selectedId, targetId, targetStage: selectedItem.stage });
+          if (move) {
+            const previousItemOrder = { ...itemOrder };
+            saveItemOrder(move.nextOrder);
+            void reorderResearchItems(move.updates).catch(() => {
+              saveItemOrder(previousItemOrder);
+              showToast("排序保存失败，已恢复原顺序。", "error");
+            });
+            showToast("已上移一项。", "success");
+          }
+        } else if (event.key === "ArrowDown" && stageIdx < stageItems.length - 1) {
+          event.preventDefault();
+          const targetId = stageItems[stageIdx + 1].id;
+          const move = moveResearchItemBeforeTarget({ items, itemOrder, sourceId: selectedId, targetId, targetStage: selectedItem.stage });
+          if (move) {
+            const previousItemOrder = { ...itemOrder };
+            saveItemOrder(move.nextOrder);
+            void reorderResearchItems(move.updates).catch(() => {
+              saveItemOrder(previousItemOrder);
+              showToast("排序保存失败，已恢复原顺序。", "error");
+            });
+            showToast("已下移一项。", "success");
+          }
+        } else if (event.key === "ArrowLeft") {
+          // Move to previous stage
+          const stageIdx = RESEARCH_STAGES.indexOf(selectedItem.stage as typeof RESEARCH_STAGES[number]);
+          if (stageIdx > 0) {
+            event.preventDefault();
+            const targetStage = RESEARCH_STAGES[stageIdx - 1];
+            const move = moveResearchItemToStageEnd({ items, itemOrder, sourceId: selectedId, targetStage });
+            if (move) {
+              const previousItemOrder = { ...itemOrder };
+              const previousItems = items;
+              saveItemOrder(move.nextOrder);
+              setItems((current) => current.map((entry) => entry.id === selectedId ? { ...entry, stage: targetStage } : entry));
+              void reorderResearchItems(move.updates).catch(() => {
+                saveItemOrder(previousItemOrder);
+                setItems(previousItems);
+                showToast("移动失败，已恢复原状态。", "error");
+              });
+              showToast(`已移动到「${RESEARCH_STAGE_LABELS[targetStage]}」。`, "success");
+            }
+          }
+        } else if (event.key === "ArrowRight") {
+          // Move to next stage
+          const stageIdx = RESEARCH_STAGES.indexOf(selectedItem.stage as typeof RESEARCH_STAGES[number]);
+          if (stageIdx < RESEARCH_STAGES.length - 1) {
+            event.preventDefault();
+            const targetStage = RESEARCH_STAGES[stageIdx + 1];
+            const move = moveResearchItemToStageEnd({ items, itemOrder, sourceId: selectedId, targetStage });
+            if (move) {
+              const previousItemOrder = { ...itemOrder };
+              const previousItems = items;
+              saveItemOrder(move.nextOrder);
+              setItems((current) => current.map((entry) => entry.id === selectedId ? { ...entry, stage: targetStage } : entry));
+              void reorderResearchItems(move.updates).catch(() => {
+                saveItemOrder(previousItemOrder);
+                setItems(previousItems);
+                showToast("移动失败，已恢复原状态。", "error");
+              });
+              showToast(`已移动到「${RESEARCH_STAGE_LABELS[targetStage]}」。`, "success");
+            }
+          }
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredItems, selectedId]);
+  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -256,11 +343,6 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     setSelectedItemIds(new Set());
   }
 
-  const saveItemOrder = useCallback((order: Record<string, string[]>) => {
-    setItemOrder(order);
-    try { localStorage.setItem("cstd_research_item_order", JSON.stringify(order)); } catch { /* ignore */ }
-  }, []);
-
   function handleDragStart(e: React.DragEvent, itemId: string) {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", itemId);
@@ -271,11 +353,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-    if (targetId !== draggedItemId) setDragOverItemId(targetId);
+    if (targetId !== draggedItemId) {
+      setDragOverItemId(targetId);
+      // Calculate drop position based on mouse position relative to element
+      const rect = e.currentTarget.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const position = y < rect.height / 2 ? "before" : "after";
+      setDragPosition(position);
+    }
   }
 
   function handleDragLeave() {
     setDragOverItemId(null);
+    setDragPosition(null);
   }
 
   function handleDrop(e: React.DragEvent, targetStage: string, targetId: string) {
@@ -284,6 +374,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     const sourceId = e.dataTransfer.getData("text/plain");
     setDraggedItemId(null);
     setDragOverItemId(null);
+    setDragPosition(null);
     const move = moveResearchItemBeforeTarget({ items, itemOrder, sourceId, targetId, targetStage });
     if (!move) return;
 
@@ -307,6 +398,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDragOverItemId(`stage:${targetStage}`);
+    setDragPosition("inside");
   }
 
   function handleDropToStage(e: React.DragEvent, targetStage: ResearchStage) {
@@ -314,6 +406,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     const sourceId = e.dataTransfer.getData("text/plain");
     setDraggedItemId(null);
     setDragOverItemId(null);
+    setDragPosition(null);
     const move = moveResearchItemToStageEnd({ items, itemOrder, sourceId, targetStage });
     if (!move) return;
 
@@ -335,6 +428,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   function handleDragEnd() {
     setDraggedItemId(null);
     setDragOverItemId(null);
+    setDragPosition(null);
   }
 
   function getStageItemOrder(stage: string, stageItems: ResearchWorkbenchItem[]): ResearchWorkbenchItem[] {
@@ -522,7 +616,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             <header className="panel-header research-queue-head">
               <div>
                 <h2>研究队列</h2>
-                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 切换</span></p>
+                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 切换 · Alt+↑↓ 排序 · Alt+←→ 移动阶段</span></p>
               </div>
             </header>
             <div className="queue-command-panel" aria-label="研究队列控制台">
@@ -578,6 +672,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <span><strong>{filteredItems.length}</strong> / {items.length} 项可见</span>
               {selectedItemIds.size ? <span>已选 {selectedItemIds.size} 项{selectedStageSummary ? ` · ${selectedStageSummary}` : ""}</span> : <span>勾选卡片进入批量操作</span>}
               {draggedItem ? <span className="drag-status">正在移动「{draggedItem.title}」：可放到阶段列或目标卡片。</span> : null}
+              {selectedId && !draggedItemId ? <span className="kbd-hint">Alt+↑↓ 排序 · Alt+←→ 移动阶段</span> : null}
             </div>
             <div className="stage-board">
               {RESEARCH_STAGES.map((stage) => {
@@ -609,10 +704,10 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                           onDragLeave={handleDragLeave}
                           onDrop={(e) => handleDrop(e, stage, item.id)}
                           onDragEnd={handleDragEnd}
-                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""} ${draggedItemId === item.id ? "dragging" : ""} ${dragOverItemId === item.id ? "drag-over" : ""}`}
+                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""} ${draggedItemId === item.id ? "dragging" : ""} ${dragOverItemId === item.id ? `drag-over drag-${dragPosition}` : ""}`}
                           key={item.id}
                           aria-pressed={selected?.id === item.id}
-                          aria-label={`${item.title}，${RESEARCH_STAGE_LABELS[item.stage]}，${isSelected ? "已选择" : "未选择"}`}
+                          aria-label={`${item.title}，${RESEARCH_STAGE_LABELS[item.stage]}，${isSelected ? "已选择" : "未选择"}${draggedItemId ? "，可拖拽" : ""}`}
                           onClick={(e) => { if (e.shiftKey) { toggleSelectItem(item.id); } else { setSelectedId(item.id); } }}
                         >
                           <div className="card-header">
