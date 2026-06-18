@@ -1,4 +1,4 @@
-import { authenticateUser, checkLoginRateLimit, cleanupOldLoginAttempts, clearSessionCookie, createAuthSession, createUser, ensureAuthSchema, publicUser, readSessionCookie, recordLoginAttempt, revokeSession } from "../_shared/auth";
+import { authenticateUser, checkLoginRateLimit, cleanupOldLoginAttempts, clearSessionCookie, createAuthSession, createUser, ensureAuthSchema, publicUser, readSessionCookie, recordLoginAttempt, revokeSession, shouldCleanupLoginAttempts } from "../_shared/auth";
 
 type Env = {
   AUTH_SECRET: string;
@@ -31,10 +31,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!user) {
     await recordLoginAttempt(env.REPORT_LIBRARY_DB, ip, username.toLowerCase(), now);
-    if (Math.random() < 0.1) await cleanupOldLoginAttempts(env.REPORT_LIBRARY_DB, now).catch(() => {});
+    if (shouldCleanupLoginAttempts()) await cleanupOldLoginAttempts(env.REPORT_LIBRARY_DB, now).catch(() => {});
     return json({ error: "账号或密码不正确。" }, 401);
   }
 
+  await cleanupOldLoginAttempts(env.REPORT_LIBRARY_DB, now).catch(() => {});
   const { cookie, session } = await createAuthSession(env.REPORT_LIBRARY_DB, user, now, isSecureRequest(request));
   return json({ authenticated: true, user: publicUser(session) }, 200, { "set-cookie": cookie });
 };

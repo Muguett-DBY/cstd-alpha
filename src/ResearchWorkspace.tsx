@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
@@ -39,6 +39,11 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [itemOrder, setItemOrder] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem("cstd_research_item_order") || "{}"); } catch { return {}; }
+  });
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
@@ -219,6 +224,66 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   function clearSelection() {
     setSelectedItemIds(new Set());
+  }
+
+  const saveItemOrder = useCallback((order: Record<string, string[]>) => {
+    setItemOrder(order);
+    try { localStorage.setItem("cstd_research_item_order", JSON.stringify(order)); } catch { /* ignore */ }
+  }, []);
+
+  function handleDragStart(e: React.DragEvent, itemId: string) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", itemId);
+    setDraggedItemId(itemId);
+  }
+
+  function handleDragOver(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (targetId !== draggedItemId) setDragOverItemId(targetId);
+  }
+
+  function handleDragLeave() {
+    setDragOverItemId(null);
+  }
+
+  function handleDrop(e: React.DragEvent, targetStage: string, targetId: string) {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain");
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const sourceItem = items.find((i) => i.id === sourceId);
+    const targetItem = items.find((i) => i.id === targetId);
+    if (!sourceItem || !targetItem) return;
+
+    if (sourceItem.stage !== targetItem.stage) return;
+
+    const stageId = targetStage;
+    const currentOrder = itemOrder[stageId] ?? filteredItems.filter((i) => i.stage === targetStage).map((i) => i.id);
+    const fromIndex = currentOrder.indexOf(sourceId);
+    const toIndex = currentOrder.indexOf(targetId);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    const newOrder = [...currentOrder];
+    newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, sourceId);
+    saveItemOrder({ ...itemOrder, [stageId]: newOrder });
+  }
+
+  function handleDragEnd() {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+  }
+
+  function getStageItemOrder(stage: string, stageItems: ResearchWorkbenchItem[]): ResearchWorkbenchItem[] {
+    const order = itemOrder[stage];
+    if (!order?.length) return stageItems;
+    const idToItem = new Map(stageItems.map((i) => [i.id, i]));
+    const ordered = order.map((id) => idToItem.get(id)).filter((i): i is ResearchWorkbenchItem => Boolean(i));
+    const remaining = stageItems.filter((i) => !order.includes(i.id));
+    return [...ordered, ...remaining];
   }
 
   async function batchChangeStage(targetStage: ResearchStage) {
@@ -433,16 +498,23 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               {RESEARCH_STAGES.map((stage) => {
                 const stageTotal = items.filter((item) => item.stage === stage).length;
                 const stageItems = filteredItems.filter((item) => item.stage === stage);
+                const orderedItems = getStageItemOrder(stage, stageItems);
                 return (
                   <section className="stage-column" key={stage}>
                     <h3>{RESEARCH_STAGE_LABELS[stage]} <span>{queueQuery ? `${stageItems.length}/${stageTotal}` : stageTotal}</span></h3>
-                    {stageItems.length ? stageItems.map((item) => {
+                    {orderedItems.length ? orderedItems.map((item) => {
                       const valuation = valuationByItem.get(item.id);
                       const isSelected = selectedItemIds.has(item.id);
                       return (
                         <button
                           type="button"
-                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""}`}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, item.id)}
+                          onDragOver={(e) => handleDragOver(e, item.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, stage, item.id)}
+                          onDragEnd={handleDragEnd}
+                          className={`research-card ${selected?.id === item.id ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${item.source === "radar" ? "source-radar" : item.source === "watchlist" ? "source-watchlist" : ""} ${draggedItemId === item.id ? "dragging" : ""} ${dragOverItemId === item.id ? "drag-over" : ""}`}
                           key={item.id}
                           onClick={(e) => { if (e.shiftKey) { toggleSelectItem(item.id); } else { setSelectedId(item.id); } }}
                         >

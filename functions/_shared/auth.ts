@@ -222,8 +222,16 @@ export async function recordLoginAttempt(db: D1Database, ip: string, username: s
 }
 
 export async function cleanupOldLoginAttempts(db: D1Database, now = new Date()) {
-  const cutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS * 2).toISOString();
+  const cutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS * 10).toISOString();
   await db.prepare(`DELETE FROM login_attempts WHERE attempted_at <= ?1`).bind(cutoff).run();
+}
+
+let loginAttemptCounter = 0;
+const CLEANUP_EVERY_N_ATTEMPTS = 20;
+
+export function shouldCleanupLoginAttempts(): boolean {
+  loginAttemptCounter += 1;
+  return loginAttemptCounter % CLEANUP_EVERY_N_ATTEMPTS === 0;
 }
 
 export function parseCookie(cookieHeader: string, name: string) {

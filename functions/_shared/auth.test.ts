@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { cleanupExpiredSessions, createPasswordHash, createSessionCookie, hashSessionToken, verifyPasswordHash } from "./auth";
+import { cleanupExpiredSessions, createPasswordHash, createSessionCookie, hashSessionToken, shouldCleanupLoginAttempts, verifyPasswordHash } from "./auth";
 
 describe("fixed-account auth primitives", () => {
   test("hashes passwords with a salt and verifies only the original password", async () => {
@@ -42,5 +42,11 @@ describe("fixed-account auth primitives", () => {
     expect(prepare).toHaveBeenCalledWith("DELETE FROM auth_sessions WHERE expires_at <= ?1");
     expect(bind).toHaveBeenCalledWith("2026-05-16T00:00:00.000Z");
     expect(run).toHaveBeenCalled();
+  });
+
+  test("shouldCleanupLoginAttempts returns true every 20th call", () => {
+    const results: boolean[] = [];
+    for (let i = 0; i < 25; i++) results.push(shouldCleanupLoginAttempts());
+    expect(results.filter(Boolean).length).toBeGreaterThanOrEqual(1);
   });
 });
