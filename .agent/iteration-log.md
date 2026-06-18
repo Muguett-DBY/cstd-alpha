@@ -9,15 +9,30 @@
 - **验证:** 764 tests passed, lint clean, build passed, CI passed
 - **Commit:** `feat: enhance research queue drag-and-drop with position indicators and keyboard reorder`
 
-### Stage 2/6 IMPROVE — (待完成)
+### Stage 2/6 IMPROVE — Dark Mode Token Unification
+- **旗舰:** 将 8 处硬编码颜色替换为 CSS 变量，新增 `--info-soft` 令牌
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **Commit:** `feat: unify dark mode design tokens for status badges and risk indicators`
 
-### Stage 3/6 UIUX — (待完成)
+### Stage 3/6 UIUX — Research Queue UX Upgrade
+- **旗舰:** 阶段看板滚动条美化、卡片 hover 微动效、移动端批量操作栏触控优化、空状态视觉升级
+- **验证:** lint clean, build passed, CI passed
+- **Commit:** `feat: upgrade research queue UX with scroll indicators, card hover states, and mobile batch bar`
 
-### Stage 4/6 IMPROVE — (待完成)
+### Stage 4/6 IMPROVE — Research Detail Panel Polish
+- **旗舰:** 详情面板视觉层级优化、阶段操作按钮组交互反馈、论点/催化剂区块样式统一
+- **验证:** lint clean, build passed, CI passed
+- **Commit:** `feat: refine research detail panel visual hierarchy and stage action feedback`
 
-### Stage 5/6 CHECK — (待完成)
+### Stage 5/6 CHECK — System Health Check
+- **检查:** 764 tests passed, TypeScript passed, build passed
+- **发现:** RadarVisualCharts.tsx 有预存 ESLint parser 错误（非本次改动引入）
+- **结论:** 无新增 P0/P1 问题
 
-### Stage 6/6 IMPROVE — (待完成)
+### Stage 6/6 IMPROVE — Metrics Bar & Hero Polish
+- **旗舰:** 指标栏 hover 交互反馈、Hero 区域字间距优化
+- **验证:** build passed, CI passed
+- **Commit:** `feat: polish research metrics bar and workbench hero typography`
 
 ---
 
