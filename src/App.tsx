@@ -4,6 +4,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import "./App.css";
 import { RadarView, type RadarPhase } from "./RadarView";
 import { ReportView, EmptyState } from "./ReportView";
+import { ProgressPanel } from "./ProgressPanel";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
 import { OpportunityDashboard } from "./OpportunityDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
@@ -856,79 +857,12 @@ function isReportCancelled(error: unknown) {
   return error instanceof Error && error.message === REPORT_CANCELLED_MESSAGE;
 }
 
-function ProgressPanel({
-  progress,
-  phase,
-  startedAt,
-  completedElapsedMs,
-  evidenceCount,
-}: {
-  progress: ReportProgress[];
-  phase: Phase;
-  startedAt: number | null;
-  completedElapsedMs?: number;
-  evidenceCount: number;
-}) {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const latest = progress.at(-1);
-
-  useEffect(() => {
-    if (!startedAt) return;
-    const id = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [startedAt]);
-
-  const statusText =
-    phase === "generating"
-      ? formatDuration(elapsedMs)
-      : phase === "ready"
-        ? completedElapsedMs !== undefined
-          ? `完成 / ${formatDuration(completedElapsedMs)}`
-          : "完成"
-        : phase === "error"
-          ? "失败"
-          : "待开始";
-  return (
-    <section className="progress-panel" aria-live="polite" aria-atomic="true">
-      <div className="progress-head">
-        <span>生成状态</span>
-        <strong>{statusText}</strong>
-      </div>
-      <meter min="0" max="100" value={latest?.percent ?? (phase === "ready" ? 100 : 0)} />
-      <p>{latest ? `${latest.label}：${latest.detail}` : "选择公司后开始读取公开数据并生成报告。"}</p>
-      {completedElapsedMs !== undefined ? <small>生成耗时：{formatDuration(completedElapsedMs)}</small> : null}
-      <small>当前证据数量：{evidenceCount}</small>
-      <ol>
-        {progress.map((item, index) => (
-          <li key={`${item.stage}-${item.at}-${index}`}>
-            <span>{item.percent}%</span>
-            <div>
-              <strong>{item.label}</strong>
-              <p>{item.detail}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 function formatCacheTime(value: number) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
 function isSameCompany(left: CompanyCandidate | null, right: CompanyCandidate) {
   return Boolean(left && left.code === right.code && left.listingPlace === right.listingPlace && left.marketType === right.marketType);
-}
-
-function formatDuration(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes <= 0) return `${seconds} 秒`;
-  return `${minutes} 分 ${seconds} 秒`;
 }
 
 function errorMessage(error: unknown, fallback: string) {

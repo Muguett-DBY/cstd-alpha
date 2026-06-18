@@ -830,48 +830,66 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <p>{selected ? `${selected.title} 的最新进展` : "选中研究项后显示动态"}</p>
             </header>
             {selected ? (
-              <div className="activity-list">
+              <div className="activity-timeline">
                 {selected.currentThesisVersionId ? (
-                  <div className="activity-item">
-                    <span className="activity-dot thesis" />
-                    <div>
-                      <strong>论文已生成</strong>
-                      <p>{relativeTime(selected.updatedAt)}</p>
+                  <div className="timeline-item" onClick={() => {}}>
+                    <span className="timeline-dot thesis" />
+                    <div className="timeline-content">
+                      <strong>论点已生成</strong>
+                      <p>研究论点已完成分析</p>
+                      <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
                 ) : null}
                 {catalystItemId === selected.id && catalysts.filter((c) => c.status === "confirmed").length > 0 ? (
-                  <div className="activity-item">
-                    <span className="activity-dot confirmed" />
-                    <div>
+                  <div className="timeline-item">
+                    <span className="timeline-dot confirmed" />
+                    <div className="timeline-content">
                       <strong>{catalysts.filter((c) => c.status === "confirmed").length} 项催化剂已确认</strong>
-                      <p>{relativeTime(catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]?.updatedAt || selected.updatedAt)}</p>
+                      <p>{catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3).map((c) => c.title).join("、")}</p>
+                      <time>{new Date(catalysts.filter((c) => c.status === "confirmed").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]?.updatedAt || selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
+                    </div>
+                  </div>
+                ) : null}
+                {catalystItemId === selected.id && catalysts.filter((c) => c.status === "open").length > 0 ? (
+                  <div className="timeline-item">
+                    <span className="timeline-dot open" />
+                    <div className="timeline-content">
+                      <strong>{catalysts.filter((c) => c.status === "open").length} 项催化剂待确认</strong>
+                      <p>等待触发事件确认</p>
                     </div>
                   </div>
                 ) : null}
                 {valuationByItem.get(selected.id) ? (
-                  <div className="activity-item">
-                    <span className="activity-dot valuation" />
-                    <div>
-                      <strong>估值{valuationByItem.get(selected.id)?.status === "completed" ? "已完成" : "进行中"}</strong>
-                      <p>{relativeTime(valuationByItem.get(selected.id)?.updatedAt || selected.updatedAt)}</p>
+                  <div className="timeline-item">
+                    <span className="timeline-dot valuation" />
+                    <div className="timeline-content">
+                      <strong>估值{valuationByItem.get(selected.id)?.status === "completed" ? "已完成" : valuationByItem.get(selected.id)?.status === "running" ? "运行中" : valuationByItem.get(selected.id)?.status === "queued" ? "排队中" : "已提交"}</strong>
+                      {valuationByItem.get(selected.id)?.status === "completed" && valuationByItem.get(selected.id)?.result ? (
+                        <p>{valuationByItem.get(selected.id)!.currency} {formatValuationPrice(valuationByItem.get(selected.id)!.result!.scenarios.find((s) => s.scenario === "base")?.perShareValue)}</p>
+                      ) : (
+                        <p>{valuationByItem.get(selected.id)?.status === "failed" ? "估值失败" : "等待分析完成"}</p>
+                      )}
+                      <time>{new Date(valuationByItem.get(selected.id)?.updatedAt || selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
                 ) : null}
                 {selected.evidenceHash ? (
-                  <div className="activity-item">
-                    <span className="activity-dot evidence" />
-                    <div>
+                  <div className="timeline-item">
+                    <span className="timeline-dot evidence" />
+                    <div className="timeline-content">
                       <strong>证据包已采集</strong>
-                      <p>{relativeTime(selected.updatedAt)}</p>
+                      <p>证据哈希: {selected.evidenceHash.slice(0, 12)}...</p>
+                      <time>{new Date(selected.updatedAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
                 ) : null}
-                <div className="activity-item">
-                  <span className="activity-dot info" />
-                  <div>
+                <div className="timeline-item">
+                  <span className="timeline-dot created" />
+                  <div className="timeline-content">
                     <strong>研究项创建</strong>
-                    <p>{relativeTime(selected.createdAt)}</p>
+                    <p>来源: {selected.source === "radar" ? "雷达扫描" : selected.source === "watchlist" ? "自选股" : selected.source}</p>
+                    <time>{new Date(selected.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
                   </div>
                 </div>
               </div>
