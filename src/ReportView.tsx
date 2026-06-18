@@ -287,11 +287,12 @@ function InfoTile({ title, value }: { title: string; value: string }) {
 }
 
 function ModuleRow({ module }: { module: ModuleScore }) {
+  const scoreColor = module.score >= 70 ? "var(--teal)" : module.score >= 50 ? "var(--amber)" : "var(--red)";
   return (
     <div className="table-row">
       <span>{module.name}</span>
       <span>{module.weight}%</span>
-      <span>{module.score}</span>
+      <span style={{ color: scoreColor, fontWeight: 700 }}>{module.score}</span>
       <span>{module.label}</span>
       <span className="muted">{module.summary}</span>
     </div>
@@ -300,12 +301,16 @@ function ModuleRow({ module }: { module: ModuleScore }) {
 
 function ScoreItemCard({ item, index }: { item: ScoreItem; index: number }) {
   const [expanded, setExpanded] = useState(false);
+  const scoreColor = item.score >= 70 ? "var(--teal)" : item.score >= 50 ? "var(--amber)" : "var(--red)";
   return (
-    <details className={`score-card ${item.score < 50 ? "low-score" : ""}`} open={expanded} onToggle={(e) => setExpanded((e.target as HTMLDetailsElement).open)}>
+    <details className={`score-item-card ${item.score < 50 ? "low-score" : ""}`} open={expanded} onToggle={(e) => setExpanded((e.target as HTMLDetailsElement).open)}>
       <summary>
         <span className="score-card-index">{index}</span>
         <span className="score-card-label">{item.label}</span>
-        <span className="score-card-score">{item.score}</span>
+        <div className="score-card-bar">
+          <div className="score-card-bar-fill" style={{ width: `${item.score}%`, background: scoreColor }} />
+        </div>
+        <span className="score-card-score" style={{ color: scoreColor }}>{item.score}</span>
       </summary>
       <div className="score-card-body">
         <p>{item.reason}</p>

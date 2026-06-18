@@ -2782,6 +2782,10 @@ button:not(:disabled):active,
 .report-header {
   border-bottom: 1px solid var(--line);
   padding-bottom: 22px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-subtle) 100%);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 8px;
 }
 
 .report-header > div,
@@ -2917,7 +2921,33 @@ button:not(:disabled):active,
 }
 
 .score-strip {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-subtle) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.info-tile {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.info-tile span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .chart-dashboard {
@@ -5270,6 +5300,26 @@ button:not(:disabled):active,
 
 .score-tile {
   cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.score-tile::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--teal);
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.score-tile:hover::before {
+  opacity: 1;
 }
 
 .score-tile:hover,
@@ -5284,6 +5334,19 @@ button:not(:disabled):active,
   color: var(--ink);
   font-size: 34px;
   line-height: 1;
+}
+
+.decision {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 5%, var(--surface)) 0%, var(--surface) 100%);
+  text-align: center;
+  justify-content: center;
+}
+
+.decision strong {
+  color: var(--teal);
+  font-size: 28px;
 }
 
 .info-tile strong {
@@ -5359,9 +5422,16 @@ button:not(:disabled):active,
 
 .table-head {
   background: var(--surface-header);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.module-table .table-row:not(.table-head) span:nth-child(3) {
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .score-items,
@@ -5375,6 +5445,55 @@ button:not(:disabled):active,
 .score-items {
   display: grid;
   gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.score-items h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.score-card-bar {
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: 1;
+  max-width: 120px;
+}
+
+.score-card-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.score-card-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  color: var(--teal);
+  font-weight: 800;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.score-card-label {
+  flex: 1;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.score-card-score {
+  font-weight: 800;
+  font-size: 16px;
+  min-width: 32px;
+  text-align: right;
 }
 
 .score-item-card {
