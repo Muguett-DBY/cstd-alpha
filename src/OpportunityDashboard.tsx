@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, fetchOpportunities, type OpportunitiesResult } from "./api";
 import { RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchOpportunitySignal } from "./shared/research-workbench";
+import { loadRecentReportHistory } from "./storage";
 import { showToast } from "./toast-state";
 
 type Props = {
@@ -125,6 +126,29 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
               </div>
             </div>
           ) : null}
+
+          {(() => {
+            const recentReports = loadRecentReportHistory();
+            return recentReports.length > 0 ? (
+              <div className="terminal-panel recent-reports">
+                <PanelHeader title="最近报告" subtitle="点击快速查看。" />
+                <div className="recent-reports-list">
+                  {recentReports.slice(0, 5).map((report, index) => (
+                    <div key={index} className="recent-report-item">
+                      <div className="recent-report-info">
+                        <strong>{report.name}</strong>
+                        <span>{report.ticker}</span>
+                      </div>
+                      <div className="recent-report-scores">
+                        <span>CQS {report.cqs}</span>
+                        <span>IAS {report.ias}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           <div className="opportunity-grid">
             <div className="terminal-panel matrix-panel">

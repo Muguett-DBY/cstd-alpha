@@ -3,6 +3,7 @@ import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared
 import type { CompanyCandidate } from "./shared/report";
 
 const LAST_REPORT_KEY = "cstd-alpha:last-report";
+const RECENT_REPORTS_KEY = "cstd-alpha:recent-reports";
 const REPORT_CACHE_PREFIX = "cstd-alpha:report-cache:";
 const CHART_CACHE_PREFIX = "cstd-alpha:chart-cache:";
 const REPORT_CACHE_VERSION = "v5-report-cleanup";
@@ -27,7 +28,9 @@ export type StoredReportEntry = {
 };
 
 export function saveLastReport(report: InvestmentReport, metrics?: ReportGenerationMetrics) {
-  return safeSetLocalStorage(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
+  const result = safeSetLocalStorage(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
+  saveRecentReport(report);
+  return result;
 }
 
 export function loadLastReport() {
@@ -128,6 +131,41 @@ export function clearLocalReportStorage() {
     for (const key of keys) localStorage.removeItem(key);
   } catch {
     // Local report caches are optional; ignore storage access failures.
+  }
+}
+
+export type RecentReport = {
+  name: string;
+  ticker: string;
+  cqs: number;
+  ias: number;
+  generatedAt: string;
+};
+
+export function saveRecentReport(report: InvestmentReport) {
+  try {
+    const existing = loadRecentReportHistory();
+    const newEntry: RecentReport = {
+      name: report.company.name,
+      ticker: report.company.ticker || "",
+      cqs: report.cqs,
+      ias: report.ias,
+      generatedAt: new Date().toISOString(),
+    };
+    const next = [newEntry, ...existing.filter((r) => r.name !== newEntry.name)].slice(0, 10);
+    safeSetLocalStorage(RECENT_REPORTS_KEY, JSON.stringify(next));
+  } catch {
+    // Storage failure is non-critical
+  }
+}
+
+export function loadRecentReportHistory(): RecentReport[] {
+  try {
+    const raw = localStorage.getItem(RECENT_REPORTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as RecentReport[];
+  } catch {
+    return [];
   }
 }
 
