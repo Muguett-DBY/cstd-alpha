@@ -1424,6 +1424,49 @@ button:not(:disabled):active,
   border-color: #b91c1c;
 }
 
+.card-expand-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 2px 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.card-expand-toggle:hover {
+  color: var(--ink);
+}
+
+.card-detail-preview {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-row span:first-child {
+  color: var(--muted);
+}
+
+.detail-row span:last-child {
+  color: var(--ink);
+  font-weight: 500;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .card-header {
   display: flex;
   align-items: baseline;

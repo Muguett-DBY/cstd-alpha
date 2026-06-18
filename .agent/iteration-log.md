@@ -1,21 +1,20 @@
 # CSTD Alpha - Iteration Log
 
-## Round 40 — 2026-06-18
+## Round 41 — 2026-06-18
 
-**承接上一轮方向:** R39 建议搜索结果高亮 + 批量操作增强
+**承接上一轮方向:** R40 建议 App.tsx 进一步拆分（ReportView 提取）
 
 **本轮决策:**
-- 搜索高亮：在研究队列搜索时高亮匹配的标题和子标题文字
-- 批量删除：新增后端 delete API + 前端批量删除按钮（带确认弹窗）
-- 两个改动都直接提升研究工作台的使用效率
+- ReportView 提取：将报告页组件 + 辅助函数提取为独立文件
+- App.tsx 从 1433 行降至 882 行（-38%）
+- 新增研究卡片展开详情预览：点击展开按钮查看元数据
 
 **完成内容:**
-- 搜索高亮：新增 highlightMatch 函数，搜索时标题和子标题匹配文字用 <mark> 高亮
-- CSS：新增 .search-highlight 样式（琥珀色背景）
-- 批量删除后端：deleteResearchItems 函数 + POST /api/research-items/delete 端点
-- 批量删除前端：deleteResearchItems API 函数 + batchDeleteItems handler
-- 批量删除 UI：批量操作栏新增红色"批量删除"按钮（带确认弹窗）
-- CSS：新增 .danger-button 样式（红色边框和文字）
+- 新建 src/ReportView.tsx（462 行），包含 ReportView + 12 个辅助组件
+- App.tsx 清理：移除 ReportView 及所有辅助函数，保留 formatDuration 等通用工具
+- 修复提取过程中发现的类型问题（ModuleScore.label/summary、valuationAnalysis、riskMatrix）
+- 研究卡片新增展开/收起按钮，点击可查看实体类型、来源、论点版本、证据哈希、更新时间
+- CSS：新增 .card-expand-toggle、.card-detail-preview、.detail-row 样式
 
 **验证:**
 - npm test: 757 passed ✅
@@ -24,13 +23,13 @@
 - GitHub Actions: ✅ 全部通过
 
 **遗留风险:**
-- App.tsx 仍有 1343 行，可继续拆分
-- 批量删除操作不可撤销，仅通过确认弹窗保护
+- App.tsx 仍有 882 行，但已从 "巨大" 降至 "中等"
+- 展开详情仅显示元数据，未加载完整论点/证据内容
 
 **下一轮方向:**
-1. 继续 App.tsx 进一步拆分（如 ReportView 提取）
-2. 研究工作台批量操作增强（批量拖拽到新阶段）
-3. 研究工作台活动日志增强
+1. 研究工作台批量拖拽到新阶段
+2. 研究工作台活动日志增强
+3. 继续 App.tsx 拆分（如提取 ProgressPanel）
 
 ---
 
@@ -66,3 +65,4 @@
 | R38 | D1 Login Cleanup + Drag-and-Drop | 登录清理确定性化 + 研究队列拖拽排序 |
 | R39 | Cross-Stage Drag-and-Drop | 跨阶段拖拽 + sort_order 后端支持 + 移动端适配 |
 | R40 | Search Highlight + Batch Delete | 搜索结果高亮 + 批量删除功能 |
+| R41 | App.tsx ReportView Extraction | ReportView 提取为独立文件 + 研究卡片展开详情 |
