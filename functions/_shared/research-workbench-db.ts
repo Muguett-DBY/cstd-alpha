@@ -95,10 +95,12 @@ export async function ensureResearchWorkbenchSchema(db: D1Database) {
       id TEXT PRIMARY KEY, user_key TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, title TEXT NOT NULL, subtitle TEXT,
       stage TEXT NOT NULL DEFAULT 'screening', status TEXT NOT NULL DEFAULT 'active', source TEXT NOT NULL DEFAULT 'manual',
       evidence_hash TEXT, current_thesis_version_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
       UNIQUE(user_key, entity_type, entity_id)
     )`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_items_user_stage ON research_items (user_key, stage, updated_at DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_items_entity ON research_items (entity_type, entity_id)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_research_items_user_stage_order ON research_items (user_key, stage, sort_order ASC, updated_at DESC)`),
     db.prepare(`CREATE TABLE IF NOT EXISTS research_thesis_versions (
       id TEXT PRIMARY KEY, user_key TEXT NOT NULL, item_id TEXT NOT NULL, version INTEGER NOT NULL, thesis_markdown TEXT NOT NULL,
       core_citations_json TEXT NOT NULL DEFAULT '[]', counter_evidence_json TEXT NOT NULL DEFAULT '[]', evidence_hash TEXT, created_by TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL
@@ -164,7 +166,7 @@ export async function listResearchItems(db: D1Database, userKey: string) {
   await ensureResearchWorkbenchSchema(db);
   const result = await db.prepare(
     `SELECT id, user_key, entity_type, entity_id, title, subtitle, stage, status, source, evidence_hash, current_thesis_version_id, created_at, updated_at, archived_at
-     FROM research_items WHERE user_key = ?1 ORDER BY updated_at DESC`,
+     FROM research_items WHERE user_key = ?1 ORDER BY sort_order ASC, updated_at DESC`,
   ).bind(userKey).all<ResearchItemRow>();
   return (result.results ?? []).map(researchItemRowToItem);
 }
@@ -178,13 +180,26 @@ export async function readResearchItemById(db: D1Database, userKey: string, id: 
   return row ? researchItemRowToItem(row) : null;
 }
 
-export async function confirmResearchStage(db: D1Database, userKey: string, id: string, stage: ResearchStage) {
+export async function confirmResearchStage(db: D1Database, userKey: string, id: string, stage: ResearchStage, sortOrder?: number) {
   await ensureResearchWorkbenchSchema(db);
   const normalized = normalizeResearchStage(stage);
   if (!normalized) throw new Error("invalid research stage");
   const now = new Date().toISOString();
-  await db.prepare(`UPDATE research_items SET stage = ?3, updated_at = ?4 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, now).run();
+  if (typeof sortOrder === "number") {
+    await db.prepare(`UPDATE research_items SET stage = ?3, sort_order = ?4, updated_at = ?5 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, sortOrder, now).run();
+  } else {
+    await db.prepare(`UPDATE research_items SET stage = ?3, updated_at = ?4 WHERE user_key = ?1 AND id = ?2`).bind(userKey, id, normalized, now).run();
+  }
   return readResearchItemById(db, userKey, id);
+}
+
+export async function reorderResearchItems(db: D1Database, userKey: string, updates: Array<{ id: string; stage: string; sortOrder: number }>) {
+  await ensureResearchWorkbenchSchema(db);
+  const now = new Date().toISOString();
+  const statements = updates.map((u) =>
+    db.prepare(`UPDATE research_items SET stage = ?3, sort_order = ?4, updated_at = ?5 WHERE user_key = ?1 AND id = ?2`).bind(userKey, u.id, u.stage, u.sortOrder, now),
+  );
+  await db.batch(statements);
 }
 
 export async function listResearchThesisVersions(db: D1Database, userKey: string, itemId: string, limit = 20) {

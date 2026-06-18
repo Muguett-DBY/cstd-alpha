@@ -131,17 +131,27 @@ export async function addResearchItem(input: {
   return data.item;
 }
 
-export async function updateResearchItemStage(id: string, stage: ResearchStage): Promise<ResearchWorkbenchItem> {
+export async function updateResearchItemStage(id: string, stage: ResearchStage, sortOrder?: number): Promise<ResearchWorkbenchItem> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ stage }),
+    body: JSON.stringify({ stage, sortOrder }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究阶段更新失败。");
   const data = (await response.json()) as { item?: ResearchWorkbenchItem };
   if (!data.item) throw new Error("研究阶段更新失败。");
   return data.item;
+}
+
+export async function reorderResearchItems(updates: Array<{ id: string; stage: string; sortOrder: number }>): Promise<void> {
+  const response = await fetch("/api/research-items/reorder", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ updates }),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "研究项排序失败。");
 }
 
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {

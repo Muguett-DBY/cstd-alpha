@@ -2357,6 +2357,39 @@ button:not(:disabled):active,
   }
 }
 
+@media (max-width: 720px) {
+  .stage-board {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+  }
+
+  .stage-column {
+    min-height: auto;
+  }
+
+  .research-card {
+    min-height: 60px;
+    padding: 8px;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .filter-group select {
+    width: 100%;
+  }
+
+  .quick-add-section {
+    flex-direction: column;
+  }
+}
+
 .selected-company,
 .progress-panel {
   margin-top: 18px;

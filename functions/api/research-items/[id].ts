@@ -22,8 +22,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  const body = (await request.json().catch(() => null)) as { stage?: ResearchStage } | null;
+  const body = (await request.json().catch(() => null)) as { stage?: ResearchStage; sortOrder?: number } | null;
   if (!body?.stage) return json({ error: "缺少阶段。" }, 400);
-  const item = await confirmResearchStage(env.REPORT_LIBRARY_DB, session.userId, String(params.id || ""), body.stage);
+  const item = await confirmResearchStage(env.REPORT_LIBRARY_DB, session.userId, String(params.id || ""), body.stage, body.sortOrder);
   return item ? json({ item }) : json({ error: "Research item not found." }, 404);
 };
