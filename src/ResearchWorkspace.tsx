@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addResearchItem, createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
+import { addResearchItem, createValuationRun, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
@@ -258,18 +258,53 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     const targetItem = items.find((i) => i.id === targetId);
     if (!sourceItem || !targetItem) return;
 
-    if (sourceItem.stage !== targetItem.stage) return;
-
+    const isCrossStage = sourceItem.stage !== targetStage;
     const stageId = targetStage;
-    const currentOrder = itemOrder[stageId] ?? filteredItems.filter((i) => i.stage === targetStage).map((i) => i.id);
-    const fromIndex = currentOrder.indexOf(sourceId);
-    const toIndex = currentOrder.indexOf(targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
 
-    const newOrder = [...currentOrder];
-    newOrder.splice(fromIndex, 1);
-    newOrder.splice(toIndex, 0, sourceId);
-    saveItemOrder({ ...itemOrder, [stageId]: newOrder });
+    const sourceStageItems = isCrossStage
+      ? filteredItems.filter((i) => i.stage === sourceItem.stage && i.id !== sourceId)
+      : filteredItems.filter((i) => i.stage === sourceItem.stage);
+    const targetStageItems = isCrossStage
+      ? filteredItems.filter((i) => i.stage === targetStage)
+      : sourceStageItems;
+
+    const sourceOrder = itemOrder[sourceItem.stage] ?? sourceStageItems.map((i) => i.id);
+    const targetOrder = isCrossStage ? (itemOrder[targetStage] ?? targetStageItems.map((i) => i.id)) : sourceOrder;
+
+    const fromIndex = sourceOrder.indexOf(sourceId);
+    const toIndex = targetOrder.indexOf(targetId);
+    if (toIndex === -1) return;
+
+    const newSourceOrder = isCrossStage ? sourceOrder.filter((id) => id !== sourceId) : [...sourceOrder];
+    const newTargetOrder = isCrossStage ? [...targetOrder] : newSourceOrder;
+
+    if (!isCrossStage) {
+      newTargetOrder.splice(fromIndex, 1);
+    }
+    const insertIndex = newTargetOrder.indexOf(targetId);
+    newTargetOrder.splice(isCrossStage ? insertIndex + 0 : insertIndex, 0, sourceId);
+
+    const new_itemOrder = { ...itemOrder };
+    if (isCrossStage) {
+      new_itemOrder[sourceItem.stage] = newSourceOrder;
+    }
+    new_itemOrder[stageId] = newTargetOrder;
+    saveItemOrder(new_itemOrder);
+
+    const updates: Array<{ id: string; stage: string; sortOrder: number }> = [];
+    if (isCrossStage) {
+      updates.push({ id: sourceId, stage: targetStage, sortOrder: newTargetOrder.indexOf(sourceId) });
+      newSourceOrder.forEach((id, index) => updates.push({ id, stage: sourceItem.stage, sortOrder: index }));
+    }
+    newTargetOrder.forEach((id, index) => {
+      if (!updates.some((u) => u.id === id)) updates.push({ id, stage: targetStage, sortOrder: index });
+    });
+
+    if (isCrossStage) {
+      setItems((current) => current.map((entry) => entry.id === sourceId ? { ...entry, stage: targetStage as ResearchStage } : entry));
+    }
+
+    void reorderResearchItems(updates).catch(() => {});
   }
 
   function handleDragEnd() {

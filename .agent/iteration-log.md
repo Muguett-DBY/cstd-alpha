@@ -1,35 +1,40 @@
 # CSTD Alpha - Iteration Log
 
-## Round 38 — 2026-06-18
+## Round 39 — 2026-06-18
 
-**承接上一轮方向:** R37 建议 D1 登录记录自动清理 + 研究工作台拖拽排序
+**承接上一轮方向:** R38 建议研究工作台跨阶段拖拽（需要后端 API 支持 sort_order 字段）
 
 **本轮决策:**
-- D1 登录清理：将 probabilistic cleanup (10% random) 改为 deterministic (每 20 次清理一次)，并在成功登录时也清理
-- login_attempts 清理窗口从 2 分钟扩大到 10 分钟，避免旧记录堆积
-- 研究工作台拖拽排序：纯前端实现（localStorage 持久化），无需后端 API 变更
+- 跨阶段拖拽是 R38 留下的核心未完成项，需要全栈改动
+- 后端：新增 sort_order 列 + reorder API + 更新查询排序
+- 前端：移除 "同阶段限制"，支持跨阶段拖放并同步到后端
+- 额外：研究队列移动端响应式优化（720px 以下单列布局）
 
 **完成内容:**
-- D1 登录清理：cleanupOldLoginAttempts 改为确定性触发（每 20 次失败尝试），成功登录时也清理
-- 新增 shouldCleanupLoginAttempts() 函数 + 测试
-- 研究工作台拖拽排序：卡片支持 drag/drop，同阶段内可拖拽调整顺序
-- 拖拽顺序通过 localStorage 持久化（key: cstd_research_item_order）
-- 拖拽视觉反馈：拖动中卡片半透明，目标位置显示顶部边框高亮
+- Migration 0014：research_items 新增 sort_order 列 + 索引
+- 后端：listResearchItems 改为按 sort_order ASC 排序
+- 后端：confirmResearchStage 支持可选 sortOrder 参数
+- 后端：新增 reorderResearchItems 批量排序函数
+- 后端：新增 /api/research-items/reorder 批量排序端点
+- 前端：updateResearchItemStage 支持 sortOrder 参数
+- 前端：新增 reorderResearchItems API 函数
+- 前端：handleDrop 支持跨阶段拖放，实时更新本地状态 + 异步同步后端
+- CSS：研究队列 720px 以下单列布局 + 筛选栏纵向排列
 
 **验证:**
-- npm test: 757 passed ✅（+1 新测试）
+- npm test: 757 passed ✅
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
 
 **遗留风险:**
-- 拖拽排序仅限同阶段内，跨阶段拖拽暂不支持（需要后端 API 支持）
 - App.tsx 仍有 1343 行，可继续拆分
+- 跨阶段拖放依赖乐观更新，后端失败时前端状态可能不一致
 
 **下一轮方向:**
-1. 研究工作台跨阶段拖拽 — 需要后端 API 支持 sort_order 字段
-2. 继续 App.tsx 进一步拆分（如 ReportView 提取）
-3. 研究工作台移动端体验优化
+1. 继续 App.tsx 进一步拆分（如 ReportView 提取）
+2. 研究工作台批量操作增强（批量拖拽、批量删除）
+3. 研究工作台搜索结果高亮
 
 ---
 
@@ -63,3 +68,4 @@
 | R36 | Financial Table Enhancement | 财务表排序/年份筛选 + 快速跳转按钮组 |
 | R37 | App.tsx RadarView Extraction | RadarView 提取为独立文件，App.tsx -50% |
 | R38 | D1 Login Cleanup + Drag-and-Drop | 登录清理确定性化 + 研究队列拖拽排序 |
+| R39 | Cross-Stage Drag-and-Drop | 跨阶段拖拽 + sort_order 后端支持 + 移动端适配 |
