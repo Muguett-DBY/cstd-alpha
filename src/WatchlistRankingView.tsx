@@ -14,20 +14,28 @@ export function WatchlistRankingView({ onOpenEntry }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    void reload(cancelled);
+    fetchWatchlistRanking()
+      .then((data) => {
+        if (cancelled) return;
+        setEntries(data.entries);
+        setPhase("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "自选股排行读取失败。");
+        setPhase("error");
+      });
     return () => { cancelled = true; };
   }, []);
 
-   async function reload(cancelled?: boolean) {
+  async function reload() {
     setPhase("loading");
     setError("");
     try {
       const data = await fetchWatchlistRanking();
-      if (cancelled) return;
       setEntries(data.entries);
       setPhase("ready");
     } catch (err) {
-      if (cancelled) return;
       setError(err instanceof Error ? err.message : "自选股排行读取失败。");
       setPhase("error");
     }

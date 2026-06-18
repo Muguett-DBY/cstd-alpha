@@ -3,6 +3,7 @@ import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, use
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
 import { downloadReportDocx } from "./docx/export-report";
+import { ErrorBoundary } from "./ErrorBoundary";
 import "./App.css";
 import { RadarVisualCharts } from "./RadarVisualCharts";
 import { ChartDashboard, type ChartPhase } from "./ReportCharts";
@@ -206,7 +207,7 @@ function App() {
   }
 
   async function submitLogout() {
-    await logout();
+    try { await logout(); } catch { /* logout failure is non-critical */ }
     setAuthenticated(false);
     setUser(null);
     setPassword("");
@@ -708,6 +709,7 @@ function App() {
       </aside>
 
       <section id="workspace" className="workspace">
+        <ErrorBoundary>
         <Suspense fallback={<section className="empty-state"><div className="button-spinner" /><h2>正在加载</h2></section>}>
           {renderedView === "opportunities" ? (
             <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
@@ -740,6 +742,7 @@ function App() {
             </>
           )}
         </Suspense>
+        </ErrorBoundary>
       </section>
 
       {phase === "selecting" && candidates.length > 0 ? (
