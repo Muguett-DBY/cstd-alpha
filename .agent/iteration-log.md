@@ -1,47 +1,55 @@
 # CSTD Alpha - Iteration Log
 
-## Round 44 — 2026-06-18 (System Health Check)
+## Round 45 — 2026-06-18 (UI/UX Design System Upgrade)
 
-**本轮类型:** 全项目体检 + 问题修复（非功能迭代）
+**本轮类型:** UI/UX 产品体验升级
 
-**检查范围:**
-- 构建与依赖（build, typecheck, lint）
-- GitHub Actions / CI 配置
-- TypeScript 类型安全
-- 功能流程（活动日志、拖拽排序、模态框）
-- 安全与数据风险（.env, console.log, SQL 注入）
-- 代码质量与可维护性
+**旗舰级主改动:** 设计系统基础统一 + 视觉体验升级
 
-**发现并修复的问题:**
+**完成内容:**
 
-| # | 文件 | 问题 | 严重度 | 修复 |
-|---|------|------|--------|------|
-| 1 | ResearchWorkspace.tsx | 活动日志 loading 状态从未显示 | P1 | 改用事件数组为空判断 |
-| 2 | ResearchWorkspace.tsx | 拖拽排序失败静默吞掉错误 | P1 | 添加 toast 通知 |
-| 3 | CandidateModal.tsx | 点击遮罩无法关闭弹窗 | P1 | 添加 backdrop onClick |
-| 4 | CandidateModal.tsx | 弹窗打开时背景仍可滚动 | P2 | 添加 body scroll lock |
-| 5 | activity.ts | parseInt 返回 NaN 传入 SQL LIMIT | P2 | 添加 Number.isFinite 校验 |
-| 6 | activity.ts | params.id 可能是数组 | P2 | 添加 Array.isArray 归一化 |
-| 7 | research-workbench-db.ts | 活动事件 ID 使用 Math.random() | P2 | 改用 crypto.randomUUID() |
-| 8 | research-workbench-db.ts | deleteResearchItems 无上限保护 | P2 | 添加 100 条上限检查 |
+1. **设计系统基础（index.css）**
+   - 新增 6 个语义化表面颜色变量（--surface-subtle, --surface-tinted, --surface-active, --surface-row-hover, --surface-header）
+   - 新增 3 级阴影尺度（--shadow-sm, --shadow-md, --shadow-lg）
+   - 新增 4 级圆角尺度（--radius-sm, --radius-md, --radius-lg, --radius-pill）
+   - 新增 fadeIn 和 loading-pulse 关键帧动画
+   - 统一焦点环为 teal 色（原为 blue）
+
+2. **视觉一致性（App.css）**
+   - 替换 50+ 硬编码颜色值为 CSS 变量
+   - 所有 #fbfbf8 → var(--surface-subtle)，#edf2f0 → var(--surface-header) 等
+   - 圆角归一化到 8px/12px 尺度（原为 3px/4px/6px/7px/10px 混乱）
+
+3. **卡片层级体系**
+   - 15 种卡片类型添加 shadow-sm 微妙深度
+   - 7 种交互卡片添加 hover 提升效果（shadow-md + translateY）
+
+4. **按钮交互状态**
+   - 二级按钮添加可见 hover 状态（着色背景 + 边框）
+   - 幽灵按钮添加可见 hover 状态
+   - 统一 teal 焦点环
+
+5. **移动端响应式（720px）**
+   - 报告导航、快速跳转、评分条更紧凑
+   - 模块表格、活动时间线、批量操作栏缩小
+   - 研究布局间距缩减，终端面板内边距
+   - 候选弹窗移动端适配
+
+6. **空状态/错误状态**
+   - 空状态字体和行高优化
+   - 错误文本增强为结构化警告样式（边框、背景、圆角）
 
 **验证:**
 - npm test: 757 passed ✅
 - npm run lint: 0 errors ✅
-- npm run typecheck:functions: 通过 ✅
 - npm run build: 成功 ✅
 - git push origin main: 成功 ✅
 - GitHub Actions: ✅ 全部通过
 
-**仍存在的已知问题（低优先级）:**
-- App.tsx 中 AbortController 存储在 useState 中（P2，反模式但功能正常）
-- 雷达轮询静默吞掉认证错误（P2，不影响核心流程）
-- 论点版本批量操作非事务性（P2，D1 限制）
-
 **下一轮建议:**
-1. 继续功能迭代（研究工作台拖拽视觉反馈、活动日志扩展事件类型）
-2. 继续 App.tsx 拆分
-3. 性能优化（echarts chunk 拆分）
+1. 报告页视觉升级（信息层级重构）
+2. 移动端导航体验优化
+3. 暗色模式支持
 
 | 轮次 | 旗舰主改动 | 关键用户增量 |
 |------|-----------|-------------|
@@ -77,3 +85,4 @@
 | R42 | Activity Timeline + ProgressPanel | 活动日志时间线重构 + ProgressPanel 提取 |
 | R43 | Activity Events Backend + CandidateModal | 活动日志后端事件流 + CandidateModal 提取 |
 | R44 | System Health Check + Fixes | 全项目体检 + 8 项 P1/P2 问题修复 |
+| R45 | Design System + Visual Upgrade | 设计系统基础统一 + 视觉体验升级 |
