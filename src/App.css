@@ -42,7 +42,7 @@
 }
 
 .toast-success {
-  background: #1a7a5c;
+  background: var(--success);
 }
 
 .toast-error {
@@ -3450,7 +3450,7 @@ button:not(:disabled):active,
 .score-bar-row div {
   height: 12px;
   border-radius: 999px;
-  background: #efe6d8;
+  background: var(--score-track);
   overflow: hidden;
 }
 
@@ -3476,7 +3476,7 @@ button:not(:disabled):active,
   position: relative;
   height: 44px;
   border-radius: 999px;
-  background: #efe6d8;
+  background: var(--score-track);
 }
 
 .buy-range,
@@ -4798,7 +4798,7 @@ button:not(:disabled):active,
 }
 
 .template-list-row.is-disabled {
-  background: #f4f1ea;
+  background: var(--disabled-surface);
 }
 
 .template-list-main {
@@ -4853,7 +4853,7 @@ button:not(:disabled):active,
 }
 
 .template-editor.is-disabled {
-  background: #f4f1ea;
+  background: var(--disabled-surface);
 }
 
 .template-editor-topline,
@@ -5319,7 +5319,7 @@ button:not(:disabled):active,
   height: 14px;
   border-radius: 999px;
   overflow: hidden;
-  background: #eeeae1;
+  background: var(--meter-track);
 }
 
 .sentiment-track i {
@@ -5422,8 +5422,8 @@ button:not(:disabled):active,
 }
 
 .sentiment-neutral .sentiment-badge {
-  background: #eeeae1;
-  color: #625f54;
+  background: var(--meter-track);
+  color: var(--muted);
 }
 
 .template-grid {
@@ -5518,8 +5518,8 @@ button:not(:disabled):active,
 }
 
 .template-card.status-running {
-  background: #f4f8ff;
-  border-color: #b7c9ec;
+  background: var(--info-soft);
+  border-color: var(--blue);
 }
 
 .template-card.is-generating {
@@ -5538,14 +5538,14 @@ button:not(:disabled):active,
 }
 
 .template-card.status-completed {
-  background: #f5fbf6;
-  border-color: #b9d9c0;
+  background: var(--success-soft);
+  border-color: var(--success);
 }
 
 .template-card.status-failed,
 .template-card.status-failed_retryable {
-  background: #fff7f5;
-  border-color: #e4bbb2;
+  background: var(--danger-soft);
+  border-color: var(--red);
 }
 
 .markdown-report {
@@ -6651,18 +6651,18 @@ button:not(:disabled):active,
 }
 
 .coverage-formal {
-  color: #18725d;
-  background: #e6f4f1;
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .coverage-watched {
-  color: #315f88;
-  background: #eaf4ff;
+  color: var(--blue);
+  background: var(--info-soft);
 }
 
 .coverage-insufficient {
-  color: #8a5b00;
-  background: #fff5d8;
+  color: var(--amber);
+  background: var(--warning-soft);
 }
 
 .radar-summary ul,
@@ -6842,23 +6842,23 @@ button:not(:disabled):active,
 }
 
 .risk-低 {
-  color: #18725d;
-  background: #e6f4f1;
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .risk-中 {
-  color: #8a5b00;
-  background: #fff5d8;
+  color: var(--amber);
+  background: var(--warning-soft);
 }
 
 .risk-高 {
   color: var(--red);
-  background: #fff0ee;
+  background: var(--danger-soft);
 }
 
 .confidence-低 {
-  color: #75641b;
-  background: #fff8d8;
+  color: var(--amber);
+  background: var(--warning-soft);
 }
 
 .confidence-中 {

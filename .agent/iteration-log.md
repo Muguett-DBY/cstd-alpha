@@ -1,5 +1,26 @@
 # CSTD Alpha - Iteration Log
 
+## Round 50 — 2026-06-18 (Cycle Loop: IMPROVE-IMPROVE-UIUX-IMPROVE-CHECK-IMPROVE)
+
+**循环模式:** 单循环自动执行总控模式
+
+### Stage 1/6 IMPROVE — Drag-and-Drop Enhancement
+- **旗舰:** 研究工作台拖拽位置指示器 (before/after/inside) + 键盘可访问排序 (Alt+↑↓ 排序, Alt+←→ 移动阶段)
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **Commit:** `feat: enhance research queue drag-and-drop with position indicators and keyboard reorder`
+
+### Stage 2/6 IMPROVE — (待完成)
+
+### Stage 3/6 UIUX — (待完成)
+
+### Stage 4/6 IMPROVE — (待完成)
+
+### Stage 5/6 CHECK — (待完成)
+
+### Stage 6/6 IMPROVE — (待完成)
+
+---
+
 ## Round 49 — 2026-06-18 (Adaptive Theme + PDF Export)
 
 **承接方向:** Round 48 的暗色模式、报告 PDF 导出；两项均已完成。
