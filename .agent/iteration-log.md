@@ -1,43 +1,42 @@
 # CSTD Alpha - Iteration Log
 
-## Round 45 — 2026-06-18 (UI/UX Design System Upgrade)
+## Round 46 — 2026-06-18 (Report Page Visual Upgrade)
 
-**本轮类型:** UI/UX 产品体验升级
+**承接上一轮方向:** R45 建议报告页视觉升级（信息层级重构）
 
-**旗舰级主改动:** 设计系统基础统一 + 视觉体验升级
+**旗舰级主改动:** 报告页信息层级重构 + 分数可视化增强
 
 **完成内容:**
 
-1. **设计系统基础（index.css）**
-   - 新增 6 个语义化表面颜色变量（--surface-subtle, --surface-tinted, --surface-active, --surface-row-hover, --surface-header）
-   - 新增 3 级阴影尺度（--shadow-sm, --shadow-md, --shadow-lg）
-   - 新增 4 级圆角尺度（--radius-sm, --radius-md, --radius-lg, --radius-pill）
-   - 新增 fadeIn 和 loading-pulse 关键帧动画
-   - 统一焦点环为 teal 色（原为 blue）
+1. **报告头部升级**
+   - 渐变背景 + 圆角 + 内边距，更专业的外观
+   - 微妙深度效果
 
-2. **视觉一致性（App.css）**
-   - 替换 50+ 硬编码颜色值为 CSS 变量
-   - 所有 #fbfbf8 → var(--surface-subtle)，#edf2f0 → var(--surface-header) 等
-   - 圆角归一化到 8px/12px 尺度（原为 3px/4px/6px/7px/10px 混乱）
+2. **评分条升级**
+   - 3 列网格 + 渐变背景 + 圆角 + 阴影
+   - 更清晰的 CQS/IAS/决策展示
 
-3. **卡片层级体系**
-   - 15 种卡片类型添加 shadow-sm 微妙深度
-   - 7 种交互卡片添加 hover 提升效果（shadow-md + translateY）
+3. **评分卡片升级**
+   - 添加边框和圆角
+   - hover 时显示 teal 顶部条效果
+   - 更好的交互反馈
 
-4. **按钮交互状态**
-   - 二级按钮添加可见 hover 状态（着色背景 + 边框）
-   - 幽灵按钮添加可见 hover 状态
-   - 统一 teal 焦点环
+4. **决策卡片升级**
+   - teal 着色渐变背景
+   - 居中布局 + 醒目的 teal 分数显示
 
-5. **移动端响应式（720px）**
-   - 报告导航、快速跳转、评分条更紧凑
-   - 模块表格、活动时间线、批量操作栏缩小
-   - 研究布局间距缩减，终端面板内边距
-   - 候选弹窗移动端适配
+5. **模块表格升级**
+   - 表头增强：大写字母、字间距
+   - 分数列颜色编码（teal/amber/red）
 
-6. **空状态/错误状态**
-   - 空状态字体和行高优化
-   - 错误文本增强为结构化警告样式（边框、背景、圆角）
+6. **详细评分卡片升级**
+   - 新增分数进度条可视化
+   - 分数颜色编码（teal ≥70, amber ≥50, red <50）
+   - 更好的展开/收起视觉层次
+
+7. **仪表盘网格升级**
+   - 4 列网格 + 边框信息卡片
+   - 大写 muted 标签增强层次
 
 **验证:**
 - npm test: 757 passed ✅
@@ -47,9 +46,9 @@
 - GitHub Actions: ✅ 全部通过
 
 **下一轮建议:**
-1. 报告页视觉升级（信息层级重构）
-2. 移动端导航体验优化
-3. 暗色模式支持
+1. 移动端导航体验优化
+2. 暗色模式支持
+3. 报告页导出 PDF 功能
 
 | 轮次 | 旗舰主改动 | 关键用户增量 |
 |------|-----------|-------------|
@@ -86,3 +85,4 @@
 | R43 | Activity Events Backend + CandidateModal | 活动日志后端事件流 + CandidateModal 提取 |
 | R44 | System Health Check + Fixes | 全项目体检 + 8 项 P1/P2 问题修复 |
 | R45 | Design System + Visual Upgrade | 设计系统基础统一 + 视觉体验升级 |
+| R46 | Report Page Visual Upgrade | 报告页信息层级重构 + 分数可视化增强 |
