@@ -20,8 +20,7 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
         if (cancelled) return;
         if (radarResult.status === "fulfilled" && radarResult.value.radar) setRadar(radarResult.value.radar);
         if (rankingResult.status === "fulfilled") setRankingEntries(rankingResult.value.entries);
-      })
-      .catch(() => {});
+      });
     return () => { cancelled = true; };
   }, []);
 
