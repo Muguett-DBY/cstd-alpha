@@ -59,6 +59,8 @@ export function AssistantView() {
   const [speechPhase, setSpeechPhase] = useState<SpeechPhase>("idle");
   const [speechNotice, setSpeechNotice] = useState("");
   const [pyodideReady, setPyodideReady] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [retryCount, setRetryCount] = useState(0);
   const pyodideRef = useRef<{ runPythonAsync: (code: string) => Promise<unknown> } | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -78,9 +80,27 @@ export function AssistantView() {
   );
 
   useEffect(() => {
-    void reloadThread();
-    void loadThreadList();
+    if (typeof window === "undefined") return;
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
   }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      if (phase === "error" && lastSentMessageRef.current) {
+        setRetryCount((current) => current + 1);
+      } else if (phase === "ready" || phase === "streaming") {
+        setRetryCount((previous) => (previous === 0 ? previous : 0));
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [phase]);
 
   useEffect(() => {
     activeThreadIdRef.current = thread?.id ?? null;
@@ -557,6 +577,15 @@ export function AssistantView() {
               </div>
             ) : null}
             <div ref={messagesEndRef} />
+          </div>
+          <div className={`assistant-status-bar ${isOnline ? "online" : "offline"} ${phase === "error" ? "has-error" : ""}`} role="status" aria-live="polite">
+            <span className="assistant-status-dot" aria-hidden="true" />
+            <span className="assistant-status-text">
+              {!isOnline ? "离线" : phase === "error" ? (retryCount > 1 ? `连接异常 (重试 ${retryCount})` : "连接异常") : "在线"}
+            </span>
+            {retryCount > 0 && phase === "error" ? (
+              <span className="assistant-status-hint">点击上方"重试上一条"可重新发送</span>
+            ) : null}
           </div>
           <form className="assistant-composer" onSubmit={(event) => void submitMessage(event)}>
             <div className="assistant-input-row">
