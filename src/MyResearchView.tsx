@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   addWatchlistItem,
   completeResearchTemplateDraft,
@@ -238,6 +238,14 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       setError(err instanceof Error ? err.message : "移除自选失败。");
     }
   }
+
+  const recordRecentTemplate = useCallback((templateId: string) => {
+    try {
+      const previous = JSON.parse(localStorage.getItem("cstd_recent_templates") || "[]") as string[];
+      const next = [templateId, ...previous.filter((id) => id !== templateId)].slice(0, 4);
+      localStorage.setItem("cstd_recent_templates", JSON.stringify(next));
+    } catch { /* ignore */ }
+  }, []);
 
   async function generate(templateId: string, forceRefresh = false) {
     const target = selectedItem;
@@ -551,7 +559,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               templates={templates}
               activeGeneration={activeGeneration}
               analysisSummary={selectedAnalysisSummary}
-              onGenerate={(templateId, forceRefresh) => void generate(templateId, forceRefresh)}
+              onGenerate={(templateId, forceRefresh) => { recordRecentTemplate(templateId); void generate(templateId, forceRefresh); }}
               onOpenAnalysis={(analysis) => void openAnalysis(analysis)}
               onOpenBaseReport={() => onOpenCompany(selectedItem.company)}
               onOpenNews={() => setActiveNews(true)}
@@ -980,6 +988,12 @@ function CompanyWorkbench({
       </div>
 
       <NewsEntryCard item={item} onOpen={onOpenNews} />
+
+      <RecentTemplatesBar
+        templates={templates}
+        onSelect={onGenerate}
+        disabled={phase === "generating"}
+      />
 
       <section className="template-grid" aria-label="全部模板深度分析">
         <TemplateCard
@@ -1419,6 +1433,48 @@ function renderInline(value: string): ReactNode[] {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
     return part;
   });
+}
+
+function RecentTemplatesBar({ templates, onSelect, disabled }: { templates: ResearchTemplate[]; onSelect: (id: string) => void; disabled: boolean }) {
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("cstd_recent_templates") || "[]"); } catch { return []; }
+  });
+  if (recentIds.length === 0) return null;
+  const recentTemplates = recentIds
+    .map((id) => templates.find((t) => t.id === id))
+    .filter((t): t is ResearchTemplate => Boolean(t))
+    .slice(0, 4);
+  if (recentTemplates.length === 0) return null;
+  return (
+    <div className="recent-templates-bar" aria-label="最近使用模板">
+      <span className="recent-templates-label">最近使用</span>
+      <div className="recent-templates-pills">
+        {recentTemplates.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            className="recent-template-pill"
+            onClick={() => onSelect(template.id)}
+            disabled={disabled}
+            title={template.title}
+          >
+            {template.title.length > 14 ? `${template.title.slice(0, 14)}…` : template.title}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="recent-template-clear"
+          onClick={() => {
+            try { localStorage.removeItem("cstd_recent_templates"); } catch { /* ignore */ }
+            setRecentIds([]);
+          }}
+          aria-label="清除最近使用"
+        >
+          清除
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
