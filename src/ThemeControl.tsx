@@ -26,8 +26,8 @@ export function ThemeControl({
           title={`${option.label}主题`}
           onClick={() => onChange(option.value)}
         >
-          <span aria-hidden="true">{option.icon}</span>
-          <span>{option.label}</span>
+          <span className="theme-icon" aria-hidden="true">{option.icon}</span>
+          <span className="theme-label">{option.label}</span>
         </button>
       ))}
     </div>
