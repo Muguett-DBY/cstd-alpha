@@ -17,6 +17,7 @@ export function ValuationLabView() {
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
   const [sortBy, setSortBy] = useState<"updated" | "base" | "bull" | "bear">("updated");
+  const [compareIds, setCompareIds] = useState<string[]>([]);
   const selected = useMemo(() => items.find((item) => item.id === selectedEntityId) ?? items[0], [items, selectedEntityId]);
   const activeRunIds = useMemo(
     () => runs.filter((run) => run.status === "queued" || run.status === "running").map((run) => run.id).sort().join(","),
@@ -155,8 +156,22 @@ export function ValuationLabView() {
                 </div>
                 <ValuationVersionTrend runs={displayRuns} />
                 {displayRuns.map((run) => (
-                  <ValuationRunCard key={run.id} run={run} onRetry={retryValuation} />
+                  <ValuationRunCard
+                    key={run.id}
+                    run={run}
+                    onRetry={retryValuation}
+                    isComparing={compareIds.includes(run.id)}
+                    canCompare={compareIds.length < 2}
+                    onCompareToggle={(id) => {
+                      setCompareIds((current) => current.includes(id) ? current.filter((x) => x !== id) : current.length < 2 ? [...current, id] : current);
+                    }}
+                  />
                 ))}
+                {compareIds.length === 2 ? (
+                  <ValuationCompareStrip compareIds={compareIds} runs={displayRuns} onClear={() => setCompareIds([])} />
+                ) : compareIds.length === 1 ? (
+                  <div className="valuation-compare-hint">再选 1 个版本开始对比</div>
+                ) : null}
               </>
             ) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
           </main>
@@ -223,7 +238,7 @@ function ValuationVersionTrend({ runs }: { runs: ValuationRunSummary[] }) {
   );
 }
 
-function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?: (run: ValuationRunSummary) => void }) {
+function ValuationRunCard({ run, onRetry, onCompareToggle, isComparing, canCompare }: { run: ValuationRunSummary; onRetry?: (run: ValuationRunSummary) => void; onCompareToggle?: (id: string) => void; isComparing?: boolean; canCompare?: boolean }) {
   const scenarios = useMemo(() => run.result?.scenarios ?? [], [run]);
   const assumptions = valuationAssumptionsForDisplay(run);
   const rangeInfo = useMemo(() => {
@@ -237,13 +252,27 @@ function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?
   }, [scenarios]);
 
   return (
-    <article className={`valuation-run-card ${run.status}`}>
+    <article className={`valuation-run-card ${run.status} ${isComparing ? "comparing" : ""}`}>
       <div className="valuation-run-head">
         <div>
           <strong>{run.title}</strong>
           <p>{methodLabel(run.method)} / {archetypeLabel(run.archetype)} / {run.currency}</p>
         </div>
-        <span className="status-pill">{statusLabel(run.status)}</span>
+        <div className="valuation-run-head-actions">
+          {onCompareToggle && run.status === "completed" ? (
+            <label className="valuation-compare-toggle">
+              <input
+                type="checkbox"
+                checked={isComparing ?? false}
+                disabled={!isComparing && !canCompare}
+                onChange={() => onCompareToggle(run.id)}
+                aria-label={`选择 ${run.title} 进行对比`}
+              />
+              <span>对比</span>
+            </label>
+          ) : null}
+          <span className="status-pill">{statusLabel(run.status)}</span>
+        </div>
       </div>
       {scenarios.length ? (
         <>
@@ -310,6 +339,46 @@ function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?
         </div>
       )}
     </article>
+  );
+}
+
+function ValuationCompareStrip({ compareIds, runs, onClear }: { compareIds: string[]; runs: ValuationRunSummary[]; onClear: () => void }) {
+  const selected = runs.filter((r) => compareIds.includes(r.id));
+  if (selected.length !== 2) return null;
+  const [a, b] = selected;
+  const aBase = a.result?.scenarios.find((s) => s.scenario === "base");
+  const bBase = b.result?.scenarios.find((s) => s.scenario === "base");
+  const baseDelta = aBase && bBase ? bBase.perShareValue - aBase.perShareValue : 0;
+  const aBull = a.result?.scenarios.find((s) => s.scenario === "bull");
+  const bBull = b.result?.scenarios.find((s) => s.scenario === "bull");
+  return (
+    <div className="valuation-compare-strip" role="region" aria-label="两个版本对比">
+      <div className="valuation-compare-head">
+        <span>版本对比 ({a.currency})</span>
+        <button type="button" className="valuation-compare-clear" onClick={onClear}>清除对比</button>
+      </div>
+      <div className="valuation-compare-grid">
+        <div className="valuation-compare-col">
+          <strong>{a.title}</strong>
+          <small>{new Date(a.createdAt).toLocaleString("zh-CN")}</small>
+          <span className="valuation-compare-base">中性 {aBase ? formatMoney(aBase.perShareValue, a.currency) : "—"}</span>
+          <span>乐观 {aBull ? formatMoney(aBull.perShareValue, a.currency) : "—"}</span>
+        </div>
+        <div className="valuation-compare-arrow" aria-hidden="true">→</div>
+        <div className="valuation-compare-col">
+          <strong>{b.title}</strong>
+          <small>{new Date(b.createdAt).toLocaleString("zh-CN")}</small>
+          <span className="valuation-compare-base">中性 {bBase ? formatMoney(bBase.perShareValue, b.currency) : "—"}</span>
+          <span>乐观 {bBull ? formatMoney(bBull.perShareValue, b.currency) : "—"}</span>
+        </div>
+        <div className="valuation-compare-delta">
+          <span>中性差异</span>
+          <strong className={baseDelta >= 0 ? "up" : "down"}>
+            {baseDelta >= 0 ? "+" : ""}{baseDelta.toFixed(2)} {a.currency}
+          </strong>
+        </div>
+      </div>
+    </div>
   );
 }
 
