@@ -183,6 +183,7 @@ function RadarRoundChanges({ changeLog }: { changeLog?: string[] }) {
     { key: "downgraded", title: "降级", items: buckets.downgraded, note: "证据转弱或本次未延续" },
     { key: "maintained", title: "维持", items: buckets.maintained, note: "延续上次稳定判断" },
   ];
+  const total = groups.reduce((sum, g) => sum + g.items.length, 0);
   return (
     <section className="radar-summary radar-round-changes" aria-labelledby="radar-round-changes-title">
       <div className="radar-round-changes-head">
@@ -206,6 +207,24 @@ function RadarRoundChanges({ changeLog }: { changeLog?: string[] }) {
           </article>
         ))}
       </div>
+      {total > 0 ? (
+        <div className="radar-round-change-distribution" aria-label="本轮变化分布">
+          <div className="radar-round-change-distribution-label">
+            <span>本轮变化分布</span>
+            <em>共 {total} 项变化</em>
+          </div>
+          <div className="radar-round-change-distribution-bar" role="img" aria-label={`本轮变化分布：新增 ${buckets.added.length}, 升级 ${buckets.upgraded.length}, 降级 ${buckets.downgraded.length}, 维持 ${buckets.maintained.length}`}>
+            {[
+              { key: "added", count: buckets.added.length, color: "var(--blue)" },
+              { key: "upgraded", count: buckets.upgraded.length, color: "var(--teal)" },
+              { key: "downgraded", count: buckets.downgraded.length, color: "var(--red)" },
+              { key: "maintained", count: buckets.maintained.length, color: "var(--muted)" },
+            ].map((seg) => seg.count > 0 ? (
+              <span key={seg.key} className="dist-seg" style={{ width: `${(seg.count / total) * 100}%`, background: seg.color }} title={`${seg.key}: ${seg.count}`} />
+            ) : null)}
+          </div>
+        </div>
+      ) : null}
       <RadarChangeFlow buckets={buckets} />
     </section>
   );
