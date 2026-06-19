@@ -19,8 +19,11 @@
 **CI:** ✅ passed (run 27807701359)
 
 #### 阶段 2/18: IMPROVE (循环1-阶段2)
-**状态:** 🔄 执行中
+**状态:** ✅ 完成
 **使用的 Prompt:** AGENT_IMPROVE_MAIN.txt
+**完成:** 研究队列筛选器和批量操作栏视觉升级 - hover/focus 状态、毛玻璃效果、圆角统一
+**Commit:** `feat: upgrade research queue filter bar and batch action bar visual polish`
+**CI:** ✅ passed (run 27807818661)
 
 ---
 

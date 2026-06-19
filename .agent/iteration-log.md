@@ -1,5 +1,23 @@
 # CSTD Alpha - Iteration Log
 
+## Round 51 — 2026-06-19 (Triple Loop: Phase 1-2 completed)
+
+**循环模式:** 三循环超级版 Agent 总控执行模式 (18 phases total)
+
+### Phase 1/18 IMPROVE — Dark Mode Token Audit
+- **旗舰:** sentiment/stage/assistant 颜色统一为 CSS 变量，新增 4 个暗色模式令牌
+- **验证:** build passed, CI passed
+- **Commit:** `feat: complete dark mode token audit with sentiment and stage color unification`
+
+### Phase 2/18 IMPROVE — Filter Bar & Batch Action Polish
+- **旗舰:** 筛选器容器背景、hover/focus 状态、批量操作栏毛玻璃效果
+- **验证:** build passed, CI passed
+- **Commit:** `feat: upgrade research queue filter bar and batch action bar visual polish`
+
+### Phase 3-18: 待执行
+
+---
+
 ## Round 50 — 2026-06-18 (Cycle Loop: IMPROVE-IMPROVE-UIUX-IMPROVE-CHECK-IMPROVE)
 
 **循环模式:** 单循环自动执行总控模式
