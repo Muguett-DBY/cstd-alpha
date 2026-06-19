@@ -25,7 +25,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [selectedId, setSelectedId] = useState("");
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
-  const [queueQuery, setQueueQuery] = useState("");
+  const [queueQuery, setQueueQuery] = useState(() => {
+    try { return localStorage.getItem("cstd_research_queue_query") || ""; } catch { return ""; }
+  });
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [quickAddSuggestions, setQuickAddSuggestions] = useState<Array<{ id: string; name: string; code: string; listingPlace: string; source: string }>>([]);
   const [quickAddLoading, setQuickAddLoading] = useState(false);
@@ -40,9 +42,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const [updatingCatalystId, setUpdatingCatalystId] = useState("");
   const [catalystStatusFilter, setCatalystStatusFilter] = useState<ResearchCatalystStatusFilter>("all");
-  const [stageFilter, setStageFilter] = useState<string>("all");
-  const [thesisFilter, setThesisFilter] = useState<"all" | "with" | "without">("all");
-  const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">("recent");
+  const [stageFilter, setStageFilter] = useState<string>(() => {
+    try { return localStorage.getItem("cstd_research_stage_filter") || "all"; } catch { return "all"; }
+  });
+  const [thesisFilter, setThesisFilter] = useState<"all" | "with" | "without">(() => {
+    try { return (localStorage.getItem("cstd_research_thesis_filter") as "all" | "with" | "without") || "all"; } catch { return "all"; }
+  });
+  const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">(() => {
+    try { return (localStorage.getItem("cstd_research_sort_order") as "recent" | "name" | "stage") || "recent"; } catch { return "recent"; }
+  });
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
@@ -246,6 +254,23 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       });
     return () => { cancelled = true; };
   }, []);
+
+  // Persist filter state to localStorage
+  useEffect(() => {
+    try { localStorage.setItem("cstd_research_queue_query", queueQuery); } catch { /* ignore */ }
+  }, [queueQuery]);
+
+  useEffect(() => {
+    try { localStorage.setItem("cstd_research_stage_filter", stageFilter); } catch { /* ignore */ }
+  }, [stageFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem("cstd_research_thesis_filter", thesisFilter); } catch { /* ignore */ }
+  }, [thesisFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem("cstd_research_sort_order", sortOrder); } catch { /* ignore */ }
+  }, [sortOrder]);
 
   useEffect(() => {
     if (!selected?.id) {
