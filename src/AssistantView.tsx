@@ -383,6 +383,15 @@ export function AssistantView() {
     assistantAbortRef.current?.abort();
   }
 
+  function resendLastMessage() {
+    if (phase === "streaming") return;
+    if (!lastSentMessageRef.current.trim()) {
+      setError("没有可重发的上一条消息。");
+      return;
+    }
+    void sendMessage(lastSentMessageRef.current);
+  }
+
   async function submitClarification() {
     if (!pendingClarification || phase === "streaming") return;
     const option = pendingClarification.request.options.find((item) => item.id === pendingClarification.selectedId) ?? pendingClarification.request.options[0];
@@ -579,9 +588,31 @@ export function AssistantView() {
               >
                 {phase === "streaming" ? "停止" : "发送"}
               </button>
+              <button
+                type="button"
+                className="assistant-resend-button"
+                onClick={resendLastMessage}
+                disabled={phase === "streaming" || !lastSentMessageRef.current.trim()}
+                aria-label="重发上一条消息"
+                title="重发上一条消息"
+              >
+                ↻
+              </button>
             </div>
             {speechNotice ? <p className={`assistant-speech-status ${speechPhase === "error" || speechPhase === "unsupported" ? "is-error" : ""}`}>{speechNotice}</p> : null}
-            {error ? <p className="error-text">{error}</p> : null}
+            {error ? (
+              <div className="assistant-error-block" role="alert">
+                <p className="error-text">{error}</p>
+                <button
+                  type="button"
+                  className="assistant-error-retry"
+                  onClick={resendLastMessage}
+                  disabled={phase === "streaming" || !lastSentMessageRef.current.trim()}
+                >
+                  重试上一条
+                </button>
+              </div>
+            ) : null}
           </form>
       </section>
       {pendingClarification ? (
