@@ -5486,6 +5486,72 @@ button:not(:disabled):active,
   color: var(--red);
 }
 
+.assistant-resend-button {
+  min-height: 44px;
+  width: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+
+.assistant-resend-button:hover:not(:disabled) {
+  border-color: var(--teal);
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, var(--surface));
+}
+
+.assistant-resend-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.assistant-error-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 8px 0;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--red) 6%, var(--surface));
+}
+
+.assistant-error-block .error-text {
+  margin: 0;
+  flex: 1;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.assistant-error-retry {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--red);
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.assistant-error-retry:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 85%, #000);
+}
+
+.assistant-error-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .assistant-speech-status {
   margin: 6px 8px 0;
   color: var(--muted);
