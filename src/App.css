@@ -4642,41 +4642,49 @@ button:not(:disabled):active,
 
 .assistant-input-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px 64px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 44px 72px;
+  gap: 8px;
   align-items: end;
 }
 
 .assistant-input-row button[type="submit"] {
-  min-height: 38px;
-  border-radius: 999px;
-  padding-inline: 12px;
-  font-size: 13px;
-  font-weight: 850;
+  min-height: 44px;
+  border-radius: 10px;
+  padding-inline: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+}
+
+.assistant-input-row button[type="submit"]:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--teal) 20%, transparent);
 }
 
 .assistant-voice-button {
-  min-height: 38px;
-  width: 38px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--line) 45%, var(--surface));
-  color: color-mix(in srgb, var(--body) 78%, var(--muted));
-  font-size: 14px;
-  font-weight: 900;
-  box-shadow: none;
+  min-height: 44px;
+  width: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
 }
 
 .assistant-voice-button:hover:not(:disabled),
 .assistant-voice-button.active {
-  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
+  background: color-mix(in srgb, var(--teal) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--teal) 30%, var(--line));
   color: var(--teal);
   transform: none;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--teal) 12%, transparent);
 }
 
 .assistant-input-row .assistant-stop-button {
-  border-color: color-mix(in srgb, var(--red) 26%, var(--line));
+  border-color: color-mix(in srgb, var(--red) 30%, var(--line));
   background: color-mix(in srgb, var(--red) 10%, var(--surface));
   color: var(--red);
 }
