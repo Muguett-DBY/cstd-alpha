@@ -16,12 +16,24 @@ export function ValuationLabView() {
   const [selectedEntityId, setSelectedEntityId] = useState("");
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [sortBy, setSortBy] = useState<"updated" | "base" | "bull" | "bear">("updated");
   const selected = useMemo(() => items.find((item) => item.id === selectedEntityId) ?? items[0], [items, selectedEntityId]);
   const activeRunIds = useMemo(
     () => runs.filter((run) => run.status === "queued" || run.status === "running").map((run) => run.id).sort().join(","),
     [runs],
   );
-  const displayRuns = useMemo(() => filterValuationRunsForDisplay(runs), [runs]);
+  const displayRuns = useMemo(() => {
+    const base = filterValuationRunsForDisplay(runs);
+    if (sortBy === "updated") {
+      return [...base].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+    const sortKey = sortBy;
+    return [...base].sort((a, b) => {
+      const aVal = a.result?.scenarios.find((s) => s.scenario === sortKey)?.perShareValue ?? -Infinity;
+      const bVal = b.result?.scenarios.find((s) => s.scenario === sortKey)?.perShareValue ?? -Infinity;
+      return bVal - aVal;
+    });
+  }, [runs, sortBy]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +140,19 @@ export function ValuationLabView() {
             </header>
             {displayRuns.length ? (
               <>
+                <div className="valuation-sort-bar" role="group" aria-label="排序">
+                  <span className="filter-label">排序</span>
+                  {[
+                    { key: "updated" as const, label: "最近更新" },
+                    { key: "base" as const, label: "中性情景" },
+                    { key: "bull" as const, label: "乐观情景" },
+                    { key: "bear" as const, label: "保守情景" },
+                  ].map((opt) => (
+                    <button key={opt.key} type="button" className={`valuation-sort-pill ${sortBy === opt.key ? "active" : ""}`} onClick={() => setSortBy(opt.key)}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
                 <ValuationVersionTrend runs={displayRuns} />
                 {displayRuns.map((run) => (
                   <ValuationRunCard key={run.id} run={run} onRetry={retryValuation} />
