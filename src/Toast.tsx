@@ -14,7 +14,8 @@ export function ToastContainer() {
     <div className="toast-container" role="status" aria-live="polite">
       {items.map((item) => (
         <div key={item.id} className={`toast-item toast-${item.type}`}>
-          <span>{item.message}</span>
+          <span className="toast-icon">{item.type === "success" ? "✓" : item.type === "error" ? "✕" : "ℹ"}</span>
+          <span className="toast-message">{item.message}</span>
         </div>
       ))}
     </div>
