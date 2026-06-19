@@ -277,7 +277,7 @@
 }
 
 .search-clear:hover {
-  background: color-mix(in srgb, var(--red) 15%, white);
+  background: color-mix(in srgb, var(--red) 15%, var(--surface));
   color: var(--red);
 }
 
@@ -1086,7 +1086,7 @@ button:not(:disabled):active,
 
 .opportunity-row:hover {
   border-color: color-mix(in srgb, var(--teal) 32%, var(--line));
-  background: color-mix(in srgb, var(--teal) 5%, white);
+  background: color-mix(in srgb, var(--teal) 5%, var(--surface));
 }
 
 .opportunity-row strong,
@@ -1371,31 +1371,46 @@ button:not(:disabled):active,
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-content: start;
-  padding: 0;
-  border-bottom: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  margin-bottom: 12px;
 }
 
 .filter-group {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .filter-label {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 750;
   color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .filter-group select {
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
   font-size: 12px;
   color: var(--ink);
-  min-height: auto;
+  min-height: 32px;
   cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filter-group select:hover {
+  border-color: color-mix(in srgb, var(--teal) 30%, var(--line));
+}
+
+.filter-group select:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 12%, transparent);
+  outline: none;
 }
 
 .card-checkbox {
@@ -1428,12 +1443,13 @@ button:not(:disabled):active,
   grid-template-columns: minmax(180px, 1fr) repeat(5, auto);
   align-items: center;
   gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--teal);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 92%, var(--teal));
-  box-shadow: 0 16px 38px rgb(18 20 23 / 0.12);
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--teal) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--teal));
+  box-shadow: 0 8px 32px rgb(18 20 23 / 0.16), 0 2px 8px rgb(18 20 23 / 0.08);
   margin: 10px 14px;
+  backdrop-filter: blur(8px);
 }
 
 .batch-action-summary {
@@ -1445,17 +1461,18 @@ button:not(:disabled):active,
 .batch-action-summary strong {
   color: var(--ink);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .batch-action-summary span {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--teal);
   overflow-wrap: anywhere;
 }
 
 .batch-action-bar select {
-  padding: 4px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
@@ -3803,9 +3820,9 @@ button:not(:disabled):active,
   width: 38px;
   height: 38px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--logo-accent) 45%, white);
+  border: 1px solid color-mix(in srgb, var(--logo-accent) 45%, var(--surface));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--logo-accent) 13%, white);
+  background: color-mix(in srgb, var(--logo-accent) 13%, var(--surface));
   color: var(--logo-accent);
   font-size: 18px;
   font-weight: 900;
@@ -4133,17 +4150,17 @@ button:not(:disabled):active,
   border: 1px solid color-mix(in srgb, var(--teal) 22%, var(--line));
   border-radius: 12px;
   padding: 12px 13px;
-  background: color-mix(in srgb, var(--teal) 4%, white);
+  background: color-mix(in srgb, var(--teal) 4%, var(--surface));
 }
 
 .assistant-deep-research-card.completed {
   border-color: color-mix(in srgb, var(--teal) 34%, var(--line));
-  background: color-mix(in srgb, var(--teal) 7%, white);
+  background: color-mix(in srgb, var(--teal) 7%, var(--surface));
 }
 
 .assistant-deep-research-card.failed {
   border-color: color-mix(in srgb, var(--red) 26%, var(--line));
-  background: color-mix(in srgb, var(--red) 5%, white);
+  background: color-mix(in srgb, var(--red) 5%, var(--surface));
 }
 
 .assistant-deep-research-head,
@@ -4581,7 +4598,7 @@ button:not(:disabled):active,
   width: 38px;
   border-radius: 999px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--line) 45%, white);
+  background: color-mix(in srgb, var(--line) 45%, var(--surface));
   color: color-mix(in srgb, var(--body) 78%, var(--muted));
   font-size: 14px;
   font-weight: 900;
@@ -4590,7 +4607,7 @@ button:not(:disabled):active,
 
 .assistant-voice-button:hover:not(:disabled),
 .assistant-voice-button.active {
-  background: color-mix(in srgb, var(--teal) 12%, white);
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
   border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
   color: var(--teal);
   transform: none;
@@ -4598,7 +4615,7 @@ button:not(:disabled):active,
 
 .assistant-input-row .assistant-stop-button {
   border-color: color-mix(in srgb, var(--red) 26%, var(--line));
-  background: color-mix(in srgb, var(--red) 10%, white);
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
   color: var(--red);
 }
 
@@ -5715,7 +5732,7 @@ button:not(:disabled):active,
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: #e6f4f1;
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
   color: var(--teal);
   font-size: 14px;
 }
@@ -6315,7 +6332,7 @@ button:not(:disabled):active,
 .quick-jump-pill:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: #eef4ff;
+  background: var(--blue-soft);
 }
 
 .radar-refresh-notice {
@@ -6895,7 +6912,7 @@ button:not(:disabled):active,
   border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--line));
   border-radius: 999px;
   padding: 4px 8px;
-  background: #f3f7fb;
+  background: var(--blue-soft);
   color: var(--blue);
   font-size: 12px;
   font-weight: 850;
@@ -7535,7 +7552,7 @@ button:not(:disabled):active,
   display: inline-flex;
   align-items: center;
   min-height: 22px;
-  border: 1px solid color-mix(in srgb, var(--stage-color) 30%, white);
+  border: 1px solid color-mix(in srgb, var(--stage-color) 30%, var(--surface));
   border-radius: 999px;
   padding: 0 8px;
   background: rgba(255, 255, 255, 0.86);
