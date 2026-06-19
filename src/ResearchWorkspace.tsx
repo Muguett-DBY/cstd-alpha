@@ -695,7 +695,17 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     {orderedItems.length ? orderedItems.map((item) => {
                       const valuation = valuationByItem.get(item.id);
                       const isSelected = selectedItemIds.has(item.id);
-                      return (
+
+  function getResearchProgress(item: ResearchWorkbenchItem): number {
+    let progress = 0;
+    if (item.currentThesisVersionId) progress += 40;
+    if (item.evidenceHash) progress += 30;
+    const valuation = valuationByItem.get(item.id);
+    if (valuation?.status === "completed") progress += 30;
+    return progress;
+  }
+
+  return (
                         <button
                           type="button"
                           draggable
@@ -730,6 +740,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                               </span>
                             ) : null}
                             <span className="card-time">{relativeTime(item.updatedAt)}</span>
+                            <div className="card-progress" aria-label={`完成度 ${getResearchProgress(item)}%`}>
+                              <div className="card-progress-bar" style={{ width: `${getResearchProgress(item)}%` }} />
+                            </div>
                             <button type="button" className="card-expand-toggle" onClick={(e) => { e.stopPropagation(); setExpandedCardId(expandedCardId === item.id ? null : item.id); }} aria-label={expandedCardId === item.id ? "收起详情" : "展开详情"}>
                               {expandedCardId === item.id ? "▲" : "▼"}
                             </button>

@@ -100,6 +100,28 @@
 2. 拆分 `vendor-docx` 包（416 kB），改为按需加载
 3. 研究工作台批量操作增强（批量删除、批量生成论点的 UX 优化）
 
+## Round 51 — 2026-06-19 (Triple Loop: Stages 1-3)
+
+### Stage 1/18 IMPROVE — Dark Mode Token Audit (Sentiment/Stage/Assistant)
+- **旗舰:** sentiment/stage/assistant 颜色统一为 CSS 变量
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **Commit:** `feat: complete dark mode token audit with sentiment and stage color unification`
+
+### Stage 2/18 IMPROVE — Research Queue Filter Bar Upgrade
+- **旗舰:** 筛选器和批量操作栏视觉升级 - hover/focus 状态、毛玻璃效果、圆角统一
+- **验证:** lint clean, build passed, CI passed
+- **Commit:** `feat: upgrade research queue filter bar and batch action bar visual polish`
+
+### Stage 3/18 IMPROVE — Dark Mode Token Unification (color-mix white)
+- **旗舰:** 11处color-mix中white替换为var(--surface)，新增--purple-soft令牌，修复radar/stage/funnel硬编码颜色
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **Commit:** `feat: unify dark mode design tokens for remaining hardcoded colors`
+
+### Stage 4/18 UIUX — Mobile Touch Targets & Accessibility
+- **旗舰:** 移动端触摸目标升级（搜索清除、卡片展开、toast关闭、阶段操作、主/次操作按钮），添加全局触摸优化和reduced-motion处理，移动端隐藏kbd-hint
+- **验证:** 764 tests passed, lint clean, build passed, CI passed
+- **Commit:** `feat: upgrade mobile touch targets and accessibility experience`
+
 ## Round 48 — 2026-06-18 (System Health Check + Fixes)
 
 **本轮类型:** 全项目体检 + 问题修复（非功能迭代）
