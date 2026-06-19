@@ -382,8 +382,11 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
 }
 
 function ScoreTile({ label, value }: { label: string; value: number }) {
+  const copyValue = () => navigator.clipboard.writeText(String(value))
+    .then(() => showToast(`${label}: ${value}`, "success"))
+    .catch(() => showToast("复制失败，请检查浏览器权限。", "error"));
   return (
-    <div className="score-tile" onClick={() => navigator.clipboard.writeText(String(value)).then(() => showToast(`${label}: ${value}`, "success")).catch(() => {})} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigator.clipboard.writeText(String(value)).then(() => showToast(`${label}: ${value}`, "success")).catch(() => {}); } }}>
+    <div className="score-tile" onClick={copyValue} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyValue(); } }}>
       <span>{label}</span>
       <strong>{value}</strong>
       <meter min="0" max="100" value={value} />
