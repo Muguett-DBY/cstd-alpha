@@ -1189,7 +1189,7 @@ button:not(:disabled):active,
   display: block;
   height: 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--teal) 70%, #dfe7e2);
+  background: color-mix(in srgb, var(--teal) 70%, var(--surface-subtle));
 }
 
 .hero-kpi {
@@ -6489,7 +6489,7 @@ button:not(:disabled):active,
 }
 
 .radar-round-change-card.change-upgraded {
-  border-left-color: #315f88;
+  border-left-color: var(--blue);
 }
 
 .radar-round-change-card.change-downgraded {
@@ -6497,7 +6497,7 @@ button:not(:disabled):active,
 }
 
 .radar-round-change-card.change-maintained {
-  border-left-color: #8a5b00;
+  border-left-color: var(--amber);
 }
 
 .radar-round-change-card span {
@@ -7162,7 +7162,7 @@ button:not(:disabled):active,
 }
 
 .radar-citation-context {
-  color: #315f88;
+  color: var(--blue);
 }
 
 .radar-citation-grid p,
@@ -7573,7 +7573,7 @@ button:not(:disabled):active,
 
 .stage-bubble {
   --stage-color: #8d4bb3;
-  --stage-soft: #f8edff;
+  --stage-soft: var(--purple-soft);
 }
 
 .stage-decline {
