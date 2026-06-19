@@ -12,6 +12,8 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
   const [data, setData] = useState<OpportunitiesResult | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "radar" | "watchlist" | "hybrid">("all");
+  const [minScore, setMinScore] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,7 +31,16 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const matrixItems = useMemo(() => (data?.opportunities ?? []).slice(0, 36), [data]);
+  const allOpportunities = useMemo(() => data?.opportunities ?? [], [data]);
+  const sourceBreakdown = useMemo(() => {
+    const counts = { radar: 0, watchlist: 0, hybrid: 0 };
+    for (const item of allOpportunities) counts[item.source] += 1;
+    return counts;
+  }, [allOpportunities]);
+  const matrixItems = useMemo(() => allOpportunities
+    .filter((item) => sourceFilter === "all" || item.source === sourceFilter)
+    .filter((item) => item.opportunityScore >= minScore)
+    .slice(0, 36), [allOpportunities, sourceFilter, minScore]);
 
   const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -153,6 +164,32 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
           <div className="opportunity-grid">
             <div className="terminal-panel matrix-panel">
               <PanelHeader title="机会与风险矩阵" subtitle="横轴为研究价值，纵轴为风险；气泡大小代表证据强度。" />
+              <div className="opportunity-filters" role="group" aria-label="机会筛选">
+                <div className="opportunity-filter-group">
+                  <span className="filter-label">信号源</span>
+                  <div className="opportunity-filter-pills">
+                    {[
+                      { key: "all" as const, label: `全部 (${allOpportunities.length})` },
+                      { key: "radar" as const, label: `雷达 (${sourceBreakdown.radar})` },
+                      { key: "watchlist" as const, label: `自选 (${sourceBreakdown.watchlist})` },
+                      { key: "hybrid" as const, label: `混合 (${sourceBreakdown.hybrid})` },
+                    ].map((opt) => (
+                      <button key={opt.key} type="button" className={`opportunity-filter-pill ${sourceFilter === opt.key ? "active" : ""}`} onClick={() => setSourceFilter(opt.key)}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="opportunity-filter-group">
+                  <label className="filter-label" htmlFor="opportunity-min-score">
+                    最低机会分: <strong>{minScore}</strong>
+                  </label>
+                  <input id="opportunity-min-score" type="range" min="0" max="100" step="5" value={minScore} onChange={(e) => setMinScore(Number(e.currentTarget.value))} className="opportunity-score-slider" />
+                </div>
+                <div className="opportunity-filter-count">
+                  匹配 <strong>{matrixItems.length}</strong> / {allOpportunities.length}
+                </div>
+              </div>
               <OpportunityMatrix items={matrixItems} onSelect={queueResearch} />
             </div>
             <div className="terminal-panel">
