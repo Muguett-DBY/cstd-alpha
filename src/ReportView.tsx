@@ -385,11 +385,19 @@ function ScoreTile({ label, value }: { label: string; value: number }) {
   const copyValue = () => navigator.clipboard.writeText(String(value))
     .then(() => showToast(`${label}: ${value}`, "success"))
     .catch(() => showToast("复制失败，请检查浏览器权限。", "error"));
+  const band = value >= 80 ? "优秀" : value >= 60 ? "良好" : value >= 40 ? "一般" : "需关注";
   return (
-    <div className="score-tile" onClick={copyValue} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyValue(); } }}>
+    <div
+      className="score-tile"
+      onClick={copyValue}
+      role="button"
+      tabIndex={0}
+      aria-label={`${label}，当前值 ${value}，评级 ${band}，点击复制`}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyValue(); } }}
+    >
       <span>{label}</span>
       <strong>{value}</strong>
-      <meter min="0" max="100" value={value} />
+      <meter min="0" max="100" value={value} aria-label={`${label} 进度`} />
     </div>
   );
 }
