@@ -246,7 +246,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder]);
+  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder, expandedCardId, selectedItemIds, selectAllVisible, clearSelection, batchDeleteItems, changeStage]);
 
   useEffect(() => {
     if (!selected?.id) return;
