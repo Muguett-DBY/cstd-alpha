@@ -120,8 +120,51 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
           event.preventDefault();
           const prev = currentIdx > 0 ? currentIdx - 1 : filteredItems.length - 1;
           setSelectedId(filteredItems[prev].id);
+        } else if (event.key === "a") {
+          event.preventDefault();
+          selectAllVisible();
         }
         return;
+      }
+      
+      // Escape: Clear selection or collapse card
+      if (event.key === "Escape") {
+        if (expandedCardId) {
+          setExpandedCardId(null);
+        } else if (selectedItemIds.size > 0) {
+          clearSelection();
+        }
+        return;
+      }
+      
+      // Enter/Space: Toggle card expansion
+      if ((event.key === "Enter" || event.key === " ") && selectedId && !event.altKey && !event.ctrlKey) {
+        event.preventDefault();
+        setExpandedCardId(expandedCardId === selectedId ? null : selectedId);
+        return;
+      }
+      
+      // Delete/Backspace: Delete selected items
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedItemIds.size > 0 && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        void batchDeleteItems();
+        return;
+      }
+      
+      // 1-5: Quick move to stage
+      if (!event.ctrlKey && !event.altKey && !event.metaKey && selectedId) {
+        const stageMap: Record<string, number> = { "1": 0, "2": 1, "3": 2, "4": 3, "5": 4 };
+        if (event.key in stageMap) {
+          event.preventDefault();
+          const selectedItem = filteredItems.find((i) => i.id === selectedId);
+          if (selectedItem) {
+            const targetStage = RESEARCH_STAGES[stageMap[event.key]];
+            if (selectedItem.stage !== targetStage) {
+              void changeStage(selectedItem, targetStage);
+            }
+          }
+          return;
+        }
       }
       
       // Alt+Arrow: Move selected card (keyboard reorder)
@@ -616,7 +659,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             <header className="panel-header research-queue-head">
               <div>
                 <h2>研究队列</h2>
-                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 切换 · Alt+↑↓ 排序 · Alt+←→ 移动阶段</span></p>
+                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 导航 · Alt+↑↓ 排序 · 1-5 切换阶段 · Enter 展开 · Del 删除</span></p>
               </div>
             </header>
             <div className="queue-command-panel" aria-label="研究队列控制台">
