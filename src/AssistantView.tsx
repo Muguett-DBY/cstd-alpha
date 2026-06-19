@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   confirmAssistantMemoryCandidate,
   fetchAssistantThread,
@@ -47,6 +47,8 @@ export function AssistantView() {
   const [phase, setPhase] = useState<AssistantPhase>("loading");
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [threadDrawerOpen, setThreadDrawerOpen] = useState(false);
@@ -496,7 +498,17 @@ export function AssistantView() {
     }
   }
 
-  const visibleMessages = useMemo(() => thread?.messages ?? [], [thread]);
+  const visibleMessages = useMemo(() => {
+    const base = thread?.messages ?? [];
+    if (!searchQuery.trim()) return base;
+    const query = searchQuery.trim().toLowerCase();
+    return base.filter((message) => message.content.toLowerCase().includes(query));
+  }, [thread, searchQuery]);
+  const searchMatchCount = useMemo(() => {
+    if (!searchQuery.trim()) return 0;
+    const all = thread?.messages ?? [];
+    return all.filter((message) => message.content.toLowerCase().includes(searchQuery.trim().toLowerCase())).length;
+  }, [thread, searchQuery]);
 
   return (
     <section className="assistant-workspace" aria-label="投研助手">
@@ -527,6 +539,42 @@ export function AssistantView() {
             </div>
             <button type="button" className="assistant-mobile-new" onClick={() => void newThread()} aria-label="新对话">＋</button>
           </header>
+          <div className="assistant-search-bar" role="search">
+            <button
+              type="button"
+              className={`assistant-search-toggle ${searchOpen ? "open" : ""}`}
+              onClick={() => setSearchOpen((current) => !current)}
+              aria-label={searchOpen ? "关闭消息搜索" : "打开消息搜索"}
+              aria-expanded={searchOpen}
+            >
+              🔍
+            </button>
+            {searchOpen ? (
+              <>
+                <input
+                  type="search"
+                  className="assistant-search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="搜索历史消息"
+                  aria-label="搜索消息内容"
+                />
+                {searchQuery ? (
+                  <span className="assistant-search-count" aria-live="polite">
+                    {searchMatchCount} 条匹配
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="assistant-search-clear"
+                  onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                  aria-label="清除搜索"
+                >
+                  ×
+                </button>
+              </>
+            ) : null}
+          </div>
           <div ref={messagesScrollRef} className="assistant-messages" onScroll={updateMessageScrollStickiness}>
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
             {visibleMessages.map((message) => {
@@ -535,7 +583,7 @@ export function AssistantView() {
               return (
                 <article key={message.id} className={`assistant-message ${message.role === "user" ? "user" : "assistant"}`}>
                   <span className="assistant-role-label">{message.role === "user" ? "你" : "助手"}</span>
-                  <AssistantText text={cleanContent} />
+                  <AssistantText text={cleanContent} highlight={searchQuery} />
                   <AssistantBlocks blocks={assistantSupplementaryBlocks(message.metadata?.blocks)} />
                   {message.metadata?.deepResearchJob ? (
                     <AssistantDeepResearchCard
@@ -725,21 +773,41 @@ function isSameAssistantResponseThread(currentThreadId: string | null, requestTh
   return !requestThreadId && currentThreadId === "local";
 }
 
-function AssistantText({ text }: { text: string }) {
+function AssistantText({ text, highlight }: { text: string; highlight?: string }) {
   const blocks = parseAssistantMarkdown(text);
+  const highlightText = (value: string) => {
+    if (!highlight || !highlight.trim()) return value;
+    const query = highlight.trim();
+    const parts: ReactNode[] = [];
+    let lastIndex = 0;
+    const lowerValue = value.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    let cursor = 0;
+    while (cursor < value.length) {
+      const found = lowerValue.indexOf(lowerQuery, cursor);
+      if (found < 0) {
+        parts.push(value.slice(cursor));
+        break;
+      }
+      if (found > cursor) parts.push(value.slice(cursor, found));
+      parts.push(<mark key={`hl-${lastIndex++}`} className="assistant-search-highlight">{value.slice(found, found + query.length)}</mark>);
+      cursor = found + query.length;
+    }
+    return <>{parts}</>;
+  };
   return (
     <div className="assistant-rich-text">
       {blocks.length
         ? blocks.map((block, index) => {
             if (block.type === "heading") {
               const Heading = block.level <= 2 ? "h3" : "h4";
-              return <Heading key={`h-${index}`}>{renderInlineMarkdown(block.text)}</Heading>;
+              return <Heading key={`h-${index}`}>{highlightText(block.text)}</Heading>;
             }
             if (block.type === "hr") return <hr key={`hr-${index}`} />;
             if (block.type === "list") {
               return (
                 <ul key={`ul-${index}`}>
-                  {block.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{renderInlineMarkdown(item)}</li>)}
+                  {block.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{highlightText(item)}</li>)}
                 </ul>
               );
             }
