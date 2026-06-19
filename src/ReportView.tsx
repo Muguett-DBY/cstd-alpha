@@ -597,15 +597,27 @@ function ReportBlock({ title, body, id }: { title: string; body: string; id?: st
 }
 
 function EvidenceList({ report }: { report: InvestmentReport }) {
+  function copyEvidenceLink(evidenceIndex: number, evidence: { source: string; title?: string; url?: string }) {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}${window.location.pathname}#evidence-${evidenceIndex}`;
+    const text = `${evidence.source} - ${evidence.title || evidence.url || "查看详情"}\n${url}`;
+    navigator.clipboard.writeText(text)
+      .then(() => showToast("引用已复制到剪贴板，可粘贴分享。", "success"))
+      .catch(() => showToast("复制失败，请手动复制。", "error"));
+  }
+
   return (
     <section className="section-stack" id="evidence">
       <h3>证据引用</h3>
       {report.evidence.length ? (
         <ul className="evidence-list">
           {report.evidence.map((item, index) => (
-            <li key={index}>
+            <li key={index} id={`evidence-${index}`}>
               <span className="evidence-source">{item.source}</span>
               {item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title || item.url}</a> : <span>{item.title}</span>}
+              <button type="button" className="evidence-copy-btn" onClick={() => copyEvidenceLink(index, item)} aria-label={`复制第 ${index + 1} 条引用链接`}>
+                复制
+              </button>
             </li>
           ))}
         </ul>
