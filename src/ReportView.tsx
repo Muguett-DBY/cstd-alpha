@@ -204,6 +204,9 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
         <a href="#scoreboard" className="quick-jump-pill">评分板</a>
         <a href="#valuation" className="quick-jump-pill">估值</a>
         <a href="#risks" className="quick-jump-pill">风险</a>
+        <span className="quick-jump-progress" aria-label={`当前章节 ${navItems.findIndex((i) => i.id === activeSection) + 1} / 共 ${navItems.length} 章`}>
+          第 {navItems.findIndex((i) => i.id === activeSection) + 1} / {navItems.length} 章
+        </span>
       </div>
 
       <header className="report-header">
