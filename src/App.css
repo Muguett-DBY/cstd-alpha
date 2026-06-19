@@ -1927,8 +1927,12 @@ button:not(:disabled):active,
 
 .valuation-summary {
   display: grid;
-  gap: 8px;
-  margin: 8px 0;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
 }
 
 .valuation-status {
@@ -1938,8 +1942,8 @@ button:not(:disabled):active,
 }
 
 .valuation-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
 }
