@@ -77,6 +77,7 @@ const fullSectionTitles = {
 export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
   const [activeSection, setActiveSection] = useState("scores");
+  const [readProgress, setReadProgress] = useState(0);
 
   useEffect(() => {
     const sections = document.querySelectorAll<HTMLElement>(".report [id]");
@@ -96,6 +97,48 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
     return () => observer.disconnect();
   }, [report]);
 
+  // Deep linking: sync active section to URL hash
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeSection) return;
+    const targetHash = `#${activeSection}`;
+    if (window.location.hash !== targetHash) {
+      window.history.replaceState(null, "", targetHash);
+    }
+  }, [activeSection]);
+
+  // Read progress tracking
+  useEffect(() => {
+    const reportEl = document.querySelector<HTMLElement>(".report");
+    if (!reportEl) return;
+    const updateProgress = () => {
+      const rect = reportEl.getBoundingClientRect();
+      const total = rect.height - window.innerHeight;
+      if (total <= 0) {
+        setReadProgress(1);
+        return;
+      }
+      const scrolled = -rect.top;
+      const ratio = Math.max(0, Math.min(1, scrolled / total));
+      setReadProgress(ratio);
+    };
+    updateProgress();
+    window.addEventListener("scroll", updateProgress, { passive: true });
+    window.addEventListener("resize", updateProgress);
+    return () => {
+      window.removeEventListener("scroll", updateProgress);
+      window.removeEventListener("resize", updateProgress);
+    };
+  }, [report]);
+
+  // Copy deep link to current section
+  function copyDeepLink(sectionId: string) {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}${window.location.pathname}#${sectionId}`;
+    navigator.clipboard.writeText(url)
+      .then(() => showToast("章节链接已复制，可粘贴分享。", "success"))
+      .catch(() => showToast("复制失败，请手动复制地址栏链接。", "error"));
+  }
+
   const navItems = [
     { id: "scores", label: "评分" },
     { id: "conclusion", label: "结论" },
@@ -109,10 +152,16 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
 
   return (
     <article className="report">
+      <div className="report-read-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(readProgress * 100)} aria-label="阅读进度">
+        <div className="report-read-progress-bar" style={{ width: `${readProgress * 100}%` }} />
+      </div>
       <nav className="report-section-nav" aria-label="报告章节">
         {navItems.map((item) => (
           <a key={item.id} href={`#${item.id}`} className={activeSection === item.id ? "active" : ""}>{item.label}</a>
         ))}
+        <button type="button" className="report-copy-link" onClick={() => copyDeepLink(activeSection)} aria-label="复制当前章节链接">
+          🔗 复制章节链接
+        </button>
       </nav>
 
       <div className="quick-jump-bar">
