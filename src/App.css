@@ -3303,8 +3303,16 @@ button:not(:disabled):active,
 }
 
 .report-actions button {
-  min-height: 38px;
+  min-height: 40px;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.report-actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--teal) 12%, transparent);
 }
 
 .report-header > div,
