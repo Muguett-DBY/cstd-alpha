@@ -2481,6 +2481,159 @@ button:not(:disabled):active,
   padding: 18px;
 }
 
+.market-cross-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.market-cross-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.market-cross-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.market-cross-head > strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.market-cross-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.market-cross-score {
+  display: flex;
+  gap: 16px;
+}
+
+.market-cross-score > div {
+  display: grid;
+  gap: 2px;
+}
+
+.market-cross-score > div > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.market-cross-score > div > strong {
+  color: var(--teal);
+  font-size: 20px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-cross-top {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.market-cross-top > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.market-cross-top > strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.market-distribution {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-tinted) 50%, var(--surface));
+}
+
+.market-distribution-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.market-distribution-label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.market-distribution-label > em {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.market-distribution-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.dist-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.market-distribution-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.market-distribution-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.market-distribution-legend > span > i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.market-distribution-legend > span > em {
+  color: var(--ink);
+  font-style: normal;
+  font-weight: 850;
+  margin-left: 2px;
+}
+
 .hot-topics-grid {
   display: flex;
   gap: 8px;
