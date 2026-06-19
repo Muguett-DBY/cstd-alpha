@@ -2811,18 +2811,126 @@ button:not(:disabled):active,
   padding: 14px;
 }
 
-.scenario-strip span {
+.scenario-cell.scenario-bear {
+  border-left: 3px solid var(--red);
+}
+
+.scenario-cell.scenario-base {
+  border-left: 3px solid var(--teal);
+}
+
+.scenario-cell.scenario-bull {
+  border-left: 3px solid var(--blue);
+}
+
+.scenario-name {
   display: block;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.scenario-strip strong {
+.scenario-value {
   display: block;
   margin-top: 6px;
   color: var(--ink);
   font-size: 24px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.scenario-summary {
+  display: block;
+  margin-top: 4px;
+  color: var(--body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.valuation-range-bar {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-tinted) 50%, var(--surface));
+}
+
+.valuation-range-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.valuation-range-label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.valuation-range-label > strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.valuation-range-label > em {
+  color: var(--amber);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.valuation-range-track {
+  position: relative;
+  height: 28px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 18%, var(--surface)) 0%, color-mix(in srgb, var(--teal) 18%, var(--surface)) 50%, color-mix(in srgb, var(--blue) 18%, var(--surface)) 100%);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.valuation-range-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+.marker-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid currentColor;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.valuation-range-marker.scenario-bear { color: var(--red); }
+.valuation-range-marker.scenario-base { color: var(--teal); }
+.valuation-range-marker.scenario-bull { color: var(--blue); }
+
+.marker-label {
+  position: absolute;
+  top: 16px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
 }
 
 .valuation-assumptions {
