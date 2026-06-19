@@ -129,18 +129,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       
       // Escape: Clear selection or collapse card
       if (event.key === "Escape") {
-        if (expandedCardId) {
-          setExpandedCardId(null);
-        } else {
-          setSelectedItemIds(new Set());
-        }
+        setExpandedCardId((current) => current ? null : current);
+        setSelectedItemIds(new Set());
         return;
       }
       
       // Enter/Space: Toggle card expansion
       if ((event.key === "Enter" || event.key === " ") && selectedId && !event.altKey && !event.ctrlKey) {
         event.preventDefault();
-        setExpandedCardId(expandedCardId === selectedId ? null : selectedId);
+        setExpandedCardId((current) => current === selectedId ? null : selectedId);
         return;
       }
       
