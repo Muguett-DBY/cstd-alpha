@@ -126,13 +126,75 @@ export function ValuationLabView() {
               <h2>估值版本</h2>
               <p>运行完成后展示三情景、关键假设、敏感性和同业区间。</p>
             </header>
-            {displayRuns.length ? displayRuns.map((run) => (
-              <ValuationRunCard key={run.id} run={run} onRetry={retryValuation} />
-            )) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
+            {displayRuns.length ? (
+              <>
+                <ValuationVersionTrend runs={displayRuns} />
+                {displayRuns.map((run) => (
+                  <ValuationRunCard key={run.id} run={run} onRetry={retryValuation} />
+                ))}
+              </>
+            ) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
           </main>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function ValuationVersionTrend({ runs }: { runs: ValuationRunSummary[] }) {
+  const trend = useMemo(() => {
+    const completed = runs
+      .filter((r) => r.status === "completed" && r.result?.scenarios)
+      .slice(0, 8);
+    if (completed.length < 2) return null;
+    const baseByRun = completed.map((r) => {
+      const base = r.result?.scenarios.find((s) => s.scenario === "base");
+      return {
+        id: r.id,
+        title: r.title,
+        asOf: r.createdAt,
+        value: base?.perShareValue ?? null,
+        currency: r.currency,
+      };
+    }).filter((entry) => entry.value !== null);
+
+    if (baseByRun.length < 2) return null;
+    const newest = baseByRun[0];
+    const oldest = baseByRun[baseByRun.length - 1];
+    const delta = (newest.value as number) - (oldest.value as number);
+    const deltaPct = oldest.value ? (delta / oldest.value) * 100 : 0;
+    return {
+      count: baseByRun.length,
+      newest,
+      oldest,
+      delta,
+      deltaPct,
+      points: baseByRun.reverse(),
+    };
+  }, [runs]);
+
+  if (!trend) return null;
+  const isUp = trend.delta >= 0;
+  return (
+    <div className="valuation-trend" role="img" aria-label={`最近 ${trend.count} 次估值变化：${isUp ? "上升" : "下降"} ${Math.abs(trend.delta).toFixed(2)} ${trend.newest.currency}（${trend.deltaPct.toFixed(1)}%）`}>
+      <div className="valuation-trend-head">
+        <span className="valuation-trend-label">最近 {trend.count} 次中性估值趋势</span>
+        <span className={`valuation-trend-delta ${isUp ? "up" : "down"}`}>
+          {isUp ? "↑" : "↓"} {Math.abs(trend.delta).toFixed(2)} {trend.newest.currency} ({trend.deltaPct.toFixed(1)}%)
+        </span>
+      </div>
+      <div className="valuation-trend-points" aria-hidden="true">
+        {trend.points.map((point, index) => {
+          const minVal = Math.min(...trend.points.map((p) => p.value as number));
+          const maxVal = Math.max(...trend.points.map((p) => p.value as number));
+          const range = maxVal - minVal || 1;
+          const height = 20 + ((point.value as number - minVal) / range) * 60;
+          return (
+            <span key={point.id || index} className="valuation-trend-bar" style={{ height: `${height}%` }} title={`${point.title} ${point.asOf}: ${point.value} ${point.currency}`} />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

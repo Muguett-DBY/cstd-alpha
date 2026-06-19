@@ -2999,6 +2999,58 @@ button:not(:disabled):active,
   color: var(--muted);
 }
 
+.valuation-trend {
+  margin: 10px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-tinted) 40%, var(--surface));
+}
+
+.valuation-trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.valuation-trend-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.valuation-trend-delta {
+  font-size: 14px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.valuation-trend-delta.up { color: var(--teal); }
+.valuation-trend-delta.down { color: var(--red); }
+
+.valuation-trend-points {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 60px;
+}
+
+.valuation-trend-bar {
+  flex: 1;
+  min-width: 8px;
+  background: color-mix(in srgb, var(--teal) 50%, var(--surface));
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+}
+
+.valuation-trend-bar:last-child {
+  background: var(--teal);
+}
+
 .valuation-pending p {
   margin: 0;
 }
