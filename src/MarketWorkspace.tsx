@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchRadarScan, fetchWatchlistRanking } from "./api";
 import type { RadarScan } from "./shared/radar";
 import type { WatchlistRankingEntry } from "./shared/user-research";
@@ -42,6 +42,40 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
     .filter((e) => e.status === "completed")
     .sort((a, b) => (b.overallScore ?? -1) - (a.overallScore ?? -1))
     .slice(0, 5);
+
+  // Cross-market comparison
+  const marketStats = useMemo(() => {
+    const grouped: Record<string, { count: number; avgScore: number; topScore: number; topTicker: string; topName: string }> = {};
+    for (const entry of rankingEntries.filter((e) => e.status === "completed")) {
+      const m = entry.market || "其他";
+      if (!grouped[m]) grouped[m] = { count: 0, avgScore: 0, topScore: -1, topTicker: "", topName: "" };
+      grouped[m].count += 1;
+      const s = entry.overallScore ?? 0;
+      grouped[m].avgScore += s;
+      if (s > grouped[m].topScore) {
+        grouped[m].topScore = s;
+        grouped[m].topTicker = entry.ticker || "";
+        grouped[m].topName = entry.companyName || "";
+      }
+    }
+    for (const m of Object.keys(grouped)) {
+      if (grouped[m].count > 0) grouped[m].avgScore = Math.round(grouped[m].avgScore / grouped[m].count);
+    }
+    return grouped;
+  }, [rankingEntries]);
+
+  // Watchlist score distribution
+  const scoreDistribution = useMemo(() => {
+    const completed = rankingEntries.filter((e) => e.status === "completed" && typeof e.overallScore === "number");
+    const total = completed.length || 1;
+    return {
+      excellent: completed.filter((e) => (e.overallScore ?? 0) >= 80).length,
+      good: completed.filter((e) => (e.overallScore ?? 0) >= 60 && (e.overallScore ?? 0) < 80).length,
+      fair: completed.filter((e) => (e.overallScore ?? 0) >= 40 && (e.overallScore ?? 0) < 60).length,
+      poor: completed.filter((e) => (e.overallScore ?? 0) < 40).length,
+      total,
+    };
+  }, [rankingEntries]);
 
   return (
     <section className="workbench-page market-page">
@@ -94,6 +128,67 @@ export function MarketWorkspace({ onOpenRanking, onOpenWatchlistRanking, onOpenR
               </div>
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {Object.keys(marketStats).length > 0 ? (
+        <div className="terminal-panel market-overview">
+          <header className="panel-header">
+            <h2>跨市场对比</h2>
+            <p>按市场统计自选股数量、平均分和最高分。</p>
+          </header>
+          <div className="market-cross-grid">
+            {Object.entries(marketStats).map(([market, stats]) => (
+              <div key={market} className="market-cross-card">
+                <div className="market-cross-head">
+                  <strong>{market}</strong>
+                  <span className="market-cross-count">{stats.count} 只</span>
+                </div>
+                <div className="market-cross-score">
+                  <div>
+                    <span>平均分</span>
+                    <strong>{stats.avgScore}</strong>
+                  </div>
+                  <div>
+                    <span>最高分</span>
+                    <strong>{stats.topScore >= 0 ? stats.topScore : "—"}</strong>
+                  </div>
+                </div>
+                {stats.topTicker ? (
+                  <div className="market-cross-top">
+                    <span>领涨</span>
+                    <strong>{stats.topName} ({stats.topTicker})</strong>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          {scoreDistribution.total > 0 ? (
+            <div className="market-distribution">
+              <div className="market-distribution-label">
+                <span>自选股评分分布</span>
+                <em>共 {scoreDistribution.total} 只有评分</em>
+              </div>
+              <div className="market-distribution-bar" role="img" aria-label={`自选股评分分布：优秀 ${scoreDistribution.excellent}, 良好 ${scoreDistribution.good}, 一般 ${scoreDistribution.fair}, 较差 ${scoreDistribution.poor}`}>
+                {[
+                  { key: "excellent", count: scoreDistribution.excellent, color: "var(--teal)" },
+                  { key: "good", count: scoreDistribution.good, color: "var(--blue)" },
+                  { key: "fair", count: scoreDistribution.fair, color: "var(--amber)" },
+                  { key: "poor", count: scoreDistribution.poor, color: "var(--red)" },
+                ].map((seg) => (
+                  seg.count > 0 ? (
+                    <span key={seg.key} className="dist-seg" style={{ width: `${(seg.count / scoreDistribution.total) * 100}%`, background: seg.color }} title={`${seg.key}: ${seg.count}`} />
+                  ) : null
+                ))}
+              </div>
+              <div className="market-distribution-legend">
+                <span><i style={{ background: "var(--teal)" }} />优秀 ≥80 <em>{scoreDistribution.excellent}</em></span>
+                <span><i style={{ background: "var(--blue)" }} />良好 60-79 <em>{scoreDistribution.good}</em></span>
+                <span><i style={{ background: "var(--amber)" }} />一般 40-59 <em>{scoreDistribution.fair}</em></span>
+                <span><i style={{ background: "var(--red)" }} />较差 &lt;40 <em>{scoreDistribution.poor}</em></span>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
