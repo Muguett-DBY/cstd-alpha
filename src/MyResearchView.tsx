@@ -99,6 +99,67 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     [analyses, selectedItem],
   );
 
+  // Library-wide analysis statistics
+  const libraryStats = useMemo(() => {
+    const stats = { total: analyses.length, completed: 0, running: 0, failed: 0, queued: 0, retryable: 0 };
+    for (const analysis of analyses) {
+      if (analysis.status === "completed") stats.completed += 1;
+      else if (analysis.status === "running") stats.running += 1;
+      else if (analysis.status === "failed") {
+        stats.failed += 1;
+        if (isRetryableTemplateStatus(analysis.status)) stats.retryable += 1;
+      } else {
+        stats.queued += 1;
+      }
+    }
+    return stats;
+  }, [analyses]);
+
+  const completedAnalyses = useMemo(() => analyses.filter((a) => a.status === "completed"), [analyses]);
+
+  // Export library as JSON
+  function exportLibraryAsJson() {
+    if (typeof window === "undefined") return;
+    if (!completedAnalyses.length) {
+      setNotice("暂无可导出的已完成分析。");
+      return;
+    }
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      user: user?.username || "anonymous",
+      watchlistCount: items.length,
+      analysisCount: completedAnalyses.length,
+      items: items.map((item) => ({
+        id: item.id,
+        company: item.company,
+        addedAt: item.addedAt,
+      })),
+      analyses: completedAnalyses.map((a) => ({
+        id: a.id,
+        watchlistId: a.watchlistId,
+        templateId: a.templateId,
+        templateTitle: a.templateTitle,
+        status: a.status,
+        title: a.title,
+        verdict: a.verdict,
+        summary: a.summary,
+        markdown: a.markdown,
+        keyPoints: a.keyPoints,
+        riskFlags: a.riskFlags,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `my-research-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setNotice(`已导出 ${completedAnalyses.length} 份分析到 JSON 文件。`);
+  }
+
   useEffect(() => {
     selectedWatchlistIdRef.current = selectedItem?.id || "";
   }, [selectedItem?.id]);
@@ -312,6 +373,50 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
             <p>已提交到后端任务队列，完成后会自动更新；已生成过的内容会优先复用缓存。切换公司不会打断当前任务。</p>
           </div>
         </div>
+      ) : null}
+
+      {libraryStats.total > 0 ? (
+        <section className="library-stats-panel" aria-label="报告库统计">
+          <div className="library-stats-head">
+            <div>
+              <p className="eyebrow">报告库概览</p>
+              <h3>我的研究报告库</h3>
+            </div>
+            <button type="button" className="library-export-button" onClick={exportLibraryAsJson} disabled={!completedAnalyses.length}>
+              导出已完成分析 (JSON)
+            </button>
+          </div>
+          <div className="library-stats-grid">
+            <div className="library-stat total">
+              <span>总分析</span>
+              <strong>{libraryStats.total}</strong>
+            </div>
+            <div className="library-stat completed">
+              <span>已完成</span>
+              <strong>{libraryStats.completed}</strong>
+            </div>
+            <div className="library-stat running">
+              <span>运行中</span>
+              <strong>{libraryStats.running}</strong>
+            </div>
+            <div className="library-stat failed">
+              <span>失败</span>
+              <strong>{libraryStats.failed}</strong>
+            </div>
+            <div className="library-stat queued">
+              <span>排队</span>
+              <strong>{libraryStats.queued}</strong>
+            </div>
+          </div>
+          {libraryStats.total > 0 ? (
+            <div className="library-stats-bar" role="img" aria-label={`分析状态分布：已完成 ${libraryStats.completed}, 运行中 ${libraryStats.running}, 失败 ${libraryStats.failed}, 排队 ${libraryStats.queued}`}>
+              {libraryStats.completed > 0 ? <span className="dist-seg" style={{ width: `${(libraryStats.completed / libraryStats.total) * 100}%`, background: "var(--teal)" }} title={`已完成 ${libraryStats.completed}`} /> : null}
+              {libraryStats.running > 0 ? <span className="dist-seg" style={{ width: `${(libraryStats.running / libraryStats.total) * 100}%`, background: "var(--blue)" }} title={`运行中 ${libraryStats.running}`} /> : null}
+              {libraryStats.failed > 0 ? <span className="dist-seg" style={{ width: `${(libraryStats.failed / libraryStats.total) * 100}%`, background: "var(--red)" }} title={`失败 ${libraryStats.failed}`} /> : null}
+              {libraryStats.queued > 0 ? <span className="dist-seg" style={{ width: `${(libraryStats.queued / libraryStats.total) * 100}%`, background: "var(--muted)" }} title={`排队 ${libraryStats.queued}`} /> : null}
+            </div>
+          ) : null}
+        </section>
       ) : null}
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
