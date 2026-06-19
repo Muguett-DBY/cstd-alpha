@@ -137,8 +137,18 @@ export function ValuationLabView() {
 }
 
 function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?: (run: ValuationRunSummary) => void }) {
-  const scenarios = run.result?.scenarios ?? [];
+  const scenarios = useMemo(() => run.result?.scenarios ?? [], [run]);
   const assumptions = valuationAssumptionsForDisplay(run);
+  const rangeInfo = useMemo(() => {
+    if (scenarios.length < 2) return null;
+    const values = scenarios.map((s) => s.perShareValue).filter((v) => Number.isFinite(v));
+    if (values.length < 2) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const mid = [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? values[0];
+    return { min, max, mid, spread: max - min, spreadPct: min > 0 ? ((max - min) / min) * 100 : 0 };
+  }, [scenarios]);
+
   return (
     <article className={`valuation-run-card ${run.status}`}>
       <div className="valuation-run-head">
@@ -152,13 +162,33 @@ function ValuationRunCard({ run, onRetry }: { run: ValuationRunSummary; onRetry?
         <>
           <div className="scenario-strip">
             {scenarios.map((scenario) => (
-              <div key={scenario.scenario}>
-                <span>{scenarioLabel(scenario.scenario)}</span>
-                <strong>{formatMoney(scenario.perShareValue, run.currency)}</strong>
-                <small>{scenario.summary}</small>
+              <div key={scenario.scenario} className={`scenario-cell scenario-${scenario.scenario}`}>
+                <span className="scenario-name">{scenarioLabel(scenario.scenario)}</span>
+                <strong className="scenario-value">{formatMoney(scenario.perShareValue, run.currency)}</strong>
+                <small className="scenario-summary">{scenario.summary}</small>
               </div>
             ))}
           </div>
+          {rangeInfo && rangeInfo.spread > 0 ? (
+            <div className="valuation-range-bar" role="img" aria-label={`估值区间：保守 ${formatMoney(rangeInfo.min, run.currency)} 至 乐观 ${formatMoney(rangeInfo.max, run.currency)}，区间幅度 ${rangeInfo.spreadPct.toFixed(1)}%`}>
+              <div className="valuation-range-label">
+                <span>估值区间</span>
+                <strong>{formatMoney(rangeInfo.min, run.currency)} — {formatMoney(rangeInfo.max, run.currency)}</strong>
+                <em>区间幅度 {rangeInfo.spreadPct.toFixed(1)}%</em>
+              </div>
+              <div className="valuation-range-track">
+                {scenarios.map((scenario) => {
+                  const ratio = rangeInfo.spread > 0 ? ((scenario.perShareValue - rangeInfo.min) / rangeInfo.spread) * 100 : 50;
+                  return (
+                    <div key={scenario.scenario} className={`valuation-range-marker scenario-${scenario.scenario}`} style={{ left: `${Math.max(0, Math.min(100, ratio))}%` }} title={`${scenarioLabel(scenario.scenario)}：${formatMoney(scenario.perShareValue, run.currency)}`}>
+                      <span className="marker-dot" />
+                      <span className="marker-label">{scenarioLabel(scenario.scenario)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           {assumptions.length ? (
             <div className="valuation-assumptions">
               <span>关键假设</span>
