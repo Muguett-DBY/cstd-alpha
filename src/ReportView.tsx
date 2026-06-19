@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { downloadReportDocx } from "./docx/export-report";
 import { printReportAsPdf } from "./pdf/export-report";
 import { showToast } from "./toast-state";
@@ -79,6 +79,17 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
   const [activeSection, setActiveSection] = useState("scores");
   const [readProgress, setReadProgress] = useState(0);
 
+  const navItems = useMemo(() => [
+    { id: "scores", label: "评分" },
+    { id: "conclusion", label: "结论" },
+    { id: "scoreboard", label: "模块" },
+    { id: "detailed-scores", label: "详细评分" },
+    { id: "financials", label: "财务" },
+    { id: "valuation", label: "估值" },
+    { id: "risks", label: "风险" },
+    { id: "evidence", label: "证据" },
+  ], []);
+
   useEffect(() => {
     const sections = document.querySelectorAll<HTMLElement>(".report [id]");
     if (!sections.length) return;
@@ -139,16 +150,38 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
       .catch(() => showToast("复制失败，请手动复制地址栏链接。", "error"));
   }
 
-  const navItems = [
-    { id: "scores", label: "评分" },
-    { id: "conclusion", label: "结论" },
-    { id: "scoreboard", label: "模块" },
-    { id: "detailed-scores", label: "详细评分" },
-    { id: "financials", label: "财务" },
-    { id: "valuation", label: "估值" },
-    { id: "risks", label: "风险" },
-    { id: "evidence", label: "证据" },
-  ];
+  // Keyboard navigation: J/K or ArrowDown/Up to jump between sections
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.target instanceof HTMLElement && event.target.isContentEditable) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const sections = navItems.map((item) => item.id);
+      const currentIdx = sections.indexOf(activeSection);
+      if (currentIdx < 0) return;
+      let nextIdx: number | null = null;
+      if (event.key === "j" || event.key === "J" || event.key === "ArrowDown") {
+        nextIdx = Math.min(sections.length - 1, currentIdx + 1);
+      } else if (event.key === "k" || event.key === "K" || event.key === "ArrowUp") {
+        nextIdx = Math.max(0, currentIdx - 1);
+      } else if (event.key === "Home") {
+        nextIdx = 0;
+      } else if (event.key === "End") {
+        nextIdx = sections.length - 1;
+      }
+      if (nextIdx === null || nextIdx < 0 || nextIdx === currentIdx) return;
+      event.preventDefault();
+      const nextId = sections[nextIdx];
+      const el = document.getElementById(nextId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setActiveSection(nextId);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeSection, navItems]);
 
   return (
     <article className="report">
