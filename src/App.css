@@ -1101,6 +1101,87 @@ button:not(:disabled):active,
   padding: 0;
 }
 
+.opportunity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-tinted) 30%, var(--surface));
+}
+
+.opportunity-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.opportunity-filter-group .filter-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.opportunity-filter-group .filter-label strong {
+  color: var(--teal);
+  font-size: 14px;
+  font-weight: 850;
+  margin-left: 4px;
+}
+
+.opportunity-filter-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.opportunity-filter-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  min-height: 32px;
+}
+
+.opportunity-filter-pill:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.opportunity-filter-pill.active {
+  background: var(--teal);
+  color: var(--on-accent);
+  border-color: var(--teal);
+}
+
+.opportunity-score-slider {
+  width: 140px;
+  accent-color: var(--teal);
+}
+
+.opportunity-filter-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.opportunity-filter-count strong {
+  color: var(--teal);
+  font-size: 14px;
+  font-weight: 850;
+  margin: 0 2px;
+}
+
 .opportunity-matrix {
   height: min(520px, 58vh);
   min-height: 360px;
