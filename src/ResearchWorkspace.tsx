@@ -122,7 +122,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
           setSelectedId(filteredItems[prev].id);
         } else if (event.key === "a") {
           event.preventDefault();
-          selectAllVisible();
+          setSelectedItemIds(new Set(filteredItems.map((i) => i.id)));
         }
         return;
       }
@@ -131,8 +131,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       if (event.key === "Escape") {
         if (expandedCardId) {
           setExpandedCardId(null);
-        } else if (selectedItemIds.size > 0) {
-          clearSelection();
+        } else {
+          setSelectedItemIds(new Set());
         }
         return;
       }
@@ -142,29 +142,6 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         event.preventDefault();
         setExpandedCardId(expandedCardId === selectedId ? null : selectedId);
         return;
-      }
-      
-      // Delete/Backspace: Delete selected items
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedItemIds.size > 0 && !event.ctrlKey && !event.altKey) {
-        event.preventDefault();
-        void batchDeleteItems();
-        return;
-      }
-      
-      // 1-5: Quick move to stage
-      if (!event.ctrlKey && !event.altKey && !event.metaKey && selectedId) {
-        const stageMap: Record<string, number> = { "1": 0, "2": 1, "3": 2, "4": 3, "5": 4 };
-        if (event.key in stageMap) {
-          event.preventDefault();
-          const selectedItem = filteredItems.find((i) => i.id === selectedId);
-          if (selectedItem) {
-            const targetStage = RESEARCH_STAGES[stageMap[event.key]];
-            if (selectedItem.stage !== targetStage) {
-              void changeStage(selectedItem, targetStage);
-            }
-          }
-          return;
-        }
       }
       
       // Alt+Arrow: Move selected card (keyboard reorder)
@@ -246,7 +223,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder, expandedCardId, selectedItemIds, selectAllVisible, clearSelection, batchDeleteItems, changeStage]);
+  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -360,7 +337,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
-  async function changeStage(item: ResearchWorkbenchItem, stage: ResearchStage) {
+  const changeStage = useCallback(async (item: ResearchWorkbenchItem, stage: ResearchStage) => {
     try {
       const updated = await updateResearchItemStage(item.id, stage);
       setItems((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
@@ -368,7 +345,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "阶段更新失败。");
     }
-  }
+  }, []);
 
   function toggleSelectItem(id: string) {
     setSelectedItemIds((current) => {
@@ -378,13 +355,13 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     });
   }
 
-  function selectAllVisible() {
+  const selectAllVisible = useCallback(() => {
     setSelectedItemIds(new Set(filteredItems.map((i) => i.id)));
-  }
+  }, [filteredItems]);
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelectedItemIds(new Set());
-  }
+  }, []);
 
   function handleDragStart(e: React.DragEvent, itemId: string) {
     e.dataTransfer.effectAllowed = "move";
@@ -504,7 +481,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }
 
-  async function batchDeleteItems() {
+  const batchDeleteItems = useCallback(async () => {
     const ids = Array.from(selectedItemIds);
     if (!ids.length) return;
     if (!window.confirm(`确定删除 ${ids.length} 个研究项？此操作不可撤销。`)) return;
@@ -519,7 +496,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     } finally {
       setBatchProcessing(false);
     }
-  }
+  }, [selectedItemIds, clearSelection]);
 
   async function batchGenerateThesis() {
     const ids = Array.from(selectedItemIds);
