@@ -3230,6 +3230,54 @@ button:not(:disabled):active,
     display: none;
   }
 
+  .scenario-strip {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .scenario-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 14px !important;
+  }
+
+  .scenario-name {
+    grid-column: 1;
+  }
+
+  .scenario-value {
+    grid-column: 2;
+    margin-top: 0 !important;
+    font-size: 20px !important;
+  }
+
+  .scenario-summary {
+    grid-column: 1 / -1;
+  }
+
+  .valuation-range-bar {
+    padding: 12px !important;
+  }
+
+  .valuation-range-track {
+    height: 32px !important;
+  }
+
+  .marker-label {
+    font-size: 10px !important;
+  }
+
+  .valuation-pick {
+    min-height: 56px !important;
+    padding: 12px 14px !important;
+  }
+
+  .valuation-pick strong {
+    font-size: 14px !important;
+  }
+
   .mobile-bottom-nav {
     display: flex;
     position: fixed;
