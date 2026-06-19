@@ -6056,6 +6056,51 @@ button:not(:disabled):active,
   background: var(--surface-subtle);
 }
 
+.watchlist-sort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-tinted) 30%, var(--surface));
+}
+
+.watchlist-sort .filter-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+
+.watchlist-sort-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  min-height: 30px;
+}
+
+.watchlist-sort-pill:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.watchlist-sort-pill.active {
+  background: var(--teal);
+  color: var(--on-accent);
+  border-color: var(--teal);
+}
+
 .my-list article {
   display: grid;
   gap: 10px;

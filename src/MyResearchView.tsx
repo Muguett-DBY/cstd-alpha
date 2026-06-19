@@ -57,6 +57,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [companyQuery, setCompanyQuery] = useState("");
   const [companyCandidates, setCompanyCandidates] = useState<CompanyCandidate[]>([]);
   const [watchlistQuery, setWatchlistQuery] = useState("");
+  const [watchlistSort, setWatchlistSort] = useState<"recent" | "name" | "thesis" | "complete">("recent");
   const [searchingCompany, setSearchingCompany] = useState(false);
   const [phase, setPhase] = useState<"loading" | "ready" | "generating" | "error">("loading");
   const [notice, setNotice] = useState("");
@@ -91,7 +92,29 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }, [selectedCompany]);
 
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedWatchlistId) ?? items[0] ?? null, [items, selectedWatchlistId]);
-  const filteredItems = useMemo(() => filterWatchlistItems(items, watchlistQuery), [items, watchlistQuery]);
+  const filteredItems = useMemo(() => {
+    const base = filterWatchlistItems(items, watchlistQuery);
+    if (watchlistSort === "name") {
+      return [...base].sort((a, b) => a.company.name.localeCompare(b.company.name, "zh-CN"));
+    }
+    if (watchlistSort === "recent") {
+      return [...base].sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
+    }
+    const analysisStatsByItem = new Map<string, { thesis: number; completion: number }>();
+    for (const item of base) {
+      const itemAnalyses = analyses.filter((a) => a.watchlistId === item.id);
+      const withThesis = itemAnalyses.filter((a) => a.markdown && a.markdown.trim().length > 0).length;
+      const completed = itemAnalyses.filter((a) => a.status === "completed").length;
+      const total = itemAnalyses.length || 1;
+      analysisStatsByItem.set(item.id, { thesis: withThesis, completion: (completed / total) * 100 });
+    }
+    return [...base].sort((a, b) => {
+      if (watchlistSort === "thesis") {
+        return (analysisStatsByItem.get(b.id)?.thesis ?? 0) - (analysisStatsByItem.get(a.id)?.thesis ?? 0);
+      }
+      return (analysisStatsByItem.get(b.id)?.completion ?? 0) - (analysisStatsByItem.get(a.id)?.completion ?? 0);
+    });
+  }, [items, watchlistQuery, watchlistSort, analyses]);
   const selectedAnalyses = useMemo(() => analyses.filter((analysis) => analysis.watchlistId === selectedItem?.id), [analyses, selectedItem?.id]);
   const analysisByTemplate = useMemo(() => new Map(selectedAnalyses.map((analysis) => [analysis.templateId, analysis])), [selectedAnalyses]);
   const selectedAnalysisSummary = useMemo(
@@ -460,10 +483,23 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               <span>搜索自选</span>
               <input
                 value={watchlistQuery}
-                onChange={(event) => setWatchlistQuery(event.target.value)}
+                onChange={(event) => setWatchlistQuery(event.currentTarget.value)}
                 placeholder="公司名、代码、市场、交易所"
               />
             </label>
+            <div className="watchlist-sort" role="group" aria-label="自选股排序">
+              <span className="filter-label">排序</span>
+              {[
+                { key: "recent" as const, label: "最近加入" },
+                { key: "name" as const, label: "按名称" },
+                { key: "thesis" as const, label: "有论点" },
+                { key: "complete" as const, label: "完成度" },
+              ].map((opt) => (
+                <button key={opt.key} type="button" className={`watchlist-sort-pill ${watchlistSort === opt.key ? "active" : ""}`} onClick={() => setWatchlistSort(opt.key)}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             {items.length ? (
               filteredItems.length ? (
                 filteredItems.map((item) => {
