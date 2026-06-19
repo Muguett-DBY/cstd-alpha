@@ -4263,7 +4263,7 @@ button:not(:disabled):active,
 }
 
 .assistant-tool-item.completed .assistant-tool-label {
-  color: #2e7d32;
+  color: var(--success);
   text-decoration: none;
 }
 
@@ -4289,7 +4289,7 @@ button:not(:disabled):active,
 }
 
 .assistant-tool-item.completed .assistant-tool-icon {
-  color: #2e7d32;
+  color: var(--success);
 }
 
 .assistant-tool-item.failed .assistant-tool-icon {
@@ -5078,7 +5078,7 @@ button:not(:disabled):active,
 
 .my-list article.active {
   background: var(--surface-active);
-  border-color: #b7d6cf;
+  border-color: color-mix(in srgb, var(--teal) 40%, var(--line));
   box-shadow: inset 3px 0 0 var(--teal);
 }
 
@@ -5379,7 +5379,7 @@ button:not(:disabled):active,
 }
 
 .sentiment-meter .sentiment-warning {
-  color: #8a5a14;
+  color: var(--amber);
   font-weight: 700;
 }
 
@@ -5469,21 +5469,21 @@ button:not(:disabled):active,
 }
 
 .sentiment-positive {
-  border-left-color: #217a52;
+  border-left-color: var(--sentiment-positive);
 }
 
 .sentiment-positive .sentiment-badge {
-  background: #dff2e8;
-  color: #176541;
+  background: var(--sentiment-positive-soft);
+  color: var(--sentiment-positive);
 }
 
 .sentiment-negative {
-  border-left-color: #b3432f;
+  border-left-color: var(--sentiment-negative);
 }
 
 .sentiment-negative .sentiment-badge {
-  background: #f7dfda;
-  color: #8f2e22;
+  background: var(--sentiment-negative-soft);
+  color: var(--sentiment-negative);
 }
 
 .sentiment-neutral {
@@ -7545,13 +7545,13 @@ button:not(:disabled):active,
 }
 
 .stage-growth {
-  --stage-color: #d1442e;
-  --stage-soft: #fff0ed;
+  --stage-color: var(--red);
+  --stage-soft: var(--danger-soft);
 }
 
 .stage-upcoming {
-  --stage-color: #d07810;
-  --stage-soft: #fff5df;
+  --stage-color: var(--amber);
+  --stage-soft: var(--warning-soft);
 }
 
 .stage-bubble {
@@ -7560,23 +7560,23 @@ button:not(:disabled):active,
 }
 
 .stage-decline {
-  --stage-color: #55708a;
-  --stage-soft: #edf3f8;
+  --stage-color: var(--muted);
+  --stage-soft: var(--surface-subtle);
 }
 
 .stage-stable {
-  --stage-color: #0f766e;
-  --stage-soft: #e6f4f1;
+  --stage-color: var(--teal);
+  --stage-soft: var(--success-soft);
 }
 
 .stage-watch {
-  --stage-color: #2f5f98;
-  --stage-soft: #eaf4ff;
+  --stage-color: var(--blue);
+  --stage-soft: var(--info-soft);
 }
 
 .stage-weak {
-  --stage-color: #8c98a4;
-  --stage-soft: #f1f2f1;
+  --stage-color: var(--muted);
+  --stage-soft: var(--surface-subtle);
 }
 
 .radar-stage-buckets {
