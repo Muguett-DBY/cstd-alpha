@@ -9736,19 +9736,47 @@ button:not(:disabled):active,
 
   .assistant-input-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 36px 54px;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 44px 56px 44px;
+    gap: 6px;
   }
 
   .assistant-composer textarea {
-    font-size: 15px;
+    font-size: 16px;
     max-height: 116px;
+    min-height: 44px;
+  }
+
+  .assistant-input-row button[type="submit"],
+  .assistant-voice-button,
+  .assistant-resend-button {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .assistant-voice-button,
+  .assistant-resend-button {
+    width: 44px;
   }
 
   .assistant-input-row button[type="submit"] {
-    min-height: 36px;
     padding-inline: 10px;
     font-size: 12px;
+    min-height: 44px;
+  }
+
+  .assistant-status-bar {
+    margin: 0 4px;
+    font-size: 10px;
+    padding: 4px 10px;
+  }
+
+  .assistant-status-hint {
+    font-size: 10px;
+  }
+
+  .assistant-error-block {
+    margin: 6px 4px 0;
+    flex-wrap: wrap;
   }
 
   .assistant-message {
