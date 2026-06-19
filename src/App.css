@@ -6904,6 +6904,44 @@ button:not(:disabled):active,
   gap: 10px;
 }
 
+.radar-round-change-distribution {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-tinted) 50%, var(--surface));
+}
+
+.radar-round-change-distribution-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.radar-round-change-distribution-label > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.radar-round-change-distribution-label > em {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.radar-round-change-distribution-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
 .radar-round-change-card {
   display: grid;
   gap: 10px;
