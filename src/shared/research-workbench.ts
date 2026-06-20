@@ -57,6 +57,14 @@ export type ResearchReadiness = {
   missing: string[];
 };
 
+export type ResearchStageProgress = {
+  currentIndex: number;
+  total: number;
+  percent: number;
+  label: string;
+  nextLabel: string | null;
+};
+
 export type ResearchThesisVersion = {
   id: string;
   itemId: string;
@@ -155,6 +163,19 @@ export function describeResearchReadiness(item: Pick<ResearchWorkbenchItem, "cur
     level: normalizedScore >= 80 ? "high" : normalizedScore >= 45 ? "medium" : "low",
     label: normalizedScore >= 80 ? "就绪" : normalizedScore >= 45 ? "可推进" : "待补齐",
     missing,
+  };
+}
+
+export function describeResearchStageProgress(stage: ResearchStage): ResearchStageProgress {
+  const currentIndex = Math.max(0, RESEARCH_STAGES.indexOf(stage));
+  const total = RESEARCH_STAGES.length;
+  const nextStage = RESEARCH_STAGES[currentIndex + 1];
+  return {
+    currentIndex,
+    total,
+    percent: Math.round(((currentIndex + 1) / total) * 100),
+    label: RESEARCH_STAGE_LABELS[stage],
+    nextLabel: nextStage ? RESEARCH_STAGE_LABELS[nextStage] : null,
   };
 }
 

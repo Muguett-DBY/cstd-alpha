@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { calculateResearchOpportunityScore, describeResearchReadiness, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
+import { calculateResearchOpportunityScore, describeResearchReadiness, describeResearchStageProgress, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
 import type { RadarIndustryPacket } from "./shared/radar";
 import type { ResearchTemplate, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -163,6 +163,30 @@ describe("research workbench scoring", () => {
       level: "high",
       label: "就绪",
       missing: [],
+    });
+  });
+
+  test("describes research stage progress for detail navigation", () => {
+    expect(describeResearchStageProgress("screening")).toEqual({
+      currentIndex: 0,
+      total: 5,
+      percent: 20,
+      label: "待初筛",
+      nextLabel: "深入研究",
+    });
+    expect(describeResearchStageProgress("opinionFormed")).toEqual({
+      currentIndex: 3,
+      total: 5,
+      percent: 80,
+      label: "已形成观点",
+      nextLabel: "归档/否决",
+    });
+    expect(describeResearchStageProgress("archived")).toEqual({
+      currentIndex: 4,
+      total: 5,
+      percent: 100,
+      label: "归档/否决",
+      nextLabel: null,
     });
   });
 });

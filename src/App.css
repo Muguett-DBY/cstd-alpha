@@ -2320,6 +2320,81 @@ button:not(:disabled):active,
   color: var(--teal);
 }
 
+.detail-stage-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--teal) 20%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+}
+
+.detail-stage-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.detail-stage-progress-head span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.detail-stage-progress-head strong {
+  color: var(--ink);
+}
+
+.detail-stage-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--meter-track);
+  overflow: hidden;
+}
+
+.detail-stage-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal), color-mix(in srgb, var(--blue) 72%, var(--teal)));
+}
+
+.detail-stage-steps,
+.readiness-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-stage-steps span,
+.readiness-checklist span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.detail-stage-steps span.done,
+.readiness-checklist span.done {
+  border-color: color-mix(in srgb, var(--teal) 24%, var(--line));
+  color: var(--teal);
+}
+
+.detail-stage-steps span.active {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: var(--on-accent);
+}
+
+.readiness-checklist {
+  margin-top: 2px;
+}
+
 .stage-actions {
   display: flex;
   flex-wrap: wrap;
@@ -9828,6 +9903,21 @@ button:not(:disabled):active,
     min-width: 82px;
     min-height: 34px;
     padding-inline: 10px;
+  }
+
+  .detail-stage-steps,
+  .readiness-checklist {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-stage-steps span,
+  .readiness-checklist span {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   }
 
   .app-shell.view-assistant .view-tabs button.wide-tab {
