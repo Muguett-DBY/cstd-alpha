@@ -38,6 +38,7 @@ const AssistantView = lazy(() => import("./AssistantView").then((module) => ({ d
 
 function App() {
   const theme = useThemePreference();
+  const [assistantPrefill, setAssistantPrefill] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<UserSession | null>(null);
   const [checking, setChecking] = useState(true);
@@ -723,7 +724,7 @@ function App() {
           {renderedView === "opportunities" ? (
             <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
           ) : renderedView === "research" ? (
-            <ResearchWorkspace onOpenLegacyMine={() => setActiveView("mine")} onOpenAssistant={() => setActiveView("assistant")} onOpenReport={() => setActiveView("report")} />
+            <ResearchWorkspace onOpenLegacyMine={() => setActiveView("mine")} onOpenAssistant={(prefill) => { setActiveView("assistant"); if (prefill) setAssistantPrefill(prefill); }} onOpenReport={() => setActiveView("report")} />
           ) : renderedView === "market" ? (
             <MarketWorkspace onOpenRanking={openMarketRanking} onOpenWatchlistRanking={() => setActiveView("watchlist-ranking")} onOpenRadar={openRadarFromMarket} />
           ) : renderedView === "valuation" ? (
@@ -737,7 +738,7 @@ function App() {
           ) : renderedView === "radar" ? (
             <RadarView radar={radar} job={radarJob} diagnostics={radarDiagnostics} isAdmin={user?.role === "admin"} phase={radarPhase} error={radarError} onRefresh={() => void loadRadar(true)} />
           ) : renderedView === "assistant" && user?.role === "admin" ? (
-            <AssistantView />
+            <AssistantView prefillMessage={assistantPrefill} onPrefillUsed={() => setAssistantPrefill("")} />
           ) : (
             <>
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (

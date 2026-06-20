@@ -42,7 +42,7 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-export function AssistantView() {
+export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessage?: string; onPrefillUsed?: () => void }) {
   const [thread, setThread] = useState<AssistantThread | null>(null);
   const [phase, setPhase] = useState<AssistantPhase>("loading");
   const [error, setError] = useState("");
@@ -72,6 +72,7 @@ export function AssistantView() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantAbortRef = useRef<AbortController | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
+  const threadLoadSeqRef = useRef(0);
 
   useEffect(
     () => () => {
@@ -90,6 +91,28 @@ export function AssistantView() {
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!prefillMessage) return;
+    const id = window.setTimeout(() => {
+      setInput(prefillMessage);
+      onPrefillUsed?.();
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [prefillMessage, onPrefillUsed]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await reloadThread();
+      if (!cancelled) void loadThreadList();
+    })();
+    return () => {
+      cancelled = true;
+      threadLoadSeqRef.current += 1;
     };
   }, []);
 
@@ -157,14 +180,18 @@ export function AssistantView() {
   }, [activeDeepResearchIds]);
 
   async function reloadThread(threadId?: string) {
+    const loadSeq = threadLoadSeqRef.current + 1;
+    threadLoadSeqRef.current = loadSeq;
     setPhase("loading");
     setError("");
     try {
       const next = await fetchAssistantThread(threadId);
+      if (threadLoadSeqRef.current !== loadSeq) return;
       setThread(next);
       setDeepResearchJobs((current) => mergeAssistantDeepResearchJobs(current, collectDeepResearchJobs(next.messages)));
       setPhase("ready");
     } catch (err) {
+      if (threadLoadSeqRef.current !== loadSeq) return;
       setError(err instanceof Error ? err.message : "助手读取失败。");
       setPhase("error");
     }
