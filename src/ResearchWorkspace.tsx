@@ -709,6 +709,16 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <option value="stage">按阶段</option>
                   </select>
                 </div>
+                {(queueQuery || stageFilter !== "all" || thesisFilter !== "all") ? (
+                  <button
+                    type="button"
+                    className="filter-reset"
+                    onClick={() => { setQueueQuery(""); setStageFilter("all"); setThesisFilter("all"); setSortOrder("recent"); }}
+                    aria-label="重置所有筛选"
+                  >
+                    重置
+                  </button>
+                ) : null}
               </div>
               <div className="quick-add-section">
                 <label className="research-queue-search">
