@@ -5849,6 +5849,45 @@ button:not(:disabled):active,
   outline-offset: 2px;
 }
 
+.assistant-tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assistant-tool-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assistant-tool-call.running {
+  border-color: color-mix(in srgb, var(--blue) 40%, var(--line));
+  background: color-mix(in srgb, var(--blue-soft) 60%, var(--surface));
+}
+
+.assistant-tool-call.completed {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--line));
+  background: color-mix(in srgb, var(--success-soft) 60%, var(--surface));
+}
+
+.assistant-tool-call.failed {
+  border-color: color-mix(in srgb, var(--red) 40%, var(--line));
+  background: color-mix(in srgb, var(--danger-soft) 60%, var(--surface));
+}
+
+.assistant-tool-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
 .assistant-message.user {
   background: color-mix(in srgb, var(--teal) 8%, var(--surface));
   border-left: 3px solid var(--teal);
