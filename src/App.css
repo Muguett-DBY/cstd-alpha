@@ -2002,6 +2002,38 @@ button:not(:disabled):active,
   white-space: nowrap;
 }
 
+.detail-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+
+.detail-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.detail-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--teal), color-mix(in srgb, var(--teal) 70%, var(--blue)));
+  transition: width 0.3s ease;
+}
+
+.detail-progress-text {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .card-header {
   display: flex;
   align-items: center;
