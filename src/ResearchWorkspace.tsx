@@ -9,7 +9,7 @@ import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./rese
 
 type Props = {
   onOpenLegacyMine: () => void;
-  onOpenAssistant: () => void;
+  onOpenAssistant: (prefill?: string) => void;
   onOpenReport: () => void;
 };
 
@@ -1105,7 +1105,20 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <div>
                 <h2>关联助手</h2>
                 <p>带着当前研究对象进入全局助手，继续追问证据、反证或估值假设。</p>
-                <button type="button" className="primary-action" onClick={onOpenAssistant}>打开助手</button>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => {
+                    if (selected) {
+                      const query = `分析 ${selected.title}（${selected.subtitle || ""}）的当前研究进展，帮我梳理关键证据和风险点。`;
+                      onOpenAssistant(query);
+                    } else {
+                      onOpenAssistant();
+                    }
+                  }}
+                >
+                  打开助手
+                </button>
               </div>
             ) : null}
           </aside>
