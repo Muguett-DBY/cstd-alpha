@@ -1,5 +1,15 @@
 # CSTD Alpha - Iteration Log
 
+## Round 52 — 2026-06-20 (Short Sprint: IMPROVE → UIUX)
+
+### Stage 1/2 IMPROVE — Research Readiness Indicators
+- **承接方向:** 研究队列最近几轮已完成筛选重置、助手预填充、移动触摸优化；本阶段继续强化研究工作台的卡片决策反馈。
+- **旗舰:** 研究就绪度：卡片和详情页统一显示百分比、状态标签（待补齐/可推进/就绪）和缺口下一步。
+- **真实问题修复:** 修复中断改动里的重复内联百分比计算和 `.agent/orchestrator-state.json` 的 `},,` 语法问题。
+- **验证:** `npm ci` clean install passed；769 tests passed；lint passed；functions typecheck passed；build passed。
+- **CI:** 待 push 后检查。
+- **下一阶段:** UIUX 专项，围绕研究工作台队列和详情页做更明显的视觉层级、交互状态和响应式体验升级。
+
 ## Round 51 — 2026-06-19 (Triple Loop: 18 Phases Completed)
 
 **循环模式:** 三循环超级版 Agent 总控执行模式 (18 phases total)

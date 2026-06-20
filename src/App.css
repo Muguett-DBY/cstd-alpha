@@ -2151,6 +2151,32 @@ button:not(:disabled):active,
   color: var(--amber);
 }
 
+.card-readiness {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.card-readiness.low,
+.readiness-pill.low {
+  background: color-mix(in srgb, var(--muted) 12%, var(--surface));
+  color: var(--muted);
+}
+
+.card-readiness.medium,
+.readiness-pill.medium {
+  background: color-mix(in srgb, var(--amber) 13%, var(--surface));
+  color: var(--amber);
+}
+
+.card-readiness.high,
+.readiness-pill.high {
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface));
+  color: var(--teal);
+}
+
 .valuation-summary {
   display: grid;
   gap: 10px;
@@ -2281,6 +2307,16 @@ button:not(:disabled):active,
 .detail-state-row .is-positive {
   border-color: color-mix(in srgb, var(--teal) 32%, var(--line));
   background: color-mix(in srgb, var(--teal) 9%, var(--surface));
+  color: var(--teal);
+}
+
+.detail-state-row .readiness-pill {
+  border-color: transparent;
+}
+
+.readiness-next {
+  margin-top: 2px;
+  font-weight: 750;
   color: var(--teal);
 }
 

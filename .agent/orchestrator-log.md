@@ -54,3 +54,23 @@
 ---
 
 ## 执行记录
+
+---
+
+## Short Sprint Orchestrator — 2026-06-20
+
+**执行模式:** IMPROVE → UIUX
+**总阶段数:** 2
+**仓库:** `E:\DEV\cstd-alpha`
+**分支:** `main`
+
+### 阶段 1/2: IMPROVE
+
+**状态:** 本地验证完成，等待 commit / push / CI
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接研究队列近期方向，将中断的卡片进度条升级为可测试、可复用的研究就绪度与下一步提示。
+**开始状态:** `main` 分支；发现未提交的研究卡片进度条和 orchestrator state 修改，已作为中断阶段继续处理；`.agent/orchestrator-state.json` 存在 `},,` JSON 语法问题。
+**完成内容:** 新增 `describeResearchReadiness`，卡片和详情页显示就绪度百分比、低/中/高状态与缺口动作；修复内联重复计算和 state JSON 语法问题。
+**本地验证:** `npm ci` clean install passed；`npm test` 769 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed。
+**风险记录:** 首次 `npm ci` 被本仓库 Vite 进程锁住 Rolldown native binding，清理并重装 `node_modules` 后通过；`npm ci` 报告 5 个既有 audit vulnerabilities，未在本阶段修复。
+**下一阶段:** UIUX，优先围绕研究工作台核心队列/详情体验做明显可感知的视觉和响应式升级。

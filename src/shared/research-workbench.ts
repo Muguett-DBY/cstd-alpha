@@ -50,6 +50,13 @@ export type ResearchWorkbenchItem = {
   archivedAt?: string;
 };
 
+export type ResearchReadiness = {
+  score: number;
+  level: "low" | "medium" | "high";
+  label: string;
+  missing: string[];
+};
+
 export type ResearchThesisVersion = {
   id: string;
   itemId: string;
@@ -122,6 +129,33 @@ const TEMPLATE_GROUP_LABELS: Record<TemplateGroupId, string> = {
 export function clampScore(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export function describeResearchReadiness(item: Pick<ResearchWorkbenchItem, "currentThesisVersionId" | "evidenceHash" | "source">): ResearchReadiness {
+  const missing: string[] = [];
+  let score = 0;
+  if (item.currentThesisVersionId) {
+    score += 40;
+  } else {
+    missing.push("生成论点");
+  }
+  if (item.evidenceHash) {
+    score += 40;
+  } else {
+    missing.push("采集证据");
+  }
+  if (item.source?.trim()) {
+    score += 20;
+  } else {
+    missing.push("确认来源");
+  }
+  const normalizedScore = clampScore(score);
+  return {
+    score: normalizedScore,
+    level: normalizedScore >= 80 ? "high" : normalizedScore >= 45 ? "medium" : "low",
+    label: normalizedScore >= 80 ? "就绪" : normalizedScore >= 45 ? "可推进" : "待补齐",
+    missing,
+  };
 }
 
 export function calculateResearchOpportunityScore(input: ResearchOpportunityInput) {

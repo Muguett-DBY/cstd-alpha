@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, createValuationRun, deleteResearchItems, fetchActivityEvents, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage, type ActivityEvent } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { describeResearchReadiness, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
@@ -65,6 +65,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     try { return JSON.parse(localStorage.getItem("cstd_research_item_order") || "{}"); } catch { return {}; }
   });
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
+  const selectedReadiness = selected ? describeResearchReadiness(selected) : null;
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
@@ -766,17 +767,8 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     {orderedItems.length ? orderedItems.map((item) => {
                       const valuation = valuationByItem.get(item.id);
                       const isSelected = selectedItemIds.has(item.id);
-
-  function getResearchProgress(item: ResearchWorkbenchItem): number {
-    let progress = 0;
-    if (item.currentThesisVersionId) progress += 40;
-    if (item.evidenceHash) progress += 30;
-    const valuation = valuationByItem.get(item.id);
-    if (valuation?.status === "completed") progress += 30;
-    return progress;
-  }
-
-  return (
+                      const readiness = describeResearchReadiness(item);
+                      return (
                         <button
                           type="button"
                           draggable
@@ -811,8 +803,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                               </span>
                             ) : null}
                             <span className="card-time">{relativeTime(item.updatedAt)}</span>
-                            <div className="card-progress" aria-label={`完成度 ${getResearchProgress(item)}%`}>
-                              <div className="card-progress-bar" style={{ width: `${getResearchProgress(item)}%` }} />
+                            <span className={`card-readiness ${readiness.level}`}>{readiness.label} {readiness.score}%</span>
+                            <div className="card-progress" aria-label={`研究就绪度 ${readiness.score}%`}>
+                              <div className="card-progress-bar" style={{ width: `${readiness.score}%` }} />
                             </div>
                             <button type="button" className="card-expand-toggle" onClick={(e) => { e.stopPropagation(); setExpandedCardId(expandedCardId === item.id ? null : item.id); }} aria-label={expandedCardId === item.id ? "收起详情" : "展开详情"}>
                               {expandedCardId === item.id ? "▲" : "▼"}
@@ -827,22 +820,11 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                               <div className="detail-row"><span>更新时间</span><span>{new Date(item.updatedAt).toLocaleString("zh-CN", { hour12: false })}</span></div>
                               <div className="detail-progress">
                                 <div className="detail-progress-bar">
-                                  <div className="detail-progress-fill" style={{ width: `${(() => {
-                                    let progress = 0;
-                                    if (item.currentThesisVersionId) progress += 40;
-                                    if (item.evidenceHash) progress += 40;
-                                    if (item.source) progress += 20;
-                                    return Math.min(100, progress);
-                                  })()}%` }} />
+                                  <div className="detail-progress-fill" style={{ width: `${readiness.score}%` }} />
                                 </div>
-                                <span className="detail-progress-text">{(() => {
-                                  let progress = 0;
-                                  if (item.currentThesisVersionId) progress += 40;
-                                  if (item.evidenceHash) progress += 40;
-                                  if (item.source) progress += 20;
-                                  return progress;
-                                })()}%</span>
+                                <span className="detail-progress-text">{readiness.label} {readiness.score}%</span>
                               </div>
+                              {readiness.missing.length ? <div className="detail-row"><span>下一步</span><span>{readiness.missing.join(" / ")}</span></div> : null}
                             </div>
                           ) : null}
                         </button>
@@ -886,7 +868,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <span>{RESEARCH_STAGE_LABELS[selected.stage]}</span>
                     <span className={selected.currentThesisVersionId ? "is-positive" : ""}>{selected.currentThesisVersionId ? "已沉淀论点" : "待生成论点"}</span>
                     <span className={selected.evidenceHash ? "is-positive" : ""}>{selected.evidenceHash ? "有证据包" : "待采集证据"}</span>
+                    {selectedReadiness ? <span className={`readiness-pill ${selectedReadiness.level}`}>研究就绪度 {selectedReadiness.score}% · {selectedReadiness.label}</span> : null}
                   </div>
+                  {selectedReadiness?.missing.length ? <p className="readiness-next">下一步：{selectedReadiness.missing.join("、")}</p> : null}
                 </div>
                 <div className="stage-actions">
                   {RESEARCH_STAGES.map((stage) => (
