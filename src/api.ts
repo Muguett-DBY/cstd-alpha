@@ -584,7 +584,7 @@ export async function sendAssistantMessage(
     if (typed.type === "done") finalMessage = typed.message;
   }
   if (requestedClarification) return null;
-  if (!finalMessage) throw new Error("助手连接提前结束，请重试。");
+  if (!finalMessage) throw assistantIncompleteResponseError();
   return finalMessage;
 }
 
@@ -719,36 +719,52 @@ async function* readSse(response: Response): AsyncGenerator<Record<string, unkno
   const decoder = new TextDecoder();
   let buffer = "";
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      throw assistantConnectionInterruptedError(error);
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const events = buffer.split("\n\n");
     buffer = events.pop() ?? "";
     for (const event of events) {
-      const lines = event.split(/\r?\n/);
-      const dataLines: string[] = [];
-      for (const line of lines) {
-        if (line.startsWith("data:")) {
-          const data = line.slice(5);
-          if (data.trim()) dataLines.push(data);
-        }
-      }
-      if (!dataLines.length) continue;
-      yield JSON.parse(dataLines.join("\n").trim()) as Record<string, unknown>;
+      const parsed = parseSseEvent(event);
+      if (parsed) yield parsed;
     }
   }
   buffer += decoder.decode();
   if (buffer.trim()) {
-    const lines = buffer.split(/\r?\n/);
-    const dataLines: string[] = [];
-    for (const line of lines) {
-      if (line.startsWith("data:")) {
-        const data = line.slice(5);
-        if (data.trim()) dataLines.push(data);
-      }
-    }
-    if (dataLines.length) yield JSON.parse(dataLines.join("\n").trim()) as Record<string, unknown>;
+    const parsed = parseSseEvent(buffer);
+    if (parsed) yield parsed;
   }
+}
+
+function parseSseEvent(event: string) {
+  const lines = event.split(/\r?\n/);
+  const dataLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("data:")) {
+      const data = line.slice(5);
+      if (data.trim()) dataLines.push(data);
+    }
+  }
+  if (!dataLines.length) return null;
+  try {
+    return JSON.parse(dataLines.join("\n").trim()) as Record<string, unknown>;
+  } catch (error) {
+    throw assistantIncompleteResponseError(error);
+  }
+}
+
+function assistantConnectionInterruptedError(cause?: unknown) {
+  return new Error("助手连接中断，已保留当前已显示内容，请重试。", { cause });
+}
+
+function assistantIncompleteResponseError(cause?: unknown) {
+  return new Error("助手响应不完整，请重试。", { cause });
 }
 
 function reportConnectionError(cause?: unknown) {
