@@ -4828,6 +4828,7 @@ button:not(:disabled):active,
 .assistant-workspace {
   display: flex;
   flex: 1;
+  height: 100%;
   min-height: 0;
   max-width: 1180px;
   margin: 0 auto;

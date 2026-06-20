@@ -185,6 +185,34 @@ describe("API client", () => {
     expect(result?.content).toBe("结论：可观察");
   });
 
+  test("maps interrupted assistant streams to a Chinese incomplete-response error", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text: "结论：先观察" })}\n\n`));
+        controller.error(new TypeError("network error"));
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream)));
+
+    await expect(sendAssistantMessage("宁德时代怎么看？")).rejects.toThrow("助手连接中断，已保留当前已显示内容，请重试。");
+  });
+
+  test("maps malformed assistant SSE payloads to a Chinese incomplete-response error", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: {"type":"done"`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream)));
+
+    await expect(sendAssistantMessage("宁德时代怎么看？")).rejects.toThrow("助手响应不完整，请重试。");
+  });
+
 
   test("returns null when assistant stream asks for a clarification choice", async () => {
     const request = {
