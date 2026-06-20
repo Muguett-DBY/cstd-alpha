@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { calculateResearchOpportunityScore, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
+import { calculateResearchOpportunityScore, describeResearchReadiness, extractCatalystDraftsFromThesis, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, opportunityFromRadarPacket, opportunityFromWatchlistRanking, summarizeResearchCatalystStatuses } from "./shared/research-workbench";
 import type { RadarIndustryPacket } from "./shared/radar";
 import type { ResearchTemplate, WatchlistRankingEntry } from "./shared/user-research";
 
@@ -130,6 +130,40 @@ describe("research workbench scoring", () => {
     expect(filterResearchWorkbenchItems(items, "港股").map((item) => item.id)).toEqual(["r3"]);
     expect(filterResearchWorkbenchItems(items, "行业").map((item) => item.id)).toEqual(["r2"]);
     expect(filterResearchWorkbenchItems(items, "不存在")).toEqual([]);
+  });
+
+  test("describes research readiness with score, level and missing next steps", () => {
+    const empty = describeResearchReadiness({ ...researchItem("r1", "贵州茅台", "600519 / SH-A", "company"), source: "" });
+    const partial = describeResearchReadiness({
+      ...researchItem("r2", "AI应用/软件", "雷达行业", "industry"),
+      evidenceHash: "hash-1",
+      source: "radar",
+    });
+    const ready = describeResearchReadiness({
+      ...researchItem("r3", "腾讯控股", "00700 / HK", "company"),
+      currentThesisVersionId: "thesis-1",
+      evidenceHash: "hash-2",
+      source: "watchlist",
+    });
+
+    expect(empty).toEqual({
+      score: 0,
+      level: "low",
+      label: "待补齐",
+      missing: ["生成论点", "采集证据", "确认来源"],
+    });
+    expect(partial).toEqual({
+      score: 60,
+      level: "medium",
+      label: "可推进",
+      missing: ["生成论点"],
+    });
+    expect(ready).toEqual({
+      score: 100,
+      level: "high",
+      label: "就绪",
+      missing: [],
+    });
   });
 });
 
