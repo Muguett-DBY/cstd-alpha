@@ -15,7 +15,8 @@
 - **旗舰:** 阶段进度条 + 阶段路径 + 研究资产检查清单，用户可直接看到 `阶段 1/5`、下一站和论点/证据/来源状态。
 - **真实问题修复:** 将阶段进度抽成 `describeResearchStageProgress` 并用测试锁定阶段顺序、百分比和最终态。
 - **验证:** 770 tests passed；lint passed；functions typecheck passed；build passed；Pages dev + Playwright verified desktop and 800px responsive layout.
-- **CI:** 待 push 后检查。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `27856500579`)。
+- **Commit:** `f0c6f69 feat: upgrade research detail stage UX`
 
 ## Round 51 — 2026-06-19 (Triple Loop: 18 Phases Completed)
 

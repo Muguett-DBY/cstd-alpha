@@ -78,10 +78,12 @@
 
 ### 阶段 2/2: UIUX
 
-**状态:** 本地验证完成，等待 commit / push / CI
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
 **阶段目标:** 强化研究详情页的阶段感知和资产完整性反馈，让用户不用扫字段也能判断当前研究推进位置。
 **完成内容:** 新增 `describeResearchStageProgress` 共享契约；详情页显示阶段进度条、阶段路径、下一站提示和论点/证据/来源检查清单；800px 响应式布局将阶段和清单 chips 变为双列 34px 触控目标。
 **本地验证:** `npm test` 770 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed。
 **浏览器验证:** `wrangler pages dev dist --port 43174` 下使用 Playwright 登录本地管理员账号；桌面和 800px 视口均验证 `Codex UIUX Demo` 详情页展示 `阶段 1/5`、`下一站：深入研究`、`待生成论点/已采集证据/来源已确认`，且 800px chips 高度为 34px，无相关 console error。
+**Commit / Push:** `f0c6f69 feat: upgrade research detail stage UX` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `27856500579`)。
 **风险记录:** `npm ci` 仍报告 5 个既有 audit vulnerabilities；390px 下管理员界面按既有逻辑进入 assistant-only shell，研究详情页无法直接到达，因此响应式验证选用 800px。
