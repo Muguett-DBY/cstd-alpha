@@ -7,8 +7,15 @@
 - **旗舰:** 研究就绪度：卡片和详情页统一显示百分比、状态标签（待补齐/可推进/就绪）和缺口下一步。
 - **真实问题修复:** 修复中断改动里的重复内联百分比计算和 `.agent/orchestrator-state.json` 的 `},,` 语法问题。
 - **验证:** `npm ci` clean install passed；769 tests passed；lint passed；functions typecheck passed；build passed。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `27855753035`)。
+- **Commit:** `b84d33a feat: add research readiness indicators to workbench cards`
+
+### Stage 2/2 UIUX — Research Detail Stage Progress
+- **承接方向:** 研究详情页已有就绪度提示；本阶段把“当前阶段、下一站、资产缺口”做成详情首屏的连续反馈。
+- **旗舰:** 阶段进度条 + 阶段路径 + 研究资产检查清单，用户可直接看到 `阶段 1/5`、下一站和论点/证据/来源状态。
+- **真实问题修复:** 将阶段进度抽成 `describeResearchStageProgress` 并用测试锁定阶段顺序、百分比和最终态。
+- **验证:** 770 tests passed；lint passed；functions typecheck passed；build passed；Pages dev + Playwright verified desktop and 800px responsive layout.
 - **CI:** 待 push 后检查。
-- **下一阶段:** UIUX 专项，围绕研究工作台队列和详情页做更明显的视觉层级、交互状态和响应式体验升级。
 
 ## Round 51 — 2026-06-19 (Triple Loop: 18 Phases Completed)
 

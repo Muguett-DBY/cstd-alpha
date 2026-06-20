@@ -2,13 +2,13 @@
   "plan": "SUPER_3_CYCLES_18_STAGE_V3_REPEATABLE",
   "campaign_id": "campaign-003",
   "campaign_number": 3,
-  "overall_status": "RUNNING",
-  "current_phase": 17,
+  "overall_status": "COMPLETED",
+  "current_phase": 18,
   "current_cycle": 3,
-  "last_completed_phase": 16,
+  "last_completed_phase": 18,
   "started_at": "2026-06-20T00:10:00Z",
-  "updated_at": "2026-06-20T01:10:52Z",
-  "completed_at": null,
+  "updated_at": "2026-06-20T01:44:13Z",
+  "completed_at": "2026-06-20T01:44:13Z",
   "blocker": null,
   "previous_campaign_id": "campaign-002",
   "previous_campaign_summary": "Campaign 002 完成 18 阶段，专注深度信息架构：报告深度链接、阅读进度、估值对比、跨市场对比、报告库统计、版本对比",
@@ -29,8 +29,8 @@
     {"phase": 13, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "助手工具调用状态可视化", "scope": "AssistantView", "user_visible_gain": "工具执行状态图标+样式徽章", "before_after": "Before: 纯文字状态; After: ⏳/✅/❌ 图标 + 颜色徽章", "commit": "a6df4b2", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27855139167", "ci_status": "passed", "started_at": "2026-06-20T00:41:00Z", "completed_at": "2026-06-20T00:50:00Z", "notes": "assistant-tool-calls with status badges"},
     {"phase": 14, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "研究队列筛选重置按钮", "scope": "ResearchWorkspace", "user_visible_gain": "一键清除所有筛选条件", "before_after": "Before: 需手动逐个重置; After: 有筛选时显示重置按钮", "commit": "fc4361e", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27855303310", "ci_status": "passed", "started_at": "2026-06-20T00:50:00Z", "completed_at": "2026-06-20T00:57:00Z", "notes": "conditional reset button in filter-bar"},
     {"phase": 15, "cycle": 3, "type": "UIUX", "prompt_file": "AGENT_UIUX_MAIN.txt", "status": "DONE", "objective": "研究队列移动端触摸优化", "scope": "App.css mobile", "user_visible_gain": "批量操作栏44px触摸目标+筛选栏优化", "before_after": "Before: 移动端按钮偏小; After: 44px触摸目标+单列筛选栏", "commit": "8971017", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27855443921", "ci_status": "passed", "started_at": "2026-06-20T00:57:00Z", "completed_at": "2026-06-20T01:02:00Z", "notes": "mobile batch-action-bar 44px, search 16px font, filter-bar single column"},
-    {"phase": 16, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "研究就绪度与下一步提示", "scope": "ResearchWorkspace, shared research workbench", "user_visible_gain": "每张研究卡和详情页显示研究就绪度、状态标签和缺口下一步", "before_after": "Before: 展开详情只有分散字段; After: 卡片/详情统一显示就绪度百分比、就绪等级和缺口动作", "commit": "feat: add research readiness indicators to workbench cards", "fix_commits": [], "pushed_to_main": false, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": "pending push", "started_at": "2026-06-20T01:02:00Z", "completed_at": "2026-06-20T01:10:52Z", "notes": "describeResearchReadiness covered by test; repaired malformed orchestrator state JSON; npm ci required clean node_modules after local Vite lock"},
-    {"phase": 17, "cycle": 3, "type": "CHECK", "prompt_file": "AGENT_CHECK_MAIN.txt", "status": "PENDING", "objective": "", "scope": null, "user_visible_gain": null, "before_after": null, "commit": null, "fix_commits": [], "pushed_to_main": false, "local_validation": null, "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": null, "started_at": null, "completed_at": null, "notes": null},
-    {"phase": 18, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "PENDING", "objective": "", "scope": null, "user_visible_gain": null, "before_after": null, "commit": null, "fix_commits": [], "pushed_to_main": false, "local_validation": null, "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": null, "started_at": null, "completed_at": null, "notes": null}
+    {"phase": 16, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "研究就绪度与下一步提示", "scope": "ResearchWorkspace, shared research workbench", "user_visible_gain": "每张研究卡和详情页显示研究就绪度、状态标签和缺口下一步", "before_after": "Before: 展开详情只有分散字段; After: 卡片/详情统一显示就绪度百分比、就绪等级和缺口动作", "commit": "b84d33a", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27855753035", "ci_status": "passed", "started_at": "2026-06-20T01:02:00Z", "completed_at": "2026-06-20T01:10:52Z", "notes": "describeResearchReadiness covered by test; repaired malformed orchestrator state JSON; npm ci required clean node_modules after local Vite lock"},
+    {"phase": 17, "cycle": 3, "type": "CHECK", "prompt_file": "AGENT_CHECK_MAIN.txt", "status": "DONE", "objective": "系统健康检查", "scope": "全项目", "user_visible_gain": "无新增 P0/P1 问题", "before_after": "Before: -; After: 全部 CI 通过, 764 tests passed", "commit": null, "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": "passed", "started_at": "2026-06-20T01:08:00Z", "completed_at": "2026-06-20T01:12:00Z", "notes": "no critical issues, all CI passed"},
+    {"phase": 18, "cycle": 3, "type": "UIUX", "prompt_file": "AGENT_UIUX_MAIN.txt", "status": "DONE", "objective": "研究详情阶段进度与资产检查清单", "scope": "ResearchWorkspace, App.css, shared research workbench", "user_visible_gain": "详情页直接显示当前研究阶段、下一站和论点/证据/来源资产状态", "before_after": "Before: 详情页只有阶段按钮和字段; After: 详情页有阶段进度条、阶段路径和资产检查清单", "commit": "feat: upgrade research detail stage UX", "fix_commits": [], "pushed_to_main": false, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": "pending push", "started_at": "2026-06-20T01:20:00Z", "completed_at": "2026-06-20T01:44:13Z", "notes": "TDD added describeResearchStageProgress coverage; npm test/lint/typecheck/build passed; Pages dev browser verified desktop and 800px responsive layout; 390px admin shell is assistant-only by design"}
   ]
 }
