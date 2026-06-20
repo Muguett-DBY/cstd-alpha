@@ -198,6 +198,44 @@ export function AssistantView() {
     }
   }
 
+  async function renameThreadInline(threadId: string, currentTitle: string) {
+    const next = window.prompt("重命名会话", currentTitle);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === currentTitle) return;
+    try {
+      await renameAssistantThread(threadId, trimmed);
+      setThreadList((current) => current.map((t) => (t.id === threadId ? { ...t, title: trimmed } : t)));
+      if (thread?.id === threadId) {
+        setThread((current) => (current ? { ...current, title: trimmed } : current));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "重命名失败。");
+    }
+  }
+
+  function exportThreadAsJson() {
+    if (!thread) return;
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      thread: {
+        id: thread.id,
+        title: thread.title,
+        updatedAt: thread.updatedAt,
+        messages: thread.messages,
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `assistant-thread-${thread.id.slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   async function removeThread(threadId: string) {
     try {
       await deleteAssistantThread(threadId);
@@ -525,7 +563,10 @@ export function AssistantView() {
           {threadList.map((t) => (
             <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
               <span className="assistant-thread-item-title">{t.title}</span>
-              <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
+              <div className="assistant-thread-item-actions">
+                <button type="button" className="assistant-thread-rename" onClick={(e) => { e.stopPropagation(); void renameThreadInline(t.id, t.title); }} aria-label="重命名会话">✎</button>
+                <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
+              </div>
             </div>
           ))}
         </div>
@@ -538,6 +579,9 @@ export function AssistantView() {
               <span>{thread?.title || "长期投研线程"}</span>
             </div>
             <button type="button" className="assistant-mobile-new" onClick={() => void newThread()} aria-label="新对话">＋</button>
+            {thread && thread.messages.length > 0 ? (
+              <button type="button" className="assistant-thread-export" onClick={exportThreadAsJson} aria-label="导出当前会话为 JSON">⤓</button>
+            ) : null}
           </header>
           <div className="assistant-search-bar" role="search">
             <button

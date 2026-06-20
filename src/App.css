@@ -4942,6 +4942,49 @@ button:not(:disabled):active,
   background: color-mix(in srgb, var(--red) 15%, transparent);
 }
 
+.assistant-thread-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+}
+
+.assistant-thread-item:hover .assistant-thread-item-actions {
+  opacity: 1;
+}
+
+.assistant-thread-rename {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.assistant-thread-rename:hover {
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 15%, transparent);
+}
+
+.assistant-thread-export {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+.assistant-thread-export:hover {
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
+}
+
 .assistant-chat-header {
   display: flex;
   align-items: center;
