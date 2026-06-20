@@ -1420,6 +1420,70 @@ button:not(:disabled):active,
   letter-spacing: 0.02em;
 }
 
+.research-pipeline {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-top: 10px;
+}
+
+.pipeline-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2px;
+  transition: width 0.3s ease;
+}
+
+.pipeline-segment:first-child { border-radius: 999px 0 0 999px; }
+.pipeline-segment:last-child { border-radius: 0 999px 999px 0; }
+
+.pipeline-count {
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.pipeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.pipeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--body);
+}
+
+.pipeline-legend-item i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.pipeline-legend-item em {
+  font-style: normal;
+  font-weight: 850;
+  color: var(--ink);
+}
+
+.stage-screening { background: var(--teal); }
+.stage-deepResearch { background: var(--blue); }
+.stage-awaitingCatalyst { background: var(--amber); }
+.stage-opinionFormed { background: color-mix(in srgb, var(--success) 80%, var(--teal)); }
+.stage-archived { background: var(--muted); }
+
 .research-queue-head {
   border-bottom: 0;
 }
@@ -4837,7 +4901,7 @@ button:not(:disabled):active,
 
 .assistant-chat-panel {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -5004,6 +5068,7 @@ button:not(:disabled):active,
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-height: 0;
   overflow-y: auto;
   padding: 30px clamp(18px, 7vw, 86px) 24px;
   background: var(--surface);
@@ -9943,6 +10008,7 @@ button:not(:disabled):active,
   .assistant-chat-panel {
     height: 100%;
     min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   }
 
   .assistant-thread-scrim {

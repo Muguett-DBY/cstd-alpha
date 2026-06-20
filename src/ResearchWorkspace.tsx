@@ -635,14 +635,33 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         const active = items.filter((i) => i.stage !== "archived").length;
         const withValuation = valuationRuns.filter((r) => r.status === "completed").length;
         const recentlyUpdated = items.filter((i) => new Date(i.updatedAt).getTime() > recentCutoff).length;
+        const stageCounts = RESEARCH_STAGES.map((stage) => ({ stage, count: items.filter((i) => i.stage === stage).length }));
         return (
-          <div className="research-metrics-bar">
-            <div className="research-metric"><strong>{total}</strong><span>研究项</span></div>
-            <div className="research-metric"><strong>{active}</strong><span>进行中</span></div>
-            <div className="research-metric"><strong>{withThesis}</strong><span>已生成论点</span></div>
-            <div className="research-metric"><strong>{withValuation}</strong><span>已完成估值</span></div>
-            <div className="research-metric"><strong>{recentlyUpdated}</strong><span>7天内更新</span></div>
-          </div>
+          <>
+            <div className="research-metrics-bar">
+              <div className="research-metric"><strong>{total}</strong><span>研究项</span></div>
+              <div className="research-metric"><strong>{active}</strong><span>进行中</span></div>
+              <div className="research-metric"><strong>{withThesis}</strong><span>已生成论点</span></div>
+              <div className="research-metric"><strong>{withValuation}</strong><span>已完成估值</span></div>
+              <div className="research-metric"><strong>{recentlyUpdated}</strong><span>7天内更新</span></div>
+            </div>
+            <div className="research-pipeline" role="img" aria-label={`研究管线：${stageCounts.map((s) => `${RESEARCH_STAGE_LABELS[s.stage]} ${s.count}`).join("、")}`}>
+              {stageCounts.map((s) => (
+                <div key={s.stage} className="pipeline-segment" title={`${RESEARCH_STAGE_LABELS[s.stage]}: ${s.count} 项`} style={{ width: total > 0 ? `${(s.count / total) * 100}%` : "0%" }}>
+                  {s.count > 0 ? <span className="pipeline-count">{s.count}</span> : null}
+                </div>
+              ))}
+            </div>
+            <div className="pipeline-legend">
+              {stageCounts.map((s) => (
+                <span key={s.stage} className="pipeline-legend-item">
+                  <i className={`pipeline-dot stage-${s.stage}`} />
+                  <span>{RESEARCH_STAGE_LABELS[s.stage]}</span>
+                  <em>{s.count}</em>
+                </span>
+              ))}
+            </div>
+          </>
         );
       })() : null}
       {phase === "loading" ? <div className="workbench-empty">正在读取研究队列…</div> : null}
