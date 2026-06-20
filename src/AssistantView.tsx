@@ -694,19 +694,14 @@ export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessag
             {!draft && (agentStatus || toolCalls.size || pyodideReady === "loading") ? (
               <div className="assistant-agent-status" role="status" aria-live="polite">
                 {toolCalls.size ? (
-                  <>
-                    <span aria-hidden="true" />
-                    <span className="assistant-agent-text">
-                    {agentStatus || (() => {
-                      const running = Array.from(toolCalls.values()).filter((c) => c.status === "running");
-                      const completed = Array.from(toolCalls.values()).filter((c) => c.status === "completed");
-                      const parts: string[] = [];
-                      if (running.length) parts.push(`正在${running.map((c) => c.label).join("、")}`);
-                      if (completed.length) parts.push(`已完成${completed.length}项`);
-                      return parts.join("，");
-                    })()}
-                    </span>
-                  </>
+                  <div className="assistant-tool-calls">
+                    {Array.from(toolCalls.entries()).map(([id, call]) => (
+                      <span key={id} className={`assistant-tool-call ${call.status}`}>
+                        {call.status === "running" ? "⏳" : call.status === "completed" ? "✅" : "❌"}
+                        <span className="assistant-tool-label">{call.label}</span>
+                      </span>
+                    ))}
+                  </div>
                 ) : pyodideReady === "loading" ? (
                   "正在加载计算环境…"
                 ) : (
