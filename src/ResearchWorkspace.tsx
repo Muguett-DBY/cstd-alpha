@@ -825,6 +825,24 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                               {item.currentThesisVersionId ? <div className="detail-row"><span>论点版本</span><span>{item.currentThesisVersionId.slice(0, 8)}...</span></div> : null}
                               {item.evidenceHash ? <div className="detail-row"><span>证据哈希</span><span>{item.evidenceHash.slice(0, 8)}...</span></div> : null}
                               <div className="detail-row"><span>更新时间</span><span>{new Date(item.updatedAt).toLocaleString("zh-CN", { hour12: false })}</span></div>
+                              <div className="detail-progress">
+                                <div className="detail-progress-bar">
+                                  <div className="detail-progress-fill" style={{ width: `${(() => {
+                                    let progress = 0;
+                                    if (item.currentThesisVersionId) progress += 40;
+                                    if (item.evidenceHash) progress += 40;
+                                    if (item.source) progress += 20;
+                                    return Math.min(100, progress);
+                                  })()}%` }} />
+                                </div>
+                                <span className="detail-progress-text">{(() => {
+                                  let progress = 0;
+                                  if (item.currentThesisVersionId) progress += 40;
+                                  if (item.evidenceHash) progress += 40;
+                                  if (item.source) progress += 20;
+                                  return progress;
+                                })()}%</span>
+                              </div>
                             </div>
                           ) : null}
                         </button>
