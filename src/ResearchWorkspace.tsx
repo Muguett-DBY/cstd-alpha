@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addResearchItem, createValuationRun, deleteResearchItems, fetchActivityEvents, fetchResearchCatalysts, fetchResearchItems, fetchResearchTheses, fetchValuations, refreshResearchThesis, reorderResearchItems, searchCompanies, syncResearchCatalystsFromThesis, updateResearchCatalystStatus, updateResearchItemStage, type ActivityEvent } from "./api";
 import { parseAssistantMarkdown } from "./assistant-markdown";
-import { describeResearchReadiness, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { describeResearchReadiness, describeResearchStageProgress, filterResearchCatalystsByStatus, filterResearchWorkbenchItems, groupResearchTemplates, RESEARCH_CATALYST_STATUS_LABELS, RESEARCH_CATALYST_STATUSES, RESEARCH_STAGE_LABELS, RESEARCH_STAGES, summarizeResearchCatalystStatuses, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchCatalystStatusFilter, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
@@ -66,6 +66,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   });
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const selectedReadiness = selected ? describeResearchReadiness(selected) : null;
+  const selectedStageProgress = selected ? describeResearchStageProgress(selected.stage) : null;
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
@@ -562,6 +563,39 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     showToast(`已导出 ${filteredItems.length} 项研究数据。`, "success");
   }
 
+  function exportFilteredJSON() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      totalItems: filteredItems.length,
+      items: filteredItems.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        entityType: item.entityType,
+        entityId: item.entityId,
+        stage: item.stage,
+        stageLabel: RESEARCH_STAGE_LABELS[item.stage as keyof typeof RESEARCH_STAGE_LABELS] || item.stage,
+        source: item.source,
+        hasThesis: Boolean(item.currentThesisVersionId),
+        thesisVersionId: item.currentThesisVersionId ?? null,
+        hasEvidence: Boolean(item.evidenceHash),
+        evidenceHash: item.evidenceHash?.slice(0, 16) ?? null,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `研究队列_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`已导出 ${filteredItems.length} 项研究数据到 JSON。`, "success");
+  }
+
   async function generateThesis(item: ResearchWorkbenchItem) {
     thesisRequestRef.current?.controller.abort("research-thesis-restarted");
     const controller = new AbortController();
@@ -850,6 +884,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   {batchProcessing ? "生成中..." : "批量生成论点"}
                 </button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredCSV()}>导出 CSV</button>
+                <button type="button" className="ghost-button" onClick={() => exportFilteredJSON()}>导出 JSON</button>
                 <button type="button" className="ghost-button danger-button" onClick={() => void batchDeleteItems()} disabled={batchProcessing}>
                   {batchProcessing ? "删除中..." : "批量删除"}
                 </button>
@@ -871,6 +906,33 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     {selectedReadiness ? <span className={`readiness-pill ${selectedReadiness.level}`}>研究就绪度 {selectedReadiness.score}% · {selectedReadiness.label}</span> : null}
                   </div>
                   {selectedReadiness?.missing.length ? <p className="readiness-next">下一步：{selectedReadiness.missing.join("、")}</p> : null}
+                  {selectedStageProgress ? (
+                    <div className="detail-stage-progress" aria-label={`研究阶段进度 ${selectedStageProgress.percent}%`}>
+                      <div className="detail-stage-progress-head">
+                        <span>阶段 {selectedStageProgress.currentIndex + 1}/{selectedStageProgress.total}</span>
+                        <strong>{selectedStageProgress.nextLabel ? `下一站：${selectedStageProgress.nextLabel}` : "已到最终阶段"}</strong>
+                      </div>
+                      <div className="detail-stage-track">
+                        <span style={{ width: `${selectedStageProgress.percent}%` }} />
+                      </div>
+                      <div className="detail-stage-steps">
+                        {RESEARCH_STAGES.map((stage, stageIndex) => (
+                          <span
+                            key={stage}
+                            className={stageIndex < selectedStageProgress.currentIndex ? "done" : stageIndex === selectedStageProgress.currentIndex ? "active" : ""}
+                            aria-current={stageIndex === selectedStageProgress.currentIndex ? "step" : undefined}
+                          >
+                            {RESEARCH_STAGE_LABELS[stage]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="readiness-checklist" aria-label="研究资产检查清单">
+                    <span className={selected.currentThesisVersionId ? "done" : ""}>{selected.currentThesisVersionId ? "已生成论点" : "待生成论点"}</span>
+                    <span className={selected.evidenceHash ? "done" : ""}>{selected.evidenceHash ? "已采集证据" : "待采集证据"}</span>
+                    <span className={selected.source?.trim() ? "done" : ""}>{selected.source?.trim() ? "来源已确认" : "待确认来源"}</span>
+                  </div>
                 </div>
                 <div className="stage-actions">
                   {RESEARCH_STAGES.map((stage) => (
