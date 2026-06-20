@@ -621,6 +621,25 @@ export function AssistantView() {
           </div>
           <div ref={messagesScrollRef} className="assistant-messages" onScroll={updateMessageScrollStickiness}>
             {phase === "loading" ? <p className="muted">正在读取长期线程...</p> : null}
+            {!visibleMessages.length && phase === "ready" ? (
+              <div className="assistant-empty-state">
+                <div className="assistant-empty-icon">💬</div>
+                <h3>开始新的投研对话</h3>
+                <p>问我任何投资问题，或让我记住你的偏好。</p>
+                <div className="assistant-empty-suggestions">
+                  {[
+                    "分析一下比亚迪的投资价值",
+                    "记住：以后分析白酒先看批价和库存",
+                    "对比贵州茅台和五粮液",
+                    "帮我整理一下最近的研究进展",
+                  ].map((suggestion) => (
+                    <button key={suggestion} type="button" className="assistant-empty-suggestion" onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {visibleMessages.map((message) => {
               const cleanContent = stripInternalAssistantCompletion(message.content);
               if (message.role === "assistant" && !cleanContent.trim()) return null;

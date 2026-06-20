@@ -5719,6 +5719,80 @@ button:not(:disabled):active,
   padding: 0 2px;
 }
 
+.assistant-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  gap: 12px;
+  min-height: 200px;
+}
+
+.assistant-empty-icon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.assistant-empty-state h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 850;
+}
+
+.assistant-empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.assistant-empty-suggestions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.assistant-empty-suggestion {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--surface);
+  color: var(--body);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  line-height: 1.4;
+}
+
+.assistant-empty-suggestion:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+}
+
+.assistant-empty-suggestion:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.assistant-message.user {
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface));
+  border-left: 3px solid var(--teal);
+}
+
+.assistant-message.assistant {
+  background: var(--surface-subtle);
+  border-left: 3px solid var(--line);
+}
+
 .assistant-speech-status {
   margin: 6px 8px 0;
   color: var(--muted);
