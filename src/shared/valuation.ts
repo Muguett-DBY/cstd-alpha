@@ -38,6 +38,9 @@ export type ThreeStatementForecastRow = {
 
 export type ValuationResult = {
   methodologyVersion?: number;
+  quantitativeVersionId?: string;
+  sourceSnapshotId?: string;
+  warnings?: string[];
   method: ValuationMethod;
   archetype: CompanyArchetype;
   currency: string;
@@ -48,6 +51,8 @@ export type ValuationResult = {
   sensitivity?: Array<{ row: string; column: string; perShareValue: number }>;
   peerRange?: { low: number; median: number; high: number; metric: string };
   evidenceHash?: string;
+  modelResults?: Array<{ modelKey: string; weight?: number; perShareValue?: number; low?: number; high?: number; summary?: string }>;
+  actualReviews?: Array<{ metricKey: string; forecastYear: number; forecastValue: number; actualValue: number; absoluteError: number; percentageError?: number }>;
 };
 
 export type ValuationRunStatus = "queued" | "running" | "completed" | "failed";
