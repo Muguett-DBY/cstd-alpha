@@ -91,13 +91,17 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
   if (!ebitMargins.length) warnings.push("缺少 EBIT 与收入配对历史，EBIT 利润率使用 13% 默认值。");
   const ebitMargin = boundedTriple(ebitMarginBase, 0.03, -0.1, 0.6);
 
-  const capexRateBase = ratioOrFallback(capex.latest, baseRevenue, 0.06, "缺少资本开支历史，资本开支率使用 6% 默认值。", warnings);
+  const capexUsedFallback = !(capex.latest !== undefined && baseRevenue > 0);
+  const capexRateBase = ratioOrFallback(capex.latest === undefined ? undefined : Math.abs(capex.latest), baseRevenue, 0.06, "缺少资本开支历史，资本开支率使用 6% 默认值。", warnings);
+  const workingCapitalUsedFallback = !(workingCapital.latest !== undefined && baseRevenue > 0);
   const workingCapitalRate = ratioOrFallback(workingCapital.latest, baseRevenue, 0.015, "缺少营运资本变动历史，营运资本率使用 1.5% 默认值。", warnings);
-  const taxRate = taxExpense !== undefined && preTaxProfit !== undefined && preTaxProfit > 0 ? clamp(taxExpense / preTaxProfit, 0, 0.45) : 0.2;
-  if (taxExpense === undefined || preTaxProfit === undefined || preTaxProfit <= 0) warnings.push("缺少所得税/税前利润历史，税率使用 20% 默认值。");
+  const taxUsedFallback = taxExpense === undefined || preTaxProfit === undefined || preTaxProfit <= 0;
+  const taxRate = !taxUsedFallback ? clamp(taxExpense / preTaxProfit, 0, 0.45) : 0.2;
+  if (taxUsedFallback) warnings.push("缺少所得税/税前利润历史，税率使用 20% 默认值。");
 
   const netDebt = debt !== undefined || cash !== undefined ? (debt ?? 0) - (cash ?? 0) : 0;
-  if (debt === undefined && cash === undefined) warnings.push("缺少债务与现金历史，净债务暂置为 0。");
+  const netDebtUsedFallback = debt === undefined && cash === undefined;
+  if (netDebtUsedFallback) warnings.push("缺少债务与现金历史，净债务暂置为 0。");
 
   const currentPrice = rawNumber(quote?.regularMarketPrice);
   const marketCap = rawNumber(quote?.marketCap);
@@ -112,12 +116,48 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
   const assumptions: BaselineAssumption[] = [
     tripleAssumption("revenueGrowth", "收入增速", revenueGrowth, "%", "formula", ["financialTenYear:营业收入"], 0.72, "基于年度营业收入序列计算 CAGR，并给出上下 4 个百分点情景。"),
     tripleAssumption("ebitMargin", "EBIT 利润率", ebitMargin, "%", "formula", ["financialTenYear:EBIT", "financialTenYear:营业收入"], ebitMargins.length ? 0.68 : 0.42, ebitMargins.length ? "基于年度 EBIT / 营业收入的近三年平均值生成情景。" : "缺少可配对 EBIT 历史，使用保守默认利润率。"),
-    tripleAssumption("capexRate", "资本开支/收入", capexRate, "%", "formula", ["financialTenYear:资本开支", "financialTenYear:营业收入"], capex.latest !== undefined ? 0.58 : 0.38, capex.latest !== undefined ? "基于最新年度资本开支除以营业收入。" : "缺少资本开支历史，使用保守默认资本开支率。"),
-    scalarAssumption("workingCapitalRate", "营运资本变动/收入", workingCapitalRate, "%", "formula", ["financialTenYear:营运资本"], workingCapital.latest !== undefined ? 0.55 : 0.35, workingCapital.latest !== undefined ? "基于最新年度营运资本变动除以营业收入。" : "缺少营运资本变动历史，使用保守默认值。"),
-    scalarAssumption("taxRate", "所得税率", taxRate, "%", "formula", ["financialTenYear:所得税费用", "financialTenYear:税前利润"], taxExpense !== undefined ? 0.62 : 0.4, taxExpense !== undefined ? "基于所得税费用 / 税前利润推导。" : "缺少税费历史，使用保守默认税率。"),
+    tripleAssumption(
+      "capexRate",
+      "资本开支/收入",
+      capexRate,
+      "%",
+      "formula",
+      capexUsedFallback ? [] : ["financialTenYear:资本开支", "financialTenYear:营业收入"],
+      capexUsedFallback ? 0.38 : 0.58,
+      capexUsedFallback ? "缺少资本开支历史，使用 fallback/default 默认资本开支率。" : "基于最新年度资本开支除以营业收入。",
+    ),
+    scalarAssumption(
+      "workingCapitalRate",
+      "营运资本变动/收入",
+      workingCapitalRate,
+      "%",
+      "formula",
+      workingCapitalUsedFallback ? [] : ["financialTenYear:营运资本", "financialTenYear:营业收入"],
+      workingCapitalUsedFallback ? 0.35 : 0.55,
+      workingCapitalUsedFallback ? "缺少营运资本变动历史，使用 fallback/default 默认值。" : "基于最新年度营运资本变动除以营业收入。",
+    ),
+    scalarAssumption(
+      "taxRate",
+      "所得税率",
+      taxRate,
+      "%",
+      "formula",
+      taxUsedFallback ? [] : ["financialTenYear:所得税费用", "financialTenYear:税前利润"],
+      taxUsedFallback ? 0.4 : 0.62,
+      taxUsedFallback ? "缺少税费历史，使用 fallback/default 默认税率。" : "基于所得税费用 / 税前利润推导。",
+    ),
     tripleAssumption("discountRate", "WACC", discountRate, "%", "formula", ["formula:ashare-default-wacc"], 0.45, "A 股经营型公司初始 WACC 情景，等待用户按行业与资本结构调整。"),
     tripleAssumption("terminalGrowthRate", "永续增长率", terminalGrowthRate, "%", "formula", ["formula:ashare-default-terminal-growth"], 0.45, "A 股长期名义增长初始情景，保持低于折现率。"),
-    scalarAssumption("netDebt", "净债务", netDebt, "亿元", "formula", ["financialTenYear:有息负债", "financialTenYear:货币资金"], debt !== undefined || cash !== undefined ? 0.65 : 0.35, debt !== undefined || cash !== undefined ? "有息负债减货币资金，单位为亿元。" : "缺少债务与现金历史，暂置为 0。"),
+    scalarAssumption(
+      "netDebt",
+      "净债务",
+      netDebt,
+      "亿元",
+      "formula",
+      netDebtEvidenceRefs(debt, cash),
+      netDebtUsedFallback ? 0.35 : 0.65,
+      netDebtUsedFallback ? "缺少债务与现金历史，使用 fallback/default 默认净债务 0。" : "有息负债减货币资金，单位为亿元。",
+    ),
     scalarAssumption("sharesOutstanding", "总股本", sharesOutstanding, "亿股", "provider", ["freshSignals.quote"], sharesOutstanding ? 0.72 : 0.25, sharesOutstanding ? "由 freshSignals.quote 的市值 / 当前价格推导，单位为亿股。" : "行情缺少市值或价格，暂置为 0。"),
   ];
 
@@ -222,22 +262,37 @@ function latestMetric(rows: Record<string, unknown>[], patterns: RegExp[]) {
 function parseFinancialValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const text = String(value ?? "").replace(/[,，\s]/g, "");
-  const num = Number.parseFloat(text);
+  const parenthesizedNegative = /^[（(].+[）)]$/.test(text);
+  const normalized = text.replace(/[()（）]/g, "");
+  const num = Number.parseFloat(normalized);
   if (!Number.isFinite(num)) return undefined;
-  if (text.includes("万亿")) return num * 10_000;
-  if (text.includes("亿")) return num;
-  if (text.includes("万")) return num / 10_000;
-  if (text.includes("元") || text.includes("美元") || text.includes("港元")) return num / 100_000_000;
-  return num;
+  const signed = parenthesizedNegative ? -num : num;
+  if (normalized.includes("万亿")) return signed * 10_000;
+  if (normalized.includes("亿")) return signed;
+  if (normalized.includes("万")) return signed / 10_000;
+  if (normalized.includes("元") || normalized.includes("美元") || normalized.includes("港元")) return signed / 100_000_000;
+  return signed;
 }
 
 function rawNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const num = Number.parseFloat(value.replace(/[,，]/g, ""));
+    const text = value.replace(/[,，\s]/g, "");
+    const num = Number.parseFloat(text);
+    if (!Number.isFinite(num)) return undefined;
+    if (text.includes("万亿")) return num * 1_000_000_000_000;
+    if (text.includes("亿")) return num * 100_000_000;
+    if (text.includes("万")) return num * 10_000;
     return Number.isFinite(num) ? num : undefined;
   }
   return undefined;
+}
+
+function netDebtEvidenceRefs(debt: number | undefined, cash: number | undefined) {
+  const refs: string[] = [];
+  if (debt !== undefined) refs.push("financialTenYear:有息负债");
+  if (cash !== undefined) refs.push("financialTenYear:货币资金");
+  return refs;
 }
 
 function normalizeTicker(value: unknown) {
@@ -314,12 +369,13 @@ function tripleAssumption(
   confidence: number,
   explanation: string,
 ): BaselineAssumption {
+  const displayValue = unit === "%" ? { bear: displayPercent(value.bear), base: displayPercent(value.base), bull: displayPercent(value.bull) } : value;
   return {
     key,
     label,
-    base: value.base,
-    bear: value.bear,
-    bull: value.bull,
+    base: displayValue.base,
+    bear: displayValue.bear,
+    bull: displayValue.bull,
     unit,
     origin,
     evidenceRefs,
@@ -339,11 +395,12 @@ function scalarAssumption(
   confidence: number,
   explanation: string,
 ): BaselineAssumption {
+  const displayValue = unit === "%" ? displayPercent(value) : value;
   return {
     key,
     label,
-    value,
-    base: value,
+    value: displayValue,
+    base: displayValue,
     unit,
     origin,
     evidenceRefs,
@@ -355,4 +412,8 @@ function scalarAssumption(
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function displayPercent(value: number) {
+  return Math.round(value * 100 * 1_000_000) / 1_000_000;
 }

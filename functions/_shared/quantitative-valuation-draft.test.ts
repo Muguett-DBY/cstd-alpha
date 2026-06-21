@@ -116,9 +116,9 @@ describe("quantitative valuation draft baseline", () => {
       evidenceRefs: expect.arrayContaining(["financialTenYear:EBIT"]),
     });
     const ebitMargin = assumptionByKey(result, "ebitMargin");
-    expect(ebitMargin.bear).toBe(result.draft.operating?.ebitMargin.low);
-    expect(ebitMargin.base).toBe(result.draft.operating?.ebitMargin.base);
-    expect(ebitMargin.bull).toBe(result.draft.operating?.ebitMargin.high);
+    expect(ebitMargin.bear).toBeCloseTo(result.draft.operating!.ebitMargin.low * 100, 6);
+    expect(ebitMargin.base).toBeCloseTo(result.draft.operating!.ebitMargin.base * 100, 6);
+    expect(ebitMargin.bull).toBeCloseTo(result.draft.operating!.ebitMargin.high * 100, 6);
     expect(ebitMargin.bear).toBeLessThanOrEqual(ebitMargin.base);
     expect(ebitMargin.base).toBeLessThanOrEqual(ebitMargin.bull);
     expect(result.draft.operating?.revenueGrowth.base).toBeCloseTo(growthTriple([1250, 1475, 1730]).base, 8);
@@ -188,17 +188,17 @@ describe("quantitative valuation draft baseline", () => {
     expect(assumptionByKey(result, "discountRate")).toMatchObject({
       origin: "formula",
       locked: false,
-      bear: 0.115,
-      base: 0.1,
-      bull: 0.085,
+      bear: 11.5,
+      base: 10,
+      bull: 8.5,
       evidenceRefs: expect.arrayContaining(["formula:ashare-default-wacc"]),
     });
     expect(assumptionByKey(result, "terminalGrowthRate")).toMatchObject({
       origin: "formula",
       locked: false,
-      bear: 0.015,
-      base: 0.025,
-      bull: 0.035,
+      bear: 1.5,
+      base: 2.5,
+      bull: 3.5,
       evidenceRefs: expect.arrayContaining(["formula:ashare-default-terminal-growth"]),
     });
     expect(assumptionByKey(result, "netDebt")).toMatchObject({
@@ -215,5 +215,92 @@ describe("quantitative valuation draft baseline", () => {
       base: 12.56,
       evidenceRefs: expect.arrayContaining(["freshSignals.quote"]),
     });
+  });
+
+  test("uses percent-point display values while keeping operating calculation inputs as decimals", () => {
+    const result = createQuantitativeBaseline(makeEvidencePackage(), makeRun());
+
+    expect(assumptionByKey(result, "revenueGrowth").base).toBeCloseTo(result.draft.operating!.revenueGrowth.base * 100, 6);
+    expect(assumptionByKey(result, "capexRate").base).toBeCloseTo(result.draft.operating!.capexRate.base * 100, 6);
+    expect(assumptionByKey(result, "workingCapitalRate").base).toBeCloseTo(result.draft.operating!.workingCapitalRate * 100, 6);
+    expect(assumptionByKey(result, "taxRate").base).toBeCloseTo(result.draft.operating!.taxRate * 100, 6);
+    expect(assumptionByKey(result, "discountRate").base).toBe(10);
+    expect(result.draft.operating?.discountRate.base).toBe(0.1);
+  });
+
+  test("marks missing financial fields as fallback assumptions without absent evidence refs", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        stableFacts: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          selectedCompany: { code: "000001", listingPlace: "深A", marketType: "A股" },
+          financialTenYear: {
+            rows: [
+              { metric: "营业收入", values: { "2023": "900亿元", "2024": "1,000亿元" } },
+              { metric: "EBIT", values: { "2023": "90亿元", "2024": "120亿元" } },
+              { metric: "货币资金", values: { "2024": "50亿元" } },
+            ],
+          },
+        },
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "000001", market: "深A", regularMarketPrice: 10, marketCap: 100_000_000_000 },
+        },
+        evidence: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          evidence: [],
+          facts: {},
+        },
+      }),
+      makeRun({ title: "样本公司" }),
+    );
+
+    for (const key of ["capexRate", "workingCapitalRate", "taxRate"]) {
+      const assumption = assumptionByKey(result, key);
+      expect(assumption.origin).toBe("formula");
+      expect(assumption.locked).toBe(false);
+      expect(assumption.confidence).toBeLessThan(0.5);
+      expect(assumption.explanation).toMatch(/fallback|default|默认|缺少/);
+      expect(assumption.evidenceRefs).toEqual([]);
+    }
+    expect(assumptionByKey(result, "netDebt")).toMatchObject({
+      origin: "formula",
+      locked: false,
+      value: -50,
+      base: -50,
+      evidenceRefs: ["financialTenYear:货币资金"],
+    });
+    expect(assumptionByKey(result, "netDebt").explanation).not.toMatch(/fallback|default|默认/);
+  });
+
+  test("parses parenthesized negative financial values and quote market-cap unit strings", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        stableFacts: {
+          company: { name: "贵州茅台", ticker: "600519", market: "A股" },
+          selectedCompany: { code: "600519", listingPlace: "沪A", marketType: "A股" },
+          financialTenYear: {
+            rows: [
+              { metric: "营业收入", values: { "2023": "1,475.00亿元", "2024": "1,730.00亿元" } },
+              { metric: "EBIT", values: { "2023": "905.00亿元", "2024": "1,050.00亿元" } },
+              { metric: "资本开支", values: { "2024": "(80亿元)" } },
+              { metric: "有息负债", values: { "2024": "(150亿元)" } },
+              { metric: "货币资金", values: { "2024": "2,000.00亿元" } },
+            ],
+          },
+        },
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "600519", market: "沪A", regularMarketPrice: 1500, marketCap: "1.884万亿" },
+        },
+      }),
+      makeRun(),
+    );
+
+    expect(result.draft.operating?.capexRate.base).toBeCloseTo(80 / 1730, 8);
+    expect(assumptionByKey(result, "capexRate").base).toBeCloseTo((80 / 1730) * 100, 6);
+    expect(result.draft.operating?.netDebt).toBe(-2150);
+    expect(result.draft.operating?.sharesOutstanding).toBeCloseTo(12.56, 6);
   });
 });
