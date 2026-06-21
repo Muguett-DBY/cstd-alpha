@@ -133,6 +133,20 @@ describe("D1 migrations", () => {
     expect(indexNames(db, "valuation_runs")).toContain("idx_valuation_runs_entity");
   });
 
+  test("quantitative valuation migration creates audit tables", () => {
+    const db = new DatabaseSync(":memory:");
+    expect(() => db.exec(readMigration("0016_quantitative_valuations.sql"))).not.toThrow();
+    for (const table of [
+      "valuation_source_snapshots",
+      "valuation_forecast_versions",
+      "valuation_assumption_values",
+      "valuation_model_results",
+      "valuation_actual_reviews",
+    ]) expect(tableColumns(db, table).size).toBeGreaterThan(0);
+    expect(tableColumns(db, "valuation_forecast_versions")).toContain("parent_version_id");
+    expect(indexNames(db, "valuation_forecast_versions")).toContain("idx_valuation_forecast_versions_run");
+  });
+
   test("lookup index migration adds hot-path query indexes without changing schema", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(readMigration("0002_user_research.sql"));
