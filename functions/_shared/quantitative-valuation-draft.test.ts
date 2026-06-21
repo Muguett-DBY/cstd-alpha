@@ -71,6 +71,15 @@ function assumptionByKey(result: ReturnType<typeof createQuantitativeBaseline>, 
   return assumption!;
 }
 
+function expectGeneratedAssumption(assumption: ReturnType<typeof assumptionByKey>) {
+  expect(assumption.locked).toBe(false);
+  expect(["provider", "formula"]).toContain(assumption.origin);
+  expect(assumption.origin).not.toBe("user");
+  expect(assumption.confidence).toBeGreaterThan(0);
+  expect(Array.isArray(assumption.evidenceRefs)).toBe(true);
+  expect(assumption.explanation.length).toBeGreaterThan(0);
+}
+
 describe("quantitative valuation draft baseline", () => {
   test("creates a formula-backed A-share operating baseline from annual evidence", () => {
     const result = createQuantitativeBaseline(makeEvidencePackage(), makeRun());
@@ -101,8 +110,17 @@ describe("quantitative valuation draft baseline", () => {
     expect(assumptionByKey(result, "ebitMargin")).toMatchObject({
       origin: "formula",
       locked: false,
+      bear: expect.any(Number),
+      base: expect.any(Number),
+      bull: expect.any(Number),
       evidenceRefs: expect.arrayContaining(["financialTenYear:EBIT"]),
     });
+    const ebitMargin = assumptionByKey(result, "ebitMargin");
+    expect(ebitMargin.bear).toBe(result.draft.operating?.ebitMargin.low);
+    expect(ebitMargin.base).toBe(result.draft.operating?.ebitMargin.base);
+    expect(ebitMargin.bull).toBe(result.draft.operating?.ebitMargin.high);
+    expect(ebitMargin.bear).toBeLessThanOrEqual(ebitMargin.base);
+    expect(ebitMargin.base).toBeLessThanOrEqual(ebitMargin.bull);
     expect(result.draft.operating?.revenueGrowth.base).toBeCloseTo(growthTriple([1250, 1475, 1730]).base, 8);
   });
 
@@ -165,15 +183,36 @@ describe("quantitative valuation draft baseline", () => {
       "sharesOutstanding",
     ]));
     for (const assumption of assumptions) {
-      expect(assumption.locked).toBe(false);
-      expect(["provider", "formula"]).toContain(assumption.origin);
-      expect(assumption.origin).not.toBe("user");
-      expect(assumption.confidence).toBeGreaterThan(0);
-      expect(Array.isArray(assumption.evidenceRefs)).toBe(true);
-      expect(assumption.explanation.length).toBeGreaterThan(0);
+      expectGeneratedAssumption(assumption);
     }
+    expect(assumptionByKey(result, "discountRate")).toMatchObject({
+      origin: "formula",
+      locked: false,
+      bear: 0.115,
+      base: 0.1,
+      bull: 0.085,
+      evidenceRefs: expect.arrayContaining(["formula:ashare-default-wacc"]),
+    });
+    expect(assumptionByKey(result, "terminalGrowthRate")).toMatchObject({
+      origin: "formula",
+      locked: false,
+      bear: 0.015,
+      base: 0.025,
+      bull: 0.035,
+      evidenceRefs: expect.arrayContaining(["formula:ashare-default-terminal-growth"]),
+    });
+    expect(assumptionByKey(result, "netDebt")).toMatchObject({
+      origin: "formula",
+      locked: false,
+      value: -1850,
+      base: -1850,
+      evidenceRefs: expect.arrayContaining(["financialTenYear:有息负债", "financialTenYear:货币资金"]),
+    });
     expect(assumptionByKey(result, "sharesOutstanding")).toMatchObject({
       origin: "provider",
+      locked: false,
+      value: 12.56,
+      base: 12.56,
       evidenceRefs: expect.arrayContaining(["freshSignals.quote"]),
     });
   });
