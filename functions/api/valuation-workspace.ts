@@ -82,6 +82,12 @@ export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssump
       ? { low: assumption.bear / 100, base: assumption.base / 100, high: assumption.bull / 100 }
       : fallback;
   };
+  const inversePercentTriple = (key: string, fallback: { low: number; base: number; high: number }) => {
+    const assumption = lookup(key);
+    return assumption && assumption.bear !== undefined && assumption.base !== undefined && assumption.bull !== undefined
+      ? { low: assumption.bull / 100, base: assumption.base / 100, high: assumption.bear / 100 }
+      : fallback;
+  };
   const percentScalar = (key: string, fallback: number) => {
     const assumption = lookup(key);
     const value = assumption?.value ?? assumption?.base;
@@ -97,7 +103,7 @@ export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssump
     revenueGrowth: percentTriple("revenueGrowth", merged.operating.revenueGrowth),
     ebitMargin: percentTriple("ebitMargin", merged.operating.ebitMargin),
     capexRate: percentTriple("capexRate", merged.operating.capexRate),
-    discountRate: percentTriple("discountRate", merged.operating.discountRate),
+    discountRate: inversePercentTriple("discountRate", merged.operating.discountRate),
     terminalGrowthRate: percentTriple("terminalGrowthRate", merged.operating.terminalGrowthRate),
     taxRate: percentScalar("taxRate", merged.operating.taxRate),
     workingCapitalRate: percentScalar("workingCapitalRate", merged.operating.workingCapitalRate),

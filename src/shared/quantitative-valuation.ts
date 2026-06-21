@@ -4,6 +4,7 @@ import type {
   ValuationAssumption,
   ValuationMethod,
   ValuationResult,
+  ValuationRunSummary,
   ValuationScenarioName,
 } from "./valuation";
 
@@ -29,6 +30,13 @@ export type OperatingValuationInput = {
   terminalGrowthRate: ScenarioTriple;
   peerEvEbitda?: ScenarioTriple;
   evidenceHash?: string;
+  forecastOverrides?: Array<{
+    year: number;
+    revenueGrowth?: number;
+    ebitMargin?: number;
+    capexRate?: number;
+    workingCapitalRate?: number;
+  }>;
 };
 
 export type FinancialValuationInput = {
@@ -118,6 +126,7 @@ export type QuantitativeValuationSnapshot = {
 };
 
 export type QuantitativeValuationWorkspace = {
+  run?: ValuationRunSummary;
   snapshot?: QuantitativeValuationSnapshot;
   versions: QuantitativeValuationVersion[];
   actualReviews: NonNullable<ValuationResult["actualReviews"]>;
@@ -318,13 +327,18 @@ function buildOperatingForecast(input: OperatingValuationInput, revenueGrowth: n
   const rows: ThreeStatementForecastRow[] = [];
   let revenue = input.baseRevenue;
   for (let year = 1; year <= 5; year += 1) {
-    revenue *= 1 + revenueGrowth;
-    const ebit = revenue * ebitMargin;
+    const override = input.forecastOverrides?.find((item) => item.year === year);
+    const yearGrowth = override?.revenueGrowth ?? revenueGrowth;
+    const yearMargin = override?.ebitMargin ?? ebitMargin;
+    const yearCapexRate = override?.capexRate ?? capexRate;
+    const yearWorkingCapitalRate = override?.workingCapitalRate ?? input.workingCapitalRate;
+    revenue *= 1 + yearGrowth;
+    const ebit = revenue * yearMargin;
     const tax = Math.max(0, ebit * input.taxRate);
     const nopat = ebit - tax;
     const depreciationAmortization = revenue * input.depreciationRate;
-    const capex = revenue * capexRate;
-    const workingCapitalChange = revenue * input.workingCapitalRate;
+    const capex = revenue * yearCapexRate;
+    const workingCapitalChange = revenue * yearWorkingCapitalRate;
     const freeCashFlow = nopat + depreciationAmortization - capex - workingCapitalChange;
     rows.push({ year, revenue, ebit, tax, nopat, depreciationAmortization, capex, workingCapitalChange, freeCashFlow });
   }

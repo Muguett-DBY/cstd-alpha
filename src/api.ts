@@ -6,6 +6,7 @@ import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, Repor
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import type { ResearchCatalyst, ResearchCatalystStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
+import type { EditableAssumption, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -254,6 +255,31 @@ export async function createValuationRun(input: {
   const data = (await response.json()) as { run?: ValuationRunSummary };
   if (!data.run) throw new Error("估值任务创建失败。");
   return data.run;
+}
+
+export async function fetchQuantitativeValuationWorkspace(runId: string): Promise<QuantitativeValuationWorkspace> {
+  const response = await fetch(`/api/valuation-workspace?runId=${encodeURIComponent(runId)}`, { credentials: "include" });
+  if (!response.ok) throw new Error((await readError(response)) || "估值工作区读取失败。");
+  const data = await response.json() as { workspace?: QuantitativeValuationWorkspace };
+  if (!data.workspace) throw new Error("估值工作区读取失败。");
+  return data.workspace;
+}
+
+export async function saveQuantitativeValuationWorkspace(input: {
+  runId: string;
+  parentVersionId: string;
+  assumptions: EditableAssumption[];
+}): Promise<{ workspace: QuantitativeValuationWorkspace; version: QuantitativeValuationVersion }> {
+  const response = await fetch("/api/valuation-workspace", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error((await readError(response)) || "估值保存失败。");
+  const data = await response.json() as { workspace?: QuantitativeValuationWorkspace; version?: QuantitativeValuationVersion };
+  if (!data.workspace || !data.version) throw new Error("估值保存失败。");
+  return { workspace: data.workspace, version: data.version };
 }
 
 export async function fetchRadarScan(): Promise<RadarScanResult> {
