@@ -65,12 +65,17 @@ export type QuantitativeScenario = {
 export type EditableAssumption<T = number> = {
   key: string;
   label: string;
-  value: T;
+  value?: T;
+  bear?: number;
+  base?: number;
+  bull?: number;
   unit?: string;
   origin: QuantitativeOrigin;
   evidenceRefs?: string[];
   confidence?: number;
   locked: boolean;
+  explanation?: string;
+  forecastYear?: number;
 };
 
 export type QuantitativeDraft = {
@@ -82,7 +87,40 @@ export type QuantitativeDraft = {
   operating?: OperatingValuationInput;
   financial?: FinancialValuationInput;
   cyclical?: CyclicalValuationInput;
+  assumptions?: EditableAssumption[];
   warnings?: string[];
+};
+
+export type QuantitativeValuationVersion = {
+  id: string;
+  runId: string;
+  sourceSnapshotId: string;
+  version: number;
+  status: string;
+  parentVersionId?: string;
+  archetype: CompanyArchetype;
+  method: ValuationMethod;
+  horizonYears: number;
+  draft?: QuantitativeDraft;
+  result?: ValuationResult;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type QuantitativeValuationSnapshot = {
+  id: string;
+  market: string;
+  asOf: string;
+  payload?: unknown;
+  evidenceHash?: string;
+  contentHash: string;
+  createdAt: string;
+};
+
+export type QuantitativeValuationWorkspace = {
+  snapshot?: QuantitativeValuationSnapshot;
+  versions: QuantitativeValuationVersion[];
+  actualReviews: NonNullable<ValuationResult["actualReviews"]>;
 };
 
 export type ActualReviewInput = {
