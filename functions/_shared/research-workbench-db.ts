@@ -2,6 +2,8 @@ import type { ResearchCatalyst, ResearchCatalystDraft, ResearchCatalystStatus, R
 import { RESEARCH_CATALYST_STATUSES, RESEARCH_STAGES } from "../../src/shared/research-workbench";
 import type { CompanyArchetype, ValuationMethod, ValuationResult, ValuationRunStatus } from "../../src/shared/valuation";
 import type { QuantitativeDraft } from "../../src/shared/quantitative-valuation";
+import type { CompanyEvidencePackage } from "./company-evidence";
+import { buildActualReviews } from "./quantitative-valuation-review";
 
 export type ResearchNotification = {
   id: string;
@@ -659,6 +661,27 @@ export async function writeActualReviews(db: D1Database, versionId: string, revi
        actual_value = excluded.actual_value, absolute_error = excluded.absolute_error,
        percentage_error = excluded.percentage_error, reviewed_at = excluded.reviewed_at`,
   ).bind(crypto.randomUUID(), versionId, review.metricKey, review.forecastYear, review.forecastValue, review.actualValue, review.absoluteError, review.percentageError ?? null, now)));
+}
+
+export async function writeActualReviewsForWatchlist(db: D1Database, userKey: string, watchlistId: string, evidence: CompanyEvidencePackage) {
+  const rows = await db.prepare(
+    `SELECT v.id AS version_id, v.draft_json, mr.payload_json
+     FROM valuation_forecast_versions v
+     JOIN valuation_runs vr ON vr.id = v.valuation_run_id AND vr.user_key = v.user_key
+     JOIN valuation_model_results mr ON mr.version_id = v.id AND mr.model_key = v.method
+     WHERE v.user_key = ?1 AND vr.entity_id = ?2
+     ORDER BY v.version DESC`,
+  ).bind(userKey, watchlistId).all<{ version_id: string; draft_json: string; payload_json: string }>();
+  let reviewCount = 0;
+  for (const row of rows.results ?? []) {
+    const draft = parseJson<QuantitativeDraft>(row.draft_json);
+    const result = parseJson<ValuationResult>(row.payload_json);
+    if (!draft || !result) continue;
+    const reviews = buildActualReviews(draft, result, evidence);
+    await writeActualReviews(db, row.version_id, reviews);
+    reviewCount += reviews.length;
+  }
+  return reviewCount;
 }
 
 export async function claimValuationRun(db: D1Database, id: string) {
