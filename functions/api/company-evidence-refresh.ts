@@ -1,5 +1,6 @@
 import { fetchAndStoreCompanyEvidence, writeCompanyEvidenceFailure } from "../_shared/company-evidence";
 import { ensureUserResearchSchema, json, type WatchlistRow } from "../_shared/user-research-db";
+import { writeActualReviewsForWatchlist } from "../_shared/research-workbench-db";
 
 type Env = {
   COMPANY_EVIDENCE_REFRESH_TOKEN?: string;
@@ -21,6 +22,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, body?.userId, body?.watchlistId, limit, offset);
   const refreshed: Array<{ watchlistId: string; ticker: string; evidenceHash: string }> = [];
   const failed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
+  const reviewFailed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
   const useTushareForThisRefresh = Boolean(body?.watchlistId) || rows.length <= 1;
 
   for (const row of rows) {
@@ -36,6 +38,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         watchlist: row,
         signal: request.signal,
       });
+      await writeActualReviewsForWatchlist(env.REPORT_LIBRARY_DB, userId, row.id, pkg).catch((error) => {
+        reviewFailed.push({ watchlistId: row.id, ticker: row.ticker, error: error instanceof Error ? error.message : String(error ?? "review failed") });
+      });
       refreshed.push({ watchlistId: row.id, ticker: row.ticker, evidenceHash: pkg.evidenceHash });
     } catch (error) {
       await writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB, userId, row, error);
@@ -43,7 +48,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  return json({ refreshed, failed, count: rows.length, refreshedCount: refreshed.length, failedCount: failed.length, limit, offset });
+  return json({ refreshed, failed, reviewFailed, count: rows.length, refreshedCount: refreshed.length, failedCount: failed.length, reviewFailedCount: reviewFailed.length, limit, offset });
 };
 
 async function readWatchlistRows(db: D1Database, userId?: string, watchlistId?: string, limit = 50, offset = 0) {
