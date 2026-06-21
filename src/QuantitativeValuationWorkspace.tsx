@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchQuantitativeValuationWorkspace, saveQuantitativeValuationWorkspace } from "./api";
 import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { applyDraftEdit, draftWarnings, findAssumption, simpleEditorFields } from "./quantitative-valuation-state";
+import { applyDraftEdit, draftWarnings, findAssumption, simpleEditorFields, userLockedAssumptions } from "./quantitative-valuation-state";
 import { showToast } from "./toast-state";
 
 type Props = {
@@ -33,7 +33,6 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setPhase("loading");
     fetchQuantitativeValuationWorkspace(run.id)
       .then((next) => {
         if (cancelled) return;
@@ -64,7 +63,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       const saved = await saveQuantitativeValuationWorkspace({
         runId: run.id,
         parentVersionId: latest.id,
-        assumptions: draft.assumptions ?? [],
+        assumptions: userLockedAssumptions(draft),
       });
       setWorkspace(saved.workspace);
       setDraft(saved.workspace.versions[0]?.draft ?? draft);
@@ -259,4 +258,3 @@ function formatMoney(value: number, currency: string) {
 function formatNumber(value: number) {
   return Number.isFinite(value) ? value.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "—";
 }
-

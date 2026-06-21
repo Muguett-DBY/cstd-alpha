@@ -8,7 +8,9 @@ import {
   mergeValuationRuns,
   retryValuationInputFromRun,
   valuationAssumptionsForDisplay,
+  valuationDisplayMode,
 } from "./valuation-state";
+import { QuantitativeValuationWorkspace } from "./QuantitativeValuationWorkspace";
 
 export function ValuationLabView() {
   const [runs, setRuns] = useState<ValuationRunSummary[]>([]);
@@ -35,6 +37,10 @@ export function ValuationLabView() {
       return bVal - aVal;
     });
   }, [runs, sortBy]);
+  const selectedWorkspaceRun = useMemo(
+    () => runs.find((run) => run.researchItemId === selected?.id && valuationDisplayMode(run) === "workspace"),
+    [runs, selected?.id],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +180,19 @@ export function ValuationLabView() {
                 ) : null}
               </>
             ) : <div className="workbench-empty compact">暂无可信估值记录。</div>}
+            {selectedWorkspaceRun ? (
+              <QuantitativeValuationWorkspace
+                key={selectedWorkspaceRun.id}
+                run={selectedWorkspaceRun}
+                onSaved={(workspace) => {
+                  const latest = workspace.versions[0];
+                  if (!latest) return;
+                  setRuns((current) => current.map((run) => run.id === selectedWorkspaceRun.id
+                    ? { ...run, updatedAt: latest.createdAt, result: { ...run.result!, quantitativeVersionId: latest.id } }
+                    : run));
+                }}
+              />
+            ) : null}
           </main>
         </div>
       ) : null}

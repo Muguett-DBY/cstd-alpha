@@ -3689,6 +3689,274 @@ button:not(:disabled):active,
   font-size: inherit;
 }
 
+.quant-valuation-workspace {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.quant-snapshot,
+.quant-editor-panel,
+.quant-results-panel,
+.quant-advanced-panel,
+.quant-version-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.quant-snapshot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.quant-snapshot h2,
+.quant-editor-panel h3,
+.quant-results-panel h3,
+.quant-advanced-panel h3,
+.quant-version-section h3 {
+  margin: 0;
+}
+
+.quant-snapshot p,
+.quant-editor-panel > p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.quant-snapshot-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quant-snapshot-metrics span {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.quant-snapshot-metrics strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quant-warning-list {
+  display: grid;
+  gap: 7px;
+}
+
+.quant-warning {
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 75%, var(--red));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--red));
+  color: var(--body);
+  font-size: 12px;
+}
+
+.quant-warning.error {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--line));
+  color: var(--red);
+}
+
+.quant-scenario-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quant-scenario-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--surface);
+  color: var(--body);
+  cursor: pointer;
+}
+
+.quant-scenario-tabs button.active {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 14%, var(--surface));
+  color: var(--teal);
+}
+
+.quant-scenario-tabs .advanced-toggle {
+  margin-left: auto;
+}
+
+.quant-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 16px;
+}
+
+.quant-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.quant-input {
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.quant-input > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.quant-input small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.quant-input > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.quant-input input,
+.quant-forecast-table input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.quant-input em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.quant-results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.quant-result-card {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.quant-result-card span,
+.quant-result-card small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.quant-result-card strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quant-sensitivity-table,
+.quant-forecast-table,
+.quant-review-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.quant-sensitivity-table th,
+.quant-sensitivity-table td,
+.quant-forecast-table th,
+.quant-forecast-table td,
+.quant-review-table th,
+.quant-review-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.quant-sensitivity-table th:first-child,
+.quant-forecast-table th:first-child,
+.quant-forecast-table td:first-child,
+.quant-review-table th:first-child,
+.quant-review-table td:first-child {
+  text-align: left;
+}
+
+.quant-version-timeline {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.quant-version-timeline > div {
+  display: grid;
+  min-width: 145px;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.quant-version-timeline span,
+.quant-version-timeline small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 760px) {
+  .quant-snapshot,
+  .quant-editor-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .quant-snapshot-metrics {
+    justify-content: flex-start;
+  }
+
+  .quant-input-grid,
+  .quant-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-scenario-tabs .advanced-toggle {
+    margin-left: 0;
+  }
+}
+
 .valuation-table-wrap {
   margin-top: 12px;
   overflow-x: auto;

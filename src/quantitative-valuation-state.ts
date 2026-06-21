@@ -58,6 +58,10 @@ export function simpleEditorFields(draft: QuantitativeDraft) {
   return SIMPLE_EDITOR_FIELDS.map((key) => findAssumption(draft, key)).filter((item): item is EditableAssumption => Boolean(item));
 }
 
+export function userLockedAssumptions(draft: QuantitativeDraft) {
+  return (draft.assumptions ?? []).filter((item) => item.origin === "user" && item.locked);
+}
+
 function synchronizeDraft(draft: QuantitativeDraft, changed: EditableAssumption): QuantitativeDraft {
   if (!draft.operating) return draft;
   const percent = (value: number | undefined) => value === undefined ? undefined : value / 100;
