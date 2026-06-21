@@ -143,7 +143,8 @@ describe("D1 migrations", () => {
       "valuation_model_results",
       "valuation_actual_reviews",
     ]) expect(tableColumns(db, table).size).toBeGreaterThan(0);
-    expect(tableColumns(db, "valuation_forecast_versions")).toContain("parent_version_id");
+  expect(tableColumns(db, "valuation_forecast_versions")).toContain("parent_version_id");
+  expect(tableColumns(db, "valuation_forecast_versions")).toContain("draft_json");
     expect(indexNames(db, "valuation_forecast_versions")).toContain("idx_valuation_forecast_versions_run");
   });
 

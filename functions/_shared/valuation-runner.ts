@@ -1,9 +1,19 @@
 import { buildDeepSeekRequestBody, cacheStableUserContent, withCacheProtocol, type DeepSeekMessage } from "./deepseek-cache";
 import { buildDeepSeekFallbackRoutes } from "./opencode-go";
-import { claimValuationRun, completeValuationRun, failValuationRun, readValuationRunForWorker, type ValuationRunRow } from "./research-workbench-db";
+import {
+  claimValuationRun,
+  completeValuationRun,
+  createOrReadValuationSourceSnapshot,
+  createQuantitativeVersion,
+  failValuationRun,
+  readValuationRunForWorker,
+  type ValuationRunRow,
+} from "./research-workbench-db";
 import { computeCyclicalMidCycle, computeFinancialDdm, computeOperatingDcf } from "./valuation-engine";
+import { createQuantitativeBaseline } from "./quantitative-valuation-draft";
 import type { AssistantEnv } from "./assistant-db";
 import type { ValuationResult } from "../../src/shared/valuation";
+import { calculateQuantitativeDraft } from "../../src/shared/quantitative-valuation";
 
 type ValuationRunnerEnv = AssistantEnv & {
   REPORT_LIBRARY_DB: D1Database;
@@ -63,10 +73,44 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
   try {
     if (!await claimValuationRun(env.REPORT_LIBRARY_DB, valuationRunId)) return;
     const evidencePackage = await readValuationEvidencePackage(env, run);
+    const quantitative = tryBuildQuantitativeVersionFromEvidence(run, evidencePackage);
     const evidence = prepareValuationEvidenceContext(evidencePackage);
-    const assumptions = await generateValuationAssumptions(env, run, evidence.promptText);
+    let assumptions: AiAssumptionPayload | undefined;
     const anchors = evidence.anchors;
-    const result = computeValuationFromAssumptions(run, assumptions, anchors);
+    let result: ValuationResult;
+    let quantitativeVersionId: string | undefined;
+    let sourceSnapshotId: string | undefined;
+    if (quantitative) {
+      const snapshot = await createOrReadValuationSourceSnapshot(env.REPORT_LIBRARY_DB, {
+        userKey: quantitative.snapshot.userKey,
+        researchItemId: quantitative.snapshot.researchItemId ?? run.entity_id,
+        market: quantitative.snapshot.market,
+        asOf: quantitative.snapshot.asOf,
+        payload: quantitative.snapshot.payload,
+        evidenceHash: quantitative.snapshot.evidenceHash,
+        contentHash: quantitative.snapshot.contentHash,
+      });
+      const version = await createQuantitativeVersion(env.REPORT_LIBRARY_DB, {
+        userKey: run.user_key,
+        runId: run.id,
+        snapshotId: snapshot.id,
+        draft: quantitative.draft,
+        result: quantitative.result,
+        createdBy: "baseline",
+      });
+      quantitativeVersionId = version.id;
+      sourceSnapshotId = snapshot.id;
+      result = {
+        ...quantitative.result,
+        methodologyVersion: 3,
+        quantitativeVersionId,
+        sourceSnapshotId,
+        warnings: quantitative.warnings,
+      };
+    } else {
+      assumptions = await generateValuationAssumptions(env, run, evidence.promptText);
+      result = computeValuationFromAssumptions(run, assumptions, anchors);
+    }
     const objectKey = `valuation/v1/${encodeURIComponent(run.user_key)}/${valuationRunId}.json`;
     if (env.REPORT_LIBRARY_BUCKET) {
       await env.REPORT_LIBRARY_BUCKET.put(objectKey, JSON.stringify({ run, evidence, anchors, assumptions, result, createdAt: new Date().toISOString() }), {
@@ -77,6 +121,25 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
   } catch (error) {
     await failValuationRun(env.REPORT_LIBRARY_DB, valuationRunId, error);
     throw error;
+  }
+}
+
+export function buildQuantitativeVersionFromEvidence(run: Pick<ValuationRunRow,
+  "id" | "user_key" | "research_item_id" | "entity_id" | "title" | "archetype" | "method" | "currency" | "evidence_hash"
+>, evidencePackage: string) {
+  if (run.method !== "dcf_3_statement" || run.archetype !== "operating") {
+    throw new Error("当前量化基准仅支持经营型 DCF。");
+  }
+  const baseline = createQuantitativeBaseline(evidencePackage, run);
+  const result = calculateQuantitativeDraft(baseline.draft);
+  return { ...baseline, result };
+}
+
+function tryBuildQuantitativeVersionFromEvidence(run: ValuationRunRow, evidencePackage: string) {
+  try {
+    return buildQuantitativeVersionFromEvidence(run, evidencePackage);
+  } catch {
+    return undefined;
   }
 }
 
