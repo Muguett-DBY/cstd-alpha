@@ -274,6 +274,91 @@ describe("quantitative valuation draft baseline", () => {
     expect(assumptionByKey(result, "netDebt").explanation).not.toMatch(/fallback|default|默认/);
   });
 
+  test("marks insufficient revenue history fallback without misleading revenue evidence refs", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        stableFacts: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          selectedCompany: { code: "000001", listingPlace: "深A", marketType: "A股" },
+          financialTenYear: {
+            rows: [
+              { metric: "营业收入", values: { "2024": "1,000亿元" } },
+              { metric: "EBIT", values: { "2024": "120亿元" } },
+            ],
+          },
+        },
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "000001", market: "深A", regularMarketPrice: 10, marketCap: 100_000_000_000 },
+        },
+        evidence: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          evidence: [],
+          facts: {},
+        },
+      }),
+      makeRun({ title: "样本公司" }),
+    );
+
+    const revenueGrowth = assumptionByKey(result, "revenueGrowth");
+    expect(revenueGrowth.base).toBe(7);
+    expect(revenueGrowth.confidence).toBeLessThan(0.5);
+    expect(revenueGrowth.explanation).toMatch(/fallback|default|默认|不足/);
+    expect(revenueGrowth.evidenceRefs).toEqual([]);
+  });
+
+  test("marks EBIT margin fallback without unusable paired metric evidence refs", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        stableFacts: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          selectedCompany: { code: "000001", listingPlace: "深A", marketType: "A股" },
+          financialTenYear: {
+            rows: [
+              { metric: "营业收入", values: { "2023": "900亿元", "2024": "1,000亿元" } },
+            ],
+          },
+        },
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "000001", market: "深A", regularMarketPrice: 10, marketCap: 100_000_000_000 },
+        },
+        evidence: {
+          company: { name: "样本公司", ticker: "000001", market: "深A" },
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          evidence: [],
+          facts: {},
+        },
+      }),
+      makeRun({ title: "样本公司" }),
+    );
+
+    const ebitMargin = assumptionByKey(result, "ebitMargin");
+    expect(ebitMargin.base).toBe(13);
+    expect(ebitMargin.confidence).toBeLessThan(0.5);
+    expect(ebitMargin.explanation).toMatch(/fallback|default|默认|缺少/);
+    expect(ebitMargin.evidenceRefs).toEqual([]);
+  });
+
+  test("marks missing quote share fallback without quote evidence refs", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "600519", market: "沪A", regularMarketPrice: 1500 },
+        },
+      }),
+      makeRun(),
+    );
+
+    const sharesOutstanding = assumptionByKey(result, "sharesOutstanding");
+    expect(sharesOutstanding.value).toBe(0);
+    expect(sharesOutstanding.confidence).toBeLessThan(0.5);
+    expect(sharesOutstanding.explanation).toMatch(/fallback|default|默认|缺少|暂置/);
+    expect(sharesOutstanding.evidenceRefs).toEqual([]);
+  });
+
   test("parses parenthesized negative financial values and quote market-cap unit strings", () => {
     const result = createQuantitativeBaseline(
       makeEvidencePackage({
