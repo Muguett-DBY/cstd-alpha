@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyDraftEdit, draftWarnings, findAssumption } from "./quantitative-valuation-state";
+import { applyDraftEdit, draftWarnings, findAssumption, userLockedAssumptions } from "./quantitative-valuation-state";
 import type { QuantitativeDraft } from "./shared/quantitative-valuation";
 
 describe("quantitative valuation editor state", () => {
@@ -21,6 +21,12 @@ describe("quantitative valuation editor state", () => {
 
     expect(findAssumption(next, "ebitMargin", 2)).toMatchObject({ base: 20, forecastYear: 2, origin: "user", locked: true });
     expect(next.operating?.forecastOverrides).toContainEqual(expect.objectContaining({ year: 2, ebitMargin: 0.2 }));
+  });
+
+  test("sends only assumptions explicitly edited by the user", () => {
+    const next = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    expect(userLockedAssumptions(next).map((item) => item.key)).toEqual(["revenueGrowth"]);
   });
 });
 

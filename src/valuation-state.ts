@@ -41,6 +41,10 @@ export function filterValuationRunsForDisplay(runs: ValuationRunSummary[]) {
   return runs.filter((run) => run.status !== "completed" || (run.result?.methodologyVersion ?? 0) >= 2);
 }
 
+export function valuationDisplayMode(run: ValuationRunSummary): "workspace" | "card" {
+  return run.status === "completed" && Boolean(run.result?.quantitativeVersionId) ? "workspace" : "card";
+}
+
 export function valuationAssumptionsForDisplay(run: ValuationRunSummary, limit = 5): ValuationAssumptionDisplay[] {
   const assumptions = run.result?.assumptions ?? [];
   return [...assumptions]

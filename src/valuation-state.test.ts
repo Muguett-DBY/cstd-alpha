@@ -5,6 +5,7 @@ import {
   hasActiveValuationRuns,
   mergeValuationRuns,
   retryValuationInputFromRun,
+  valuationDisplayMode,
   valuationAssumptionsForDisplay,
 } from "./valuation-state";
 
@@ -99,6 +100,20 @@ describe("valuation state", () => {
       currency: "CNY",
       evidenceHash: "evidence-hash-1",
     });
+  });
+
+  test("opens only completed quantitative runs in the editable workspace", () => {
+    const quantitative = valuationRun("completed", "quantitative");
+    quantitative.result = {
+      method: "dcf_3_statement", archetype: "operating", currency: "CNY", asOf: "2026-06-21",
+      assumptions: [], scenarios: [], methodologyVersion: 3, quantitativeVersionId: "version-1",
+    };
+    const legacy = valuationRun("completed", "legacy");
+    legacy.result = { ...quantitative.result, methodologyVersion: 2, quantitativeVersionId: undefined };
+
+    expect(valuationDisplayMode(quantitative)).toBe("workspace");
+    expect(valuationDisplayMode(legacy)).toBe("card");
+    expect(valuationDisplayMode(valuationRun("queued"))).toBe("card");
   });
 });
 
