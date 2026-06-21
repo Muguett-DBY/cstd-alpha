@@ -84,11 +84,13 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
 
   const baseRevenue = latestOrFallback(revenue.latest, 0, "缺少营业收入历史，营收基数暂置为 0，需人工补充。", warnings);
   const revenueGrowth = growthTriple(revenue.values);
-  if (revenue.values.length < 2) warnings.push("营业收入历史不足，收入增速使用 7% 保守默认值。");
+  const revenueGrowthUsedFallback = revenue.values.length < 2;
+  if (revenueGrowthUsedFallback) warnings.push("营业收入历史不足，收入增速使用 7% 保守默认值。");
 
   const ebitMargins = pairedRatios(ebit.values, revenue.values);
+  const ebitMarginUsedFallback = ebitMargins.length === 0;
   const ebitMarginBase = ebitMargins.length ? average(tail(ebitMargins, 3)) : 0.13;
-  if (!ebitMargins.length) warnings.push("缺少 EBIT 与收入配对历史，EBIT 利润率使用 13% 默认值。");
+  if (ebitMarginUsedFallback) warnings.push("缺少 EBIT 与收入配对历史，EBIT 利润率使用 13% 默认值。");
   const ebitMargin = boundedTriple(ebitMarginBase, 0.03, -0.1, 0.6);
 
   const capexUsedFallback = !(capex.latest !== undefined && baseRevenue > 0);
@@ -108,14 +110,33 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
   const sharesOutstanding = marketCap !== undefined && currentPrice !== undefined && currentPrice > 0 && marketCap > 0
     ? marketCap / currentPrice / 100_000_000
     : 0;
-  if (!sharesOutstanding) warnings.push("缺少可由行情市值/价格推导的总股本，总股本暂置为 0，需人工补充。");
+  const sharesOutstandingUsedFallback = !sharesOutstanding;
+  if (sharesOutstandingUsedFallback) warnings.push("缺少可由行情市值/价格推导的总股本，总股本暂置为 0，需人工补充。");
 
   const capexRate = boundedTriple(capexRateBase, 0.015, 0, 0.35);
   const discountRate = { bear: 0.115, base: 0.1, bull: 0.085 };
   const terminalGrowthRate = { bear: 0.015, base: 0.025, bull: 0.035 };
   const assumptions: BaselineAssumption[] = [
-    tripleAssumption("revenueGrowth", "收入增速", revenueGrowth, "%", "formula", ["financialTenYear:营业收入"], 0.72, "基于年度营业收入序列计算 CAGR，并给出上下 4 个百分点情景。"),
-    tripleAssumption("ebitMargin", "EBIT 利润率", ebitMargin, "%", "formula", ["financialTenYear:EBIT", "financialTenYear:营业收入"], ebitMargins.length ? 0.68 : 0.42, ebitMargins.length ? "基于年度 EBIT / 营业收入的近三年平均值生成情景。" : "缺少可配对 EBIT 历史，使用保守默认利润率。"),
+    tripleAssumption(
+      "revenueGrowth",
+      "收入增速",
+      revenueGrowth,
+      "%",
+      "formula",
+      revenueGrowthUsedFallback ? [] : ["financialTenYear:营业收入"],
+      revenueGrowthUsedFallback ? 0.38 : 0.72,
+      revenueGrowthUsedFallback ? "营业收入历史不足，使用 fallback/default 默认收入增速。" : "基于年度营业收入序列计算 CAGR，并给出上下 4 个百分点情景。",
+    ),
+    tripleAssumption(
+      "ebitMargin",
+      "EBIT 利润率",
+      ebitMargin,
+      "%",
+      "formula",
+      ebitMarginUsedFallback ? [] : ["financialTenYear:EBIT", "financialTenYear:营业收入"],
+      ebitMarginUsedFallback ? 0.42 : 0.68,
+      ebitMarginUsedFallback ? "缺少可配对 EBIT 历史，使用 fallback/default 默认利润率。" : "基于年度 EBIT / 营业收入的近三年平均值生成情景。",
+    ),
     tripleAssumption(
       "capexRate",
       "资本开支/收入",
@@ -158,7 +179,16 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
       netDebtUsedFallback ? 0.35 : 0.65,
       netDebtUsedFallback ? "缺少债务与现金历史，使用 fallback/default 默认净债务 0。" : "有息负债减货币资金，单位为亿元。",
     ),
-    scalarAssumption("sharesOutstanding", "总股本", sharesOutstanding, "亿股", "provider", ["freshSignals.quote"], sharesOutstanding ? 0.72 : 0.25, sharesOutstanding ? "由 freshSignals.quote 的市值 / 当前价格推导，单位为亿股。" : "行情缺少市值或价格，暂置为 0。"),
+    scalarAssumption(
+      "sharesOutstanding",
+      "总股本",
+      sharesOutstanding,
+      "亿股",
+      "provider",
+      sharesOutstandingUsedFallback ? [] : ["freshSignals.quote"],
+      sharesOutstandingUsedFallback ? 0.25 : 0.72,
+      sharesOutstandingUsedFallback ? "行情缺少市值或价格，使用 fallback/default 将总股本暂置为 0。" : "由 freshSignals.quote 的市值 / 当前价格推导，单位为亿股。",
+    ),
   ];
 
   const operating: OperatingValuationInput = {
