@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   computeValuationFromAssumptions,
+  buildQuantitativeVersionFromEvidence,
   extractValuationAnchors,
   mergeAnchorsIntoAssumptions,
   prepareValuationEvidenceContext,
@@ -249,5 +250,51 @@ describe("computeValuationFromAssumptions", () => {
     const baseForecast = result.forecastRows?.[0];
     expect(baseForecast?.revenue).toBeGreaterThan(1000 * 1.04 * 0.99);
     expect(baseForecast?.revenue).toBeLessThan(1000 * 1.08 * 1.01);
+  });
+});
+
+describe("buildQuantitativeVersionFromEvidence", () => {
+  test("builds a deterministic operating draft and result from valid A-share evidence", () => {
+    const evidence = JSON.stringify({
+      version: 1,
+      userId: "user-1",
+      watchlistId: "watch-1",
+      companyKey: "A股:600519",
+      evidenceHash: "evidence-1",
+      materialHash: "material-1",
+      stableHash: "stable-1",
+      freshHash: "fresh-1",
+      fetchedAt: "2026-06-21T00:00:00.000Z",
+      stableFacts: {
+        company: { name: "贵州茅台", ticker: "600519", market: "A股" },
+        financialTenYear: {
+          rows: [
+            { metric: "营业收入", values: { "2023": "1400亿元", "2024": "1600亿元" } },
+            { metric: "EBIT", values: { "2023": "800亿元", "2024": "900亿元" } },
+          ],
+        },
+      },
+      freshSignals: {
+        retrievedAt: "2026-06-21T00:00:00.000Z",
+        quote: { symbol: "600519", market: "沪A", regularMarketPrice: 1500, marketCap: 1_884_000_000_000 },
+      },
+      evidence: {
+        company: { name: "贵州茅台", ticker: "600519", market: "A股" },
+        retrievedAt: "2026-06-21T00:00:00.000Z",
+        evidence: [],
+        facts: {},
+      },
+    });
+    const fullRun = {
+      id: "run-1", user_key: "user-1", research_item_id: "research-1", entity_id: "watch-1", title: "贵州茅台",
+      archetype: "operating", method: "dcf_3_statement", currency: "CNY", evidence_hash: "evidence-1",
+    } as ValuationRunRow;
+
+    const built = buildQuantitativeVersionFromEvidence(fullRun, evidence);
+
+    expect(built.snapshot.contentHash).toBe("material-1");
+    expect(built.draft.operating?.baseRevenue).toBe(1600);
+    expect(built.result.method).toBe("dcf_3_statement");
+    expect(built.result.scenarios.find((scenario) => scenario.scenario === "base")?.perShareValue).toBeGreaterThan(0);
   });
 });

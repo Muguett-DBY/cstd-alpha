@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS valuation_forecast_versions (
   id TEXT PRIMARY KEY, user_key TEXT NOT NULL, valuation_run_id TEXT NOT NULL,
   source_snapshot_id TEXT NOT NULL, version INTEGER NOT NULL, status TEXT NOT NULL,
   parent_version_id TEXT, archetype TEXT NOT NULL, method TEXT NOT NULL,
-  horizon_years INTEGER NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+  horizon_years INTEGER NOT NULL, draft_json TEXT NOT NULL DEFAULT '{}', created_by TEXT NOT NULL, created_at TEXT NOT NULL,
   UNIQUE(valuation_run_id, version)
 );
 CREATE TABLE IF NOT EXISTS valuation_assumption_values (
