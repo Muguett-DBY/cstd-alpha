@@ -44,4 +44,21 @@ describe("valuation workspace API contract", () => {
     expect(merged.assumptions?.[0]).toMatchObject({ base: 12, bear: 5, bull: 18, origin: "user", locked: true });
     expect(merged.operating?.revenueGrowth).toEqual({ low: 0.05, base: 0.12, high: 0.18 });
   });
+
+  test("maps conservative WACC to the high discount rate and optimistic WACC to the low rate", () => {
+    const draft: QuantitativeDraft = {
+      method: "dcf_3_statement", archetype: "operating", currency: "CNY", asOf: "2026-06-21",
+      assumptions: [{ key: "discountRate", label: "WACC", bear: 11.5, base: 10, bull: 8.5, unit: "%", origin: "formula", locked: false }],
+      operating: {
+        currency: "CNY", asOf: "2026-06-21", baseRevenue: 100, sharesOutstanding: 10, netDebt: 5,
+        revenueGrowth: { low: 0.03, base: 0.07, high: 0.11 }, ebitMargin: { low: 0.08, base: 0.13, high: 0.18 },
+        taxRate: 0.2, depreciationRate: 0.035, capexRate: { low: 0.04, base: 0.06, high: 0.08 }, workingCapitalRate: 0.015,
+        discountRate: { low: 0.085, base: 0.1, high: 0.115 }, terminalGrowthRate: { low: 0.015, base: 0.025, high: 0.035 },
+      },
+    };
+
+    const merged = mergeUserAssumptions(draft, [{ key: "discountRate", bear: 12, base: 10, bull: 8 }]);
+
+    expect(merged.operating?.discountRate).toEqual({ low: 0.08, base: 0.1, high: 0.12 });
+  });
 });
