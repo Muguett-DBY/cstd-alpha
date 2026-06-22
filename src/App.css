@@ -5594,6 +5594,24 @@ button:not(:disabled):active,
   padding: 4px 0;
 }
 
+.assistant-thread-search {
+  padding: 0 12px 8px;
+}
+
+.assistant-thread-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+
+.assistant-thread-search input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
 .assistant-thread-item {
   display: flex;
   justify-content: space-between;
