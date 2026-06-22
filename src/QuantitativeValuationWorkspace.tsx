@@ -30,6 +30,8 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [advanced, setAdvanced] = useState(false);
   const [phase, setPhase] = useState<"loading" | "ready" | "saving" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [history, setHistory] = useState<QuantitativeDraft[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +56,29 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     try { return calculateQuantitativeDraft(draft); } catch { return null; }
   }, [draft, warnings]);
   const latest = workspace?.versions[0];
+
+  function pushHistory(newDraft: QuantitativeDraft) {
+    setHistory((prev) => {
+      const trimmed = prev.slice(0, historyIndex + 1);
+      return [...trimmed, newDraft].slice(-50);
+    });
+    setHistoryIndex((prev) => Math.min(prev + 1, 49));
+  }
+
+  function undo() {
+    if (historyIndex <= 0 || !history[historyIndex - 1]) return;
+    setHistoryIndex((prev) => prev - 1);
+    setDraft(history[historyIndex - 1]);
+  }
+
+  function redo() {
+    if (historyIndex >= history.length - 1 || !history[historyIndex + 1]) return;
+    setHistoryIndex((prev) => prev + 1);
+    setDraft(history[historyIndex + 1]);
+  }
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
 
   async function save() {
     if (!draft || !latest || warnings.some((warning) => warning.level === "error")) return;
@@ -99,6 +124,10 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         <div className="quant-snapshot-metrics">
           <span>当前价格<strong>{currentPrice !== undefined ? formatMoney(currentPrice, run.currency) : "待验证"}</strong></span>
           <span>最新版本<strong>V{latest?.version ?? 1}</strong></span>
+          <div className="quant-undo-redo">
+            <button type="button" className="quant-undo-btn" onClick={undo} disabled={!canUndo} aria-label="撤销 Ctrl+Z" title="撤销 Ctrl+Z">↩</button>
+            <button type="button" className="quant-redo-btn" onClick={redo} disabled={!canRedo} aria-label="重做 Ctrl+Y" title="重做 Ctrl+Y">↪</button>
+          </div>
           <button type="button" className="primary-action" onClick={() => void save()} disabled={phase === "saving" || warnings.some((warning) => warning.level === "error")}>
             {phase === "saving" ? "保存中…" : "保存新版本"}
           </button>
@@ -136,7 +165,11 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                     type="number"
                     step="0.1"
                     value={scenarioValue(assumption, scenario)}
-                    onChange={(event) => setDraft(applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: event.target.value }))}
+                    onChange={(event) => {
+                      const newDraft = applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: event.target.value });
+                      pushHistory(newDraft);
+                      setDraft(newDraft);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         event.currentTarget.blur();
@@ -180,7 +213,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         </section>
       </div>
 
-      {advanced ? <AdvancedForecast draft={draft} onChange={setDraft} /> : null}
+      {advanced ? <AdvancedForecast draft={draft} onChange={setDraft} onHistoryPush={pushHistory} /> : null}
 
       <section className="quant-version-section">
         <h3>版本与预测复盘</h3>
@@ -208,7 +241,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   );
 }
 
-function AdvancedForecast({ draft, onChange }: { draft: QuantitativeDraft; onChange: (draft: QuantitativeDraft) => void }) {
+function AdvancedForecast({ draft, onChange, onHistoryPush }: { draft: QuantitativeDraft; onChange: (draft: QuantitativeDraft) => void; onHistoryPush: (draft: QuantitativeDraft) => void }) {
   return (
     <section className="quant-advanced-panel">
       <h3>未来五年逐年覆写</h3>
@@ -218,7 +251,11 @@ function AdvancedForecast({ draft, onChange }: { draft: QuantitativeDraft; onCha
           <tbody>{[1, 2, 3, 4, 5].map((year) => (
             <tr key={year}><td>第 {year} 年</td>{ADVANCED_FIELDS.map((field) => {
               const value = findAssumption(draft, field.key, year)?.base ?? findAssumption(draft, field.key)?.base ?? "";
-              return <td key={field.key}><input type="number" step="0.1" value={value} onChange={(event) => onChange(applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: event.target.value }))} onKeyDown={(event) => {
+              return <td key={field.key}><input type="number" step="0.1" value={value} onChange={(event) => {
+                const newDraft = applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: event.target.value });
+                onHistoryPush(newDraft);
+                onChange(newDraft);
+              }} onKeyDown={(event) => {
                 if (event.key === "Escape") { event.currentTarget.blur(); return; }
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                   event.preventDefault();
@@ -226,7 +263,9 @@ function AdvancedForecast({ draft, onChange }: { draft: QuantitativeDraft; onCha
                   const current = Number(event.currentTarget.value) || 0;
                   const next = event.key === "ArrowUp" ? current + delta : current - delta;
                   const clamped = Math.max(0, Math.min(next, 999));
-                  onChange(applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: String(Math.round(clamped * 100) / 100) }));
+                  const newDraft = applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: String(Math.round(clamped * 100) / 100) });
+                  onHistoryPush(newDraft);
+                  onChange(newDraft);
                 }
               }} /></td>;
             })}</tr>
