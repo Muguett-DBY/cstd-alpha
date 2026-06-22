@@ -4172,6 +4172,42 @@ button:not(:disabled):active,
     font-size: 10px;
     cursor: pointer;
     transition: all 0.15s ease;
+  }
+
+  .quant-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-input input,
+  .quant-forecast-table input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .quant-undo-redo {
+    order: -1;
+  }
+
+  .quant-undo-btn,
+  .quant-redo-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .quant-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-snapshot {
+    flex-direction: column;
+  }
+
+  .quant-snapshot-metrics {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .mobile-bottom-nav button {
     -webkit-tap-highlight-color: transparent;
     border-radius: 8px;
     min-height: 44px;
