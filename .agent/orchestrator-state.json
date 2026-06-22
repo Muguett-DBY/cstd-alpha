@@ -3,9 +3,9 @@
   "campaign_id": "campaign-004",
   "campaign_number": 4,
   "overall_status": "RUNNING",
-  "current_phase": 17,
+  "current_phase": 18,
   "current_cycle": 3,
-  "last_completed_phase": 16,
+  "last_completed_phase": 17,
   "started_at": "2026-06-22T13:46:00Z",
   "updated_at": "2026-06-22T13:46:00Z",
   "completed_at": null,
@@ -30,7 +30,7 @@
     {"phase": 14, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "助手快捷键增强", "scope": "AssistantView", "user_visible_gain": "Ctrl+N 新对话、Ctrl+F 搜索、Ctrl+L 清空", "before_after": "Before: 仅 Enter/Shift+Enter; After: 新增 Ctrl+N/F/L 快捷键", "commit": "adca98b", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27934014000", "ci_status": "passed", "started_at": "2026-06-22T16:21:00Z", "completed_at": "2026-06-22T16:31:00Z", "notes": "handleInputKeyDown with Ctrl+N/F/L shortcuts"},
     {"phase": 15, "cycle": 3, "type": "UIUX", "prompt_file": "AGENT_UIUX_MAIN.txt", "status": "DONE", "objective": "助手移动端优化", "scope": "App.css", "user_visible_gain": "44px 触摸目标、按钮对齐、状态栏高度", "before_after": "Before: 移动端按钮 36px; After: 44px 触摸目标 + 居中对齐", "commit": "7e5074f", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27934386473", "ci_status": "passed", "started_at": "2026-06-22T16:31:00Z", "completed_at": "2026-06-22T16:40:00Z", "notes": "mobile thread-toggle/mobile-new 44px, flex center alignment"},
     {"phase": 16, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "DONE", "objective": "研究工作台数据可视化", "scope": "ResearchWorkspace, App.css", "user_visible_gain": "阶段分布条形图", "before_after": "Before: 仅堆叠进度条; After: 新增水平条形图展示各阶段分布", "commit": "425ae7d", "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": "27934698375", "ci_status": "passed", "started_at": "2026-06-22T16:40:00Z", "completed_at": "2026-06-22T16:47:00Z", "notes": "research-stage-bars with horizontal progress for each stage"},
-    {"phase": 17, "cycle": 3, "type": "CHECK", "prompt_file": "AGENT_CHECK_MAIN.txt", "status": "PENDING", "objective": "", "scope": null, "user_visible_gain": null, "before_after": null, "commit": null, "fix_commits": [], "pushed_to_main": false, "local_validation": null, "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": null, "started_at": null, "completed_at": null, "notes": null},
+    {"phase": 17, "cycle": 3, "type": "CHECK", "prompt_file": "AGENT_CHECK_MAIN.txt", "status": "DONE", "objective": "系统健康检查", "scope": "全项目", "user_visible_gain": "无新增 P0/P1 问题", "before_after": "Before: 无检查; After: 803 tests passed, lint/build/TypeScript check passed", "commit": null, "fix_commits": [], "pushed_to_main": true, "local_validation": "passed", "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": "passed", "started_at": "2026-06-22T16:47:00Z", "completed_at": "2026-06-22T16:50:00Z", "notes": "803 tests, lint, build, TypeScript check all passed, no console.log issues"},
     {"phase": 18, "cycle": 3, "type": "IMPROVE", "prompt_file": "AGENT_IMPROVE_MAIN.txt", "status": "PENDING", "objective": "", "scope": null, "user_visible_gain": null, "before_after": null, "commit": null, "fix_commits": [], "pushed_to_main": false, "local_validation": null, "ci_workflow": "Deploy Cloudflare Pages", "ci_run": null, "ci_status": null, "started_at": null, "completed_at": null, "notes": null}
   ]
 }
