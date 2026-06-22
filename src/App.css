@@ -3750,6 +3750,40 @@ button:not(:disabled):active,
   font-variant-numeric: tabular-nums;
 }
 
+.quant-undo-redo {
+  display: flex;
+  gap: 4px;
+}
+
+.quant-undo-btn,
+.quant-redo-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.quant-undo-btn:hover:not(:disabled),
+.quant-redo-btn:hover:not(:disabled) {
+  border-color: var(--teal);
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface));
+}
+
+.quant-undo-btn:disabled,
+.quant-redo-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .quant-warning-list {
   display: grid;
   gap: 7px;
