@@ -167,6 +167,21 @@ describe("quantitative valuation draft baseline", () => {
     });
   });
 
+  test("compacts oversized evidence before storing the valuation source snapshot", () => {
+    const pkg = makeEvidencePackage();
+    (pkg.evidence as Record<string, unknown>).rawResearchBody = "x".repeat(3_000_000);
+
+    const result = createQuantitativeBaseline(pkg, makeRun());
+
+    expect(JSON.stringify(result.snapshot.payload).length).toBeLessThan(200_000);
+    expect(result.snapshot.payload).toMatchObject({
+      companyKey: "A股:600519",
+      stableFacts: { financialTenYear: { rows: expect.any(Array) } },
+      freshSignals: { quote: { regularMarketPrice: 1500 } },
+    });
+    expect(result.snapshot.payload).not.toHaveProperty("evidence");
+  });
+
   test("generated assumptions are unlocked provider or formula values, never user values", () => {
     const result = createQuantitativeBaseline(makeEvidencePackage(), makeRun());
     const assumptions = result.draft.assumptions;
