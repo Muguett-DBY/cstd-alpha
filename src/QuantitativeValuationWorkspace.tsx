@@ -178,40 +178,49 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <h3>关键预测驱动</h3>
           <p>系统已根据历史财务预填；修改后会立即重算。</p>
           <div className="quant-input-grid">
-            {simpleEditorFields(draft).map((assumption) => (
-              <label className="quant-input" key={assumption.key}>
-                <span>{assumption.label}<small>{assumption.origin === "user" ? "手动锁定" : "自动填入"}</small></span>
-                <div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={scenarioValue(assumption, scenario)}
-                    onChange={(event) => {
-                      const newDraft = applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: event.target.value });
-                      pushHistory(newDraft);
-                      setDraft(newDraft);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.currentTarget.blur();
-                        return;
-                      }
-                      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                        event.preventDefault();
-                        const delta = event.shiftKey ? 1.0 : 0.1;
-                        const current = Number(event.currentTarget.value) || 0;
-                        const next = event.key === "ArrowUp" ? current + delta : current - delta;
-                        const clamped = Math.max(0, Math.min(next, 999));
-                        setDraft(applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: String(Math.round(clamped * 100) / 100) }));
-                      }
-                    }}
-                    aria-label={`${assumption.label}，${assumption.unit}，当前值 ${scenarioValue(assumption, scenario)}，上下箭头微调，Shift 加速`}
-                  />
-                  <em>{assumption.unit}</em>
-                </div>
-                <small title={assumption.explanation}>{assumption.explanation || "公式推导"}</small>
-              </label>
-            ))}
+            {simpleEditorFields(draft).map((assumption) => {
+              const value = scenarioValue(assumption, scenario);
+              const numericValue = Number(value);
+              const hasWarning = warnings.some((w) => w.message.includes(assumption.label));
+              const isValid = numericValue >= 0 && numericValue <= 999;
+              return (
+                <label className={`quant-input ${hasWarning ? "has-warning" : ""} ${!isValid && value !== "" ? "has-error" : ""}`} key={assumption.key}>
+                  <span>{assumption.label}<small>{assumption.origin === "user" ? "手动锁定" : "自动填入"}</small></span>
+                  <div>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={value}
+                      onChange={(event) => {
+                        const newDraft = applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: event.target.value });
+                        pushHistory(newDraft);
+                        setDraft(newDraft);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.currentTarget.blur();
+                          return;
+                        }
+                        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                          event.preventDefault();
+                          const delta = event.shiftKey ? 1.0 : 0.1;
+                          const current = Number(event.currentTarget.value) || 0;
+                          const next = event.key === "ArrowUp" ? current + delta : current - delta;
+                          const clamped = Math.max(0, Math.min(next, 999));
+                          const newDraft = applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: String(Math.round(clamped * 100) / 100) });
+                          pushHistory(newDraft);
+                          setDraft(newDraft);
+                        }
+                      }}
+                      aria-label={`${assumption.label}，${assumption.unit}，当前值 ${value}，上下箭头微调，Shift 加速`}
+                    />
+                    <em>{assumption.unit}</em>
+                  </div>
+                  <small title={assumption.explanation}>{assumption.explanation || "公式推导"}</small>
+                  {hasWarning ? <span className="quant-field-warning">⚠️ {warnings.find((w) => w.message.includes(assumption.label))?.message}</span> : null}
+                </label>
+              );
+            })}
           </div>
         </section>
 
