@@ -3817,11 +3817,23 @@ button:not(:disabled):active,
   background: color-mix(in srgb, var(--surface) 92%, var(--red));
   color: var(--body);
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quant-warning::before {
+  content: "⚠️";
+  font-size: 14px;
 }
 
 .quant-warning.error {
   border-color: color-mix(in srgb, var(--red) 55%, var(--line));
   color: var(--red);
+}
+
+.quant-warning.error::before {
+  content: "❌";
 }
 
 .quant-scenario-tabs {
@@ -3838,12 +3850,19 @@ button:not(:disabled):active,
   background: var(--surface);
   color: var(--body);
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quant-scenario-tabs button:hover {
+  border-color: var(--teal);
+  color: var(--teal);
 }
 
 .quant-scenario-tabs button.active {
   border-color: var(--teal);
   background: color-mix(in srgb, var(--teal) 14%, var(--surface));
   color: var(--teal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 12%, transparent);
 }
 
 .quant-scenario-tabs .advanced-toggle {
@@ -3954,6 +3973,24 @@ button:not(:disabled):active,
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-subtle);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quant-result-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.quant-result-card.bear {
+  border-left: 3px solid var(--red);
+}
+
+.quant-result-card.base {
+  border-left: 3px solid var(--teal);
+}
+
+.quant-result-card.bull {
+  border-left: 3px solid var(--blue);
 }
 
 .quant-result-card span,
