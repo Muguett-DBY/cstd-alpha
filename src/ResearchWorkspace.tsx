@@ -51,6 +51,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">(() => {
     try { return (localStorage.getItem("cstd_research_sort_order") as "recent" | "name" | "stage") || "recent"; } catch { return "recent"; }
   });
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month">("all");
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
@@ -76,6 +77,18 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     if (stageFilter !== "all") result = result.filter((i) => i.stage === stageFilter);
     if (thesisFilter === "with") result = result.filter((i) => i.currentThesisVersionId);
     if (thesisFilter === "without") result = result.filter((i) => !i.currentThesisVersionId);
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const cutoff = new Date();
+      if (dateFilter === "today") {
+        cutoff.setHours(0, 0, 0, 0);
+      } else if (dateFilter === "week") {
+        cutoff.setDate(now.getDate() - 7);
+      } else if (dateFilter === "month") {
+        cutoff.setMonth(now.getMonth() - 1);
+      }
+      result = result.filter((i) => new Date(i.updatedAt) >= cutoff);
+    }
     if (sortOrder === "recent") result = [...result].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     else if (sortOrder === "name") result = [...result].sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
     else if (sortOrder === "stage") {
@@ -83,7 +96,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       result = [...result].sort((a, b) => (stageOrder[a.stage] ?? 99) - (stageOrder[b.stage] ?? 99));
     }
     return result;
-  }, [items, queueQuery, stageFilter, thesisFilter, sortOrder]);
+  }, [items, queueQuery, stageFilter, thesisFilter, sortOrder, dateFilter]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
   const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -742,6 +755,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <option value="recent">最近更新</option>
                     <option value="name">按名称</option>
                     <option value="stage">按阶段</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <span className="filter-label">活动时间</span>
+                  <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}>
+                    <option value="all">全部时间</option>
+                    <option value="today">今天</option>
+                    <option value="week">本周</option>
+                    <option value="month">本月</option>
                   </select>
                 </div>
                 {(queueQuery || stageFilter !== "all" || thesisFilter !== "all") ? (
