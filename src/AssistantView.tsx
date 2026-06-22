@@ -52,6 +52,7 @@ export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessag
   const [draft, setDraft] = useState("");
   const [threadList, setThreadList] = useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [threadDrawerOpen, setThreadDrawerOpen] = useState(false);
+  const [threadSearch, setThreadSearch] = useState("");
   const [pendingClarification, setPendingClarification] = useState<{ original: string; request: AssistantClarificationRequest; selectedId: string; customAnswer: string; error?: string } | null>(null);
   const [pendingMemory, setPendingMemory] = useState<AssistantMemoryCandidate | null>(null);
   const [draftBlocks, setDraftBlocks] = useState<AssistantBlock[]>([]);
@@ -587,15 +588,26 @@ export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessag
           </div>
         </div>
         <div className="assistant-thread-list">
-          {threadList.map((t) => (
-            <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
-              <span className="assistant-thread-item-title">{t.title}</span>
-              <div className="assistant-thread-item-actions">
-                <button type="button" className="assistant-thread-rename" onClick={(e) => { e.stopPropagation(); void renameThreadInline(t.id, t.title); }} aria-label="重命名会话">✎</button>
-                <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
+          <div className="assistant-thread-search">
+            <input
+              type="search"
+              placeholder="搜索会话..."
+              value={threadSearch}
+              onChange={(e) => setThreadSearch(e.target.value)}
+              aria-label="搜索会话"
+            />
+          </div>
+          {threadList
+            .filter((t) => !threadSearch || t.title.toLowerCase().includes(threadSearch.toLowerCase()))
+            .map((t) => (
+              <div key={t.id} className={`assistant-thread-item ${t.id === thread?.id ? "active" : ""}`} onClick={() => void switchThread(t.id)}>
+                <span className="assistant-thread-item-title">{t.title}</span>
+                <div className="assistant-thread-item-actions">
+                  <button type="button" className="assistant-thread-rename" onClick={(e) => { e.stopPropagation(); void renameThreadInline(t.id, t.title); }} aria-label="重命名会话">✎</button>
+                  <button type="button" className="assistant-thread-delete" onClick={(e) => { e.stopPropagation(); void removeThread(t.id); }} aria-label="删除">✕</button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
       <section className="assistant-chat-panel" aria-label="助手聊天">
