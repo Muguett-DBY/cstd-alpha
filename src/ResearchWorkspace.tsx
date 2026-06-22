@@ -725,6 +725,13 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         const withValuation = valuationRuns.filter((r) => r.status === "completed").length;
         const recentlyUpdated = items.filter((i) => new Date(i.updatedAt).getTime() > recentCutoff).length;
         const stageCounts = RESEARCH_STAGES.map((stage) => ({ stage, count: items.filter((i) => i.stage === stage).length }));
+        const avgReadiness = items.length > 0 ? Math.round(items.reduce((sum, item) => {
+          const readiness = describeResearchReadiness(item);
+          return sum + readiness.score;
+        }, 0) / items.length) : 0;
+        const withEvidence = items.filter((i) => i.evidenceHash).length;
+        const evidenceRate = total > 0 ? Math.round((withEvidence / total) * 100) : 0;
+        const thesisRate = total > 0 ? Math.round((withThesis / total) * 100) : 0;
         return (
           <>
             <div className="research-metrics-bar">
@@ -733,6 +740,29 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <div className="research-metric"><strong>{withThesis}</strong><span>已生成论点</span></div>
               <div className="research-metric"><strong>{withValuation}</strong><span>已完成估值</span></div>
               <div className="research-metric"><strong>{recentlyUpdated}</strong><span>7天内更新</span></div>
+            </div>
+            <div className="research-insights">
+              <div className="research-insight">
+                <span>论点覆盖率</span>
+                <div className="research-insight-bar">
+                  <div className="research-insight-fill" style={{ width: `${thesisRate}%`, background: "var(--teal)" }} />
+                </div>
+                <strong>{thesisRate}%</strong>
+              </div>
+              <div className="research-insight">
+                <span>证据覆盖率</span>
+                <div className="research-insight-bar">
+                  <div className="research-insight-fill" style={{ width: `${evidenceRate}%`, background: "var(--blue)" }} />
+                </div>
+                <strong>{evidenceRate}%</strong>
+              </div>
+              <div className="research-insight">
+                <span>平均就绪度</span>
+                <div className="research-insight-bar">
+                  <div className="research-insight-fill" style={{ width: `${avgReadiness}%`, background: "var(--amber)" }} />
+                </div>
+                <strong>{avgReadiness}%</strong>
+              </div>
             </div>
             <div className="research-pipeline" role="img" aria-label={`研究管线：${stageCounts.map((s) => `${RESEARCH_STAGE_LABELS[s.stage]} ${s.count}`).join("、")}`}>
               {stageCounts.map((s) => (
