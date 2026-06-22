@@ -808,6 +808,35 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 </div>
               ))}
             </div>
+            <div className="research-summary-card">
+              <h3>研究总结</h3>
+              <div className="research-summary-grid">
+                <div className="research-summary-item">
+                  <span>研究项总数</span>
+                  <strong>{total}</strong>
+                </div>
+                <div className="research-summary-item">
+                  <span>平均完成度</span>
+                  <strong>{thesisRate}%</strong>
+                </div>
+                <div className="research-summary-item">
+                  <span>证据覆盖率</span>
+                  <strong>{evidenceRate}%</strong>
+                </div>
+                <div className="research-summary-item">
+                  <span>平均就绪度</span>
+                  <strong>{avgReadiness}%</strong>
+                </div>
+                <div className="research-summary-item">
+                  <span>本周活跃</span>
+                  <strong>{recentlyUpdated}</strong>
+                </div>
+                <div className="research-summary-item">
+                  <span>估值完成</span>
+                  <strong>{withValuation}</strong>
+                </div>
+              </div>
+            </div>
           </>
         );
       })() : null}

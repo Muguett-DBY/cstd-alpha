@@ -1565,6 +1565,49 @@ button:not(:disabled):active,
   text-align: right;
 }
 
+.research-summary-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.research-summary-card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.research-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.research-summary-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.research-summary-item span {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.research-summary-item strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .stage-screening { background: var(--teal); }
 .stage-deepResearch { background: var(--blue); }
 .stage-awaitingCatalyst { background: var(--amber); }
