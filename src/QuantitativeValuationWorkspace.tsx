@@ -128,6 +128,27 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             <button type="button" className="quant-undo-btn" onClick={undo} disabled={!canUndo} aria-label="撤销 Ctrl+Z" title="撤销 Ctrl+Z">↩</button>
             <button type="button" className="quant-redo-btn" onClick={redo} disabled={!canRedo} aria-label="重做 Ctrl+Y" title="重做 Ctrl+Y">↪</button>
           </div>
+          <button type="button" className="quant-export-btn" onClick={() => {
+            if (!preview) return;
+            const text = [
+              `${run.title} 量化估值摘要`,
+              `日期: ${draft.asOf}`,
+              `方法: ${methodLabel(draft.method)}`,
+              `当前价格: ${currentPrice !== undefined ? formatMoney(currentPrice, run.currency) : "待验证"}`,
+              "",
+              "三情景估值:",
+              ...preview.scenarios.map((s) => `  ${scenarioLabel(s.scenario)}: ${formatMoney(s.perShareValue, preview.currency)}${currentPrice ? ` (${formatUpside(s.perShareValue, currentPrice)})` : ""}`),
+              "",
+              preview.sensitivity?.length ? `敏感性分析: ${preview.sensitivity.length} 个参数组合` : "",
+              `版本: V${latest?.version ?? 1}`,
+            ].filter(Boolean).join("\n");
+            navigator.clipboard.writeText(text).then(() => showToast("估值摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败。", "error"));
+          }} aria-label="复制估值摘要">
+            📋 复制摘要
+          </button>
+          <button type="button" className="quant-export-btn" onClick={() => window.print()} aria-label="打印估值报告">
+            🖨️ 打印
+          </button>
           <button type="button" className="primary-action" onClick={() => void save()} disabled={phase === "saving" || warnings.some((warning) => warning.level === "error")}>
             {phase === "saving" ? "保存中…" : "保存新版本"}
           </button>
