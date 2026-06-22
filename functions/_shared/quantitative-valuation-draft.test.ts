@@ -403,4 +403,18 @@ describe("quantitative valuation draft baseline", () => {
     expect(result.draft.operating?.netDebt).toBe(-2150);
     expect(result.draft.operating?.sharesOutstanding).toBeCloseTo(12.56, 6);
   });
+
+  test("normalizes legacy Tencent market-cap numbers expressed in 亿元", () => {
+    const result = createQuantitativeBaseline(
+      makeEvidencePackage({
+        freshSignals: {
+          retrievedAt: "2026-06-21T09:00:00.000Z",
+          quote: { symbol: "600519", market: "沪A", quoteSourceName: "Tencent", regularMarketPrice: 1215, marketCap: 15188.49 },
+        },
+      }),
+      makeRun(),
+    );
+
+    expect(result.draft.operating?.sharesOutstanding).toBeCloseTo(12.5, 2);
+  });
 });

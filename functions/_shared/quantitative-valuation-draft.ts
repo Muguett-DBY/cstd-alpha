@@ -106,7 +106,7 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
   if (netDebtUsedFallback) warnings.push("缺少债务与现金历史，净债务暂置为 0。");
 
   const currentPrice = rawNumber(quote?.regularMarketPrice);
-  const marketCap = rawNumber(quote?.marketCap);
+  const marketCap = marketCapInCny(quote);
   const sharesOutstanding = marketCap !== undefined && currentPrice !== undefined && currentPrice > 0 && marketCap > 0
     ? marketCap / currentPrice / 100_000_000
     : 0;
@@ -360,6 +360,15 @@ function rawNumber(value: unknown): number | undefined {
     return Number.isFinite(num) ? num : undefined;
   }
   return undefined;
+}
+
+function marketCapInCny(quote: Record<string, unknown> | undefined) {
+  const value = rawNumber(quote?.marketCap);
+  if (value === undefined) return undefined;
+  const isLegacyTencentValue = quote?.quoteSourceName === "Tencent"
+    && quote.marketCapUnit !== "CNY"
+    && typeof quote.marketCap === "number";
+  return isLegacyTencentValue ? value * 100_000_000 : value;
 }
 
 function netDebtEvidenceRefs(debt: number | undefined, cash: number | undefined) {

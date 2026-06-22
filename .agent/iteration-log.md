@@ -1,5 +1,11 @@
 # CSTD Alpha - Iteration Log
 
+## Round 55 — 2026-06-22 (Production Hotfix: Tencent Market-Cap Units)
+
+- **触发:** 线上贵州茅台真实估值生成后，总股本被计算为 `1.25e-7 亿股`，导致每股估值异常放大。
+- **修复:** 腾讯行情市值字段按“亿元”转换为 CNY 元；量化基线同时兼容无单位标记的旧腾讯证据包。
+- **回归:** 使用真实形态的旧腾讯行情数据，验证总股本归一到约 `12.5 亿股`。
+
 ## Round 54 — 2026-06-22 (Production Hotfix: Large Evidence Snapshots)
 
 - **触发:** 线上 A 股估值真实回归发现 `SQLITE_TOOBIG`；完整公司证据包不能直接写入 D1 快照字段。
