@@ -3913,6 +3913,27 @@ button:not(:disabled):active,
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 15%, transparent);
 }
 
+.quant-input.has-error input {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 15%, transparent);
+}
+
+.quant-input.has-warning input {
+  border-color: var(--amber);
+}
+
+.quant-field-warning {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 25%, var(--line));
+  border-radius: 6px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .quant-input em {
   color: var(--muted);
   font-size: 11px;
