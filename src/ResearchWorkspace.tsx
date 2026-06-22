@@ -617,6 +617,23 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     showToast(`已导出 ${filteredItems.length} 项研究数据。`, "success");
   }
 
+  function copyResearchSummary() {
+    const lines = [
+      `研究队列摘要 - ${new Date().toLocaleDateString("zh-CN")}`,
+      `共 ${filteredItems.length} 项（已筛选）/ ${items.length} 项（总计）`,
+      "",
+      "按阶段分布：",
+      ...RESEARCH_STAGES.map((stage) => {
+        const count = filteredItems.filter((i) => i.stage === stage).length;
+        return count > 0 ? `  ${RESEARCH_STAGE_LABELS[stage as keyof typeof RESEARCH_STAGE_LABELS]}: ${count} 项` : null;
+      }).filter(Boolean),
+      "",
+      "研究项列表：",
+      ...filteredItems.map((item, i) => `${i + 1}. ${item.title} [${RESEARCH_STAGE_LABELS[item.stage as keyof typeof RESEARCH_STAGE_LABELS] || item.stage}]${item.currentThesisVersionId ? " ✓论点" : ""}${item.evidenceHash ? " ✓证据" : ""}`),
+    ];
+    navigator.clipboard.writeText(lines.join("\n")).then(() => showToast("研究摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败。", "error"));
+  }
+
   function exportFilteredJSON() {
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -978,6 +995,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 </button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredCSV()}>导出 CSV</button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredJSON()}>导出 JSON</button>
+                <button type="button" className="ghost-button" onClick={() => copyResearchSummary()}>复制摘要</button>
                 <button type="button" className="ghost-button danger-button" onClick={() => void batchDeleteItems()} disabled={batchProcessing}>
                   {batchProcessing ? "删除中..." : "批量删除"}
                 </button>
