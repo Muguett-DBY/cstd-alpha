@@ -1420,6 +1420,52 @@ button:not(:disabled):active,
   letter-spacing: 0.02em;
 }
 
+.research-insights {
+  display: flex;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.research-insight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.research-insight span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.research-insight strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  min-width: 32px;
+  text-align: right;
+}
+
+.research-insight-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.research-insight-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
 .research-pipeline {
   display: flex;
   height: 12px;
