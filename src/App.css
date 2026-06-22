@@ -3848,6 +3848,14 @@ button:not(:disabled):active,
   color: var(--ink);
   font: inherit;
   font-variant-numeric: tabular-nums;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quant-input input:focus,
+.quant-forecast-table input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 15%, transparent);
 }
 
 .quant-input em {

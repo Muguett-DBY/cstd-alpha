@@ -137,6 +137,21 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                     step="0.1"
                     value={scenarioValue(assumption, scenario)}
                     onChange={(event) => setDraft(applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.currentTarget.blur();
+                        return;
+                      }
+                      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                        event.preventDefault();
+                        const delta = event.shiftKey ? 1.0 : 0.1;
+                        const current = Number(event.currentTarget.value) || 0;
+                        const next = event.key === "ArrowUp" ? current + delta : current - delta;
+                        const clamped = Math.max(0, Math.min(next, 999));
+                        setDraft(applyDraftEdit(draft, { key: assumption.key, scenario, rawValue: String(Math.round(clamped * 100) / 100) }));
+                      }
+                    }}
+                    aria-label={`${assumption.label}，${assumption.unit}，当前值 ${scenarioValue(assumption, scenario)}，上下箭头微调，Shift 加速`}
                   />
                   <em>{assumption.unit}</em>
                 </div>
@@ -203,7 +218,17 @@ function AdvancedForecast({ draft, onChange }: { draft: QuantitativeDraft; onCha
           <tbody>{[1, 2, 3, 4, 5].map((year) => (
             <tr key={year}><td>第 {year} 年</td>{ADVANCED_FIELDS.map((field) => {
               const value = findAssumption(draft, field.key, year)?.base ?? findAssumption(draft, field.key)?.base ?? "";
-              return <td key={field.key}><input type="number" step="0.1" value={value} onChange={(event) => onChange(applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: event.target.value }))} /></td>;
+              return <td key={field.key}><input type="number" step="0.1" value={value} onChange={(event) => onChange(applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: event.target.value }))} onKeyDown={(event) => {
+                if (event.key === "Escape") { event.currentTarget.blur(); return; }
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  const delta = event.shiftKey ? 1.0 : 0.1;
+                  const current = Number(event.currentTarget.value) || 0;
+                  const next = event.key === "ArrowUp" ? current + delta : current - delta;
+                  const clamped = Math.max(0, Math.min(next, 999));
+                  onChange(applyDraftEdit(draft, { key: field.key, scenario: "base", forecastYear: year, rawValue: String(Math.round(clamped * 100) / 100) }));
+                }
+              }} /></td>;
             })}</tr>
           ))}</tbody>
         </table>
