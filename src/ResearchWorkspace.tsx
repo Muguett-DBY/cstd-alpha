@@ -164,6 +164,47 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         return;
       }
       
+      // Number keys 1-5: Quick stage change
+      if (!event.ctrlKey && !event.altKey && !event.metaKey && selectedId) {
+        const num = parseInt(event.key);
+        if (num >= 1 && num <= 5) {
+          event.preventDefault();
+          const targetStage = RESEARCH_STAGES[num - 1];
+          if (targetStage) {
+            const selectedItem = filteredItems.find((i) => i.id === selectedId);
+            if (selectedItem && selectedItem.stage !== targetStage) {
+              void updateResearchItemStage(selectedId, targetStage).then(() => {
+                setItems((current) => current.map((item) => item.id === selectedId ? { ...item, stage: targetStage } : item));
+                showToast(`已移动到「${RESEARCH_STAGE_LABELS[targetStage]}」。`, "success");
+              }).catch(() => showToast("阶段移动失败。", "error"));
+            }
+          }
+          return;
+        }
+      }
+      
+      // D: Delete selected (with confirmation)
+      if (event.key === "d" && !event.ctrlKey && !event.altKey && !event.metaKey && selectedId) {
+        event.preventDefault();
+        showToast("请使用批量操作栏进行删除。", "info");
+        return;
+      }
+      
+      // T: Generate thesis for selected
+      if (event.key === "t" && !event.ctrlKey && !event.altKey && !event.metaKey && selectedId) {
+        event.preventDefault();
+        showToast("请使用批量操作栏生成论点。", "info");
+        return;
+      }
+      
+      // F: Focus search
+      if (event.key === "f" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        const searchInput = document.querySelector<HTMLInputElement>(".research-queue-search input");
+        if (searchInput) searchInput.focus();
+        return;
+      }
+      
       // Alt+Arrow: Move selected card (keyboard reorder)
       if (event.altKey && !event.ctrlKey && !event.metaKey && selectedId) {
         const selectedItem = filteredItems.find((i) => i.id === selectedId);
@@ -243,7 +284,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder]);
+  }, [filteredItems, selectedId, items, itemOrder, saveItemOrder, selected]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -535,7 +576,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
   }, [selectedItemIds, clearSelection]);
 
-  async function batchGenerateThesis() {
+  const batchGenerateThesis = useCallback(async () => {
     const ids = Array.from(selectedItemIds);
     if (!ids.length) return;
     setBatchProcessing(true);
@@ -555,7 +596,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     } finally {
       setBatchProcessing(false);
     }
-  }
+  }, [selectedItemIds, clearSelection]);
 
   function exportFilteredCSV() {
     const rows = [["名称", "实体类型", "副标题", "阶段", "来源", "有论点", "有证据", "创建时间", "更新时间"]];
@@ -725,7 +766,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             <header className="panel-header research-queue-head">
               <div>
                 <h2>研究队列</h2>
-                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 导航 · Alt+↑↓ 排序 · 1-5 切换阶段 · Enter 展开 · Del 删除</span></p>
+                <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 导航 · Alt+↑↓ 排序 · 1-5 切换阶段 · Enter 展开 · Del 删除 · F 搜索</span></p>
               </div>
             </header>
             <div className="queue-command-panel" aria-label="研究队列控制台">
