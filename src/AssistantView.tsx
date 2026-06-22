@@ -298,9 +298,34 @@ export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessag
       metaKey: event.metaKey,
       isComposing: event.nativeEvent.isComposing,
     });
-    if (intent !== "submit") return;
-    event.preventDefault();
-    event.currentTarget.form?.requestSubmit();
+    if (intent === "submit") {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+      return;
+    }
+    // Escape: blur input
+    if (event.key === "Escape") {
+      event.currentTarget.blur();
+      return;
+    }
+    // Ctrl+N: new thread
+    if (event.ctrlKey && event.key === "n") {
+      event.preventDefault();
+      void newThread();
+      return;
+    }
+    // Ctrl+F: toggle search
+    if (event.ctrlKey && event.key === "f") {
+      event.preventDefault();
+      setSearchOpen((current) => !current);
+      return;
+    }
+    // Ctrl+L: clear input
+    if (event.ctrlKey && event.key === "l") {
+      event.preventDefault();
+      setInput("");
+      return;
+    }
   }
 
   async function toggleSpeechRecognition() {
