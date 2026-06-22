@@ -797,6 +797,17 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 </span>
               ))}
             </div>
+            <div className="research-stage-bars">
+              {stageCounts.map((s) => (
+                <div key={s.stage} className="research-stage-bar">
+                  <div className="research-stage-bar-label">{RESEARCH_STAGE_LABELS[s.stage]}</div>
+                  <div className="research-stage-bar-track">
+                    <div className="research-stage-bar-fill" style={{ width: `${total > 0 ? (s.count / total) * 100 : 0}%` }} />
+                  </div>
+                  <div className="research-stage-bar-count">{s.count}</div>
+                </div>
+              ))}
+            </div>
           </>
         );
       })() : null}
