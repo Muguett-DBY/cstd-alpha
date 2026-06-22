@@ -21,7 +21,7 @@ export type QuantitativeBaselineSnapshot = {
   researchItemId: string | null;
   market: "A股";
   asOf: string;
-  payload: CompanyEvidencePackage;
+  payload: Record<string, unknown>;
   evidenceHash: string;
   contentHash: string;
   warnings: string[];
@@ -213,7 +213,7 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
     researchItemId: run.research_item_id,
     market: "A股",
     asOf,
-    payload: pkg,
+    payload: compactSnapshotPayload(pkg, stableFacts, freshSignals),
     evidenceHash: pkg.evidenceHash || run.evidence_hash || "",
     contentHash: pkg.materialHash || pkg.stableHash || pkg.evidenceHash || run.evidence_hash || "",
     warnings: sourceWarnings,
@@ -238,6 +238,50 @@ export function createQuantitativeBaseline(pkgOrJson: CompanyEvidencePackage | s
     warnings,
   };
   return { snapshot, draft, warnings };
+}
+
+function compactSnapshotPayload(
+  pkg: CompanyEvidencePackage,
+  stableFacts: Record<string, unknown> | undefined,
+  freshSignals: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const financialTenYear = recordValue(stableFacts?.financialTenYear);
+  const sourceCompany = recordValue(stableFacts?.company) ?? recordValue(recordValue(pkg.evidence)?.company);
+  return {
+    version: pkg.version,
+    userId: pkg.userId,
+    watchlistId: pkg.watchlistId,
+    companyKey: pkg.companyKey,
+    evidenceHash: pkg.evidenceHash,
+    materialHash: pkg.materialHash,
+    stableHash: pkg.stableHash,
+    freshHash: pkg.freshHash,
+    fetchedAt: pkg.fetchedAt,
+    stableFacts: {
+      company: sourceCompany,
+      selectedCompany: recordValue(stableFacts?.selectedCompany),
+      financialTenYear: { rows: compactFinancialRows(financialTenYear?.rows) },
+    },
+    freshSignals: {
+      retrievedAt: stringValue(freshSignals?.retrievedAt),
+      quote: recordValue(freshSignals?.quote),
+      warnings: sourceWarningStrings(freshSignals),
+    },
+  };
+}
+
+function compactFinancialRows(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).flatMap((candidate) => {
+    const row = recordValue(candidate);
+    const metric = stringValue(row?.metric);
+    const values = recordValue(row?.values);
+    if (!metric || !values) return [];
+    const annualValues = Object.fromEntries(Object.entries(values)
+      .filter(([year, amount]) => /^\d{4}$/.test(year) && (typeof amount === "number" || typeof amount === "string"))
+      .map(([year, amount]) => [year, typeof amount === "string" ? amount.slice(0, 128) : amount]));
+    return [{ metric: metric.slice(0, 128), values: annualValues }];
+  });
 }
 
 function validateAsharePackage(

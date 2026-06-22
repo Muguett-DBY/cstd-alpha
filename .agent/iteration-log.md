@@ -1,5 +1,12 @@
 # CSTD Alpha - Iteration Log
 
+## Round 54 — 2026-06-22 (Production Hotfix: Large Evidence Snapshots)
+
+- **触发:** 线上 A 股估值真实回归发现 `SQLITE_TOOBIG`；完整公司证据包不能直接写入 D1 快照字段。
+- **修复:** 快照改为只保存估值所需的公司标识、年度财务行、行情、来源哈希与警告；原始证据继续留在既有证据存储链路。
+- **回归:** 新增 3 MB 原始正文的回归用例，断言 D1 快照小于 200 KB 且不会保存原始 `evidence` 正文。
+- **验证:** 72 个 Vitest 文件、802 个测试通过；ESLint、Functions TypeScript、生产构建和 `git diff --check` 通过。
+
 ## Round 53 — 2026-06-22 (A 股量化估值工作区)
 
 - **范围:** 为已加入研究队列的 A 股经营型公司生成来源快照与五年 FCFF DCF 自动基线；银行、保险和周期股继续使用现有专用估值卡。
