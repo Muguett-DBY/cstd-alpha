@@ -10640,7 +10640,7 @@ button:not(:disabled):active,
   .assistant-thread-toggle,
   .assistant-mobile-new {
     min-width: 0;
-    min-height: 36px;
+    min-height: 44px;
     border: 0;
     border-radius: 999px;
     background: var(--surface-subtle);
@@ -10651,6 +10651,18 @@ button:not(:disabled):active,
 
   .assistant-mobile-new {
     justify-self: end;
+  }
+
+  .assistant-thread-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .assistant-mobile-bar .assistant-mobile-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .auth-panel,
