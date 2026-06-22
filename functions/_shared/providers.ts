@@ -822,6 +822,7 @@ function normalizeTencentAQuote(text: string | undefined, candidate: CompanyCand
   const fields = quoted.split("~");
   const price = numberFromString(fields[3]);
   if (price === undefined || price <= 0) return undefined;
+  const marketCap = tencentMarketCapToCny(numberFromString(fields[45]));
   return pickDefined({
     symbol: candidate.code || stringValue(fields[2]),
     longName: candidate.name,
@@ -834,10 +835,15 @@ function normalizeTencentAQuote(text: string | undefined, candidate: CompanyCand
     regularMarketDayHigh: numberFromString(fields[33]),
     regularMarketDayLow: numberFromString(fields[34]),
     trailingPE: numberFromString(fields[39]),
-    marketCap: numberFromString(fields[45]),
+    marketCap,
+    marketCapUnit: marketCap === undefined ? undefined : "CNY",
     currency: /^[A-Z]{3}$/.test(fields[82] ?? "") ? fields[82] : "CNY",
     quoteSourceName: "Tencent",
   });
+}
+
+function tencentMarketCapToCny(value: number | undefined) {
+  return value === undefined ? undefined : value * 100_000_000;
 }
 
 function eastmoneyLatestKlineUrl(secid: string) {
