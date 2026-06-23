@@ -338,4 +338,30 @@ describe("buildQuantitativeVersionFromAssumptions", () => {
     expect(built.result.quantitativeVersionId).toBeUndefined();
     expect(built.result.scenarios.find((scenario) => scenario.scenario === "base")?.perShareValue).toBeGreaterThan(0);
   });
+
+  test("keeps A-share manual valuation usable when scale assumptions are missing", () => {
+    const run = {
+      id: "run-1",
+      user_key: "user-1",
+      research_item_id: "research-1",
+      entity_id: "eastmoney:1.600519",
+      title: "贵州茅台",
+      archetype: "operating",
+      method: "dcf_3_statement",
+      currency: "CNY",
+      evidence_hash: null,
+    } as ValuationRunRow;
+
+    const built = buildQuantitativeVersionFromAssumptions(
+      run,
+      { confidence: 0.3, operating: { revenueGrowth: { low: 0.02, base: 0.05, high: 0.08 } } },
+      {},
+      "暂无完整公司证据包。估值对象：贵州茅台。",
+    );
+
+    expect(built.draft.operating?.baseRevenue).toBeGreaterThan(0);
+    expect(built.draft.operating?.sharesOutstanding).toBeGreaterThan(0);
+    expect(built.draft.assumptions?.map((assumption) => assumption.key)).toEqual(expect.arrayContaining(["baseRevenue", "sharesOutstanding"]));
+    expect(built.warnings.join("\n")).toContain("占位");
+  });
 });

@@ -178,10 +178,10 @@ export function buildQuantitativeVersionFromAssumptions(
   if (run.method !== "dcf_3_statement" || run.archetype !== "operating") {
     throw new Error("当前量化基准仅支持经营型 DCF。");
   }
-  const merged = mergeAnchorsIntoAssumptions(payload, anchors);
+  const warnings = ["未找到完整公司证据包，已使用模型假设生成可编辑量化草稿；请优先补充或刷新公司证据后复核。"];
+  const merged = withManualFallbackScale(mergeAnchorsIntoAssumptions(payload, anchors), warnings);
   validateValuationInputs(run, merged);
   const operating = buildOperatingInput(run, merged, new Date().toISOString().slice(0, 10));
-  const warnings = ["未找到完整公司证据包，已使用模型假设生成可编辑量化草稿；请优先补充或刷新公司证据后复核。"];
   const draft: QuantitativeDraft & { runId: string; sourceSnapshotId: "pending"; market: "A股" } = {
     runId: run.id,
     sourceSnapshotId: "pending",
@@ -302,6 +302,7 @@ function buildOperatingInput(
 function operatingAssumptionsFromAi(input: OperatingValuationInput, confidence = 0.5): EditableAssumption[] {
   const boundedConfidence = clamp(numberValue(confidence, 0.5), 0.05, 0.95);
   return [
+    scalarEditableAssumption("baseRevenue", "营业收入基数", input.baseRevenue, "亿元", boundedConfidence, "营业收入基数，缺少完整证据包时可能为占位值，请优先手动修正。"),
     tripleEditableAssumption("revenueGrowth", "收入增速", input.revenueGrowth, "%", boundedConfidence, "由模型结合当前证据上下文生成，等待人工复核。"),
     tripleEditableAssumption("ebitMargin", "EBIT 利润率", input.ebitMargin, "%", boundedConfidence, "由模型结合当前证据上下文生成，等待人工复核。"),
     tripleEditableAssumption("capexRate", "资本开支/收入", input.capexRate, "%", boundedConfidence, "缺少完整证据包时的模型初始值，可手动调整。"),
@@ -312,6 +313,19 @@ function operatingAssumptionsFromAi(input: OperatingValuationInput, confidence =
     scalarEditableAssumption("netDebt", "净债务", input.netDebt, "亿元", boundedConfidence, "由模型或证据锚点生成的净债务，建议用最新财报复核。"),
     scalarEditableAssumption("sharesOutstanding", "总股本", input.sharesOutstanding, "亿股", boundedConfidence, "由模型或证据锚点生成的总股本，建议用行情/公告复核。"),
   ];
+}
+
+function withManualFallbackScale(payload: AiAssumptionPayload, warnings: string[]): AiAssumptionPayload {
+  const operating = { ...(payload.operating ?? {}) };
+  if (!operating.baseRevenue || operating.baseRevenue <= 0) {
+    operating.baseRevenue = 100;
+    warnings.push("缺少营业收入基数，已使用 100 亿元占位以保持手动估值工作区可用；保存前请改为真实值。");
+  }
+  if (!operating.sharesOutstanding || operating.sharesOutstanding <= 0) {
+    operating.sharesOutstanding = 1;
+    warnings.push("缺少总股本，已使用 1 亿股占位以保持手动估值工作区可用；保存前请改为真实值。");
+  }
+  return { ...payload, operating };
 }
 
 function tripleEditableAssumption(key: string, label: string, value: ScenarioTriple, unit: string, confidence: number, explanation: string): EditableAssumption {
