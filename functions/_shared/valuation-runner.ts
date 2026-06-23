@@ -112,7 +112,7 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
         warnings: quantitative.warnings,
       };
     } else {
-      assumptions = await generateValuationAssumptions(env, run, evidence.promptText);
+      assumptions = await generateValuationAssumptionsOrPlaceholder(env, run, evidence.promptText);
       if (run.method === "dcf_3_statement" && run.archetype === "operating") {
         const fallbackQuantitative = buildQuantitativeVersionFromAssumptions(run, assumptions, anchors, evidencePackage);
         const snapshot = await createOrReadValuationSourceSnapshot(env.REPORT_LIBRARY_DB, {
@@ -527,6 +527,17 @@ async function generateValuationAssumptions(env: ValuationRunnerEnv, run: Valuat
     }
   }
   throw lastError instanceof Error ? lastError : new Error("valuation assumption generation failed");
+}
+
+export async function generateValuationAssumptionsOrPlaceholder(env: ValuationRunnerEnv, run: ValuationRunRow, evidence: string): Promise<AiAssumptionPayload> {
+  try {
+    return await generateValuationAssumptions(env, run, evidence);
+  } catch (error) {
+    if (run.method === "dcf_3_statement" && run.archetype === "operating") {
+      return { confidence: 0.2, operating: {} };
+    }
+    throw error;
+  }
 }
 
 function buildValuationMessages(run: ValuationRunRow, evidence: string): DeepSeekMessage[] {
