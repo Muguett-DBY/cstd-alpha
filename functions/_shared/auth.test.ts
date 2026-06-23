@@ -6,7 +6,7 @@ describe("fixed-account auth primitives", () => {
     const first = await createPasswordHash("correct horse battery staple", "fixed-salt-for-test");
     const second = await createPasswordHash("correct horse battery staple", "another-fixed-salt");
 
-    expect(first).toMatch(/^pbkdf2-sha256\$\d+\$/);
+    expect(first).toMatch(/^pbkdf2-sha256\$100000\$/);
     expect(first).not.toBe(second);
     await expect(verifyPasswordHash("correct horse battery staple", first)).resolves.toBe(true);
     await expect(verifyPasswordHash("wrong password", first)).resolves.toBe(false);
@@ -14,6 +14,7 @@ describe("fixed-account auth primitives", () => {
 
   test("rejects malformed or excessive password hash work factors without deriving a key", async () => {
     await expect(verifyPasswordHash("password", "pbkdf2-sha256$0$salt$digest")).resolves.toBe(false);
+    await expect(verifyPasswordHash("password", "pbkdf2-sha256$600000$salt$digest")).resolves.toBe(false);
     await expect(verifyPasswordHash("password", "pbkdf2-sha256$2000001$salt$digest")).resolves.toBe(false);
   });
 

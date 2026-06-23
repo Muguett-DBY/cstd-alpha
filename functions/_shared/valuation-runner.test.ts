@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   computeValuationFromAssumptions,
+  buildQuantitativeVersionFromAssumptions,
   buildQuantitativeVersionFromEvidence,
   extractValuationAnchors,
   mergeAnchorsIntoAssumptions,
@@ -295,6 +296,46 @@ describe("buildQuantitativeVersionFromEvidence", () => {
     expect(built.snapshot.contentHash).toBe("material-1");
     expect(built.draft.operating?.baseRevenue).toBe(1600);
     expect(built.result.method).toBe("dcf_3_statement");
+    expect(built.result.scenarios.find((scenario) => scenario.scenario === "base")?.perShareValue).toBeGreaterThan(0);
+  });
+});
+
+describe("buildQuantitativeVersionFromAssumptions", () => {
+  test("builds an editable quantitative workspace from grounded AI assumptions when evidence package is not ready", () => {
+    const run = {
+      id: "run-1",
+      user_key: "user-1",
+      research_item_id: "research-1",
+      entity_id: "eastmoney:1.600519",
+      title: "贵州茅台",
+      archetype: "operating",
+      method: "dcf_3_statement",
+      currency: "CNY",
+      evidence_hash: null,
+    } as ValuationRunRow;
+
+    const built = buildQuantitativeVersionFromAssumptions(
+      run,
+      {
+        confidence: 0.55,
+        operating: {
+          baseRevenue: 1600,
+          sharesOutstanding: 12.56,
+          netDebt: -400,
+          revenueGrowth: { low: 0.03, base: 0.06, high: 0.09 },
+          ebitMargin: { low: 0.45, base: 0.5, high: 0.55 },
+        },
+      },
+      {},
+      "暂无完整公司证据包。估值对象：贵州茅台。",
+    );
+
+    expect(built.snapshot.researchItemId).toBe("research-1");
+    expect(built.snapshot.contentHash).toMatch(/^ai-fallback:/);
+    expect(built.draft.operating?.baseRevenue).toBe(1600);
+    expect(built.draft.operating?.sharesOutstanding).toBe(12.56);
+    expect(built.draft.assumptions?.some((assumption) => assumption.origin === "ai")).toBe(true);
+    expect(built.result.quantitativeVersionId).toBeUndefined();
     expect(built.result.scenarios.find((scenario) => scenario.scenario === "base")?.perShareValue).toBeGreaterThan(0);
   });
 });

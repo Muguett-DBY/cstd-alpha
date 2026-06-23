@@ -13,7 +13,7 @@ import { computeCyclicalMidCycle, computeFinancialDdm, computeOperatingDcf } fro
 import { createQuantitativeBaseline } from "./quantitative-valuation-draft";
 import type { AssistantEnv } from "./assistant-db";
 import type { ValuationResult } from "../../src/shared/valuation";
-import { calculateQuantitativeDraft } from "../../src/shared/quantitative-valuation";
+import { calculateQuantitativeDraft, type EditableAssumption, type OperatingValuationInput, type QuantitativeDraft, type ScenarioTriple } from "../../src/shared/quantitative-valuation";
 
 type ValuationRunnerEnv = AssistantEnv & {
   REPORT_LIBRARY_DB: D1Database;
@@ -60,6 +60,10 @@ type Triple = {
   high?: number;
 };
 
+type BuiltQuantitativeVersion =
+  | ReturnType<typeof buildQuantitativeVersionFromEvidence>
+  | ReturnType<typeof buildQuantitativeVersionFromAssumptions>;
+
 export type ValuationAnchors = {
   baseRevenue?: number;
   sharesOutstanding?: number;
@@ -73,7 +77,7 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
   try {
     if (!await claimValuationRun(env.REPORT_LIBRARY_DB, valuationRunId)) return;
     const evidencePackage = await readValuationEvidencePackage(env, run);
-    const quantitative = tryBuildQuantitativeVersionFromEvidence(run, evidencePackage);
+    const quantitative: BuiltQuantitativeVersion | undefined = tryBuildQuantitativeVersionFromEvidence(run, evidencePackage);
     const evidence = prepareValuationEvidenceContext(evidencePackage);
     let assumptions: AiAssumptionPayload | undefined;
     const anchors = evidence.anchors;
@@ -109,7 +113,37 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
       };
     } else {
       assumptions = await generateValuationAssumptions(env, run, evidence.promptText);
-      result = computeValuationFromAssumptions(run, assumptions, anchors);
+      if (run.method === "dcf_3_statement" && run.archetype === "operating") {
+        const fallbackQuantitative = buildQuantitativeVersionFromAssumptions(run, assumptions, anchors, evidencePackage);
+        const snapshot = await createOrReadValuationSourceSnapshot(env.REPORT_LIBRARY_DB, {
+          userKey: fallbackQuantitative.snapshot.userKey,
+          researchItemId: fallbackQuantitative.snapshot.researchItemId ?? run.entity_id,
+          market: fallbackQuantitative.snapshot.market,
+          asOf: fallbackQuantitative.snapshot.asOf,
+          payload: fallbackQuantitative.snapshot.payload,
+          evidenceHash: fallbackQuantitative.snapshot.evidenceHash,
+          contentHash: fallbackQuantitative.snapshot.contentHash,
+        });
+        const version = await createQuantitativeVersion(env.REPORT_LIBRARY_DB, {
+          userKey: run.user_key,
+          runId: run.id,
+          snapshotId: snapshot.id,
+          draft: fallbackQuantitative.draft,
+          result: fallbackQuantitative.result,
+          createdBy: "baseline",
+        });
+        quantitativeVersionId = version.id;
+        sourceSnapshotId = snapshot.id;
+        result = {
+          ...fallbackQuantitative.result,
+          methodologyVersion: 3,
+          quantitativeVersionId,
+          sourceSnapshotId,
+          warnings: fallbackQuantitative.warnings,
+        };
+      } else {
+        result = computeValuationFromAssumptions(run, assumptions, anchors);
+      }
     }
     const objectKey = `valuation/v1/${encodeURIComponent(run.user_key)}/${valuationRunId}.json`;
     if (env.REPORT_LIBRARY_BUCKET) {
@@ -133,6 +167,59 @@ export function buildQuantitativeVersionFromEvidence(run: Pick<ValuationRunRow,
   const baseline = createQuantitativeBaseline(evidencePackage, run);
   const result = calculateQuantitativeDraft(baseline.draft);
   return { ...baseline, result };
+}
+
+export function buildQuantitativeVersionFromAssumptions(
+  run: Pick<ValuationRunRow, "id" | "user_key" | "research_item_id" | "entity_id" | "title" | "archetype" | "method" | "currency" | "evidence_hash">,
+  payload: AiAssumptionPayload,
+  anchors: ValuationAnchors,
+  evidencePackage: string,
+) {
+  if (run.method !== "dcf_3_statement" || run.archetype !== "operating") {
+    throw new Error("当前量化基准仅支持经营型 DCF。");
+  }
+  const merged = mergeAnchorsIntoAssumptions(payload, anchors);
+  validateValuationInputs(run, merged);
+  const operating = buildOperatingInput(run, merged, new Date().toISOString().slice(0, 10));
+  const warnings = ["未找到完整公司证据包，已使用模型假设生成可编辑量化草稿；请优先补充或刷新公司证据后复核。"];
+  const draft: QuantitativeDraft & { runId: string; sourceSnapshotId: "pending"; market: "A股" } = {
+    runId: run.id,
+    sourceSnapshotId: "pending",
+    market: "A股",
+    method: "dcf_3_statement",
+    archetype: "operating",
+    currency: operating.currency,
+    asOf: operating.asOf,
+    operating,
+    assumptions: operatingAssumptionsFromAi(operating, payload.confidence),
+    scenarios: {
+      bear: { discountRate: operating.discountRate.high, terminalGrowthRate: operating.terminalGrowthRate.low },
+      base: { discountRate: operating.discountRate.base, terminalGrowthRate: operating.terminalGrowthRate.base },
+      bull: { discountRate: operating.discountRate.low, terminalGrowthRate: operating.terminalGrowthRate.high },
+    },
+    warnings,
+  };
+  const result = calculateQuantitativeDraft(draft);
+  const snapshot = {
+    userKey: run.user_key,
+    researchItemId: run.research_item_id,
+    market: "A股" as const,
+    asOf: operating.asOf,
+    payload: {
+      kind: "ai-assumption-fallback",
+      runId: run.id,
+      entityId: run.entity_id,
+      title: run.title,
+      anchors,
+      assumptions: merged,
+      evidencePreview: truncateText(evidencePackage, 1200),
+    },
+    evidenceHash: run.evidence_hash ?? "",
+    contentHash: `ai-fallback:${stableHashCode({ runId: run.id, entityId: run.entity_id, merged, anchors })}`,
+    warnings,
+    createdAt: new Date().toISOString(),
+  };
+  return { snapshot, draft, result, warnings };
 }
 
 function tryBuildQuantitativeVersionFromEvidence(run: ValuationRunRow, evidencePackage: string) {
@@ -180,8 +267,21 @@ export function computeValuationFromAssumptions(
     }));
   }
   const operating = merged.operating ?? {};
-  return markGroundedMethodology(computeOperatingDcf({
-    currency,
+  return markGroundedMethodology(computeOperatingDcf(buildOperatingInput(run, { ...merged, operating }, asOf)));
+}
+
+function markGroundedMethodology(result: ValuationResult): ValuationResult {
+  return { ...result, methodologyVersion: 2 };
+}
+
+function buildOperatingInput(
+  run: Pick<ValuationRunRow, "currency" | "evidence_hash">,
+  payload: AiAssumptionPayload,
+  asOf: string,
+): OperatingValuationInput {
+  const operating = payload.operating ?? {};
+  return {
+    currency: payload.currency || run.currency || "CNY",
     asOf,
     baseRevenue: positiveNumber(operating.baseRevenue, 0),
     sharesOutstanding: positiveNumber(operating.sharesOutstanding, 0),
@@ -196,11 +296,55 @@ export function computeValuationFromAssumptions(
     terminalGrowthRate: normalizeTriple(operating.terminalGrowthRate, { low: 0.015, base: 0.025, high: 0.035 }),
     peerEvEbitda: operating.peerEvEbitda ? normalizeTriple(operating.peerEvEbitda, { low: 10, base: 14, high: 18 }) : undefined,
     evidenceHash: run.evidence_hash ?? undefined,
-  }));
+  };
 }
 
-function markGroundedMethodology(result: ValuationResult): ValuationResult {
-  return { ...result, methodologyVersion: 2 };
+function operatingAssumptionsFromAi(input: OperatingValuationInput, confidence = 0.5): EditableAssumption[] {
+  const boundedConfidence = clamp(numberValue(confidence, 0.5), 0.05, 0.95);
+  return [
+    tripleEditableAssumption("revenueGrowth", "收入增速", input.revenueGrowth, "%", boundedConfidence, "由模型结合当前证据上下文生成，等待人工复核。"),
+    tripleEditableAssumption("ebitMargin", "EBIT 利润率", input.ebitMargin, "%", boundedConfidence, "由模型结合当前证据上下文生成，等待人工复核。"),
+    tripleEditableAssumption("capexRate", "资本开支/收入", input.capexRate, "%", boundedConfidence, "缺少完整证据包时的模型初始值，可手动调整。"),
+    scalarEditableAssumption("workingCapitalRate", "营运资本变动/收入", input.workingCapitalRate, "%", boundedConfidence, "缺少完整证据包时的模型初始值，可手动调整。"),
+    scalarEditableAssumption("taxRate", "所得税率", input.taxRate, "%", boundedConfidence, "缺少完整证据包时的模型初始值，可手动调整。"),
+    tripleEditableAssumption("discountRate", "WACC", { low: input.discountRate.high, base: input.discountRate.base, high: input.discountRate.low }, "%", boundedConfidence, "由模型生成的折现率情景，需结合行业和资本结构复核。"),
+    tripleEditableAssumption("terminalGrowthRate", "永续增长率", input.terminalGrowthRate, "%", boundedConfidence, "由模型生成的长期增长率情景，需保持低于折现率。"),
+    scalarEditableAssumption("netDebt", "净债务", input.netDebt, "亿元", boundedConfidence, "由模型或证据锚点生成的净债务，建议用最新财报复核。"),
+    scalarEditableAssumption("sharesOutstanding", "总股本", input.sharesOutstanding, "亿股", boundedConfidence, "由模型或证据锚点生成的总股本，建议用行情/公告复核。"),
+  ];
+}
+
+function tripleEditableAssumption(key: string, label: string, value: ScenarioTriple, unit: string, confidence: number, explanation: string): EditableAssumption {
+  const multiplier = unit === "%" ? 100 : 1;
+  return {
+    key,
+    label,
+    bear: roundDisplay(value.low * multiplier),
+    base: roundDisplay(value.base * multiplier),
+    bull: roundDisplay(value.high * multiplier),
+    unit,
+    origin: "ai",
+    evidenceRefs: [],
+    confidence,
+    locked: false,
+    explanation,
+  };
+}
+
+function scalarEditableAssumption(key: string, label: string, value: number, unit: string, confidence: number, explanation: string): EditableAssumption {
+  const displayValue = unit === "%" ? value * 100 : value;
+  return {
+    key,
+    label,
+    value: roundDisplay(displayValue),
+    base: roundDisplay(displayValue),
+    unit,
+    origin: "ai",
+    evidenceRefs: [],
+    confidence,
+    locked: false,
+    explanation,
+  };
 }
 
 export function extractValuationAnchors(evidenceText: string): ValuationAnchors {
@@ -463,6 +607,24 @@ function numberValue(value: unknown, fallback: number) {
 function rateValue(value: unknown, fallback: number) {
   const parsed = numberValue(value, fallback);
   return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundDisplay(value: number) {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function stableHashCode(value: unknown) {
+  const text = JSON.stringify(value);
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function parseMaybeJson(value: unknown) {
