@@ -1,8 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   computeValuationFromAssumptions,
   buildQuantitativeVersionFromAssumptions,
   buildQuantitativeVersionFromEvidence,
+  generateValuationAssumptionsOrPlaceholder,
   extractValuationAnchors,
   mergeAnchorsIntoAssumptions,
   prepareValuationEvidenceContext,
@@ -14,6 +15,10 @@ import type { ValuationRunRow } from "./research-workbench-db";
 function makeRun(overrides?: Partial<Pick<ValuationRunRow, "method" | "archetype" | "currency" | "evidence_hash">>): Pick<ValuationRunRow, "method" | "archetype" | "currency" | "evidence_hash"> {
   return { method: "dcf_3_statement", archetype: "operating", currency: "CNY", evidence_hash: null, ...overrides };
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("extractValuationAnchors", () => {
   test("extracts baseRevenue from financialTenYear revenue row", () => {
@@ -363,5 +368,28 @@ describe("buildQuantitativeVersionFromAssumptions", () => {
     expect(built.draft.operating?.sharesOutstanding).toBeGreaterThan(0);
     expect(built.draft.assumptions?.map((assumption) => assumption.key)).toEqual(expect.arrayContaining(["baseRevenue", "sharesOutstanding"]));
     expect(built.warnings.join("\n")).toContain("占位");
+  });
+});
+
+describe("generateValuationAssumptionsOrPlaceholder", () => {
+  test("returns editable placeholder assumptions for operating DCF when model routes fail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 503 })));
+    const run = {
+      id: "run-1",
+      user_key: "user-1",
+      research_item_id: "research-1",
+      entity_id: "eastmoney:1.600519",
+      title: "贵州茅台",
+      status: "running",
+      archetype: "operating",
+      method: "dcf_3_statement",
+      currency: "CNY",
+      evidence_hash: null,
+    } as ValuationRunRow;
+
+    await expect(generateValuationAssumptionsOrPlaceholder({} as never, run, "{}")).resolves.toMatchObject({
+      confidence: 0.2,
+      operating: {},
+    });
   });
 });
