@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun, createResearchThesisVersion, updateResearchCatalystStatus, upsertResearchCatalystDrafts } from "./research-workbench-db";
+import { claimValuationRun, createResearchThesisVersion, deleteResearchItems, updateResearchCatalystStatus, upsertResearchCatalystDrafts } from "./research-workbench-db";
 
 describe("claimValuationRun", () => {
   test("claims only queued or failed runs and reports whether the atomic update won", async () => {
@@ -40,6 +40,47 @@ describe("claimValuationRun", () => {
     } as unknown as D1Database;
 
     await expect(claimValuationRun(db, "run-1")).resolves.toBe(false);
+  });
+});
+
+describe("deleteResearchItems", () => {
+  test("cascades user-scoped research item children before deleting parent rows", async () => {
+    const executed: Array<{ sql: string; bindings: unknown[] }> = [];
+    const db = {
+      async batch(statements: Array<{ sql?: string; bindings?: unknown[] }>) {
+        for (const statement of statements) executed.push({ sql: statement.sql ?? "", bindings: statement.bindings ?? [] });
+        return [];
+      },
+      prepare(sql: string) {
+        return {
+          sql,
+          bind(...bindings: unknown[]) {
+            return {
+              sql,
+              bindings,
+              async run() {
+                executed.push({ sql, bindings });
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await deleteResearchItems(db, "user-1", ["research-1", "research-2"]);
+
+    const deleteStatements = executed.filter(({ sql }) => sql.trim().startsWith("DELETE"));
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_model_results"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_assumption_values"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_actual_reviews"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_forecast_versions"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_source_snapshots"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("valuation_runs"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("research_activity_events"))).toBe(true);
+    expect(deleteStatements.some(({ sql }) => sql.includes("research_thesis_versions"))).toBe(true);
+    expect(deleteStatements.at(-1)?.sql).toContain("DELETE FROM research_items");
+    expect(deleteStatements.every(({ bindings }) => bindings[0] === "user-1")).toBe(true);
   });
 });
 

@@ -265,7 +265,23 @@ export async function deleteResearchItems(db: D1Database, userKey: string, ids: 
   if (!ids.length) return;
   if (ids.length > 100) throw new Error("too many ids to delete");
   const placeholders = ids.map((_, i) => `?${i + 2}`).join(",");
-  await db.prepare(`DELETE FROM research_items WHERE user_key = ?1 AND id IN (${placeholders})`).bind(userKey, ...ids).run();
+  const runSubquery = `SELECT id FROM valuation_runs WHERE user_key = ?1 AND research_item_id IN (${placeholders})`;
+  const versionSubquery = `SELECT id FROM valuation_forecast_versions WHERE user_key = ?1 AND valuation_run_id IN (${runSubquery})`;
+  const statements = [
+    db.prepare(`DELETE FROM valuation_model_results WHERE version_id IN (${versionSubquery})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM valuation_assumption_values WHERE version_id IN (${versionSubquery})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM valuation_actual_reviews WHERE version_id IN (${versionSubquery})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM valuation_forecast_versions WHERE user_key = ?1 AND valuation_run_id IN (${runSubquery})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM valuation_source_snapshots WHERE user_key = ?1 AND research_item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM valuation_runs WHERE user_key = ?1 AND research_item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_activity_events WHERE user_key = ?1 AND item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_catalysts WHERE user_key = ?1 AND item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_thesis_versions WHERE user_key = ?1 AND item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_stage_suggestions WHERE user_key = ?1 AND item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_notifications WHERE user_key = ?1 AND item_id IN (${placeholders})`).bind(userKey, ...ids),
+    db.prepare(`DELETE FROM research_items WHERE user_key = ?1 AND id IN (${placeholders})`).bind(userKey, ...ids),
+  ];
+  await db.batch(statements);
 }
 
 export type ActivityEvent = {
