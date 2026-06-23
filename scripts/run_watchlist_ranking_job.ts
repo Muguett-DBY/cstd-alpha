@@ -13,8 +13,6 @@ const endpoint = process.env.WATCHLIST_RANKING_WORKER_URL || "https://alpha.cust
 const token = process.env.WATCHLIST_RANKING_WORKER_TOKEN || process.env.TEMPLATE_ANALYSIS_WORKER_TOKEN;
 const jobId = process.env.WATCHLIST_RANKING_JOB_ID || process.argv.find((arg) => arg.startsWith("--job-id="))?.slice("--job-id=".length);
 
-if (isCliEntry()) await runWatchlistRankingJob({ endpoint, token, jobId });
-
 export async function runWatchlistRankingJob(input: { endpoint: string; token?: string; jobId?: string }) {
   if (!input.token) throw new Error("WATCHLIST_RANKING_WORKER_TOKEN or TEMPLATE_ANALYSIS_WORKER_TOKEN is required.");
   if (!input.jobId) throw new Error("WATCHLIST_RANKING_JOB_ID or --job-id is required.");
@@ -84,3 +82,5 @@ function isCliEntry() {
   const entry = process.argv[1]?.replace(/\\/g, "/");
   return Boolean(entry && import.meta.url.endsWith(entry.split("/").pop() ?? ""));
 }
+
+if (isCliEntry()) await runWatchlistRankingJob({ endpoint, token, jobId });
