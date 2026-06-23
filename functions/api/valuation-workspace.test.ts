@@ -45,6 +45,32 @@ describe("valuation workspace API contract", () => {
     expect(merged.operating?.revenueGrowth).toEqual({ low: 0.05, base: 0.12, high: 0.18 });
   });
 
+  test("synchronizes manually edited revenue base into operating inputs", () => {
+    const draft: QuantitativeDraft = {
+      method: "dcf_3_statement",
+      archetype: "operating",
+      currency: "CNY",
+      asOf: "2026-06-21",
+      operating: {
+        currency: "CNY", asOf: "2026-06-21", baseRevenue: 100, sharesOutstanding: 10, netDebt: 5,
+        revenueGrowth: { low: 0.03, base: 0.07, high: 0.11 },
+        ebitMargin: { low: 0.08, base: 0.13, high: 0.18 }, taxRate: 0.2, depreciationRate: 0.035,
+        capexRate: { low: 0.04, base: 0.06, high: 0.08 }, workingCapitalRate: 0.015,
+        discountRate: { low: 0.085, base: 0.1, high: 0.115 },
+        terminalGrowthRate: { low: 0.015, base: 0.025, high: 0.035 },
+      },
+      assumptions: [{
+        key: "baseRevenue", label: "营业收入基数", value: 100, base: 100, unit: "亿元",
+        origin: "ai", locked: false, evidenceRefs: [], confidence: 0.3,
+      }],
+    };
+
+    const merged = mergeUserAssumptions(draft, [{ key: "baseRevenue", value: 1800, base: 1800 }]);
+
+    expect(merged.assumptions?.[0]).toMatchObject({ value: 1800, base: 1800, origin: "user", locked: true });
+    expect(merged.operating?.baseRevenue).toBe(1800);
+  });
+
   test("maps conservative WACC to the high discount rate and optimistic WACC to the low rate", () => {
     const draft: QuantitativeDraft = {
       method: "dcf_3_statement", archetype: "operating", currency: "CNY", asOf: "2026-06-21",

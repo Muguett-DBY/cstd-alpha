@@ -95,11 +95,12 @@ export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssump
   };
   const numberScalar = (key: string, fallback: number) => {
     const assumption = lookup(key);
-    const value = assumption?.value ?? assumption?.base;
+    const value = assumption?.base ?? assumption?.value;
     return typeof value === "number" ? value : fallback;
   };
   merged.operating = {
     ...merged.operating,
+    baseRevenue: numberScalar("baseRevenue", merged.operating.baseRevenue),
     revenueGrowth: percentTriple("revenueGrowth", merged.operating.revenueGrowth),
     ebitMargin: percentTriple("ebitMargin", merged.operating.ebitMargin),
     capexRate: percentTriple("capexRate", merged.operating.capexRate),

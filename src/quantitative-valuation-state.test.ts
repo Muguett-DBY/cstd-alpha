@@ -28,6 +28,13 @@ describe("quantitative valuation editor state", () => {
 
     expect(userLockedAssumptions(next).map((item) => item.key)).toEqual(["revenueGrowth"]);
   });
+
+  test("edits revenue base as a direct operating amount", () => {
+    const next = applyDraftEdit(baseDraft(), { key: "baseRevenue", scenario: "base", rawValue: "1800" });
+
+    expect(findAssumption(next, "baseRevenue")).toMatchObject({ base: 1800, origin: "user", locked: true });
+    expect(next.operating?.baseRevenue).toBe(1800);
+  });
 });
 
 function baseDraft(): QuantitativeDraft {
@@ -43,6 +50,7 @@ function baseDraft(): QuantitativeDraft {
     },
     assumptions: [
       { key: "revenueGrowth", label: "收入增速", bear: 3, base: 7, bull: 11, unit: "%", origin: "formula", locked: false },
+      { key: "baseRevenue", label: "营业收入基数", value: 100, base: 100, unit: "亿元", origin: "formula", locked: false },
       { key: "ebitMargin", label: "EBIT 利润率", bear: 8, base: 13, bull: 18, unit: "%", origin: "formula", locked: false },
       { key: "discountRate", label: "WACC", bear: 11.5, base: 10, bull: 8.5, unit: "%", origin: "formula", locked: false },
       { key: "terminalGrowthRate", label: "永续增长率", bear: 1.5, base: 2.5, bull: 3.5, unit: "%", origin: "formula", locked: false },

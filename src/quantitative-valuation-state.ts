@@ -10,7 +10,7 @@ export type DraftEdit = {
 export type DraftWarning = { level: "error" | "warning"; message: string };
 
 export const SIMPLE_EDITOR_FIELDS = [
-  "revenueGrowth", "ebitMargin", "capexRate", "workingCapitalRate", "taxRate",
+  "baseRevenue", "revenueGrowth", "ebitMargin", "capexRate", "workingCapitalRate", "taxRate",
   "discountRate", "terminalGrowthRate", "netDebt", "sharesOutstanding",
 ] as const;
 
@@ -89,7 +89,8 @@ function synchronizeDraft(draft: QuantitativeDraft, changed: EditableAssumption)
   const scalar = percent(changed.value ?? changed.base);
   if (changed.key === "taxRate" && scalar !== undefined) operating.taxRate = scalar;
   if (changed.key === "workingCapitalRate" && scalar !== undefined) operating.workingCapitalRate = scalar;
-  const number = changed.value ?? changed.base;
+  const number = changed.base ?? changed.value;
+  if (changed.key === "baseRevenue" && number !== undefined) operating.baseRevenue = number;
   if (changed.key === "netDebt" && number !== undefined) operating.netDebt = number;
   if (changed.key === "sharesOutstanding" && number !== undefined) operating.sharesOutstanding = number;
   const next = { ...draft, operating };
