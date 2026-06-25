@@ -837,6 +837,32 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                   <strong>{withValuation}</strong>
                 </div>
               </div>
+              <div className="research-readiness-distribution">
+                <h4>就绪度分布</h4>
+                <div className="readiness-bars">
+                  <div className="readiness-bar-group">
+                    <span className="readiness-label">高就绪</span>
+                    <div className="readiness-bar">
+                      <div className="readiness-bar-fill" style={{ width: `${total > 0 ? (items.filter((i) => describeResearchReadiness(i).level === "high").length / total) * 100 : 0}%`, background: "var(--teal)" }} />
+                    </div>
+                    <strong>{items.filter((i) => describeResearchReadiness(i).level === "high").length}</strong>
+                  </div>
+                  <div className="readiness-bar-group">
+                    <span className="readiness-label">中就绪</span>
+                    <div className="readiness-bar">
+                      <div className="readiness-bar-fill" style={{ width: `${total > 0 ? (items.filter((i) => describeResearchReadiness(i).level === "medium").length / total) * 100 : 0}%`, background: "var(--blue)" }} />
+                    </div>
+                    <strong>{items.filter((i) => describeResearchReadiness(i).level === "medium").length}</strong>
+                  </div>
+                  <div className="readiness-bar-group">
+                    <span className="readiness-label">低就绪</span>
+                    <div className="readiness-bar">
+                      <div className="readiness-bar-fill" style={{ width: `${total > 0 ? (items.filter((i) => describeResearchReadiness(i).level === "low").length / total) * 100 : 0}%`, background: "var(--amber)" }} />
+                    </div>
+                    <strong>{items.filter((i) => describeResearchReadiness(i).level === "low").length}</strong>
+                  </div>
+                </div>
+              </div>
             </div>
           </>
         );
