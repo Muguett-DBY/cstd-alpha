@@ -22,6 +22,18 @@
 - **Commit:** `ce9c797 feat: show valuation preset impact before applying`
 - **下一阶段:** Stage 3/6 UIUX，将预设、保存、决策区整合成更清晰的工作流视觉层级。
 
+### Stage 3/6 UIUX — Valuation Preset Library Status
+
+- **承接方向:** 在阶段 2 的预设影响摘要上，补齐预设库的整体状态，让用户先看到可载入、当前匹配和总方案数量。
+- **旗舰:** 新增 `describeQuantitativePresetLibrary` UI 状态契约；预设区域升级为“情景预设库”，在创建表单中显示“当前匹配/可载入”摘要和方案数量。
+- **体验修复:** 原预设区域只能逐卡查看状态，无法快速判断当前草稿是否已有匹配方案；现在顶部摘要直接给出全局判断，减少误点和重复保存。
+- **验证:** 先写失败测试；831 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。Browser 插件出现 CDP 超时后，按总控要求 fallback 到 Playwright。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43174`；桌面创建“阶段三预设库”后摘要为 `1 个当前匹配方案 / 1 个方案 · 0 个可载入 · 1 个当前匹配`，`scrollWidth=clientWidth=1365`；800px 下摘要保留、创建区单列、保存按钮 44px、`scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage3-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage3-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28206550454`)。
+- **Commit:** `8d4d5f3 feat: upgrade valuation preset library UX`
+- **下一阶段:** Stage 4/6 IMPROVE，继续围绕预设库做更主动的方案模板/初始化能力。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix

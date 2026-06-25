@@ -224,3 +224,19 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205591523`)。
 **风险记录:** 预设管理仍缺少更强的布局层级、批量整理和删除能力；交由 UIUX 阶段处理视觉整合。
 **下一阶段:** 阶段 3/6 UIUX，将预设、保存和决策区组织成更成熟的估值工作流界面。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 将预设区域升级为可扫读的情景预设库，提供全局状态摘要和更稳定的响应式布局。
+**开始状态:** 阶段 2 功能 commit `ce9c797` 和日志 commit `54498de` 均已推送，Pages CI runs `28205591523` / `28205675333` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `describeQuantitativePresetLibrary`；预设面板标题升级为“情景预设库”；创建区新增预设库摘要，展示总方案、可载入方案和当前匹配方案数量；桌面创建区调整为四列，900px 以下回落单列。
+**真实问题修复:** 用户原本需要逐张预设卡判断哪些可载入、哪些已匹配当前草稿；现在顶部摘要先给出全局状态，避免重复载入和无意义保存。
+**本地验证:** `npm test` 831 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Browser 插件出现 CDP 超时，fallback 到 Playwright；本地临时 QA 账号 + local D1 fixture 验证进入量化估值工作区、保存“阶段三预设库”预设、桌面和 800px 摘要状态正确；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，保存按钮 44px。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage3-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage3-800.png`。
+**Commit / Push:** `8d4d5f3 feat: upgrade valuation preset library UX` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28206550454`)。
+**风险记录:** 本阶段仍未引入预设模板和删除/整理能力；阶段 4 继续推进主动方案模板，避免空预设库需要用户从零创建。
+**下一阶段:** 阶段 4/6 IMPROVE，为量化估值提供可一键生成/载入的内置方案模板。
