@@ -99,7 +99,7 @@
 
 ### 阶段 1/6: IMPROVE
 
-**状态:** ✅ 本地完成，等待 commit / push / CI
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接 A 股量化估值主线，把装饰性的版本时间线升级为可操作的版本对比与历史草稿回看闭环。
 **开始状态:** `main` 与 `origin/main` 同步；源码无未提交改动；保留上一轮未完成的 `.agent/orchestrator-state.json` 和 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。基线 811 tests passed，最近 Pages CI run `28149120114` passed。
@@ -142,4 +142,6 @@
 **真实问题修复:** 保存前用户原先只能在顶部点击按钮，无法一眼确认本次会记录什么备注、是否因参数错误被阻塞、以及哪些假设变化会进入审计历史。
 **本地验证:** 先补失败测试再实现；`npm test` 821 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** `wrangler pages dev dist --port 43174` 下使用 Playwright 登录本地管理员账号；桌面和 800px 视口均验证状态条显示 `准备保存新版本`、`1 项变更`、手动备注预览，800px 下 `scrollWidth=clientWidth=800` 且保存按钮高度 44px。仅出现登录前 `/api/session` 既有 401 探测。
+**Commit / Push:** `3fe1e8f feat: improve valuation save workflow UX` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28196231187`)。
 **风险记录:** Playwright full-page 桌面截图会把 sticky 顶部导航拼接到页面中部，这是截图拼接 artifact，不是实际固定遮挡。
