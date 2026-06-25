@@ -1005,15 +1005,23 @@ button:not(:disabled):active,
   border-radius: 10px;
   padding: 22px;
   background: var(--surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  font-size: 14px;
+  color: var(--muted);
 }
 
 .workbench-empty.compact {
   padding: 14px;
+  min-height: 60px;
 }
 
 .workbench-empty.error {
   border-color: color-mix(in srgb, var(--red) 32%, var(--line));
   color: var(--red);
+  background: color-mix(in srgb, var(--red) 5%, var(--surface-subtle));
 }
 
 .opportunities-page {
@@ -3866,6 +3874,16 @@ button:not(:disabled):active,
   border-radius: 10px;
   background: var(--surface);
   padding: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quant-snapshot:hover,
+.quant-editor-panel:hover,
+.quant-results-panel:hover,
+.quant-advanced-panel:hover,
+.quant-version-section:hover {
+  border-color: var(--teal);
+  box-shadow: 0 2px 8px rgba(0, 118, 110, 0.08);
 }
 
 .quant-snapshot {
