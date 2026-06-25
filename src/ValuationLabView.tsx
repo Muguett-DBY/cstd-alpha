@@ -160,6 +160,14 @@ export function ValuationLabView() {
                     </button>
                   ))}
                 </div>
+                <div className="valuation-summary-bar">
+                  <span className="valuation-summary-label">估值概览</span>
+                  <div className="valuation-summary-stats">
+                    <span><strong>{displayRuns.length}</strong> 个版本</span>
+                    <span><strong>{displayRuns.filter((r) => r.status === "completed").length}</strong> 已完成</span>
+                    <span><strong>{displayRuns.filter((r) => r.status === "running" || r.status === "queued").length}</strong> 进行中</span>
+                  </div>
+                </div>
                 <ValuationVersionTrend runs={displayRuns} />
                 {displayRuns.map((run) => (
                   <ValuationRunCard
