@@ -48,6 +48,41 @@ export type QuantitativeSaveGuidance = {
   canSave: boolean;
 };
 
+export type QuantitativeDecision = {
+  tone: "opportunity" | "risk" | "balanced" | "unpriced";
+  title: string;
+  detail: string;
+  baseGap?: number;
+};
+
+export function describeQuantitativeDecision(input: {
+  currentPrice?: number;
+  scenarios: Array<{ scenario: ValuationScenarioName; perShareValue: number }>;
+}): QuantitativeDecision {
+  const base = input.scenarios.find((item) => item.scenario === "base");
+  if (!base || !input.currentPrice || input.currentPrice <= 0) {
+    return {
+      tone: "unpriced",
+      title: "等待市场价格验证",
+      detail: "三情景估值已完成，补齐可信市场价格后显示安全边际。",
+      baseGap: undefined,
+    };
+  }
+  const bear = input.scenarios.find((item) => item.scenario === "bear");
+  const bull = input.scenarios.find((item) => item.scenario === "bull");
+  const baseGap = Number((base.perShareValue / input.currentPrice - 1).toFixed(6));
+  const tone = baseGap >= 0.1 ? "opportunity" : baseGap <= -0.1 ? "risk" : "balanced";
+  const title = tone === "opportunity"
+    ? `基准情景显示 ${formatDecisionGap(baseGap)} 上行空间`
+    : tone === "risk"
+      ? `基准情景显示 ${formatDecisionGap(baseGap)} 下行风险`
+      : `基准情景接近当前市价（${formatSignedDecisionGap(baseGap)}）`;
+  const detail = bear && bull
+    ? `保守情景${formatDecisionDirection(bear.perShareValue / input.currentPrice - 1)}，乐观情景${formatDecisionDirection(bull.perShareValue / input.currentPrice - 1)}。`
+    : "情景结果已完成，继续检查关键假设和敏感性组合。";
+  return { tone, title, detail, baseGap };
+}
+
 export function describeQuantitativeSaveGuidance(input: {
   phase: "loading" | "ready" | "saving" | "error";
   warnings: DraftWarning[];
@@ -301,4 +336,16 @@ function formatCompactAssumption(value: number, unit?: string) {
 
 function sensitivityPercent(value: number) {
   return String(Number((value * 100).toFixed(4)));
+}
+
+function formatDecisionGap(value: number) {
+  return `${Math.abs(value * 100).toFixed(1)}%`;
+}
+
+function formatSignedDecisionGap(value: number) {
+  return `${value >= 0 ? "+" : "−"}${formatDecisionGap(value)}`;
+}
+
+function formatDecisionDirection(value: number) {
+  return `${value >= 0 ? "上行" : "下行"} ${formatDecisionGap(value)}`;
 }

@@ -5,6 +5,7 @@ import {
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
+  describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
@@ -173,6 +174,36 @@ describe("quantitative valuation editor state", () => {
       tone: "saving",
       canSave: false,
       title: "正在保存新版本",
+    });
+  });
+
+  test("summarizes a meaningful base-case discount against the market price", () => {
+    expect(describeQuantitativeDecision({
+      currentPrice: 100,
+      scenarios: [
+        { scenario: "bear", perShareValue: 80 },
+        { scenario: "base", perShareValue: 120 },
+        { scenario: "bull", perShareValue: 160 },
+      ],
+    })).toEqual({
+      tone: "opportunity",
+      title: "基准情景显示 20.0% 上行空间",
+      detail: "保守情景下行 20.0%，乐观情景上行 60.0%。",
+      baseGap: 0.2,
+    });
+  });
+
+  test("reports unavailable market comparison without inventing a conclusion", () => {
+    expect(describeQuantitativeDecision({
+      scenarios: [
+        { scenario: "bear", perShareValue: 80 },
+        { scenario: "base", perShareValue: 120 },
+        { scenario: "bull", perShareValue: 160 },
+      ],
+    })).toMatchObject({
+      tone: "unpriced",
+      title: "等待市场价格验证",
+      baseGap: undefined,
     });
   });
 });

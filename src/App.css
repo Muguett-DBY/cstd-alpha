@@ -4252,7 +4252,7 @@ button:not(:disabled):active,
 
 .quant-editor-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -4342,9 +4342,98 @@ button:not(:disabled):active,
 
 .quant-results-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
-  margin: 14px 0;
+}
+
+.quant-results-visual {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(210px, 0.55fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.quant-results-visual .valuation-scenario-chart {
+  margin: 0;
+}
+
+.quant-decision-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, auto);
+  gap: 18px;
+  margin-top: 14px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.quant-decision-band.opportunity {
+  border-left-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+}
+
+.quant-decision-band.risk {
+  border-left-color: var(--red);
+  background: color-mix(in srgb, var(--red) 6%, var(--surface));
+}
+
+.quant-decision-band.balanced {
+  border-left-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 6%, var(--surface));
+}
+
+.quant-decision-band > div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.quant-decision-band span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.quant-decision-band strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.quant-decision-band p {
+  margin: 0;
+  color: var(--body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.quant-decision-band dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(100px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.quant-decision-band dl > div {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-left: 1px solid var(--line);
+}
+
+.quant-decision-band dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.quant-decision-band dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .valuation-scenario-chart {
@@ -4486,7 +4575,7 @@ button:not(:disabled):active,
 }
 
 .quant-sensitivity-heading button {
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid var(--teal);
   border-radius: 7px;
   padding: 7px 11px;
@@ -4495,6 +4584,13 @@ button:not(:disabled):active,
   font-weight: 750;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.quant-sensitivity-heading button:disabled {
+  border-color: var(--line);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  cursor: default;
 }
 
 .quant-sensitivity-selection {
@@ -4537,7 +4633,7 @@ button:not(:disabled):active,
 
 .quant-sensitivity-table td > button {
   width: 100%;
-  min-height: 34px;
+  min-height: 48px;
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 6px;
@@ -4549,11 +4645,39 @@ button:not(:disabled):active,
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
+.quant-sensitivity-table td > button strong,
+.quant-sensitivity-table td > button small {
+  display: block;
+}
+
+.quant-sensitivity-table td > button strong {
+  color: inherit;
+  font-size: 11px;
+}
+
+.quant-sensitivity-table td > button small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.quant-sensitivity-table td > button.positive small {
+  color: var(--teal);
+}
+
+.quant-sensitivity-table td > button.negative small {
+  color: var(--red);
+}
+
 .quant-sensitivity-table td > button:hover,
 .quant-sensitivity-table td > button.selected {
   border-color: var(--teal);
   background: color-mix(in srgb, var(--teal) 10%, var(--surface));
   color: var(--teal);
+}
+
+.quant-sensitivity-table td > button.current {
+  box-shadow: inset 0 0 0 1px var(--teal);
 }
 
 .quant-sensitivity-table th:first-child,
@@ -4740,6 +4864,23 @@ button:not(:disabled):active,
     width: 100%;
     min-height: 44px;
   }
+
+  .quant-decision-band,
+  .quant-results-visual {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-decision-band dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quant-sensitivity-heading {
+    display: grid;
+  }
+
+  .quant-sensitivity-heading button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
@@ -4757,6 +4898,15 @@ button:not(:disabled):active,
   .quant-input-grid,
   .quant-results-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quant-decision-band dl {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-decision-band dl > div {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .quant-scenario-tabs .advanced-toggle {
