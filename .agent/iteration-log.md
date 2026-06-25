@@ -12,6 +12,16 @@
 - **Commit:** `4a3f054 feat: make valuation sensitivity matrix actionable`
 - **下一阶段:** UIUX 专项重构即时估值结果区和敏感性矩阵的视觉层级、选中反馈、触控与中等宽度体验。
 
+### Stage 2/2 UIUX — Valuation Decision Cockpit
+
+- **旗舰:** 即时结果区升级为全宽决策台，直接给出基准相对市价的上行/下行结论、保守/乐观边界、当前价格、基准价值和估值区间。
+- **配套体验:** 图表与三情景卡片形成稳定阅读路径；矩阵默认定位当前基准，区分当前/待应用；每个点显示估值和上/下行；重复应用被禁用。
+- **响应式与可访问性:** 900px 下结果单列；应用按钮 44px、矩阵单元格 48px；800px `scrollWidth=clientWidth=800`，完整保留 9 个组合和可见 selected 状态。
+- **验证:** 824 tests passed；lint passed；functions typecheck passed；build passed；Playwright 验证桌面和 800px 关键交互与控制台健康。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28203811079`)。
+- **Commit:** `18453c3 feat: upgrade valuation decision cockpit UX`
+- **下一轮旗舰建议:** 为量化估值增加可保存的情景预设/命名方案，支持在“基准、谨慎、压力测试”等方案之间快速切换和比较。
+
 ## Round 57 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Valuation Version Decision Notes

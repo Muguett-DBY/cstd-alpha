@@ -172,7 +172,16 @@
 
 ### 阶段 2/2: UIUX
 
-**状态:** 🔄 执行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
 **阶段目标:** 将即时估值结果区重构为全宽决策台，强化市场价格结论、敏感性选中反馈、触控和中等宽度阅读体验。
 **开始状态:** 阶段 1 功能 commit `4a3f054` 与日志 commit `9c0354e` 均已推送，Pages CI runs `28201143665` / `28201259761` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `describeQuantitativeDecision` 决策摘要契约；结果区改为全宽决策台，显示市价结论、情景边界和区间指标；敏感性矩阵默认当前基准、每点显示相对市价、区分当前/待应用并禁止重复应用。
+**响应式 / 状态 / 可访问性:** 900px 下结果和操作区单列；应用按钮 44px、矩阵单元格 48px；按钮 aria-label 包含参数、估值、市价差和当前基准状态；正负结果不只依赖颜色。
+**本地验证:** `npm test` 824 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright 验证桌面决策结论带、当前基准、待应用、写回和撤销；800px 保留 9 个矩阵点，`scrollWidth=clientWidth=800`，按钮 44px、单元格 48px。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round58-decision-cockpit-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round58-decision-cockpit-tablet800.png`。
+**Commit / Push:** `18453c3 feat: upgrade valuation decision cockpit UX` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28203811079`)。
+**风险记录:** Vite 仍有既有 pyodide externalization 和大 chunk warning；740px 及以下仍按产品既有逻辑进入 assistant-only shell，因此核心估值页响应式验收使用 800px。
+**下一阶段:** 本次 2 阶段已完成。下一轮优先做可保存、可命名的估值情景预设，并与版本对比联动。
