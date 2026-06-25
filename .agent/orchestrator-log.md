@@ -209,3 +209,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205255004`)。
 **风险记录:** 本阶段先做预设的创建、载入和随版本保存；预设之间的差异摘要、当前草稿冲突提示和删除/管理能力留给下一阶段。
 **下一阶段:** 阶段 2/6 IMPROVE，增强预设对比摘要、当前草稿差异提示和误载入防护。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在可复用估值预设之上，补齐载入前影响摘要和当前组合防误触。
+**开始状态:** 阶段 1 功能 commit `56cd3ef` 和日志 commit `386176f` 均已推送，Pages CI runs `28205255004` / `28205346507` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `describeQuantitativePresetImpact`；预设卡显示将调整的关键假设数量、基准估值变化金额和百分比；当前已匹配预设自动显示“已是当前假设组合”并禁用。
+**真实问题修复:** 预设载入前缺少影响解释，用户无法判断会改什么；当前组合也能重复点击，容易制造无意义历史记录。
+**本地验证:** `npm test` 830 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** in-app Browser 验证桌面预设卡展示“已是当前假设组合 / 基准 +CNY 0 · +0.0%”且按钮禁用；800px 下影响摘要存在、按钮高度约 99px、`scrollWidth=clientWidth=785`，无 console error。一次 Browser 截图 CDP 超时，但 DOM 度量和交互状态正常。
+**Commit / Push:** `ce9c797 feat: show valuation preset impact before applying` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205591523`)。
+**风险记录:** 预设管理仍缺少更强的布局层级、批量整理和删除能力；交由 UIUX 阶段处理视觉整合。
+**下一阶段:** 阶段 3/6 UIUX，将预设、保存和决策区组织成更成熟的估值工作流界面。

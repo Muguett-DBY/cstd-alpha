@@ -12,6 +12,16 @@
 - **Commit:** `56cd3ef feat: add reusable valuation scenario presets`
 - **下一阶段:** Stage 2/6 IMPROVE，围绕预设做更强的对比摘要、当前草稿差异提示和误载入防护。
 
+### Stage 2/6 IMPROVE — Valuation Preset Impact Preview
+
+- **承接方向:** 在阶段 1 的可复用预设基础上，补齐载入前的影响判断，避免用户盲点预设。
+- **旗舰:** 每个预设卡现在显示载入后会调整几项关键假设、基准估值变化金额和百分比；当预设已经等于当前草稿时自动标为“已是当前假设组合”并禁用。
+- **真实问题修复:** 原预设卡只能显示名称和假设数量，无法判断载入后会改变什么，也容易重复载入当前组合。
+- **验证:** 先写失败测试；830 tests passed；lint passed；functions typecheck passed；build passed；Browser 验证桌面当前组合禁用、影响摘要可见、无 console error；800px `scrollWidth=clientWidth=785`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205591523`)。
+- **Commit:** `ce9c797 feat: show valuation preset impact before applying`
+- **下一阶段:** Stage 3/6 UIUX，将预设、保存、决策区整合成更清晰的工作流视觉层级。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix
