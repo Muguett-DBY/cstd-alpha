@@ -1,4 +1,10 @@
-import { validateQuantitativeDraft, type EditableAssumption, type QuantitativeDraft } from "./shared/quantitative-valuation";
+import {
+  calculateQuantitativeDraft,
+  validateQuantitativeDraft,
+  type EditableAssumption,
+  type QuantitativeDraft,
+} from "./shared/quantitative-valuation";
+import type { ValuationScenarioName } from "./shared/valuation";
 
 export type DraftEdit = {
   key: string;
@@ -8,6 +14,30 @@ export type DraftEdit = {
 };
 
 export type DraftWarning = { level: "error" | "warning"; message: string };
+
+export type DraftHistory = {
+  entries: QuantitativeDraft[];
+  index: number;
+  current: QuantitativeDraft;
+};
+
+export type QuantitativeDraftComparison = {
+  scenarios: Array<{
+    scenario: ValuationScenarioName;
+    baselineValue: number;
+    currentValue: number;
+    delta: number;
+    deltaPercent?: number;
+  }>;
+  assumptions: Array<{
+    key: string;
+    label: string;
+    unit?: string;
+    baselineValue: number;
+    currentValue: number;
+    delta: number;
+  }>;
+};
 
 export const SIMPLE_EDITOR_FIELDS = [
   "baseRevenue", "revenueGrowth", "ebitMargin", "capexRate", "workingCapitalRate", "taxRate",
@@ -60,6 +90,59 @@ export function simpleEditorFields(draft: QuantitativeDraft) {
 
 export function userLockedAssumptions(draft: QuantitativeDraft) {
   return (draft.assumptions ?? []).filter((item) => item.origin === "user" && item.locked);
+}
+
+export function createDraftHistory(draft: QuantitativeDraft): DraftHistory {
+  return { entries: [draft], index: 0, current: draft };
+}
+
+export function pushDraftHistory(history: DraftHistory, draft: QuantitativeDraft): DraftHistory {
+  const entries = [...history.entries.slice(0, history.index + 1), draft].slice(-50);
+  return { entries, index: entries.length - 1, current: draft };
+}
+
+export function undoDraftHistory(history: DraftHistory): DraftHistory {
+  const index = Math.max(0, history.index - 1);
+  return { ...history, index, current: history.entries[index] };
+}
+
+export function redoDraftHistory(history: DraftHistory): DraftHistory {
+  const index = Math.min(history.entries.length - 1, history.index + 1);
+  return { ...history, index, current: history.entries[index] };
+}
+
+export function compareQuantitativeDrafts(current: QuantitativeDraft, baseline: QuantitativeDraft): QuantitativeDraftComparison {
+  const currentResult = calculateQuantitativeDraft(current);
+  const baselineResult = calculateQuantitativeDraft(baseline);
+  const baselineScenarios = new Map(baselineResult.scenarios.map((item) => [item.scenario, item]));
+  const scenarios = currentResult.scenarios.flatMap((item) => {
+    const baselineItem = baselineScenarios.get(item.scenario);
+    if (!baselineItem) return [];
+    const delta = item.perShareValue - baselineItem.perShareValue;
+    return [{
+      scenario: item.scenario,
+      baselineValue: baselineItem.perShareValue,
+      currentValue: item.perShareValue,
+      delta,
+      deltaPercent: baselineItem.perShareValue === 0 ? undefined : delta / Math.abs(baselineItem.perShareValue),
+    }];
+  });
+  const assumptions = SIMPLE_EDITOR_FIELDS.flatMap((key) => {
+    const currentAssumption = findAssumption(current, key);
+    const baselineAssumption = findAssumption(baseline, key);
+    const currentValue = currentAssumption?.base ?? currentAssumption?.value;
+    const baselineValue = baselineAssumption?.base ?? baselineAssumption?.value;
+    if (!currentAssumption || !baselineAssumption || typeof currentValue !== "number" || typeof baselineValue !== "number" || currentValue === baselineValue) return [];
+    return [{
+      key,
+      label: currentAssumption.label,
+      unit: currentAssumption.unit,
+      baselineValue,
+      currentValue,
+      delta: currentValue - baselineValue,
+    }];
+  });
+  return { scenarios, assumptions };
 }
 
 function synchronizeDraft(draft: QuantitativeDraft, changed: EditableAssumption): QuantitativeDraft {

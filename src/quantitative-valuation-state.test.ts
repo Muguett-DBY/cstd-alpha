@@ -1,5 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { applyDraftEdit, draftWarnings, findAssumption, userLockedAssumptions } from "./quantitative-valuation-state";
+import {
+  applyDraftEdit,
+  compareQuantitativeDrafts,
+  createDraftHistory,
+  draftWarnings,
+  findAssumption,
+  pushDraftHistory,
+  undoDraftHistory,
+  userLockedAssumptions,
+} from "./quantitative-valuation-state";
 import type { QuantitativeDraft } from "./shared/quantitative-valuation";
 
 describe("quantitative valuation editor state", () => {
@@ -34,6 +43,38 @@ describe("quantitative valuation editor state", () => {
 
     expect(findAssumption(next, "baseRevenue")).toMatchObject({ base: 1800, origin: "user", locked: true });
     expect(next.operating?.baseRevenue).toBe(1800);
+  });
+
+  test("compares scenario values and changed assumptions against a saved baseline", () => {
+    const baseline = baseDraft();
+    const current = applyDraftEdit(baseline, { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    const comparison = compareQuantitativeDrafts(current, baseline);
+
+    expect(comparison.scenarios.find((item) => item.scenario === "base")).toMatchObject({
+      baselineValue: expect.any(Number),
+      currentValue: expect.any(Number),
+      delta: expect.any(Number),
+    });
+    expect(comparison.scenarios.find((item) => item.scenario === "base")?.delta).not.toBe(0);
+    expect(comparison.assumptions).toContainEqual(expect.objectContaining({
+      key: "revenueGrowth",
+      label: "收入增速",
+      baselineValue: 7,
+      currentValue: 12.5,
+      delta: 5.5,
+      unit: "%",
+    }));
+  });
+
+  test("keeps the initial draft in history so the first edit can be undone", () => {
+    const initial = baseDraft();
+    const edited = applyDraftEdit(initial, { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+    const history = pushDraftHistory(createDraftHistory(initial), edited);
+
+    expect(history.index).toBe(1);
+    expect(undoDraftHistory(history).entries[0]).toEqual(initial);
+    expect(findAssumption(undoDraftHistory(history).current, "revenueGrowth")?.base).toBe(7);
   });
 });
 
