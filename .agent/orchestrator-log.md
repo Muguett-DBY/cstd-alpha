@@ -120,7 +120,7 @@
 
 ### 阶段 1/2: IMPROVE
 
-**状态:** ✅ 本地完成，等待 push / CI
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接 A 股量化估值审计链，把“保存新版本”升级为带决策备注的可追溯版本历史。
 **开始状态:** `main` 分支；保留既有未提交 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。
@@ -128,7 +128,7 @@
 **真实问题修复:** 解决保存后版本历史只能看到数值变化、看不到“为什么调整”的审计缺口；同时限制备注长度并在服务端归一化空白。
 **本地验证:** `npm test` 817 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** `wrangler pages dev dist --port 43174` 下验证桌面保存备注生成 V3；Playwright fallback 验证 800px 视口 `scrollWidth=clientWidth=800`，备注字段和保存后的备注均可见，无相关 console error。
-**Commit / Push:** 待提交 `feat: add valuation version decision notes`。
-**CI:** 待 push 后检查。
+**Commit / Push:** `83bb621 feat: add valuation version decision notes` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28195320241`)。
 **风险记录:** 本地 D1 历史状态在应用全量 migrations 时命中既有 `sort_order` 重复列；本阶段浏览器 QA 对本地库单独应用了新 `decision_note` 列。正式部署仍由 `0017_quantitative_version_notes.sql` 迁移承接。
 **下一阶段:** 阶段 2/2 UIUX，围绕量化估值工作区做更明显的信息层级、响应式和交互状态升级。
