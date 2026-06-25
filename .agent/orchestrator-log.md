@@ -145,3 +145,19 @@
 **Commit / Push:** `3fe1e8f feat: improve valuation save workflow UX` pushed to `origin/main`。
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28196231187`)。
 **风险记录:** Playwright full-page 桌面截图会把 sticky 顶部导航拼接到页面中部，这是截图拼接 artifact，不是实际固定遮挡。
+
+---
+
+## Short Sprint Orchestrator — 2026-06-26 (Round 58)
+
+**执行模式:** IMPROVE → UIUX
+**总阶段数:** 2
+**仓库:** `E:\DEV\cstd-alpha`
+**分支:** `main`
+
+### 阶段 1/2: IMPROVE
+
+**状态:** 🔄 执行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 将只读 DCF 敏感性表升级为可操作的决策矩阵，允许选择 WACC/永续增长组合并安全写入基准草稿。
+**开始状态:** `main` 与 `origin/main` 同步；保留既有未提交 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段；最近 Pages CI 通过。

@@ -133,6 +133,22 @@ export function applyDraftEdit(draft: QuantitativeDraft, edit: DraftEdit): Quant
   return synchronizeDraft({ ...draft, assumptions }, assumptions[index]);
 }
 
+export function applySensitivityPoint(
+  draft: QuantitativeDraft,
+  point: { discountRate: number; terminalGrowthRate: number; perShareValue: number },
+) {
+  const withDiscountRate = applyDraftEdit(draft, {
+    key: "discountRate",
+    scenario: "base",
+    rawValue: sensitivityPercent(point.discountRate),
+  });
+  return applyDraftEdit(withDiscountRate, {
+    key: "terminalGrowthRate",
+    scenario: "base",
+    rawValue: sensitivityPercent(point.terminalGrowthRate),
+  });
+}
+
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {
   return {
     ...draft,
@@ -281,4 +297,8 @@ function forecastOverrideField(key: string) {
 function formatCompactAssumption(value: number, unit?: string) {
   const formatted = Number.isInteger(value) ? String(value) : value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return `${formatted}${unit ?? ""}`;
+}
+
+function sensitivityPercent(value: number) {
+  return String(Number((value * 100).toFixed(4)));
 }

@@ -364,7 +364,13 @@ function buildOperatingSensitivity(input: OperatingValuationInput) {
     discountRates.map((discount) => {
       const forecast = buildOperatingForecast(input, input.revenueGrowth.base, input.ebitMargin.base, input.capexRate.base);
       const equityValue = dcfEquityValue(forecast.map((row) => row.freeCashFlow), discount, growth, input.netDebt);
-      return { row: `g ${(growth * 100).toFixed(1)}%`, column: `WACC ${(discount * 100).toFixed(1)}%`, perShareValue: divideSafe(equityValue, input.sharesOutstanding) };
+      return {
+        row: `g ${(growth * 100).toFixed(1)}%`,
+        column: `WACC ${(discount * 100).toFixed(1)}%`,
+        discountRate: discount,
+        terminalGrowthRate: growth,
+        perShareValue: divideSafe(equityValue, input.sharesOutstanding),
+      };
     }),
   );
 }
