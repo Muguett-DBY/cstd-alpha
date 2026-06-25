@@ -3943,6 +3943,7 @@ button:not(:disabled):active,
 
 .quant-snapshot,
 .quant-decision-note,
+.quant-save-strip,
 .quant-editor-panel,
 .quant-results-panel,
 .quant-advanced-panel,
@@ -3956,6 +3957,7 @@ button:not(:disabled):active,
 
 .quant-snapshot:hover,
 .quant-decision-note:hover,
+.quant-save-strip:hover,
 .quant-editor-panel:hover,
 .quant-results-panel:hover,
 .quant-advanced-panel:hover,
@@ -4050,6 +4052,83 @@ button:not(:disabled):active,
   border-color: var(--teal);
   background: var(--surface);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 15%, transparent);
+}
+
+.quant-save-strip {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.42fr) minmax(240px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--line) 70%, var(--teal));
+}
+
+.quant-save-strip.ready {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--teal) 8%, var(--surface)), var(--surface) 42%);
+}
+
+.quant-save-strip.unchanged {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--blue) 6%, var(--surface)), var(--surface) 42%);
+}
+
+.quant-save-strip.blocked {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 8%, var(--surface)), var(--surface) 42%);
+}
+
+.quant-save-strip.saving {
+  border-color: color-mix(in srgb, var(--amber) 48%, var(--line));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 9%, var(--surface)), var(--surface) 42%);
+}
+
+.quant-save-status,
+.quant-save-audit {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.quant-save-status span,
+.quant-save-audit span {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--teal) 12%, var(--surface-subtle));
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.quant-save-strip.blocked .quant-save-status span {
+  background: color-mix(in srgb, var(--red) 12%, var(--surface-subtle));
+  color: var(--red);
+}
+
+.quant-save-strip.saving .quant-save-status span {
+  background: color-mix(in srgb, var(--amber) 15%, var(--surface-subtle));
+  color: var(--amber);
+}
+
+.quant-save-status strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.quant-save-status p,
+.quant-save-audit p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quant-save-audit p {
+  color: var(--body);
+}
+
+.quant-save-strip .primary-action {
+  min-width: 128px;
+  min-height: 38px;
+  white-space: nowrap;
 }
 
 .quant-undo-redo {
@@ -4562,6 +4641,18 @@ button:not(:disabled):active,
 
 .quant-version-diff-table th:first-child {
   text-align: left;
+}
+
+@media (max-width: 900px) {
+  .quant-save-strip {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .quant-save-strip .primary-action {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 760px) {

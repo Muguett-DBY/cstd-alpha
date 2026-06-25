@@ -39,6 +39,78 @@ export type QuantitativeDraftComparison = {
   }>;
 };
 
+export type QuantitativeSaveGuidance = {
+  tone: "ready" | "blocked" | "saving" | "unchanged";
+  title: string;
+  detail: string;
+  notePreview: string;
+  changedAssumptionCount: number;
+  canSave: boolean;
+};
+
+export function describeQuantitativeSaveGuidance(input: {
+  phase: "loading" | "ready" | "saving" | "error";
+  warnings: DraftWarning[];
+  current?: QuantitativeDraft;
+  baseline?: QuantitativeDraft;
+  decisionNote?: string;
+  autoDecisionNote?: string;
+}): QuantitativeSaveGuidance {
+  const error = input.warnings.find((warning) => warning.level === "error");
+  const manualNote = input.decisionNote?.trim() ?? "";
+  const notePreview = manualNote || input.autoDecisionNote || "保存为审计版本：关键假设未变化。";
+  let changedAssumptionCount = 0;
+  if (input.current && input.baseline && !error) {
+    try {
+      changedAssumptionCount = compareQuantitativeDrafts(input.current, input.baseline).assumptions.length;
+    } catch {
+      changedAssumptionCount = 0;
+    }
+  }
+
+  if (input.phase === "saving") {
+    return {
+      tone: "saving",
+      title: "正在保存新版本",
+      detail: "正在写入用户锁定假设和版本说明，请稍候。",
+      notePreview,
+      changedAssumptionCount,
+      canSave: false,
+    };
+  }
+
+  if (error) {
+    return {
+      tone: "blocked",
+      title: "先修正参数错误",
+      detail: error.message,
+      notePreview,
+      changedAssumptionCount,
+      canSave: false,
+    };
+  }
+
+  if (changedAssumptionCount === 0) {
+    return {
+      tone: "unchanged",
+      title: "可保存审计快照",
+      detail: "关键假设未变化，保存后会记录当前数据快照和备注。",
+      notePreview,
+      changedAssumptionCount,
+      canSave: true,
+    };
+  }
+
+  return {
+    tone: "ready",
+    title: "准备保存新版本",
+    detail: `${changedAssumptionCount} 项关键假设已调整，备注将写入版本历史。`,
+    notePreview,
+    changedAssumptionCount,
+    canSave: true,
+  };
+}
+
 export const SIMPLE_EDITOR_FIELDS = [
   "baseRevenue", "revenueGrowth", "ebitMargin", "capexRate", "workingCapitalRate", "taxRate",
   "discountRate", "terminalGrowthRate", "netDebt", "sharesOutstanding",
