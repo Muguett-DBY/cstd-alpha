@@ -2,7 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchQuantitativeValuationWorkspace, saveQuantitativeValuationWorkspace } from "./api";
 import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ValuationRunSummary } from "./shared/valuation";
-import { applyDraftEdit, draftWarnings, findAssumption, simpleEditorFields, userLockedAssumptions } from "./quantitative-valuation-state";
+import {
+  applyDraftEdit,
+  compareQuantitativeDrafts,
+  createDraftHistory,
+  draftWarnings,
+  findAssumption,
+  pushDraftHistory,
+  redoDraftHistory,
+  simpleEditorFields,
+  undoDraftHistory,
+  userLockedAssumptions,
+  type DraftHistory,
+} from "./quantitative-valuation-state";
 import { showToast } from "./toast-state";
 import { ValuationScenarioChart } from "./ValuationScenarioChart";
 
@@ -31,16 +43,19 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [advanced, setAdvanced] = useState(false);
   const [phase, setPhase] = useState<"loading" | "ready" | "saving" | "error">("loading");
   const [message, setMessage] = useState("");
-  const [history, setHistory] = useState<QuantitativeDraft[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [history, setHistory] = useState<DraftHistory | null>(null);
+  const [comparisonVersionId, setComparisonVersionId] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
     fetchQuantitativeValuationWorkspace(run.id)
       .then((next) => {
         if (cancelled) return;
+        const nextDraft = next.versions[0]?.draft ?? null;
         setWorkspace(next);
-        setDraft(next.versions[0]?.draft ?? null);
+        setDraft(nextDraft);
+        setHistory(nextDraft ? createDraftHistory(nextDraft) : null);
+        setComparisonVersionId(next.versions[1]?.id);
         setPhase("ready");
       })
       .catch((error) => {
@@ -57,29 +72,32 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     try { return calculateQuantitativeDraft(draft); } catch { return null; }
   }, [draft, warnings]);
   const latest = workspace?.versions[0];
+  const comparisonVersion = workspace?.versions.find((version) => version.id === comparisonVersionId);
+  const versionComparison = useMemo(() => {
+    if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
+    try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
+  }, [comparisonVersion, draft, warnings]);
 
   function pushHistory(newDraft: QuantitativeDraft) {
-    setHistory((prev) => {
-      const trimmed = prev.slice(0, historyIndex + 1);
-      return [...trimmed, newDraft].slice(-50);
-    });
-    setHistoryIndex((prev) => Math.min(prev + 1, 49));
+    setHistory((current) => pushDraftHistory(current ?? createDraftHistory(draft ?? newDraft), newDraft));
   }
 
   function undo() {
-    if (historyIndex <= 0 || !history[historyIndex - 1]) return;
-    setHistoryIndex((prev) => prev - 1);
-    setDraft(history[historyIndex - 1]);
+    if (!history || history.index <= 0) return;
+    const next = undoDraftHistory(history);
+    setHistory(next);
+    setDraft(next.current);
   }
 
   function redo() {
-    if (historyIndex >= history.length - 1 || !history[historyIndex + 1]) return;
-    setHistoryIndex((prev) => prev + 1);
-    setDraft(history[historyIndex + 1]);
+    if (!history || history.index >= history.entries.length - 1) return;
+    const next = redoDraftHistory(history);
+    setHistory(next);
+    setDraft(next.current);
   }
 
-  const canUndo = historyIndex > 0;
-  const canRedo = historyIndex < history.length - 1;
+  const canUndo = Boolean(history && history.index > 0);
+  const canRedo = Boolean(history && history.index < history.entries.length - 1);
 
   async function save() {
     if (!draft || !latest || warnings.some((warning) => warning.level === "error")) return;
@@ -92,7 +110,10 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         assumptions: userLockedAssumptions(draft),
       });
       setWorkspace(saved.workspace);
-      setDraft(saved.workspace.versions[0]?.draft ?? draft);
+      const savedDraft = saved.workspace.versions[0]?.draft ?? draft;
+      setDraft(savedDraft);
+      setHistory(createDraftHistory(savedDraft));
+      setComparisonVersionId(saved.workspace.versions[1]?.id);
       setPhase("ready");
       onSaved?.(saved.workspace);
       showToast("估值版本已保存。", "success");
@@ -102,8 +123,11 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       setPhase("error");
       if (text.includes("版本已更新")) {
         void fetchQuantitativeValuationWorkspace(run.id).then((next) => {
+          const nextDraft = next.versions[0]?.draft ?? null;
           setWorkspace(next);
-          setDraft(next.versions[0]?.draft ?? null);
+          setDraft(nextDraft);
+          setHistory(nextDraft ? createDraftHistory(nextDraft) : null);
+          setComparisonVersionId(next.versions[1]?.id);
           setPhase("ready");
         });
       }
@@ -257,12 +281,75 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       {advanced ? <AdvancedForecast draft={draft} onChange={setDraft} onHistoryPush={pushHistory} /> : null}
 
       <section className="quant-version-section">
-        <h3>版本与预测复盘</h3>
+        <div className="quant-version-heading">
+          <div>
+            <h3>版本对比与预测复盘</h3>
+            <p>选择一个历史版本，与当前草稿逐项比较；旧版本始终保持不可变。</p>
+          </div>
+          {comparisonVersion?.draft ? (
+            <button type="button" className="quant-version-load" onClick={() => {
+              if (latest?.draft && JSON.stringify(draft) !== JSON.stringify(latest.draft) && !window.confirm("当前草稿存在未保存修改，载入历史版本会替换这些本地修改。继续吗？")) return;
+              setDraft(comparisonVersion.draft ?? draft);
+              setHistory(createDraftHistory(comparisonVersion.draft ?? draft));
+              showToast(`已载入 V${comparisonVersion.version}，保存时会生成最新后继版本。`, "success");
+            }}>
+              载入 V{comparisonVersion.version} 为草稿
+            </button>
+          ) : null}
+        </div>
         <div className="quant-version-timeline">
           {workspace.versions.map((version) => (
-            <div key={version.id}><strong>V{version.version}</strong><span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span><small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small></div>
+            <button
+              type="button"
+              key={version.id}
+              className={comparisonVersionId === version.id ? "active" : ""}
+              aria-pressed={comparisonVersionId === version.id}
+              onClick={() => setComparisonVersionId(version.id)}
+            >
+              <strong>V{version.version}</strong>
+              <span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span>
+              <small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small>
+            </button>
           ))}
         </div>
+        {comparisonVersion && versionComparison ? (
+          <div className="quant-version-comparison" aria-live="polite">
+            <div className="quant-version-comparison-head">
+              <strong>当前草稿 vs V{comparisonVersion.version}</strong>
+              <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"}</span>
+            </div>
+            <div className="quant-version-scenario-grid">
+              {versionComparison.scenarios.map((item) => (
+                <article key={item.scenario} className={"quant-version-scenario " + item.scenario}>
+                  <span>{scenarioLabel(item.scenario)}</span>
+                  <strong>{formatMoney(item.currentValue, draft.currency)}</strong>
+                  <small>V{comparisonVersion.version} {formatMoney(item.baselineValue, draft.currency)}</small>
+                  <em className={item.delta >= 0 ? "up" : "down"}>
+                    {formatSignedMoney(item.delta, draft.currency)}
+                    {item.deltaPercent === undefined ? "" : ` · ${formatSignedPercent(item.deltaPercent)}`}
+                  </em>
+                </article>
+              ))}
+            </div>
+            {versionComparison.assumptions.length ? (
+              <div className="valuation-table-wrap">
+                <table className="quant-version-diff-table">
+                  <thead><tr><th>关键假设</th><th>V{comparisonVersion.version}</th><th>当前草稿</th><th>变化</th></tr></thead>
+                  <tbody>{versionComparison.assumptions.map((item) => (
+                    <tr key={item.key}>
+                      <th>{item.label}</th>
+                      <td>{formatAssumption(item.baselineValue, item.unit)}</td>
+                      <td>{formatAssumption(item.currentValue, item.unit)}</td>
+                      <td className={item.delta >= 0 ? "up" : "down"}>{formatSignedAssumption(item.delta, item.unit)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : <p className="workbench-empty compact">当前草稿与所选版本的关键假设一致。</p>}
+          </div>
+        ) : (
+          <p className="workbench-empty compact">{workspace.versions.length > 1 ? "选择历史版本后显示差异。" : "保存下一版后即可进行版本对比。"}</p>
+        )}
         {workspace.actualReviews.length ? (
           <div className="valuation-table-wrap">
             <table className="quant-review-table">
@@ -358,6 +445,22 @@ function formatUpside(value: number, price: number) {
 
 function formatMoney(value: number, currency: string) {
   return currency + " " + formatNumber(value);
+}
+
+function formatSignedMoney(value: number, currency: string) {
+  return `${value >= 0 ? "+" : "−"}${currency} ${formatNumber(Math.abs(value))}`;
+}
+
+function formatSignedPercent(value: number) {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value * 100).toFixed(1)}%`;
+}
+
+function formatAssumption(value: number, unit?: string) {
+  return `${formatNumber(value)}${unit ?? ""}`;
+}
+
+function formatSignedAssumption(value: number, unit?: string) {
+  return `${value >= 0 ? "+" : "−"}${formatNumber(Math.abs(value))}${unit ?? ""}`;
 }
 
 function formatNumber(value: number) {

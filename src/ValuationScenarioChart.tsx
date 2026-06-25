@@ -1,3 +1,5 @@
+import { scenarioBarHeight } from "./valuation-scenario-chart-state";
+
 type ScenarioData = {
   scenario: "bear" | "base" | "bull";
   label: string;
@@ -29,7 +31,7 @@ export function ValuationScenarioChart({ scenarios, currentPrice, currency }: Va
     <div className="valuation-scenario-chart" role="img" aria-label="估值情景图表">
       <div className="valuation-scenario-bars">
         {scenarios.map((item) => {
-          const height = Math.max(20, (item.value / maxValue) * 100);
+          const height = scenarioBarHeight(item.value, maxValue);
           return (
             <div key={item.scenario} className="valuation-scenario-bar-group">
               <div className="valuation-scenario-value">
@@ -38,7 +40,7 @@ export function ValuationScenarioChart({ scenarios, currentPrice, currency }: Va
               <div 
                 className="valuation-scenario-bar"
                 style={{ 
-                  height: `${height}%`,
+                  height: `${height}px`,
                   backgroundColor: scenarioColor(item.scenario)
                 }}
               >

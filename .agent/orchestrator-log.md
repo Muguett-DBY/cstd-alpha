@@ -87,3 +87,24 @@
 **Commit / Push:** `f0c6f69 feat: upgrade research detail stage UX` pushed to `origin/main`。
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `27856500579`)。
 **风险记录:** `npm ci` 仍报告 5 个既有 audit vulnerabilities；390px 下管理员界面按既有逻辑进入 assistant-only shell，研究详情页无法直接到达，因此响应式验证选用 800px。
+
+---
+
+## Six-Stage Reinforcement Cycle — 2026-06-26
+
+**执行模式:** IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE
+**总阶段数:** 6
+**仓库:** `E:\DEV\cstd-alpha`
+**分支:** `main`
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 本地完成，等待 commit / push / CI
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 A 股量化估值主线，把装饰性的版本时间线升级为可操作的版本对比与历史草稿回看闭环。
+**开始状态:** `main` 与 `origin/main` 同步；源码无未提交改动；保留上一轮未完成的 `.agent/orchestrator-state.json` 和 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。基线 811 tests passed，最近 Pages CI run `28149120114` passed。
+**完成内容:** 默认比较当前草稿与上一版本；支持选择任意历史版本；显示三情景每股价值差异、百分比与关键假设差异；支持载入旧版本作为新草稿且保持历史不可变。
+**真实问题修复:** 修复首次修改后无法撤回初始草稿；修复三情景柱状图百分比高度缺少稳定父级基准，导致柱体塌缩和标签重叠。
+**本地验证:** 74 个 Vitest 文件、815 tests passed；lint、functions typecheck、production build、`git diff --check` passed。浏览器已验证编辑联动、首次撤销、载入 V1、桌面和 800px 布局；无相关 console error。
+**风险记录:** 740px 及以下按产品既有逻辑进入 assistant-only shell，估值页不可达，因此本阶段响应式验收使用 800px；Vite 仍报告既有大 chunk warning。
+**下一阶段:** 阶段 2/6 IMPROVE，继续量化估值审计链，优先补齐“保存版本时记录变更原因/决策备注并在历史中可追溯”。
