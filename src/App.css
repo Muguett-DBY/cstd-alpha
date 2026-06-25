@@ -1616,6 +1616,36 @@ button:not(:disabled):active,
 
 .research-queue-head {
   border-bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.view-mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.view-mode-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.view-mode-btn:hover {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.view-mode-btn.active {
+  background: var(--teal);
+  color: var(--on-accent);
+  border-color: var(--teal);
 }
 
 .queue-command-panel {

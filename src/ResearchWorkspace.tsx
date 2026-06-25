@@ -58,6 +58,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [viewMode, setViewMode] = useState<"kanban" | "list" | "compact">("kanban");
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
@@ -854,6 +855,11 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <div>
                 <h2>研究队列</h2>
                 <p>AI 只提出建议，阶段变化必须由你确认。<span className="kbd-hint">Ctrl+←→ 导航 · Alt+↑↓ 排序 · 1-5 切换阶段 · Enter 展开 · Del 删除 · F 搜索</span></p>
+              </div>
+              <div className="view-mode-toggle" role="group" aria-label="视图模式">
+                <button type="button" className={`view-mode-btn ${viewMode === "kanban" ? "active" : ""}`} onClick={() => setViewMode("kanban")} aria-label="看板视图">▦</button>
+                <button type="button" className={`view-mode-btn ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} aria-label="列表视图">☰</button>
+                <button type="button" className={`view-mode-btn ${viewMode === "compact" ? "active" : ""}`} onClick={() => setViewMode("compact")} aria-label="紧凑视图">▤</button>
               </div>
             </header>
             <div className="queue-command-panel" aria-label="研究队列控制台">
