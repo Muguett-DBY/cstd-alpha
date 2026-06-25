@@ -66,6 +66,13 @@ export type QuantitativePresetImpact = {
   baseDeltaPercent?: number;
 };
 
+export type QuantitativePresetLibrary = {
+  total: number;
+  currentCount: number;
+  actionableCount: number;
+  title: string;
+};
+
 export function describeQuantitativeDecision(input: {
   currentPrice?: number;
   scenarios: Array<{ scenario: ValuationScenarioName; perShareValue: number }>;
@@ -260,6 +267,19 @@ export function describeQuantitativePresetImpact(draft: QuantitativeDraft, prese
       canApply: false,
     };
   }
+}
+
+export function describeQuantitativePresetLibrary(draft: QuantitativeDraft, presets: QuantitativePreset[] | undefined): QuantitativePresetLibrary {
+  const impacts = (presets ?? []).map((preset) => describeQuantitativePresetImpact(draft, preset));
+  const currentCount = impacts.filter((impact) => impact.tone === "current").length;
+  const actionableCount = impacts.filter((impact) => impact.canApply).length;
+  const total = impacts.length;
+  const title = total === 0
+    ? "暂无预设"
+    : currentCount > 0
+      ? `${currentCount} 个当前匹配方案`
+      : `${actionableCount} 个可载入方案`;
+  return { total, currentCount, actionableCount, title };
 }
 
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {

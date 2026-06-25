@@ -12,6 +12,7 @@ import {
   createDraftHistory,
   describeQuantitativeDecision,
   describeQuantitativePresetImpact,
+  describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
@@ -92,6 +93,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     decisionNote,
     autoDecisionNote,
   }), [autoDecisionNote, decisionNote, draft, latestDraft, phase, warnings]);
+  const presetLibrary = useMemo(() =>
+    draft ? describeQuantitativePresetLibrary(draft, draft.presets) : { total: 0, currentCount: 0, actionableCount: 0, title: "暂无预设" },
+  [draft]);
   const versionComparison = useMemo(() => {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
@@ -238,8 +242,12 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       <section className="quant-preset-panel" aria-label="估值情景预设">
         <div className="quant-preset-create">
           <div>
-            <strong>情景预设</strong>
+            <strong>情景预设库</strong>
             <span>把当前手动锁定的关键假设保存为可复用方案，下次可一键载入。</span>
+          </div>
+          <div className="quant-preset-summary" aria-live="polite">
+            <span>{presetLibrary.title}</span>
+            <small>{presetLibrary.total} 个方案 · {presetLibrary.actionableCount} 个可载入 · {presetLibrary.currentCount} 个当前匹配</small>
           </div>
           <label>
             <span className="sr-only">预设名称</span>

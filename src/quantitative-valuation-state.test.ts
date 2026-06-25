@@ -7,6 +7,7 @@ import {
   compareQuantitativeDrafts,
   createQuantitativePreset,
   createDraftHistory,
+  describeQuantitativePresetLibrary,
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
@@ -134,6 +135,27 @@ describe("quantitative valuation editor state", () => {
       title: "已是当前假设组合",
       changedAssumptionCount: 0,
       canApply: false,
+    });
+  });
+
+  test("summarizes the preset library for UI status badges", () => {
+    const presetDraft = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    expect(describeQuantitativePresetLibrary(baseDraft(), presetDraft.presets)).toEqual({
+      total: 1,
+      currentCount: 0,
+      actionableCount: 1,
+      title: "1 个可载入方案",
+    });
+    expect(describeQuantitativePresetLibrary(presetDraft, presetDraft.presets)).toEqual({
+      total: 1,
+      currentCount: 1,
+      actionableCount: 0,
+      title: "1 个当前匹配方案",
     });
   });
 
