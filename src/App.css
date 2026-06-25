@@ -4160,10 +4160,18 @@ button:not(:disabled):active,
 }
 
 .quant-preset-create span,
-.quant-preset-list span {
+.quant-preset-list span,
+.quant-preset-list small {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.quant-preset-list em {
+  color: var(--body);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .quant-preset-create label {
@@ -4225,6 +4233,22 @@ button:not(:disabled):active,
 .quant-preset-list button:focus-visible {
   border-color: var(--blue);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.quant-preset-list button.current {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--teal) 38%, var(--line));
+  background: color-mix(in srgb, var(--teal) 7%, var(--surface));
+}
+
+.quant-preset-list button.invalid {
+  cursor: not-allowed;
+  border-color: color-mix(in srgb, var(--red) 36%, var(--line));
+  background: color-mix(in srgb, var(--red) 6%, var(--surface));
+}
+
+.quant-preset-list button:disabled {
+  opacity: 0.82;
 }
 
 .quant-undo-redo {

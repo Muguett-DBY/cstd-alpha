@@ -56,6 +56,16 @@ export type QuantitativeDecision = {
   baseGap?: number;
 };
 
+export type QuantitativePresetImpact = {
+  tone: "changes" | "current" | "invalid";
+  title: string;
+  detail: string;
+  changedAssumptionCount: number;
+  canApply: boolean;
+  baseDelta?: number;
+  baseDeltaPercent?: number;
+};
+
 export function describeQuantitativeDecision(input: {
   currentPrice?: number;
   scenarios: Array<{ scenario: ValuationScenarioName; perShareValue: number }>;
@@ -205,6 +215,51 @@ export function applyQuantitativePreset(draft: QuantitativeDraft, preset?: Quant
     next = applyPresetAssumption(next, assumption);
   }
   return next;
+}
+
+export function describeQuantitativePresetImpact(draft: QuantitativeDraft, preset?: QuantitativePreset): QuantitativePresetImpact {
+  if (!preset?.assumptions.length) {
+    return {
+      tone: "invalid",
+      title: "预设不可用",
+      detail: "这个预设没有可应用的关键假设。",
+      changedAssumptionCount: 0,
+      canApply: false,
+    };
+  }
+  try {
+    const applied = applyQuantitativePreset(draft, preset);
+    const comparison = compareQuantitativeDrafts(applied, draft);
+    const base = comparison.scenarios.find((item) => item.scenario === "base");
+    if (!comparison.assumptions.length && (!base || Math.abs(base.delta) < 0.000001)) {
+      return {
+        tone: "current",
+        title: "已是当前假设组合",
+        detail: "载入后不会改变当前草稿。",
+        changedAssumptionCount: 0,
+        canApply: false,
+        baseDelta: 0,
+        baseDeltaPercent: 0,
+      };
+    }
+    return {
+      tone: "changes",
+      title: `将调整 ${comparison.assumptions.length} 项关键假设`,
+      detail: base ? `基准估值变化 ${formatSignedCompact(base.delta)}。` : "载入后会更新当前草稿。",
+      changedAssumptionCount: comparison.assumptions.length,
+      canApply: true,
+      baseDelta: base?.delta,
+      baseDeltaPercent: base?.deltaPercent,
+    };
+  } catch (error) {
+    return {
+      tone: "invalid",
+      title: "预设参数需修正",
+      detail: error instanceof Error ? error.message : "载入预设后参数无效。",
+      changedAssumptionCount: 0,
+      canApply: false,
+    };
+  }
 }
 
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {
@@ -382,6 +437,10 @@ function normalizePresetName(name: string, index: number) {
 function formatCompactAssumption(value: number, unit?: string) {
   const formatted = Number.isInteger(value) ? String(value) : value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return `${formatted}${unit ?? ""}`;
+}
+
+function formatSignedCompact(value: number) {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
 }
 
 function sensitivityPercent(value: number) {

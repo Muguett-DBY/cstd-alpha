@@ -11,6 +11,7 @@ import {
   createQuantitativePreset,
   createDraftHistory,
   describeQuantitativeDecision,
+  describeQuantitativePresetImpact,
   describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
@@ -269,22 +270,33 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         </div>
         {draft.presets?.length ? (
           <div className="quant-preset-list">
-            {draft.presets.map((preset) => (
-              <button
-                type="button"
-                key={preset.id}
-                onClick={() => {
-                  const newDraft = applyQuantitativePreset(draft, preset);
-                  pushHistory(newDraft);
-                  setDraft(newDraft);
-                  setScenario("base");
-                  showToast(`已载入「${preset.name}」预设。`, "success");
-                }}
-              >
-                <strong>{preset.name}</strong>
-                <span>{preset.assumptions.length} 项假设 · {new Date(preset.createdAt).toLocaleDateString("zh-CN")}</span>
-              </button>
-            ))}
+            {draft.presets.map((preset) => {
+              const impact = describeQuantitativePresetImpact(draft, preset);
+              return (
+                <button
+                  type="button"
+                  key={preset.id}
+                  className={impact.tone}
+                  disabled={!impact.canApply}
+                  onClick={() => {
+                    const newDraft = applyQuantitativePreset(draft, preset);
+                    pushHistory(newDraft);
+                    setDraft(newDraft);
+                    setScenario("base");
+                    showToast(`已载入「${preset.name}」预设。`, "success");
+                  }}
+                >
+                  <strong>{preset.name}</strong>
+                  <span>{preset.assumptions.length} 项假设 · {new Date(preset.createdAt).toLocaleDateString("zh-CN")}</span>
+                  <em>{impact.title}</em>
+                  <small>
+                    {impact.baseDelta === undefined
+                      ? impact.detail
+                      : `基准 ${formatSignedMoney(impact.baseDelta, draft.currency)}${impact.baseDeltaPercent === undefined ? "" : ` · ${formatSignedPercent(impact.baseDeltaPercent)}`}`}
+                  </small>
+                </button>
+              );
+            })}
           </div>
         ) : (
           <p className="workbench-empty compact">保存第一个预设后，可在基准、谨慎、压力测试等方案间快速切换。</p>
