@@ -668,6 +668,38 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     showToast(`已导出 ${filteredItems.length} 项研究数据到 JSON。`, "success");
   }
 
+  function exportResearchMarkdown() {
+    const lines: string[] = [];
+    lines.push(`# 研究队列导出`);
+    lines.push(`导出时间：${new Date().toLocaleString("zh-CN")}`);
+    lines.push(`总项数：${filteredItems.length} / ${items.length}`);
+    lines.push("");
+    lines.push("## 研究项列表");
+    lines.push("");
+    for (const item of filteredItems) {
+      const readiness = describeResearchReadiness(item);
+      lines.push(`### ${item.title}`);
+      lines.push(`- 类型：${item.entityType}`);
+      lines.push(`- 阶段：${RESEARCH_STAGE_LABELS[item.stage as keyof typeof RESEARCH_STAGE_LABELS] || item.stage}`);
+      lines.push(`- 来源：${item.source}`);
+      lines.push(`- 就绪度：${readiness.score}% (${readiness.label})`);
+      if (item.currentThesisVersionId) lines.push(`- 论点：已生成`);
+      if (item.evidenceHash) lines.push(`- 证据：已采集`);
+      if (readiness.missing.length) lines.push(`- 待完成：${readiness.missing.join("、")}`);
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `研究队列_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`已导出 ${filteredItems.length} 项研究数据到 Markdown。`, "success");
+  }
+
   async function generateThesis(item: ResearchWorkbenchItem) {
     thesisRequestRef.current?.controller.abort("research-thesis-restarted");
     const controller = new AbortController();
@@ -1067,6 +1099,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                 </button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredCSV()}>导出 CSV</button>
                 <button type="button" className="ghost-button" onClick={() => exportFilteredJSON()}>导出 JSON</button>
+                <button type="button" className="ghost-button" onClick={() => exportResearchMarkdown()}>导出 Markdown</button>
                 <button type="button" className="ghost-button" onClick={() => copyResearchSummary()}>复制摘要</button>
                 <button type="button" className="ghost-button danger-button" onClick={() => void batchDeleteItems()} disabled={batchProcessing}>
                   {batchProcessing ? "删除中..." : "批量删除"}
