@@ -36,6 +36,14 @@ export type ThreeStatementForecastRow = {
   freeCashFlow: number;
 };
 
+export type ValuationSensitivityPoint = {
+  row: string;
+  column: string;
+  discountRate: number;
+  terminalGrowthRate: number;
+  perShareValue: number;
+};
+
 export type ValuationResult = {
   methodologyVersion?: number;
   quantitativeVersionId?: string;
@@ -48,7 +56,7 @@ export type ValuationResult = {
   assumptions: ValuationAssumption[];
   scenarios: ValuationScenarioResult[];
   forecastRows?: ThreeStatementForecastRow[];
-  sensitivity?: Array<{ row: string; column: string; perShareValue: number }>;
+  sensitivity?: ValuationSensitivityPoint[];
   peerRange?: { low: number; median: number; high: number; metric: string };
   evidenceHash?: string;
   modelResults?: Array<{ modelKey: string; weight?: number; perShareValue?: number; low?: number; high?: number; summary?: string }>;

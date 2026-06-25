@@ -87,6 +87,13 @@ describe("quantitative valuation shared contract", () => {
     expect(result.forecastRows).toHaveLength(5);
     expect(base?.perShareValue).toBeGreaterThan(0);
     expect(Number.isFinite(base?.perShareValue)).toBe(true);
+    expect(result.sensitivity).toContainEqual(expect.objectContaining({
+      row: "g 2.5%",
+      column: "WACC 10.0%",
+      discountRate: 0.1,
+      terminalGrowthRate: 0.025,
+      perShareValue: expect.any(Number),
+    }));
   });
 
   test("calculateActualReview returns correct absolute and percentage errors", () => {

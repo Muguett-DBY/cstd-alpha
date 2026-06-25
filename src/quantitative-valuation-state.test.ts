@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   applyDraftEdit,
+  applySensitivityPoint,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
@@ -45,6 +46,31 @@ describe("quantitative valuation editor state", () => {
 
     expect(findAssumption(next, "baseRevenue")).toMatchObject({ base: 1800, origin: "user", locked: true });
     expect(next.operating?.baseRevenue).toBe(1800);
+  });
+
+  test("applies a sensitivity point to the base case without changing outer scenarios", () => {
+    const next = applySensitivityPoint(baseDraft(), {
+      discountRate: 0.09,
+      terminalGrowthRate: 0.035,
+      perShareValue: 18.6,
+    });
+
+    expect(findAssumption(next, "discountRate")).toMatchObject({
+      bear: 11.5,
+      base: 9,
+      bull: 8.5,
+      origin: "user",
+      locked: true,
+    });
+    expect(findAssumption(next, "terminalGrowthRate")).toMatchObject({
+      bear: 1.5,
+      base: 3.5,
+      bull: 3.5,
+      origin: "user",
+      locked: true,
+    });
+    expect(next.operating?.discountRate).toEqual({ low: 0.085, base: 0.09, high: 0.115 });
+    expect(next.operating?.terminalGrowthRate).toEqual({ low: 0.015, base: 0.035, high: 0.035 });
   });
 
   test("compares scenario values and changed assumptions against a saved baseline", () => {

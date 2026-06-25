@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchQuantitativeValuationWorkspace, saveQuantitativeValuationWorkspace } from "./api";
 import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
-import type { ValuationRunSummary } from "./shared/valuation";
+import type { ValuationRunSummary, ValuationSensitivityPoint } from "./shared/valuation";
 import {
   applyDraftEdit,
+  applySensitivityPoint,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
@@ -316,7 +317,20 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                   </div>
                 ))}
               </div>
-              {preview.sensitivity?.length ? <SensitivityTable rows={preview.sensitivity} currency={preview.currency} /> : null}
+              {preview.sensitivity?.length ? (
+                <SensitivityTable
+                  rows={preview.sensitivity}
+                  currency={preview.currency}
+                  currentPrice={currentPrice}
+                  onApply={(point) => {
+                    const newDraft = applySensitivityPoint(draft, point);
+                    pushHistory(newDraft);
+                    setDraft(newDraft);
+                    setScenario("base");
+                    showToast(`已将 WACC ${(point.discountRate * 100).toFixed(1)}% / g ${(point.terminalGrowthRate * 100).toFixed(1)}% 应用到基准情景。`, "success");
+                  }}
+                />
+              ) : null}
             </>
           ) : <div className="workbench-empty compact">修正错误参数后显示估值。</div>}
         </section>
@@ -450,10 +464,65 @@ function AdvancedForecast({ draft, onChange, onHistoryPush }: { draft: Quantitat
   );
 }
 
-function SensitivityTable({ rows, currency }: { rows: Array<{ row: string; column: string; perShareValue: number }>; currency: string }) {
+function SensitivityTable({
+  rows,
+  currency,
+  currentPrice,
+  onApply,
+}: {
+  rows: ValuationSensitivityPoint[];
+  currency: string;
+  currentPrice?: number;
+  onApply: (point: ValuationSensitivityPoint) => void;
+}) {
+  const [selected, setSelected] = useState<ValuationSensitivityPoint | null>(null);
   const columns = Array.from(new Set(rows.map((item) => item.column)));
   const rowNames = Array.from(new Set(rows.map((item) => item.row)));
-  return <div className="valuation-table-wrap"><table className="quant-sensitivity-table"><thead><tr><th>终值增长 / WACC</th>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rowNames.map((row) => <tr key={row}><th>{row}</th>{columns.map((column) => <td key={column}>{formatMoney(rows.find((item) => item.row === row && item.column === column)?.perShareValue ?? 0, currency)}</td>)}</tr>)}</tbody></table></div>;
+  return (
+    <section className="quant-sensitivity-explorer" aria-label="DCF 敏感性决策矩阵">
+      <div className="quant-sensitivity-heading">
+        <div>
+          <strong>敏感性决策矩阵</strong>
+          <p>选择一个 WACC / 永续增长组合，确认后写入基准情景。</p>
+        </div>
+        {selected ? <button type="button" onClick={() => onApply(selected)}>应用到基准情景</button> : null}
+      </div>
+      {selected ? (
+        <div className="quant-sensitivity-selection" aria-live="polite">
+          <span>已选 {selected.column} · {selected.row}</span>
+          <strong>{formatMoney(selected.perShareValue, currency)}</strong>
+          {currentPrice ? <small>{formatUpside(selected.perShareValue, currentPrice)}</small> : null}
+        </div>
+      ) : <p className="quant-sensitivity-hint">点击矩阵中的估值数字查看并应用该组合。</p>}
+      <div className="valuation-table-wrap">
+        <table className="quant-sensitivity-table">
+          <thead><tr><th>终值增长 / WACC</th>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+          <tbody>{rowNames.map((row) => (
+            <tr key={row}>
+              <th>{row}</th>
+              {columns.map((column) => {
+                const point = rows.find((item) => item.row === row && item.column === column);
+                if (!point) return <td key={column}>—</td>;
+                const isSelected = selected?.row === row && selected.column === column;
+                return (
+                  <td key={column}>
+                    <button
+                      type="button"
+                      className={isSelected ? "selected" : ""}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelected(point)}
+                    >
+                      {formatMoney(point.perShareValue, currency)}
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function scenarioValue(assumption: { bear?: number; base?: number; bull?: number; value?: number }, scenario: "bear" | "base" | "bull") {
