@@ -8,6 +8,7 @@ import {
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
+  describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
@@ -154,6 +155,10 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   if (!workspace || !draft) return <div className="workbench-empty error">{message || "估值草稿尚未准备完成。"}</div>;
 
   const currentPrice = workspace.snapshot ? quoteValue(workspace.snapshot.payload, "regularMarketPrice") : undefined;
+  const decision = preview ? describeQuantitativeDecision({
+    currentPrice,
+    scenarios: preview.scenarios,
+  }) : null;
   return (
     <section className="quant-valuation-workspace" aria-label={run.title + " 量化估值"}>
       <header className="quant-snapshot">
@@ -298,30 +303,48 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <h3>即时估值结果</h3>
           {preview ? (
             <>
-              <ValuationScenarioChart
-                scenarios={preview.scenarios.map((s) => ({
-                  scenario: s.scenario,
-                  label: scenarioLabel(s.scenario),
-                  value: s.perShareValue,
-                  currency: preview.currency,
-                }))}
-                currentPrice={currentPrice}
-                currency={preview.currency}
-              />
-              <div className="quant-results-grid">
-                {preview.scenarios.map((item) => (
-                  <div key={item.scenario} className={"quant-result-card " + item.scenario}>
-                    <span>{scenarioLabel(item.scenario)}</span>
-                    <strong>{formatMoney(item.perShareValue, preview.currency)}</strong>
-                    {currentPrice ? <small>{formatUpside(item.perShareValue, currentPrice)}</small> : null}
+              {decision ? (
+                <section className={`quant-decision-band ${decision.tone}`} aria-live="polite">
+                  <div>
+                    <span>市场价格结论</span>
+                    <strong>{decision.title}</strong>
+                    <p>{decision.detail}</p>
                   </div>
-                ))}
+                  <dl>
+                    <div><dt>当前价格</dt><dd>{currentPrice ? formatMoney(currentPrice, preview.currency) : "待验证"}</dd></div>
+                    <div><dt>基准价值</dt><dd>{formatMoney(preview.scenarios.find((item) => item.scenario === "base")?.perShareValue ?? 0, preview.currency)}</dd></div>
+                    <div><dt>估值区间</dt><dd>{formatMoney(Math.min(...preview.scenarios.map((item) => item.perShareValue)), preview.currency)} – {formatMoney(Math.max(...preview.scenarios.map((item) => item.perShareValue)), preview.currency)}</dd></div>
+                  </dl>
+                </section>
+              ) : null}
+              <div className="quant-results-visual">
+                <ValuationScenarioChart
+                  scenarios={preview.scenarios.map((s) => ({
+                    scenario: s.scenario,
+                    label: scenarioLabel(s.scenario),
+                    value: s.perShareValue,
+                    currency: preview.currency,
+                  }))}
+                  currentPrice={currentPrice}
+                  currency={preview.currency}
+                />
+                <div className="quant-results-grid">
+                  {preview.scenarios.map((item) => (
+                    <div key={item.scenario} className={"quant-result-card " + item.scenario}>
+                      <span>{scenarioLabel(item.scenario)}</span>
+                      <strong>{formatMoney(item.perShareValue, preview.currency)}</strong>
+                      {currentPrice ? <small>{formatUpside(item.perShareValue, currentPrice)}</small> : null}
+                    </div>
+                  ))}
+                </div>
               </div>
               {preview.sensitivity?.length ? (
                 <SensitivityTable
                   rows={preview.sensitivity}
                   currency={preview.currency}
                   currentPrice={currentPrice}
+                  currentDiscountRate={draft.operating?.discountRate.base}
+                  currentTerminalGrowthRate={draft.operating?.terminalGrowthRate.base}
                   onApply={(point) => {
                     const newDraft = applySensitivityPoint(draft, point);
                     pushHistory(newDraft);
@@ -468,16 +491,31 @@ function SensitivityTable({
   rows,
   currency,
   currentPrice,
+  currentDiscountRate,
+  currentTerminalGrowthRate,
   onApply,
 }: {
   rows: ValuationSensitivityPoint[];
   currency: string;
   currentPrice?: number;
+  currentDiscountRate?: number;
+  currentTerminalGrowthRate?: number;
   onApply: (point: ValuationSensitivityPoint) => void;
 }) {
-  const [selected, setSelected] = useState<ValuationSensitivityPoint | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string>();
+  const pointKey = (point: ValuationSensitivityPoint) => `${point.discountRate}:${point.terminalGrowthRate}`;
+  const currentPoint = rows.find((point) =>
+    point.discountRate === currentDiscountRate && point.terminalGrowthRate === currentTerminalGrowthRate,
+  );
+  const selected = rows.find((point) => pointKey(point) === selectedKey) ?? currentPoint ?? rows[0];
+  const isCurrentSelection = Boolean(
+    selected
+    && selected.discountRate === currentDiscountRate
+    && selected.terminalGrowthRate === currentTerminalGrowthRate,
+  );
   const columns = Array.from(new Set(rows.map((item) => item.column)));
   const rowNames = Array.from(new Set(rows.map((item) => item.row)));
+  const pointMap = new Map(rows.map((point) => [`${point.row}:${point.column}`, point]));
   return (
     <section className="quant-sensitivity-explorer" aria-label="DCF 敏感性决策矩阵">
       <div className="quant-sensitivity-heading">
@@ -485,15 +523,15 @@ function SensitivityTable({
           <strong>敏感性决策矩阵</strong>
           <p>选择一个 WACC / 永续增长组合，确认后写入基准情景。</p>
         </div>
-        {selected ? <button type="button" onClick={() => onApply(selected)}>应用到基准情景</button> : null}
+        <button type="button" onClick={() => onApply(selected)} disabled={isCurrentSelection}>
+          {isCurrentSelection ? "当前基准组合" : "应用到基准情景"}
+        </button>
       </div>
-      {selected ? (
-        <div className="quant-sensitivity-selection" aria-live="polite">
-          <span>已选 {selected.column} · {selected.row}</span>
-          <strong>{formatMoney(selected.perShareValue, currency)}</strong>
-          {currentPrice ? <small>{formatUpside(selected.perShareValue, currentPrice)}</small> : null}
-        </div>
-      ) : <p className="quant-sensitivity-hint">点击矩阵中的估值数字查看并应用该组合。</p>}
+      <div className="quant-sensitivity-selection" aria-live="polite">
+        <span>{isCurrentSelection ? "当前基准" : "待应用"} · {selected.column} · {selected.row}</span>
+        <strong>{formatMoney(selected.perShareValue, currency)}</strong>
+        {currentPrice ? <small>{formatUpside(selected.perShareValue, currentPrice)}</small> : null}
+      </div>
       <div className="valuation-table-wrap">
         <table className="quant-sensitivity-table">
           <thead><tr><th>终值增长 / WACC</th>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
@@ -501,18 +539,26 @@ function SensitivityTable({
             <tr key={row}>
               <th>{row}</th>
               {columns.map((column) => {
-                const point = rows.find((item) => item.row === row && item.column === column);
+                const point = pointMap.get(`${row}:${column}`);
                 if (!point) return <td key={column}>—</td>;
-                const isSelected = selected?.row === row && selected.column === column;
+                const isSelected = pointKey(selected) === pointKey(point);
+                const isCurrent = point === currentPoint;
+                const gap = currentPrice ? point.perShareValue / currentPrice - 1 : undefined;
                 return (
                   <td key={column}>
                     <button
                       type="button"
-                      className={isSelected ? "selected" : ""}
+                      className={[
+                        isSelected ? "selected" : "",
+                        isCurrent ? "current" : "",
+                        gap === undefined ? "" : gap >= 0 ? "positive" : "negative",
+                      ].filter(Boolean).join(" ")}
                       aria-pressed={isSelected}
-                      onClick={() => setSelected(point)}
+                      aria-label={`${column}，${row}，估值 ${formatMoney(point.perShareValue, currency)}${currentPrice ? `，${formatUpside(point.perShareValue, currentPrice)}` : ""}${isCurrent ? "，当前基准" : ""}`}
+                      onClick={() => setSelectedKey(pointKey(point))}
                     >
-                      {formatMoney(point.perShareValue, currency)}
+                      <strong>{formatMoney(point.perShareValue, currency)}</strong>
+                      {currentPrice ? <small>{formatUpside(point.perShareValue, currentPrice)}</small> : null}
                     </button>
                   </td>
                 );
