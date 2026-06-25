@@ -1,5 +1,17 @@
 # CSTD Alpha - Iteration Log
 
+## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
+
+### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets
+
+- **承接方向:** 直接承接 Round 58 的下一轮旗舰建议，为量化估值增加可保存、可命名、可复用的情景预设。
+- **旗舰:** 用户可把当前手动锁定的关键假设保存为命名预设，并在工作区内一键载入；预设随版本保存进入 `draft_json`，后续版本可继续复用。
+- **真实问题修复:** 服务端保存链路原本只接收 assumption edits，无法保留用户在工作区沉淀的方案状态；现在保存时会归一化并持久化预设。
+- **验证:** 先写失败测试；828 tests passed；lint passed；functions typecheck passed；build passed；Browser 验证桌面创建/载入预设、无横向溢出和无 console error；800px 验证预设面板单列、按钮 44px、`scrollWidth=clientWidth`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205255004`)。
+- **Commit:** `56cd3ef feat: add reusable valuation scenario presets`
+- **下一阶段:** Stage 2/6 IMPROVE，围绕预设做更强的对比摘要、当前草稿差异提示和误载入防护。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix

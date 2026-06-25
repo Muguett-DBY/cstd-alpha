@@ -185,3 +185,27 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28203811079`)。
 **风险记录:** Vite 仍有既有 pyodide externalization 和大 chunk warning；740px 及以下仍按产品既有逻辑进入 assistant-only shell，因此核心估值页响应式验收使用 800px。
 **下一阶段:** 本次 2 阶段已完成。下一轮优先做可保存、可命名的估值情景预设，并与版本对比联动。
+
+---
+
+## Long Six-Stage Orchestrator — 2026-06-26 (Round 59)
+
+**执行模式:** IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE
+**总阶段数:** 6
+**仓库:** `E:\DEV\cstd-alpha`
+**分支:** `main`
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接上一轮“可保存、可命名的量化估值情景预设”方向，让估值工作区可以保存和复用成组关键假设。
+**开始状态:** `main` 分支；保留既有未提交 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段；最近 Pages CI 为成功。
+**完成内容:** 新增 `QuantitativePreset` 共享类型；工作区新增情景预设面板，可保存当前用户锁定假设并一键载入；保存估值版本时携带并持久化预设到 draft；后端归一化预设 id、名称和假设字段。
+**真实问题修复:** 原手动估值方案只能存在于当前草稿和版本差异里，不能被命名后重复使用；后端也没有保存预设 payload 的契约。
+**本地验证:** `npm test` 828 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** `wrangler pages dev dist --port 43174` + in-app Browser；桌面验证创建/载入“半年报兑现”预设、收入增速保持 `12.5`、`scrollWidth=clientWidth=1265`、无 console error；800px 验证预设面板单列、保存按钮 44px、`scrollWidth=clientWidth=785`、无 console error。
+**Commit / Push:** `56cd3ef feat: add reusable valuation scenario presets` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28205255004`)。
+**风险记录:** 本阶段先做预设的创建、载入和随版本保存；预设之间的差异摘要、当前草稿冲突提示和删除/管理能力留给下一阶段。
+**下一阶段:** 阶段 2/6 IMPROVE，增强预设对比摘要、当前草稿差异提示和误载入防护。
