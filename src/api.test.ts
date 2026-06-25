@@ -10,6 +10,7 @@ import {
   resetResearchTemplatesToDefault,
   saveResearchTemplates,
   saveResearchTemplatesAsDefault,
+  saveQuantitativeValuationWorkspace,
   searchCompanies,
   refreshRadarScan,
   sendAssistantMessage,
@@ -269,6 +270,46 @@ describe("API client", () => {
     await expect(stopAssistantDeepResearchJob("deep-1")).resolves.toMatchObject({ id: "deep-1", status: "stopping", stopRequested: true });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/assistant/deep-research/deep-1", { credentials: "include", cache: "no-store" });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/assistant/deep-research/deep-1/stop", { method: "POST", credentials: "include" });
+  });
+
+  test("sends valuation version decision notes with manual saves", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      workspace: { versions: [], actualReviews: [] },
+      version: {
+        id: "version-2",
+        runId: "run-1",
+        sourceSnapshotId: "snapshot-1",
+        version: 2,
+        status: "saved",
+        archetype: "operating",
+        method: "dcf_3_statement",
+        horizonYears: 5,
+        createdBy: "user",
+        createdAt: "2026-06-22T00:00:00.000Z",
+        decisionNote: "上调收入增速，跟踪订单兑现。",
+      },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await saveQuantitativeValuationWorkspace({
+      runId: "run-1",
+      parentVersionId: "version-1",
+      assumptions: [],
+      decisionNote: "上调收入增速，跟踪订单兑现。",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/valuation-workspace",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          runId: "run-1",
+          parentVersionId: "version-1",
+          assumptions: [],
+          decisionNote: "上调收入增速，跟踪订单兑现。",
+        }),
+      }),
+    );
   });
 
   test("rejects login responses that omit the user payload", async () => {

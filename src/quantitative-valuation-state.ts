@@ -145,6 +145,17 @@ export function compareQuantitativeDrafts(current: QuantitativeDraft, baseline: 
   return { scenarios, assumptions };
 }
 
+export function buildDraftDecisionNote(current: QuantitativeDraft, baseline?: QuantitativeDraft) {
+  if (!baseline) return "";
+  const comparison = compareQuantitativeDrafts(current, baseline);
+  if (!comparison.assumptions.length) return "保存为审计版本：关键假设未变化。";
+  const summary = comparison.assumptions.slice(0, 3).map((item) =>
+    `${item.label}：${formatCompactAssumption(item.baselineValue, item.unit)} → ${formatCompactAssumption(item.currentValue, item.unit)}`,
+  ).join("；");
+  const suffix = comparison.assumptions.length > 3 ? `；另 ${comparison.assumptions.length - 3} 项` : "";
+  return `调整${summary}${suffix}。`;
+}
+
 function synchronizeDraft(draft: QuantitativeDraft, changed: EditableAssumption): QuantitativeDraft {
   if (!draft.operating) return draft;
   const percent = (value: number | undefined) => value === undefined ? undefined : value / 100;
@@ -193,4 +204,9 @@ function assumptionTriple(assumption: EditableAssumption) {
 function forecastOverrideField(key: string) {
   if (key === "revenueGrowth" || key === "ebitMargin" || key === "capexRate" || key === "workingCapitalRate") return key;
   return undefined;
+}
+
+function formatCompactAssumption(value: number, unit?: string) {
+  const formatted = Number.isInteger(value) ? String(value) : value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  return `${formatted}${unit ?? ""}`;
 }

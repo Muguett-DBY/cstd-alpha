@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   applyDraftEdit,
+  buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
   draftWarnings,
@@ -75,6 +76,12 @@ describe("quantitative valuation editor state", () => {
     expect(history.index).toBe(1);
     expect(undoDraftHistory(history).entries[0]).toEqual(initial);
     expect(findAssumption(undoDraftHistory(history).current, "revenueGrowth")?.base).toBe(7);
+  });
+
+  test("summarizes edited assumptions into a concise version decision note", () => {
+    const current = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    expect(buildDraftDecisionNote(current, baseDraft())).toBe("调整收入增速：7% → 12.5%。");
   });
 });
 

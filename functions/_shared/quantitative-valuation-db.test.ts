@@ -70,12 +70,14 @@ describe("quantitative valuation persistence", () => {
 
     const version = await createQuantitativeVersion(db, {
       userKey: "user-a", runId: "run-1", snapshotId: "snapshot-1", draft, result,
-      parentVersionId: "version-1", createdBy: "user",
+      parentVersionId: "version-1", createdBy: "user", decisionNote: "上调收入增速，跟踪订单兑现。",
     });
 
-    expect(version).toMatchObject({ runId: "run-1", version: 2, parentVersionId: "version-1", createdBy: "user" });
+    expect(version).toMatchObject({ runId: "run-1", version: 2, parentVersionId: "version-1", createdBy: "user", decisionNote: "上调收入增速，跟踪订单兑现。" });
     expect(batchSizes).toEqual([expect.any(Number)]);
-    expect(statements.some(({ sql }) => sql.includes("INSERT INTO valuation_forecast_versions"))).toBe(true);
+    const versionInsert = statements.find(({ sql }) => sql.includes("INSERT INTO valuation_forecast_versions"));
+    expect(versionInsert?.sql).toContain("decision_note");
+    expect(versionInsert?.bindings).toContain("上调收入增速，跟踪订单兑现。");
     expect(statements.some(({ sql }) => sql.includes("INSERT INTO valuation_assumption_values"))).toBe(true);
     expect(statements.some(({ sql }) => sql.includes("INSERT INTO valuation_model_results"))).toBe(true);
   });
@@ -86,12 +88,14 @@ describe("quantitative valuation persistence", () => {
       id: "version-2", user_key: "user-a", valuation_run_id: "run-1", source_snapshot_id: "snapshot-1",
       version: 2, status: "saved", parent_version_id: "version-1", archetype: "operating",
       method: "dcf_3_statement", horizon_years: 5, created_by: "user", created_at: "2026-06-22T00:00:00.000Z",
+      decision_note: "保留谨慎假设，等待半年报验证。",
       draft_json: JSON.stringify(draft),
     }] : []);
 
     const versions = await listQuantitativeVersions(db, "user-a", "run-1");
 
     expect(versions.map((item) => item.version)).toEqual([2]);
+    expect(versions[0]?.decisionNote).toBe("保留谨慎假设，等待半年报验证。");
     const query = statements.find(({ sql }) => sql.includes("FROM valuation_forecast_versions"));
     expect(query?.sql).toContain("user_key = ?1");
     expect(query?.bindings).toEqual(["user-a", "run-1"]);

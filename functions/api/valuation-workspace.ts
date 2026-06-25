@@ -33,6 +33,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     runId?: string;
     parentVersionId?: string;
     assumptions?: UserAssumptionEdit[];
+    decisionNote?: string;
   } | null;
   if (!body?.runId?.trim() || !body.parentVersionId?.trim() || !Array.isArray(body.assumptions)) {
     return json({ error: "估值保存参数不完整。" }, 400);
@@ -54,6 +55,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       result,
       parentVersionId: latest.id,
       createdBy: "user",
+      decisionNote: body.decisionNote,
     });
     const nextWorkspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, body.runId.trim());
     return json({ workspace: nextWorkspace, version }, 201);
