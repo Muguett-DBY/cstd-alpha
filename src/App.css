@@ -4131,6 +4131,102 @@ button:not(:disabled):active,
   white-space: nowrap;
 }
 
+.quant-preset-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--blue));
+  border-radius: 8px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 5%, var(--surface)), var(--surface));
+}
+
+.quant-preset-create {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.quant-preset-create > div,
+.quant-preset-list button {
+  display: grid;
+  gap: 4px;
+}
+
+.quant-preset-create strong,
+.quant-preset-list strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.quant-preset-create span,
+.quant-preset-list span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.quant-preset-create label {
+  min-width: 0;
+}
+
+.quant-preset-create input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font: inherit;
+}
+
+.quant-preset-create input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 16%, transparent);
+}
+
+.quant-preset-create button,
+.quant-preset-list button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.quant-preset-create button {
+  padding: 0 14px;
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quant-preset-create button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.quant-preset-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.quant-preset-list button {
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.quant-preset-list button:hover,
+.quant-preset-list button:focus-visible {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
 .quant-undo-redo {
   display: flex;
   gap: 4px;
@@ -4862,6 +4958,15 @@ button:not(:disabled):active,
 
   .quant-save-strip .primary-action {
     width: 100%;
+    min-height: 44px;
+  }
+
+  .quant-preset-create {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .quant-preset-create button {
     min-height: 44px;
   }
 

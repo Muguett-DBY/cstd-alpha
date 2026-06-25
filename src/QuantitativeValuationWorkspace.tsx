@@ -4,9 +4,11 @@ import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeVa
 import type { ValuationRunSummary, ValuationSensitivityPoint } from "./shared/valuation";
 import {
   applyDraftEdit,
+  applyQuantitativePreset,
   applySensitivityPoint,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
+  createQuantitativePreset,
   createDraftHistory,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
@@ -50,6 +52,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [history, setHistory] = useState<DraftHistory | null>(null);
   const [comparisonVersionId, setComparisonVersionId] = useState<string>();
   const [decisionNote, setDecisionNote] = useState("");
+  const [presetName, setPresetName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -124,6 +127,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         parentVersionId: latest.id,
         assumptions: userLockedAssumptions(draft),
         decisionNote: decisionNote.trim() || autoDecisionNote,
+        presets: draft.presets ?? [],
       });
       setWorkspace(saved.workspace);
       const savedDraft = saved.workspace.versions[0]?.draft ?? draft;
@@ -228,6 +232,63 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         <button type="button" className="primary-action" onClick={() => void save()} disabled={!saveGuidance.canSave}>
           {phase === "saving" ? "保存中…" : "保存新版本"}
         </button>
+      </section>
+
+      <section className="quant-preset-panel" aria-label="估值情景预设">
+        <div className="quant-preset-create">
+          <div>
+            <strong>情景预设</strong>
+            <span>把当前手动锁定的关键假设保存为可复用方案，下次可一键载入。</span>
+          </div>
+          <label>
+            <span className="sr-only">预设名称</span>
+            <input
+              value={presetName}
+              maxLength={40}
+              placeholder={`例如：${scenarioLabel(scenario)}压力测试`}
+              onChange={(event) => setPresetName(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              const newDraft = createQuantitativePreset(draft, presetName);
+              if (newDraft === draft) {
+                showToast("先调整并锁定至少一项关键假设，再保存预设。", "error");
+                return;
+              }
+              pushHistory(newDraft);
+              setDraft(newDraft);
+              setPresetName("");
+              showToast("估值情景预设已保存到当前草稿。", "success");
+            }}
+            disabled={!userLockedAssumptions(draft).length}
+          >
+            保存当前预设
+          </button>
+        </div>
+        {draft.presets?.length ? (
+          <div className="quant-preset-list">
+            {draft.presets.map((preset) => (
+              <button
+                type="button"
+                key={preset.id}
+                onClick={() => {
+                  const newDraft = applyQuantitativePreset(draft, preset);
+                  pushHistory(newDraft);
+                  setDraft(newDraft);
+                  setScenario("base");
+                  showToast(`已载入「${preset.name}」预设。`, "success");
+                }}
+              >
+                <strong>{preset.name}</strong>
+                <span>{preset.assumptions.length} 项假设 · {new Date(preset.createdAt).toLocaleDateString("zh-CN")}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="workbench-empty compact">保存第一个预设后，可在基准、谨慎、压力测试等方案间快速切换。</p>
+        )}
       </section>
 
       {message ? <div className="workbench-notice">{message}</div> : null}

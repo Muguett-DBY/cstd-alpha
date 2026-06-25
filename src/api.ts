@@ -6,7 +6,7 @@ import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, Repor
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import type { ResearchCatalyst, ResearchCatalystStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
-import type { EditableAssumption, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
+import type { EditableAssumption, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
@@ -270,6 +270,7 @@ export async function saveQuantitativeValuationWorkspace(input: {
   parentVersionId: string;
   assumptions: EditableAssumption[];
   decisionNote?: string;
+  presets?: QuantitativePreset[];
 }): Promise<{ workspace: QuantitativeValuationWorkspace; version: QuantitativeValuationVersion }> {
   const response = await fetch("/api/valuation-workspace", {
     method: "POST",
