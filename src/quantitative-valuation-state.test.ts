@@ -4,6 +4,7 @@ import {
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
+  describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
   pushDraftHistory,
@@ -82,6 +83,71 @@ describe("quantitative valuation editor state", () => {
     const current = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
 
     expect(buildDraftDecisionNote(current, baseDraft())).toBe("调整收入增速：7% → 12.5%。");
+  });
+
+  test("describes save readiness with manual note and changed assumptions", () => {
+    const current = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    expect(describeQuantitativeSaveGuidance({
+      phase: "ready",
+      warnings: [],
+      current,
+      baseline: baseDraft(),
+      decisionNote: "半年报订单兑现，上调收入假设。",
+    })).toMatchObject({
+      tone: "ready",
+      canSave: true,
+      changedAssumptionCount: 1,
+      title: "准备保存新版本",
+      detail: "1 项关键假设已调整，备注将写入版本历史。",
+      notePreview: "半年报订单兑现，上调收入假设。",
+    });
+  });
+
+  test("explains automatic audit note when no manual note is provided", () => {
+    const current = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    expect(describeQuantitativeSaveGuidance({
+      phase: "ready",
+      warnings: [],
+      current,
+      baseline: baseDraft(),
+      decisionNote: "",
+      autoDecisionNote: buildDraftDecisionNote(current, baseDraft()),
+    })).toMatchObject({
+      tone: "ready",
+      canSave: true,
+      notePreview: "调整收入增速：7% → 12.5%。",
+    });
+  });
+
+  test("blocks save guidance when draft has validation errors", () => {
+    expect(describeQuantitativeSaveGuidance({
+      phase: "ready",
+      warnings: [{ level: "error", message: "WACC 必须高于永续增长率。" }],
+      current: baseDraft(),
+      baseline: baseDraft(),
+      decisionNote: "",
+    })).toMatchObject({
+      tone: "blocked",
+      canSave: false,
+      title: "先修正参数错误",
+      detail: "WACC 必须高于永续增长率。",
+    });
+  });
+
+  test("shows saving feedback while a new version is being persisted", () => {
+    expect(describeQuantitativeSaveGuidance({
+      phase: "saving",
+      warnings: [],
+      current: baseDraft(),
+      baseline: baseDraft(),
+      decisionNote: "",
+    })).toMatchObject({
+      tone: "saving",
+      canSave: false,
+      title: "正在保存新版本",
+    });
   });
 });
 

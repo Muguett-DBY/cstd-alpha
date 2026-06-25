@@ -7,6 +7,7 @@ import {
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
+  describeQuantitativeSaveGuidance,
   draftWarnings,
   findAssumption,
   pushDraftHistory,
@@ -77,6 +78,14 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const latestDraft = latest?.draft;
   const comparisonVersion = workspace?.versions.find((version) => version.id === comparisonVersionId);
   const autoDecisionNote = useMemo(() => draft ? buildDraftDecisionNote(draft, latestDraft) : "", [draft, latestDraft]);
+  const saveGuidance = useMemo(() => describeQuantitativeSaveGuidance({
+    phase,
+    warnings,
+    current: draft ?? undefined,
+    baseline: latestDraft,
+    decisionNote,
+    autoDecisionNote,
+  }), [autoDecisionNote, decisionNote, draft, latestDraft, phase, warnings]);
   const versionComparison = useMemo(() => {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
@@ -180,9 +189,6 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <button type="button" className="quant-export-btn" onClick={() => window.print()} aria-label="打印估值报告">
             🖨️ 打印
           </button>
-          <button type="button" className="primary-action" onClick={() => void save()} disabled={phase === "saving" || warnings.some((warning) => warning.level === "error")}>
-            {phase === "saving" ? "保存中…" : "保存新版本"}
-          </button>
         </div>
       </header>
 
@@ -201,6 +207,21 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           />
           <small>{decisionNote.trim() ? `${decisionNote.trim().length}/240` : autoDecisionNote ? `将自动记录：${autoDecisionNote}` : "可选，留空也会记录本次关键假设变化。"}</small>
         </label>
+      </section>
+
+      <section className={`quant-save-strip ${saveGuidance.tone}`} aria-live="polite" aria-label="保存版本状态">
+        <div className="quant-save-status">
+          <span>{saveGuidance.tone === "saving" ? "写入中" : saveGuidance.canSave ? "可保存" : "需处理"}</span>
+          <strong>{saveGuidance.title}</strong>
+          <p>{saveGuidance.detail}</p>
+        </div>
+        <div className="quant-save-audit">
+          <span>{saveGuidance.changedAssumptionCount ? `${saveGuidance.changedAssumptionCount} 项变更` : "无数值变更"}</span>
+          <p>{saveGuidance.notePreview}</p>
+        </div>
+        <button type="button" className="primary-action" onClick={() => void save()} disabled={!saveGuidance.canSave}>
+          {phase === "saving" ? "保存中…" : "保存新版本"}
+        </button>
       </section>
 
       {message ? <div className="workbench-notice">{message}</div> : null}

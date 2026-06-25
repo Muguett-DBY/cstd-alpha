@@ -62,6 +62,14 @@
 - **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `27856500579`)。
 - **Commit:** `f0c6f69 feat: upgrade research detail stage UX`
 
+### Stage 2/2 UIUX — Quantitative Valuation Save Workflow
+- **承接方向:** 阶段 1 已让版本历史可记录决策备注；本阶段把保存前的状态、备注预览和阻塞原因前置到同一个工作流。
+- **旗舰:** `describeQuantitativeSaveGuidance` + 保存状态条，显示 `准备保存新版本`、变更数量、手动/自动备注预览，并把主保存按钮放到版本说明下方。
+- **真实问题修复:** 用户保存前不再需要从顶部按钮、备注框和警告列表之间来回确认；参数错误、保存中、无变化快照都有可测状态。
+- **验证:** 先写失败测试；821 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验收:** `wrangler pages dev dist --port 43174`；Playwright 验证桌面与 800px 视口保存状态条联动，800px `scrollWidth=clientWidth=800`，保存按钮 44px，无新增相关 console error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage2\valuation-save-strip-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage2\valuation-save-strip-tablet800.png`。
+
 ## Round 51 — 2026-06-19 (Triple Loop: 18 Phases Completed)
 
 **循环模式:** 三循环超级版 Agent 总控执行模式 (18 phases total)

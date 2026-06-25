@@ -132,3 +132,14 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28195320241`)。
 **风险记录:** 本地 D1 历史状态在应用全量 migrations 时命中既有 `sort_order` 重复列；本阶段浏览器 QA 对本地库单独应用了新 `decision_note` 列。正式部署仍由 `0017_quantitative_version_notes.sql` 迁移承接。
 **下一阶段:** 阶段 2/2 UIUX，围绕量化估值工作区做更明显的信息层级、响应式和交互状态升级。
+
+### 阶段 2/2: UIUX
+
+**状态:** ✅ 本地完成，等待 commit / push / CI
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 承接版本决策备注，把量化估值保存动作从顶部拥挤按钮升级为带状态、备注预览和阻塞原因的保存工作流。
+**完成内容:** 新增 `describeQuantitativeSaveGuidance` 共享状态契约；“保存新版本”主按钮移动到版本说明旁的保存状态条；状态条展示可保存/需处理/写入中、关键假设变更数量、手动或自动备注预览；800px 下自动单列堆叠并保持 44px 保存按钮。
+**真实问题修复:** 保存前用户原先只能在顶部点击按钮，无法一眼确认本次会记录什么备注、是否因参数错误被阻塞、以及哪些假设变化会进入审计历史。
+**本地验证:** 先补失败测试再实现；`npm test` 821 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** `wrangler pages dev dist --port 43174` 下使用 Playwright 登录本地管理员账号；桌面和 800px 视口均验证状态条显示 `准备保存新版本`、`1 项变更`、手动备注预览，800px 下 `scrollWidth=clientWidth=800` 且保存按钮高度 44px。仅出现登录前 `/api/session` 既有 401 探测。
+**风险记录:** Playwright full-page 桌面截图会把 sticky 顶部导航拼接到页面中部，这是截图拼接 artifact，不是实际固定遮挡。
