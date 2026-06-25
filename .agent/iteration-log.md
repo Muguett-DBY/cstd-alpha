@@ -1,5 +1,17 @@
 # CSTD Alpha - Iteration Log
 
+## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
+
+### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix
+
+- **承接方向:** 在版本备注和保存状态闭环后，继续把量化估值从“可复盘”推进到“可直接辅助决策”。
+- **旗舰:** 静态敏感性表升级为可选矩阵；用户可查看组合估值与相对市价结果，并一键写入基准 WACC / 永续增长率，自动进入撤销和版本审计链。
+- **真实问题修复:** 修复敏感性百分比写回时出现 `3.5000000000000004` 的浮点展示噪音。
+- **验证:** 822 tests passed；lint passed；functions typecheck passed；build passed；桌面和 800px 验证 9 个矩阵点、应用、撤销、2 项保存变更和无横向溢出。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28201143665`)。
+- **Commit:** `4a3f054 feat: make valuation sensitivity matrix actionable`
+- **下一阶段:** UIUX 专项重构即时估值结果区和敏感性矩阵的视觉层级、选中反馈、触控与中等宽度体验。
+
 ## Round 57 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Valuation Version Decision Notes

@@ -157,7 +157,15 @@
 
 ### 阶段 1/2: IMPROVE
 
-**状态:** 🔄 执行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 将只读 DCF 敏感性表升级为可操作的决策矩阵，允许选择 WACC/永续增长组合并安全写入基准草稿。
 **开始状态:** `main` 与 `origin/main` 同步；保留既有未提交 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段；最近 Pages CI 通过。
+**完成内容:** 敏感性结果新增结构化 WACC / 永续增长参数；矩阵单元格支持选择、显示相对市价结果并一键写入基准情景；写回动作进入撤销链、用户锁定和版本备注。
+**真实问题修复:** 修复 3.5% 在写回输入框时显示为 `3.5000000000000004` 的浮点精度问题。
+**本地验证:** `npm test` 822 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** 内置浏览器完成选择/应用/撤销/保存变更证明；重载后连接超时，按 Prompt 允许 fallback 到 Playwright。桌面和 800px 均验证 9 个矩阵点；应用后 WACC `8.5`、g `3.5`、撤销可用、保存状态 `2 项变更`；800px `scrollWidth=clientWidth=800`。
+**Commit / Push:** `4a3f054 feat: make valuation sensitivity matrix actionable` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28201143665`)。
+**风险记录:** 首次页面加载仍会出现既有未登录 `/api/session` 401 探测；截图显示 800px 下矩阵信息密度和触控层级仍有优化空间，交由阶段 2 处理。
+**下一阶段:** 阶段 2/2 UIUX，升级即时估值结果区和敏感性矩阵的视觉层级、选中反馈与响应式体验。
