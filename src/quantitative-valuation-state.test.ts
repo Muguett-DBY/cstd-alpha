@@ -7,6 +7,7 @@ import {
   compareQuantitativeDrafts,
   createQuantitativePreset,
   createDraftHistory,
+  describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   draftWarnings,
@@ -101,6 +102,39 @@ describe("quantitative valuation editor state", () => {
 
     expect(findAssumption(next, "revenueGrowth")).toMatchObject({ base: 12.5, origin: "user", locked: true });
     expect(next.operating?.revenueGrowth.base).toBe(0.125);
+  });
+
+  test("describes the valuation impact before applying a preset", () => {
+    const presetDraft = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    const impact = describeQuantitativePresetImpact(baseDraft(), presetDraft.presets?.[0]);
+
+    expect(impact).toMatchObject({
+      tone: "changes",
+      title: "将调整 1 项关键假设",
+      changedAssumptionCount: 1,
+      canApply: true,
+    });
+    expect(impact.baseDelta).not.toBe(0);
+  });
+
+  test("marks a preset as already current when it would not change the draft", () => {
+    const presetDraft = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    expect(describeQuantitativePresetImpact(presetDraft, presetDraft.presets?.[0])).toMatchObject({
+      tone: "current",
+      title: "已是当前假设组合",
+      changedAssumptionCount: 0,
+      canApply: false,
+    });
   });
 
   test("compares scenario values and changed assumptions against a saved baseline", () => {
