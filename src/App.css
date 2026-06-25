@@ -3942,6 +3942,7 @@ button:not(:disabled):active,
 }
 
 .quant-snapshot,
+.quant-decision-note,
 .quant-editor-panel,
 .quant-results-panel,
 .quant-advanced-panel,
@@ -3954,6 +3955,7 @@ button:not(:disabled):active,
 }
 
 .quant-snapshot:hover,
+.quant-decision-note:hover,
 .quant-editor-panel:hover,
 .quant-results-panel:hover,
 .quant-advanced-panel:hover,
@@ -4002,6 +4004,52 @@ button:not(:disabled):active,
   color: var(--ink);
   font-size: 15px;
   font-variant-numeric: tabular-nums;
+}
+
+.quant-decision-note {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.quant-decision-note strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.quant-decision-note span,
+.quant-decision-note small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.quant-decision-note label {
+  display: grid;
+  gap: 6px;
+}
+
+.quant-decision-note textarea {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.45;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.quant-decision-note textarea:focus {
+  outline: none;
+  border-color: var(--teal);
+  background: var(--surface);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 15%, transparent);
 }
 
 .quant-undo-redo {
@@ -4383,9 +4431,20 @@ button:not(:disabled):active,
 }
 
 .quant-version-timeline span,
-.quant-version-timeline small {
+.quant-version-timeline small,
+.quant-version-timeline em {
   color: var(--muted);
   font-size: 10px;
+}
+
+.quant-version-timeline em {
+  display: -webkit-box;
+  max-width: 220px;
+  overflow: hidden;
+  font-style: normal;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .quant-version-heading,
@@ -4430,6 +4489,17 @@ button:not(:disabled):active,
 .quant-version-comparison-head span {
   color: var(--muted);
   font-size: 11px;
+}
+
+.quant-version-note {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--teal) 22%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+  color: var(--body);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .quant-version-scenario-grid {
@@ -4496,6 +4566,7 @@ button:not(:disabled):active,
 
 @media (max-width: 760px) {
   .quant-snapshot,
+  .quant-decision-note,
   .quant-editor-grid {
     display: grid;
     grid-template-columns: 1fr;

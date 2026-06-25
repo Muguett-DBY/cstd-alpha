@@ -52,6 +52,7 @@ type QuantitativeVersionRow = {
   horizon_years: number;
   draft_json: string;
   created_by: string;
+  decision_note: string | null;
   created_at: string;
 };
 
@@ -570,6 +571,7 @@ export async function createQuantitativeVersion(db: D1Database, input: {
   result: ValuationResult;
   parentVersionId?: string;
   createdBy: "baseline" | "user" | "system";
+  decisionNote?: string;
 }) {
   const next = await db.prepare(
     `SELECT COALESCE(MAX(version), 0) + 1 AS next_version
@@ -578,13 +580,14 @@ export async function createQuantitativeVersion(db: D1Database, input: {
   const version = Number(next?.next_version ?? 1);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const decisionNote = normalizeDecisionNote(input.decisionNote);
   const statements: D1PreparedStatement[] = [
     db.prepare(
       `INSERT INTO valuation_forecast_versions (
          id, user_key, valuation_run_id, source_snapshot_id, version, status, parent_version_id,
-         archetype, method, horizon_years, draft_json, created_by, created_at
-       ) VALUES (?1, ?2, ?3, ?4, ?5, 'saved', ?6, ?7, ?8, 5, ?9, ?10, ?11)`,
-    ).bind(id, input.userKey, input.runId, input.snapshotId, version, input.parentVersionId ?? null, input.draft.archetype, input.draft.method, JSON.stringify(input.draft), input.createdBy, now),
+         archetype, method, horizon_years, draft_json, created_by, decision_note, created_at
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'saved', ?6, ?7, ?8, 5, ?9, ?10, ?11, ?12)`,
+    ).bind(id, input.userKey, input.runId, input.snapshotId, version, input.parentVersionId ?? null, input.draft.archetype, input.draft.method, JSON.stringify(input.draft), input.createdBy, decisionNote ?? null, now),
   ];
   for (const assumption of normalizeQuantitativeAssumptions(input.draft.assumptions ?? [])) {
     statements.push(db.prepare(
@@ -618,6 +621,7 @@ export async function createQuantitativeVersion(db: D1Database, input: {
     horizonYears: 5,
     draft: input.draft,
     result: input.result,
+    decisionNote,
     createdBy: input.createdBy,
     createdAt: now,
   };
@@ -626,7 +630,7 @@ export async function createQuantitativeVersion(db: D1Database, input: {
 export async function listQuantitativeVersions(db: D1Database, userKey: string, runId: string) {
   const result = await db.prepare(
     `SELECT id, user_key, valuation_run_id, source_snapshot_id, version, status, parent_version_id,
-            archetype, method, horizon_years, draft_json, created_by, created_at
+            archetype, method, horizon_years, draft_json, created_by, decision_note, created_at
      FROM valuation_forecast_versions
      WHERE user_key = ?1 AND valuation_run_id = ?2
      ORDER BY version DESC`,
@@ -813,9 +817,16 @@ function quantitativeVersionRowToSummary(row: QuantitativeVersionRow) {
     method: row.method,
     horizonYears: row.horizon_years,
     draft: parseJson<QuantitativeDraftWithAssumptions>(row.draft_json),
+    decisionNote: row.decision_note ?? undefined,
     createdBy: row.created_by,
     createdAt: row.created_at,
   };
+}
+
+function normalizeDecisionNote(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim().slice(0, 240);
+  return normalized || undefined;
 }
 
 function normalizeQuantitativeAssumptions(assumptions: Array<Record<string, unknown>>) {

@@ -108,3 +108,27 @@
 **本地验证:** 74 个 Vitest 文件、815 tests passed；lint、functions typecheck、production build、`git diff --check` passed。浏览器已验证编辑联动、首次撤销、载入 V1、桌面和 800px 布局；无相关 console error。
 **风险记录:** 740px 及以下按产品既有逻辑进入 assistant-only shell，估值页不可达，因此本阶段响应式验收使用 800px；Vite 仍报告既有大 chunk warning。
 **下一阶段:** 阶段 2/6 IMPROVE，继续量化估值审计链，优先补齐“保存版本时记录变更原因/决策备注并在历史中可追溯”。
+
+---
+
+## Short Sprint Orchestrator — 2026-06-26
+
+**执行模式:** IMPROVE → UIUX
+**总阶段数:** 2
+**仓库:** `E:\DEV\cstd-alpha`
+**分支:** `main`
+
+### 阶段 1/2: IMPROVE
+
+**状态:** ✅ 本地完成，等待 push / CI
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 A 股量化估值审计链，把“保存新版本”升级为带决策备注的可追溯版本历史。
+**开始状态:** `main` 分支；保留既有未提交 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。
+**完成内容:** 新增 `decision_note` D1 迁移；手动保存版本可填写本次版本说明；留空时自动生成关键假设变化摘要；版本时间线和对比区展示历史备注。
+**真实问题修复:** 解决保存后版本历史只能看到数值变化、看不到“为什么调整”的审计缺口；同时限制备注长度并在服务端归一化空白。
+**本地验证:** `npm test` 817 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** `wrangler pages dev dist --port 43174` 下验证桌面保存备注生成 V3；Playwright fallback 验证 800px 视口 `scrollWidth=clientWidth=800`，备注字段和保存后的备注均可见，无相关 console error。
+**Commit / Push:** 待提交 `feat: add valuation version decision notes`。
+**CI:** 待 push 后检查。
+**风险记录:** 本地 D1 历史状态在应用全量 migrations 时命中既有 `sort_order` 重复列；本阶段浏览器 QA 对本地库单独应用了新 `decision_note` 列。正式部署仍由 `0017_quantitative_version_notes.sql` 迁移承接。
+**下一阶段:** 阶段 2/2 UIUX，围绕量化估值工作区做更明显的信息层级、响应式和交互状态升级。

@@ -269,6 +269,7 @@ export async function saveQuantitativeValuationWorkspace(input: {
   runId: string;
   parentVersionId: string;
   assumptions: EditableAssumption[];
+  decisionNote?: string;
 }): Promise<{ workspace: QuantitativeValuationWorkspace; version: QuantitativeValuationVersion }> {
   const response = await fetch("/api/valuation-workspace", {
     method: "POST",

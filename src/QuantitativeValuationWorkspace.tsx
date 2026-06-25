@@ -4,6 +4,7 @@ import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeVa
 import type { ValuationRunSummary } from "./shared/valuation";
 import {
   applyDraftEdit,
+  buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createDraftHistory,
   draftWarnings,
@@ -45,6 +46,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<DraftHistory | null>(null);
   const [comparisonVersionId, setComparisonVersionId] = useState<string>();
+  const [decisionNote, setDecisionNote] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +74,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     try { return calculateQuantitativeDraft(draft); } catch { return null; }
   }, [draft, warnings]);
   const latest = workspace?.versions[0];
+  const latestDraft = latest?.draft;
   const comparisonVersion = workspace?.versions.find((version) => version.id === comparisonVersionId);
+  const autoDecisionNote = useMemo(() => draft ? buildDraftDecisionNote(draft, latestDraft) : "", [draft, latestDraft]);
   const versionComparison = useMemo(() => {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
@@ -108,11 +112,13 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         runId: run.id,
         parentVersionId: latest.id,
         assumptions: userLockedAssumptions(draft),
+        decisionNote: decisionNote.trim() || autoDecisionNote,
       });
       setWorkspace(saved.workspace);
       const savedDraft = saved.workspace.versions[0]?.draft ?? draft;
       setDraft(savedDraft);
       setHistory(createDraftHistory(savedDraft));
+      setDecisionNote("");
       setComparisonVersionId(saved.workspace.versions[1]?.id);
       setPhase("ready");
       onSaved?.(saved.workspace);
@@ -179,6 +185,23 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           </button>
         </div>
       </header>
+
+      <section className="quant-decision-note" aria-label="版本决策备注">
+        <div>
+          <strong>本次版本说明</strong>
+          <span>保存时会写入版本历史，方便复盘每次假设调整的原因。</span>
+        </div>
+        <label>
+          <textarea
+            value={decisionNote}
+            maxLength={240}
+            rows={2}
+            placeholder={autoDecisionNote || "例如：上调收入增速，等待半年报订单兑现。"}
+            onChange={(event) => setDecisionNote(event.target.value)}
+          />
+          <small>{decisionNote.trim() ? `${decisionNote.trim().length}/240` : autoDecisionNote ? `将自动记录：${autoDecisionNote}` : "可选，留空也会记录本次关键假设变化。"}</small>
+        </label>
+      </section>
 
       {message ? <div className="workbench-notice">{message}</div> : null}
       {warnings.length ? (
@@ -308,6 +331,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             >
               <strong>V{version.version}</strong>
               <span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span>
+              {version.decisionNote ? <em>{version.decisionNote}</em> : null}
               <small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small>
             </button>
           ))}
@@ -318,6 +342,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
               <strong>当前草稿 vs V{comparisonVersion.version}</strong>
               <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"}</span>
             </div>
+            {comparisonVersion.decisionNote ? <p className="quant-version-note">V{comparisonVersion.version} 备注：{comparisonVersion.decisionNote}</p> : null}
             <div className="quant-version-scenario-grid">
               {versionComparison.scenarios.map((item) => (
                 <article key={item.scenario} className={"quant-version-scenario " + item.scenario}>

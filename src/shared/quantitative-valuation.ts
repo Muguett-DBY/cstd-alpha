@@ -111,6 +111,7 @@ export type QuantitativeValuationVersion = {
   horizonYears: number;
   draft?: QuantitativeDraft;
   result?: ValuationResult;
+  decisionNote?: string;
   createdBy: string;
   createdAt: string;
 };

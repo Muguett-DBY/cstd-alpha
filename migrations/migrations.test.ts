@@ -136,6 +136,7 @@ describe("D1 migrations", () => {
   test("quantitative valuation migration creates audit tables", () => {
     const db = new DatabaseSync(":memory:");
     expect(() => db.exec(readMigration("0016_quantitative_valuations.sql"))).not.toThrow();
+    expect(() => db.exec(readMigration("0017_quantitative_version_notes.sql"))).not.toThrow();
     for (const table of [
       "valuation_source_snapshots",
       "valuation_forecast_versions",
@@ -143,8 +144,9 @@ describe("D1 migrations", () => {
       "valuation_model_results",
       "valuation_actual_reviews",
     ]) expect(tableColumns(db, table).size).toBeGreaterThan(0);
-  expect(tableColumns(db, "valuation_forecast_versions")).toContain("parent_version_id");
-  expect(tableColumns(db, "valuation_forecast_versions")).toContain("draft_json");
+    expect(tableColumns(db, "valuation_forecast_versions")).toContain("parent_version_id");
+    expect(tableColumns(db, "valuation_forecast_versions")).toContain("draft_json");
+    expect(tableColumns(db, "valuation_forecast_versions")).toContain("decision_note");
     expect(indexNames(db, "valuation_forecast_versions")).toContain("idx_valuation_forecast_versions_run");
   });
 
