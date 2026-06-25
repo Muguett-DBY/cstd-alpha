@@ -3,6 +3,7 @@ import {
   validateQuantitativeDraft,
   type EditableAssumption,
   type QuantitativeDraft,
+  type QuantitativePreset,
 } from "./shared/quantitative-valuation";
 import type { ValuationScenarioName } from "./shared/valuation";
 
@@ -184,6 +185,28 @@ export function applySensitivityPoint(
   });
 }
 
+export function createQuantitativePreset(draft: QuantitativeDraft, name: string, now = new Date().toISOString()): QuantitativeDraft {
+  const assumptions = userLockedAssumptions(draft);
+  if (!assumptions.length) return draft;
+  const presets = [...(draft.presets ?? [])];
+  const preset: QuantitativePreset = {
+    id: `preset-${now.replace(/\D/g, "").slice(0, 14)}-${presets.length + 1}`,
+    name: normalizePresetName(name, presets.length + 1),
+    createdAt: now,
+    assumptions: assumptions.map((assumption) => ({ ...assumption })),
+  };
+  return { ...draft, presets: [...presets, preset].slice(-12) };
+}
+
+export function applyQuantitativePreset(draft: QuantitativeDraft, preset?: QuantitativePreset): QuantitativeDraft {
+  if (!preset?.assumptions.length) return draft;
+  let next = draft;
+  for (const assumption of preset.assumptions) {
+    next = applyPresetAssumption(next, assumption);
+  }
+  return next;
+}
+
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {
   return {
     ...draft,
@@ -327,6 +350,33 @@ function assumptionTriple(assumption: EditableAssumption) {
 function forecastOverrideField(key: string) {
   if (key === "revenueGrowth" || key === "ebitMargin" || key === "capexRate" || key === "workingCapitalRate") return key;
   return undefined;
+}
+
+function applyPresetAssumption(draft: QuantitativeDraft, presetAssumption: EditableAssumption): QuantitativeDraft {
+  const assumptions = [...(draft.assumptions ?? [])];
+  let index = assumptions.findIndex((item) => item.key === presetAssumption.key && item.forecastYear === presetAssumption.forecastYear);
+  if (index < 0) {
+    const base = assumptions.find((item) => item.key === presetAssumption.key && item.forecastYear === undefined);
+    if (!base) return draft;
+    assumptions.push({ ...base, forecastYear: presetAssumption.forecastYear });
+    index = assumptions.length - 1;
+  }
+  const merged: EditableAssumption = {
+    ...assumptions[index],
+    value: presetAssumption.value,
+    bear: presetAssumption.bear,
+    base: presetAssumption.base,
+    bull: presetAssumption.bull,
+    origin: "user",
+    locked: true,
+  };
+  assumptions[index] = merged;
+  return synchronizeDraft({ ...draft, assumptions }, merged);
+}
+
+function normalizePresetName(name: string, index: number) {
+  const normalized = name.replace(/\s+/g, " ").trim().slice(0, 40);
+  return normalized || `情景预设 ${index}`;
 }
 
 function formatCompactAssumption(value: number, unit?: string) {

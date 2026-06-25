@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   applyDraftEdit,
+  applyQuantitativePreset,
   applySensitivityPoint,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
+  createQuantitativePreset,
   createDraftHistory,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
@@ -72,6 +74,33 @@ describe("quantitative valuation editor state", () => {
     });
     expect(next.operating?.discountRate).toEqual({ low: 0.085, base: 0.09, high: 0.115 });
     expect(next.operating?.terminalGrowthRate).toEqual({ low: 0.015, base: 0.035, high: 0.035 });
+  });
+
+  test("creates a named valuation preset from current user-locked assumptions", () => {
+    const current = applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" });
+
+    const next = createQuantitativePreset(current, "半年报兑现", "2026-06-26T00:00:00.000Z");
+
+    expect(next.presets).toHaveLength(1);
+    expect(next.presets?.[0]).toMatchObject({
+      id: "preset-20260626000000-1",
+      name: "半年报兑现",
+      createdAt: "2026-06-26T00:00:00.000Z",
+      assumptions: [expect.objectContaining({ key: "revenueGrowth", base: 12.5, origin: "user", locked: true })],
+    });
+  });
+
+  test("applies a saved valuation preset back into the editable draft", () => {
+    const current = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    const next = applyQuantitativePreset(baseDraft(), current.presets?.[0]);
+
+    expect(findAssumption(next, "revenueGrowth")).toMatchObject({ base: 12.5, origin: "user", locked: true });
+    expect(next.operating?.revenueGrowth.base).toBe(0.125);
   });
 
   test("compares scenario values and changed assumptions against a saved baseline", () => {

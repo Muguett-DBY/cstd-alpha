@@ -86,6 +86,13 @@ export type EditableAssumption<T = number> = {
   forecastYear?: number;
 };
 
+export type QuantitativePreset = {
+  id: string;
+  name: string;
+  createdAt: string;
+  assumptions: EditableAssumption[];
+};
+
 export type QuantitativeDraft = {
   method: ValuationMethod;
   archetype: CompanyArchetype;
@@ -96,6 +103,7 @@ export type QuantitativeDraft = {
   financial?: FinancialValuationInput;
   cyclical?: CyclicalValuationInput;
   assumptions?: EditableAssumption[];
+  presets?: QuantitativePreset[];
   warnings?: string[];
 };
 

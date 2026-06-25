@@ -6,6 +6,7 @@ import {
   validateQuantitativeDraft,
   type EditableAssumption,
   type QuantitativeDraft,
+  type QuantitativePreset,
 } from "../../src/shared/quantitative-valuation";
 
 type Env = AssistantEnv & { REPORT_LIBRARY_DB?: D1Database };
@@ -34,6 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     parentVersionId?: string;
     assumptions?: UserAssumptionEdit[];
     decisionNote?: string;
+    presets?: QuantitativePreset[];
   } | null;
   if (!body?.runId?.trim() || !body.parentVersionId?.trim() || !Array.isArray(body.assumptions)) {
     return json({ error: "估值保存参数不完整。" }, 400);
@@ -44,7 +46,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!latest?.draft || !workspace.snapshot) return json({ error: "估值草稿尚未准备完成。" }, 409);
   if (body.parentVersionId !== latest.id) return json({ error: "估值版本已更新，请刷新后再保存。" }, 409);
   try {
-    const draft = mergeUserAssumptions(latest.draft, body.assumptions);
+    const draft = mergeUserAssumptions(latest.draft, body.assumptions, { presets: body.presets });
     validateQuantitativeDraft(draft);
     const result = calculateQuantitativeDraft(draft);
     const version = await createQuantitativeVersion(env.REPORT_LIBRARY_DB, {
@@ -70,12 +72,12 @@ export function isAshareResearchItem(item: { entityType: string; entityId: strin
   return /\d{6}/.test(text) && /A股|沪A|深A|创业板|科创板|SH-A|SZ-A|ASTOCK/i.test(text);
 }
 
-export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssumptionEdit[]): QuantitativeDraft {
+export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssumptionEdit[], options: { presets?: QuantitativePreset[] } = {}): QuantitativeDraft {
   const assumptions = (draft.assumptions ?? []).map((assumption) => {
     const edit = edits.find((candidate) => candidate.key === assumption.key && candidate.forecastYear === assumption.forecastYear);
     return edit ? { ...assumption, ...editableFields(edit), origin: "user" as const, locked: true } : assumption;
   });
-  const merged: QuantitativeDraft = { ...draft, assumptions };
+  const merged: QuantitativeDraft = { ...draft, assumptions, presets: normalizeValuationPresets(options.presets ?? draft.presets) };
   if (!merged.operating) return merged;
   const lookup = (key: string) => assumptions.find((assumption) => assumption.key === key);
   const percentTriple = (key: string, fallback: { low: number; base: number; high: number }) => {
@@ -125,4 +127,36 @@ function editableFields(edit: UserAssumptionEdit) {
   return Object.fromEntries(Object.entries(edit).filter(([key, value]) =>
     ["value", "bear", "base", "bull", "forecastYear"].includes(key) && typeof value === "number" && Number.isFinite(value),
   ));
+}
+
+function normalizeValuationPresets(presets: QuantitativePreset[] | undefined): QuantitativePreset[] | undefined {
+  const normalized = (presets ?? []).flatMap((preset) => {
+    if (!preset || typeof preset.id !== "string" || typeof preset.name !== "string" || typeof preset.createdAt !== "string") return [];
+    const assumptions = Array.isArray(preset.assumptions) ? preset.assumptions.flatMap(normalizePresetAssumption) : [];
+    if (!assumptions.length) return [];
+    return [{
+      id: preset.id.replace(/[^\w:-]/g, "").slice(0, 80) || crypto.randomUUID(),
+      name: preset.name.replace(/\s+/g, " ").trim().slice(0, 40) || "未命名预设",
+      createdAt: preset.createdAt,
+      assumptions,
+    }];
+  });
+  return normalized.length ? normalized.slice(-12) : undefined;
+}
+
+function normalizePresetAssumption(assumption: EditableAssumption): EditableAssumption[] {
+  if (!assumption || typeof assumption.key !== "string" || typeof assumption.label !== "string") return [];
+  const next: EditableAssumption = {
+    key: assumption.key,
+    label: assumption.label,
+    unit: typeof assumption.unit === "string" ? assumption.unit : undefined,
+    origin: "user",
+    locked: true,
+    forecastYear: typeof assumption.forecastYear === "number" && Number.isFinite(assumption.forecastYear) ? assumption.forecastYear : undefined,
+  };
+  for (const key of ["value", "bear", "base", "bull"] as const) {
+    const value = assumption[key];
+    if (typeof value === "number" && Number.isFinite(value)) next[key] = value;
+  }
+  return next.value === undefined && next.base === undefined && next.bear === undefined && next.bull === undefined ? [] : [next];
 }
