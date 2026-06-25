@@ -4,6 +4,7 @@ import { calculateQuantitativeDraft, type QuantitativeDraft, type QuantitativeVa
 import type { ValuationRunSummary } from "./shared/valuation";
 import { applyDraftEdit, draftWarnings, findAssumption, simpleEditorFields, userLockedAssumptions } from "./quantitative-valuation-state";
 import { showToast } from "./toast-state";
+import { ValuationScenarioChart } from "./ValuationScenarioChart";
 
 type Props = {
   run: ValuationRunSummary;
@@ -228,6 +229,16 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <h3>即时估值结果</h3>
           {preview ? (
             <>
+              <ValuationScenarioChart
+                scenarios={preview.scenarios.map((s) => ({
+                  scenario: s.scenario,
+                  label: scenarioLabel(s.scenario),
+                  value: s.perShareValue,
+                  currency: preview.currency,
+                }))}
+                currentPrice={currentPrice}
+                currency={preview.currency}
+              />
               <div className="quant-results-grid">
                 {preview.scenarios.map((item) => (
                   <div key={item.scenario} className={"quant-result-card " + item.scenario}>
