@@ -3501,6 +3501,37 @@ button:not(:disabled):active,
   background: color-mix(in srgb, var(--surface-tinted) 30%, var(--surface));
 }
 
+.valuation-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.valuation-summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.valuation-summary-stats {
+  display: flex;
+  gap: 16px;
+}
+
+.valuation-summary-stats span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.valuation-summary-stats strong {
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .valuation-sort-bar .filter-label {
   color: var(--muted);
   font-size: 11px;
