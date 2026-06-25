@@ -4142,7 +4142,7 @@ button:not(:disabled):active,
 
 .quant-preset-create {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px) auto;
+  grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.7fr) minmax(180px, 240px) auto;
   gap: 12px;
   align-items: center;
 }
@@ -4151,6 +4151,20 @@ button:not(:disabled):active,
 .quant-preset-list button {
   display: grid;
   gap: 4px;
+}
+
+.quant-preset-summary {
+  min-height: 42px;
+  align-content: center;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--teal) 26%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+}
+
+.quant-preset-summary span {
+  color: var(--teal);
+  font-weight: 900;
 }
 
 .quant-preset-create strong,
