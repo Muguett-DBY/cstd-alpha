@@ -341,5 +341,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 27 tests passed；全量 `npm test` 839 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43176` 验证行动中心标题、3 个流程步骤、桌面 `scrollWidth=clientWidth=1365`；1100px 行动区和保存条单列且无溢出；800px 流程步骤单列、最小高度 52px、`scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-1100.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-800.png`。
+**Commit / Push:** `b378f99 feat: add valuation action center` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28218883995`)。
 **风险记录:** UIUX 阶段未改变保存 API；行动中心仍依赖前端草稿状态判断，未来如果预设变为后端模板实体需同步更新状态来源。
 **下一阶段:** 阶段 4/6 IMPROVE，继续补齐估值版本可追溯能力，优先考虑保存后版本历史中展示预设库变更摘要。
