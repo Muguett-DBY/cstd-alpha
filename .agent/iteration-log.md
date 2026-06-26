@@ -46,6 +46,17 @@
 - **Commit:** `cd22474 feat: add valuation starter preset templates`
 - **下一阶段:** Stage 5/6 CHECK，做针对性健康检查并修复量化估值保存链路中的真实缺陷。
 
+### Stage 5/6 CHECK — Yearly Forecast Override Persistence
+
+- **检查方向:** 聚焦量化估值保存链路中最容易丢数据的高级年度假设编辑，验证前端传入 `forecastYear` 后服务端是否保存到计算输入。
+- **发现问题:** `mergeUserAssumptions` 只遍历已有 assumptions；当用户新增年度覆盖项时，后端会丢弃该 edit，也不会写入 `operating.forecastOverrides`。
+- **修复:** 缺失的年度假设会从基础假设克隆并锁定为 user edit；`revenueGrowth / ebitMargin / capexRate / workingCapitalRate` 年度覆盖会同步合并进 `forecastOverrides`。
+- **验证:** 先写失败测试；833 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **API 验证:** 本地 Pages API POST 年度 EBIT 率覆盖后，新版本 `58949bed-a03d-4723-b81d-d73af83def74` 的 draft 包含 `forecastOverrides[{year:2, ebitMargin:0.2}]` 和锁定的年度假设。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28209077808`)。
+- **Commit:** `8b11c67 fix: persist yearly valuation forecast overrides`
+- **下一阶段:** Stage 6/6 IMPROVE，在 CHECK 修复后继续增强年度覆盖的用户可见确认。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix

@@ -256,3 +256,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28208795705`)。
 **风险记录:** 模板目前是本地生成的草稿预设，不是独立后端模板实体；需要保存版本后才会随 draft 持久化。
 **下一阶段:** 阶段 5/6 CHECK，做保存链路健康检查并修复发现的真实问题。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 对量化估值保存链路做针对性健康检查，优先验证高级年度覆盖项不会在后端保存时丢失。
+**开始状态:** 阶段 4 功能 commit `cd22474` 和日志 commit `fb4e22e` 均已推送，Pages CI runs `28208795705` / `28208868966` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**发现问题:** 前端高级编辑可生成 `forecastYear` assumption，但后端 `mergeUserAssumptions` 只遍历已有 assumptions；新增年度覆盖项会被静默丢弃，`operating.forecastOverrides` 不会更新。
+**修复内容:** 新增缺失年度假设补全逻辑；从基础假设克隆年度 edit，锁定为 user assumption；将年度 `revenueGrowth / ebitMargin / capexRate / workingCapitalRate` 同步合并到 `forecastOverrides`。
+**本地验证:** 先写失败测试并复现；修复后 `functions/api/valuation-workspace.test.ts` 7 tests passed；全量 `npm test` 833 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**API 验证:** 本地 Pages API 保存 `ebitMargin forecastYear=2 base=20` 后，新版本 `58949bed-a03d-4723-b81d-d73af83def74` 返回 `forecastOverrides[{year:2, ebitMargin:0.2}]`，年度 assumption 为 `origin=user` 且 `locked=true`。
+**Commit / Push:** `8b11c67 fix: persist yearly valuation forecast overrides` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28209077808`)。
+**风险记录:** CHECK 阶段确认后端持久化正确；UI 端尚未把年度覆盖项汇总成一个明确的保存前检查摘要，交由阶段 6 改进。
+**下一阶段:** 阶段 6/6 IMPROVE，增加年度覆盖摘要，让用户保存前明确知道哪些年度假设将被写入。
