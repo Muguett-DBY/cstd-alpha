@@ -14,6 +14,7 @@ import {
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   describeQuantitativeSaveSuccess,
+  describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
@@ -303,6 +304,48 @@ describe("quantitative valuation editor state", () => {
 
     expect(describeQuantitativeSaveSuccess(withStarters)).toBe("估值版本已保存，携带 4 个预设。");
     expect(describeQuantitativeSaveSuccess(baseDraft())).toBe("估值版本已保存，未携带预设。");
+  });
+
+  test("summarizes preset library differences between current and historical versions", () => {
+    const historical = {
+      ...baseDraft(),
+      presets: [{
+        id: "preset-growth",
+        name: "旧增长方案",
+        createdAt: "2026-06-26T00:00:00.000Z",
+        assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 3, base: 7, bull: 11, unit: "%", origin: "user" as const, locked: true }],
+      }, {
+        id: "preset-margin",
+        name: "利润率复核",
+        createdAt: "2026-06-26T00:00:00.000Z",
+        assumptions: [{ key: "ebitMargin", label: "EBIT 利润率", bear: 8, base: 13, bull: 18, unit: "%", origin: "user" as const, locked: true }],
+      }],
+    };
+    const current = {
+      ...baseDraft(),
+      presets: [{
+        id: "preset-growth",
+        name: "新增长方案",
+        createdAt: "2026-06-26T00:10:00.000Z",
+        assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 4, base: 8, bull: 12, unit: "%", origin: "user" as const, locked: true }],
+      }, {
+        id: "preset-pressure",
+        name: "压力测试",
+        createdAt: "2026-06-26T00:11:00.000Z",
+        assumptions: [{ key: "discountRate", label: "WACC", bear: 12, base: 10, bull: 8, unit: "%", origin: "user" as const, locked: true }],
+      }],
+    };
+
+    expect(describeQuantitativeVersionPresetDelta(current, historical)).toEqual({
+      hasChanges: true,
+      title: "预设库有 3 项差异",
+      detail: "新增 1 个方案、移除 1 个方案、更新 1 个方案。",
+    });
+    expect(describeQuantitativeVersionPresetDelta(current, current)).toEqual({
+      hasChanges: false,
+      title: "预设库一致",
+      detail: "当前草稿与所选版本携带相同预设库。",
+    });
   });
 
   test("builds starter preset templates from baseline assumptions", () => {
