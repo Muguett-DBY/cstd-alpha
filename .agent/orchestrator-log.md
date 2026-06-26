@@ -486,5 +486,7 @@
 **本地验证:** 先写失败测试并复现 stale source；修复后定向 `src/quantitative-valuation-state.test.ts` 34 tests passed；全量 `npm test` 847 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，先恢复 V4 预设库，再生成内置模板；自动审计说明不再包含 `恢复 V4 预设库。`，toast 显示 `已生成内置估值模板。`，预设库变更提示仍可见；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-800.png`。
+**Commit / Push:** `203a746 fix: clear stale valuation preset source audits` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28234090775`)。
 **风险记录:** CHECK 阶段确认恢复来源只应描述“当前预设库仍完整来自历史版本”的状态；若未来增加批量导入/外部模板同步，也必须调用同一清理 helper。
 **下一阶段:** 阶段 6/6 IMPROVE，在修复后的来源生命周期上增加更清晰的用户可见状态或保存提示。

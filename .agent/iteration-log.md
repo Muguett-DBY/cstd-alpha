@@ -58,6 +58,8 @@
 - **验证:** 先写失败测试；847 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 先恢复 V4，再生成内置模板；确认旧来源备注消失、模板生成 toast 和预设库变更提示可见；1365px 与 800px 均无横向溢出。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28234090775`)。
+- **Commit:** `203a746 fix: clear stale valuation preset source audits`
 - **下一阶段:** Stage 6/6 IMPROVE，在恢复来源生命周期上增加更清晰的保存前状态表达。
 
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
