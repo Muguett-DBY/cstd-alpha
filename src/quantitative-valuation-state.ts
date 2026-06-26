@@ -93,6 +93,12 @@ export type QuantitativeVersionPresetSummary = {
   detail: string;
 };
 
+export type QuantitativeVersionPresetDelta = {
+  hasChanges: boolean;
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -505,6 +511,42 @@ export function describeQuantitativeVersionPresetSummary(draft?: QuantitativeDra
     count: presets.length,
     title: `${presets.length} 个预设`,
     detail: names + suffix,
+  };
+}
+
+export function describeQuantitativeVersionPresetDelta(current: QuantitativeDraft, baseline?: QuantitativeDraft): QuantitativeVersionPresetDelta {
+  const currentPresets = current.presets ?? [];
+  const baselinePresets = baseline?.presets ?? [];
+  const baselineById = new Map(baselinePresets.map((preset) => [preset.id, preset]));
+  const currentById = new Map(currentPresets.map((preset) => [preset.id, preset]));
+  const added = currentPresets.filter((preset) => !baselineById.has(preset.id)).length;
+  const removed = baselinePresets.filter((preset) => !currentById.has(preset.id)).length;
+  const renamed = currentPresets.filter((preset) => {
+    const previous = baselineById.get(preset.id);
+    return previous && previous.name !== preset.name && presetAssumptionsSignature(previous) === presetAssumptionsSignature(preset);
+  }).length;
+  const edited = currentPresets.filter((preset) => {
+    const previous = baselineById.get(preset.id);
+    return previous && presetAssumptionsSignature(previous) !== presetAssumptionsSignature(preset);
+  }).length;
+  const total = added + removed + renamed + edited;
+  if (!total) {
+    return {
+      hasChanges: false,
+      title: "预设库一致",
+      detail: "当前草稿与所选版本携带相同预设库。",
+    };
+  }
+  const parts = [
+    added ? `新增 ${added} 个方案` : "",
+    removed ? `移除 ${removed} 个方案` : "",
+    renamed ? `重命名 ${renamed} 个方案` : "",
+    edited ? `更新 ${edited} 个方案` : "",
+  ].filter(Boolean);
+  return {
+    hasChanges: true,
+    title: `预设库有 ${total} 项差异`,
+    detail: `${parts.join("、")}。`,
   };
 }
 

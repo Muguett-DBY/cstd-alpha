@@ -17,6 +17,7 @@ import {
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
   describeQuantitativeSaveSuccess,
+  describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
@@ -121,6 +122,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
   }, [comparisonVersion, draft, warnings]);
+  const versionPresetDelta = useMemo(() =>
+    draft && comparisonVersion?.draft ? describeQuantitativeVersionPresetDelta(draft, comparisonVersion.draft) : null,
+  [comparisonVersion, draft]);
 
   function pushHistory(newDraft: QuantitativeDraft) {
     setHistory((current) => pushDraftHistory(current ?? createDraftHistory(draft ?? newDraft), newDraft));
@@ -615,6 +619,11 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
               <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"} · {describeQuantitativeVersionPresetSummary(comparisonVersion.draft).title}</span>
             </div>
             <p className="quant-version-preset-note">V{comparisonVersion.version} 预设库：{describeQuantitativeVersionPresetSummary(comparisonVersion.draft).detail}</p>
+            {versionPresetDelta ? (
+              <p className={"quant-version-preset-note " + (versionPresetDelta.hasChanges ? "changed" : "synced")}>
+                {versionPresetDelta.title}：{versionPresetDelta.detail}
+              </p>
+            ) : null}
             {comparisonVersion.decisionNote ? <p className="quant-version-note">V{comparisonVersion.version} 备注：{comparisonVersion.decisionNote}</p> : null}
             <div className="quant-version-scenario-grid">
               {versionComparison.scenarios.map((item) => (

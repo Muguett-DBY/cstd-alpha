@@ -402,3 +402,20 @@
 **本地最终门禁:** 842 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 **CI 最终状态:** 所有阶段功能 commit 与日志 commit 对应的 `Deploy Cloudflare Pages` runs 均 passed，截至最终功能 run `28219832841`。
 **遗留风险:** Vite 仍保留既有 pyodide browser externalization 和大 chunk warning；740px 及以下仍按既有产品逻辑进入 assistant-only shell，因此估值工作区响应式验收继续使用 800px。
+
+## Round 61 - 6 Stage Main V2
+
+### 阶段 1/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 60 的量化估值预设版本追溯主线，在版本对比区补齐当前草稿与历史版本之间的预设库差异摘要。
+**开始状态:** `main` 与 `origin/main` 同步在 `cc872d4`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 准备新增版本预设差异摘要状态契约，先复现函数缺失。
+**完成内容:** 新增 `describeQuantitativeVersionPresetDelta` 状态函数，复用现有 preset signature 逻辑统计当前草稿与历史版本之间的新增、移除、重命名、更新预设；版本对比区新增预设库差异提示，并区分 changed/synced 视觉状态。
+**真实问题修复:** 版本时间线已经能显示历史版本携带多少预设，但用户仍无法判断当前草稿相比所选历史版本具体多了或少了哪些预设库变更；现在版本复盘能直接看到预设库差异摘要。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 30 tests passed；全量 `npm test` 843 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，进入估值工作区，版本对比区显示 `预设库有 3 项差异：新增 3 个方案。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-800.png`。
+**风险记录:** 差异摘要按 preset id 与 assumption signature 对比；未来如引入跨工作区共享模板，需要升级为模板实体级 diff。
+**下一阶段:** 阶段 2/6 IMPROVE，继续把预设版本复盘推进到更强的可恢复/可操作闭环。

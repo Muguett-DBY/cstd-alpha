@@ -1,5 +1,17 @@
 # CSTD Alpha - Iteration Log
 
+## Round 61 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
+
+### Stage 1/6 IMPROVE — Version Preset Delta Summary
+
+- **承接方向:** 延续 Round 60 的量化估值预设版本追溯闭环，让版本对比区不仅显示历史版本携带多少预设，还能说明当前草稿与历史版本的预设库差异。
+- **旗舰:** 新增版本预设差异摘要，统计新增、移除、重命名、更新预设，并在版本对比区显示 changed/synced 状态。
+- **真实问题修复:** 之前版本复盘只能看到“Vx 有 N 个预设”，无法判断当前草稿相比历史版本的预设库变化；现在能直接看到 `预设库有 3 项差异：新增 3 个方案。`
+- **验证:** 先写失败测试；843 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证版本对比区预设差异摘要、桌面和 800px 无横向溢出。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-800.png`。
+- **下一阶段:** Stage 2/6 IMPROVE，继续把预设版本复盘推进到更强的可恢复/可操作闭环。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management
