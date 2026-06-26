@@ -215,6 +215,59 @@ export function createQuantitativePreset(draft: QuantitativeDraft, name: string,
   return { ...draft, presets: [...presets, preset].slice(-12) };
 }
 
+export function buildQuantitativeStarterPresets(draft: QuantitativeDraft, now = new Date().toISOString()): QuantitativePreset[] {
+  const stamp = now.replace(/\D/g, "").slice(0, 14);
+  const templates: Array<{
+    slug: string;
+    name: string;
+    transforms: Record<string, (value: number) => number>;
+  }> = [
+    {
+      slug: "base-review",
+      name: "基准复核",
+      transforms: {
+        revenueGrowth: (value) => value,
+        ebitMargin: (value) => value,
+        discountRate: (value) => value,
+        terminalGrowthRate: (value) => value,
+      },
+    },
+    {
+      slug: "cautious-cut",
+      name: "谨慎下修",
+      transforms: {
+        revenueGrowth: (value) => value * 0.85,
+        ebitMargin: (value) => value - 1,
+        discountRate: (value) => value + 0.5,
+        terminalGrowthRate: (value) => value - 0.25,
+      },
+    },
+    {
+      slug: "pressure-test",
+      name: "压力测试",
+      transforms: {
+        revenueGrowth: (value) => value * 0.65,
+        ebitMargin: (value) => value - 2,
+        capexRate: (value) => value + 1,
+        discountRate: (value) => value + 1,
+        terminalGrowthRate: (value) => value - 0.75,
+      },
+    },
+  ];
+  return templates.flatMap((template) => {
+    const assumptions = Object.entries(template.transforms)
+      .map(([key, transform]) => starterPresetAssumption(draft, key, transform))
+      .filter((item): item is EditableAssumption => Boolean(item));
+    if (!assumptions.length) return [];
+    return [{
+      id: `starter-${template.slug}-${stamp}`,
+      name: template.name,
+      createdAt: now,
+      assumptions,
+    }];
+  });
+}
+
 export function applyQuantitativePreset(draft: QuantitativeDraft, preset?: QuantitativePreset): QuantitativeDraft {
   if (!preset?.assumptions.length) return draft;
   let next = draft;
@@ -447,6 +500,27 @@ function applyPresetAssumption(draft: QuantitativeDraft, presetAssumption: Edita
   };
   assumptions[index] = merged;
   return synchronizeDraft({ ...draft, assumptions }, merged);
+}
+
+function starterPresetAssumption(draft: QuantitativeDraft, key: string, transform: (value: number) => number): EditableAssumption | undefined {
+  const source = findAssumption(draft, key);
+  if (!source) return undefined;
+  const nextValue = (value: number | undefined) => value === undefined ? undefined : normalizeStarterValue(key, transform(value));
+  return {
+    ...source,
+    value: nextValue(source.value),
+    bear: nextValue(source.bear),
+    base: nextValue(source.base),
+    bull: nextValue(source.bull),
+    origin: "user",
+    locked: true,
+  };
+}
+
+function normalizeStarterValue(key: string, value: number) {
+  const floor = key === "terminalGrowthRate" ? 0 : key === "ebitMargin" || key === "revenueGrowth" || key === "capexRate" ? -50 : value;
+  const ceiling = key === "discountRate" ? 30 : key === "terminalGrowthRate" ? 8 : 100;
+  return Number(Math.min(ceiling, Math.max(floor, value)).toFixed(4));
 }
 
 function normalizePresetName(name: string, index: number) {

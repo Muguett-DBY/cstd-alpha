@@ -3,6 +3,7 @@ import {
   applyDraftEdit,
   applyQuantitativePreset,
   applySensitivityPoint,
+  buildQuantitativeStarterPresets,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createQuantitativePreset,
@@ -156,6 +157,27 @@ describe("quantitative valuation editor state", () => {
       currentCount: 1,
       actionableCount: 0,
       title: "1 个当前匹配方案",
+    });
+  });
+
+  test("builds starter preset templates from baseline assumptions", () => {
+    const starters = buildQuantitativeStarterPresets(baseDraft(), "2026-06-26T00:00:00.000Z");
+
+    expect(starters.map((preset) => preset.name)).toEqual(["基准复核", "谨慎下修", "压力测试"]);
+    expect(starters[0]).toMatchObject({
+      id: "starter-base-review-20260626000000",
+      assumptions: [
+        expect.objectContaining({ key: "revenueGrowth", origin: "user", locked: true }),
+        expect.objectContaining({ key: "ebitMargin", origin: "user", locked: true }),
+        expect.objectContaining({ key: "discountRate", origin: "user", locked: true }),
+        expect.objectContaining({ key: "terminalGrowthRate", origin: "user", locked: true }),
+      ],
+    });
+    const pressure = starters.find((preset) => preset.name === "压力测试");
+    expect(pressure?.assumptions.find((item) => item.key === "revenueGrowth")?.base).toBeLessThan(7);
+    expect(describeQuantitativePresetImpact(baseDraft(), pressure)).toMatchObject({
+      tone: "changes",
+      canApply: true,
     });
   });
 
