@@ -9,6 +9,7 @@ import {
   createQuantitativePreset,
   createDraftHistory,
   describeQuantitativePresetLibrary,
+  describeQuantitativePresetChangeSummary,
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
@@ -194,6 +195,51 @@ describe("quantitative valuation editor state", () => {
       currentCount: 0,
       actionableCount: 0,
       title: "暂无预设",
+    });
+  });
+
+  test("summarizes unsaved preset library changes against the latest version", () => {
+    const latest = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+    const renamed = renameQuantitativePreset(latest, "preset-20260626000000-1", "半年报复核方案");
+
+    expect(describeQuantitativePresetChangeSummary(renamed, latest)).toEqual({
+      hasChanges: true,
+      changedPresetCount: 1,
+      title: "预设库变更待保存",
+      detail: "重命名 1 个方案，保存新版本后写入历史。",
+    });
+    expect(describeQuantitativePresetChangeSummary(latest, latest)).toEqual({
+      hasChanges: false,
+      changedPresetCount: 0,
+      title: "预设库已同步",
+      detail: "当前预设库与最新版本一致。",
+    });
+  });
+
+  test("makes preset-only edits visible in save guidance", () => {
+    const latest = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+    const current = deleteQuantitativePreset(latest, "preset-20260626000000-1");
+
+    expect(describeQuantitativeSaveGuidance({
+      phase: "ready",
+      warnings: [],
+      current,
+      baseline: latest,
+      decisionNote: "",
+    })).toMatchObject({
+      tone: "ready",
+      canSave: true,
+      changedAssumptionCount: 0,
+      title: "准备保存预设库变更",
+      detail: "删除 1 个方案，保存新版本后写入历史。",
     });
   });
 

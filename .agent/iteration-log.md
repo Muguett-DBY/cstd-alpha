@@ -14,6 +14,16 @@
 - **Commit:** `96b6597 feat: manage valuation presets`
 - **下一阶段:** Stage 2/6 IMPROVE，为预设库管理增加更明确的保存/未保存提示，避免用户误以为重命名或删除已经持久化到历史版本。
 
+### Stage 2/6 IMPROVE — Preset Library Save Awareness
+
+- **承接方向:** 延续阶段 1 的预设管理能力，补齐“整理预设后是否已经保存”的关键反馈。
+- **旗舰:** 新增预设库差异摘要，生成/重命名/删除/更新预设后，面板显示“预设库变更待保存”，保存条显示“准备保存预设库变更”及变更明细。
+- **真实问题修复:** 之前 preset-only 变更不会改变假设值，保存条仍像普通审计快照，用户容易误以为预设整理已经持久化；现在保存闭环明确覆盖预设库。
+- **验证:** 先写失败测试；838 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43175` 验证删除模板后显示“预设库变更待保存”和“准备保存预设库变更”；桌面/800px 均无横向溢出。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-800.png`。
+- **下一阶段:** Stage 3/6 UIUX，围绕预设库、保存条、版本区做更清晰的信息层级和响应式整合。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets

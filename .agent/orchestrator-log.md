@@ -312,3 +312,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28217985652`)。
 **风险记录:** 预设删除/重命名仍是草稿级变更，需要保存新版本才会写回后端历史；Vite 仍有既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 2/6 IMPROVE，继续让预设管理与保存链路更可追溯，优先补齐“预设库变更需要保存”的明确待保存提示。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 补齐阶段 1 的认知风险：预设重命名/删除/生成属于草稿变更，用户需要明确知道必须保存新版本才会持久化。
+**开始状态:** 阶段 1 功能 commit `96b6597` 和日志 commit `bbac529` 均已推送，CI runs `28217985652` / `28218055157` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增预设库差异摘要和 preset-only 保存指导测试，先复现缺少 `describeQuantitativePresetChangeSummary` 且保存条仍显示“可保存审计快照”的问题。
+**完成内容:** 新增 `describeQuantitativePresetChangeSummary`，可区分新增、重命名、删除、更新预设；保存指导在仅有预设库变更时显示“准备保存预设库变更”；预设库摘要增加“预设库已同步 / 预设库变更待保存”状态和说明 tooltip。
+**真实问题修复:** 用户在第 1 阶段可以整理预设，但保存条不会说明这类操作尚未写入历史版本；现在 preset-only 变更会被显式纳入保存闭环。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 26 tests passed；全量 `npm test` 838 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43175` 验证生成模板并删除“谨慎下修”后，面板显示“预设库变更待保存”，保存条显示“准备保存预设库变更 / 新增 2 个方案，保存新版本后写入历史”；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-800.png`。
+**风险记录:** 预设变更摘要基于当前草稿和最新版本的 preset id 对比；如果未来引入跨版本模板实体，需要把摘要迁移到后端模板变更模型。
+**下一阶段:** 阶段 3/6 UIUX，围绕预设库、保存条和版本区做更清晰的信息层级与响应式整合。

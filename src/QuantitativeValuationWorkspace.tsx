@@ -12,6 +12,7 @@ import {
   createQuantitativePreset,
   createDraftHistory,
   describeQuantitativeDecision,
+  describeQuantitativePresetChangeSummary,
   describeQuantitativePresetImpact,
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
@@ -105,6 +106,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const presetLibrary = useMemo(() =>
     draft ? describeQuantitativePresetLibrary(draft, draft.presets) : { total: 0, currentCount: 0, actionableCount: 0, title: "暂无预设" },
   [draft]);
+  const presetChangeSummary = useMemo(() =>
+    draft ? describeQuantitativePresetChangeSummary(draft, latestDraft) : { hasChanges: false, changedPresetCount: 0, title: "预设库已同步", detail: "当前预设库与最新版本一致。" },
+  [draft, latestDraft]);
   const versionComparison = useMemo(() => {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
@@ -293,6 +297,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <div className="quant-preset-summary" aria-live="polite">
             <span>{presetLibrary.title}</span>
             <small>{presetLibrary.total} 个方案 · {presetLibrary.actionableCount} 个可载入 · {presetLibrary.currentCount} 个当前匹配</small>
+            <em className={presetChangeSummary.hasChanges ? "pending" : ""} title={presetChangeSummary.detail}>{presetChangeSummary.title}</em>
           </div>
           <label>
             <span className="sr-only">预设名称</span>

@@ -4172,6 +4172,17 @@ button:not(:disabled):active,
   font-weight: 900;
 }
 
+.quant-preset-summary em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.quant-preset-summary em.pending {
+  color: var(--accent);
+}
+
 .quant-preset-templates {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
