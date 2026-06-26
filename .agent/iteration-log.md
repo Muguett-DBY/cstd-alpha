@@ -34,6 +34,8 @@
 - **验证:** 新增操作提示状态测试；845 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证面板文案、按钮存在、桌面/800px 无横向溢出，800px 按钮高度均为 44px。仅有登录前既有 `/api/session` 401。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221969458`)；`Build Radar Evidence` run `28230639906` passed。
+- **Commit:** `619b86a feat: clarify valuation version restore actions`
 - **下一阶段:** Stage 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
 
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)

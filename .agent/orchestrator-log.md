@@ -451,5 +451,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 32 tests passed；全量 `npm test` 845 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证操作面板显示 `选择恢复范围`、说明包含 `不覆盖当前估值假设`，恢复/载入按钮存在；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，移动按钮高度均为 44px。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-800.png`。
+**Commit / Push:** `619b86a feat: clarify valuation version restore actions` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221969458`)；后续 `Build Radar Evidence` run `28230639906` 也 passed。
 **风险记录:** 本阶段仅改前端信息架构与交互提示，不改变保存 API；构建仍保留既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
