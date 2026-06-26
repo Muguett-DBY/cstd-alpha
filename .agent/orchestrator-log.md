@@ -325,5 +325,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 26 tests passed；全量 `npm test` 838 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43175` 验证生成模板并删除“谨慎下修”后，面板显示“预设库变更待保存”，保存条显示“准备保存预设库变更 / 新增 2 个方案，保存新版本后写入历史”；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-800.png`。
+**Commit / Push:** `1007e51 feat: flag unsaved valuation preset changes` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28218283357`)。
 **风险记录:** 预设变更摘要基于当前草稿和最新版本的 preset id 对比；如果未来引入跨版本模板实体，需要把摘要迁移到后端模板变更模型。
 **下一阶段:** 阶段 3/6 UIUX，围绕预设库、保存条和版本区做更清晰的信息层级与响应式整合。

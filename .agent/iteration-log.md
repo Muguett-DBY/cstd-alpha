@@ -22,6 +22,8 @@
 - **验证:** 先写失败测试；838 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43175` 验证删除模板后显示“预设库变更待保存”和“准备保存预设库变更”；桌面/800px 均无横向溢出。仅有登录前既有 `/api/session` 401。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage2-preset-unsaved-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28218283357`)。
+- **Commit:** `1007e51 feat: flag unsaved valuation preset changes`
 - **下一阶段:** Stage 3/6 UIUX，围绕预设库、保存条、版本区做更清晰的信息层级和响应式整合。
 
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
