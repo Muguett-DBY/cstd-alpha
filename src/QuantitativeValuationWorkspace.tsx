@@ -21,6 +21,7 @@ import {
   describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
+  describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
   describeRestoredPresetLibrarySource,
   describeYearlyOverrideSummary,
@@ -655,6 +656,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
               <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"} · {describeQuantitativeVersionPresetSummary(comparisonVersion.draft).title}</span>
             </div>
             <p className="quant-version-preset-note">V{comparisonVersion.version} 预设库：{describeQuantitativeVersionPresetSummary(comparisonVersion.draft).detail}</p>
+            {describeQuantitativeVersionSourceSummary(comparisonVersion.draft) ? (
+              <p className="quant-version-preset-note source">{describeQuantitativeVersionSourceSummary(comparisonVersion.draft)?.detail}</p>
+            ) : null}
             {versionPresetDelta ? (
               <p className={"quant-version-preset-note " + (versionPresetDelta.hasChanges ? "changed" : "synced")}>
                 {versionPresetDelta.title}：{versionPresetDelta.detail}
@@ -722,6 +726,7 @@ function VersionTimelineButton({
   onSelect: () => void;
 }) {
   const presetSummary = describeQuantitativeVersionPresetSummary(version.draft);
+  const sourceSummary = describeQuantitativeVersionSourceSummary(version.draft);
   return (
     <button
       type="button"
@@ -732,6 +737,7 @@ function VersionTimelineButton({
       <strong>V{version.version}</strong>
       <span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span>
       <span className="quant-version-preset-pill">{presetSummary.title}</span>
+      {sourceSummary ? <span className="quant-version-preset-pill source">{sourceSummary.title}</span> : null}
       {version.decisionNote ? <em>{version.decisionNote}</em> : null}
       <small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small>
     </button>
