@@ -46,6 +46,8 @@
 - **验证:** 新增版本预设摘要测试；840 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43177` 验证时间线预设 pill、版本对比预设摘要、桌面和 800px 无横向溢出。仅有登录前既有 `/api/session` 401。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28219172524`)。
+- **Commit:** `3e5c92c feat: show valuation version preset provenance`
 - **下一阶段:** Stage 5/6 CHECK，验证保存 API 返回的版本历史是否真实携带 presets 快照，并修复发现的真实问题。
 
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)

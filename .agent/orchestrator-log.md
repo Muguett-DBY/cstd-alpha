@@ -358,5 +358,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 28 tests passed；全量 `npm test` 840 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43177` 验证版本时间线显示预设数量 pill，对比区显示 `V4 预设库：该版本未携带可复用预设。`，桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-800.png`。
+**Commit / Push:** `3e5c92c feat: show valuation version preset provenance` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28219172524`)。
 **风险记录:** 本阶段展示的是版本 draft 内的 presets 快照；历史版本若本身没有保存 presets，会显示“无预设”，这是数据真实状态。
 **下一阶段:** 阶段 5/6 CHECK，做量化估值工作区健康检查，重点验证保存 API 返回的版本历史是否带回 presets 快照并与前端摘要一致。
