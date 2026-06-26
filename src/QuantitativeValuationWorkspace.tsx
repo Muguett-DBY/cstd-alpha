@@ -17,6 +17,7 @@ import {
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
   describeQuantitativeSaveSuccess,
+  describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
@@ -126,6 +127,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const versionPresetDelta = useMemo(() =>
     draft && comparisonVersion?.draft ? describeQuantitativeVersionPresetDelta(draft, comparisonVersion.draft) : null,
   [comparisonVersion, draft]);
+  const versionActionHint = useMemo(() =>
+    comparisonVersion ? describeQuantitativeVersionActionHint(comparisonVersion.version, versionPresetDelta) : null,
+  [comparisonVersion, versionPresetDelta]);
 
   function pushHistory(newDraft: QuantitativeDraft) {
     setHistory((current) => pushDraftHistory(current ?? createDraftHistory(draft ?? newDraft), newDraft));
@@ -592,8 +596,13 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             <h3>版本对比与预测复盘</h3>
             <p>选择一个历史版本，与当前草稿逐项比较；旧版本始终保持不可变。</p>
           </div>
-          {comparisonVersion?.draft ? (
-            <div className="quant-version-actions">
+          {comparisonVersion?.draft && versionActionHint ? (
+            <div className="quant-version-action-panel">
+              <div>
+                <strong>{versionActionHint.title}</strong>
+                <span>{versionActionHint.detail}</span>
+              </div>
+              <div className="quant-version-actions">
               {versionPresetDelta?.hasChanges ? (
                 <button type="button" className="quant-version-load secondary" onClick={() => {
                   const newDraft = restoreQuantitativePresetLibrary(draft, comparisonVersion.draft);
@@ -601,7 +610,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                   setDraft(newDraft);
                   showToast(`已恢复 V${comparisonVersion.version} 预设库，保存新版本后写入历史。`, "success");
                 }}>
-                  恢复 V{comparisonVersion.version} 预设库
+                  {versionActionHint.restoreLabel}
                 </button>
               ) : null}
               <button type="button" className="quant-version-load" onClick={() => {
@@ -610,8 +619,9 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                 setHistory(createDraftHistory(comparisonVersion.draft ?? draft));
                 showToast(`已载入 V${comparisonVersion.version}，保存时会生成最新后继版本。`, "success");
               }}>
-                载入 V{comparisonVersion.version} 为草稿
+                {versionActionHint.loadLabel}
               </button>
+              </div>
             </div>
           ) : null}
         </div>

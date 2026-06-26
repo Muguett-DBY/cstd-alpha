@@ -99,6 +99,13 @@ export type QuantitativeVersionPresetDelta = {
   detail: string;
 };
 
+export type QuantitativeVersionActionHint = {
+  title: string;
+  detail: string;
+  restoreLabel?: string;
+  loadLabel: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -554,6 +561,23 @@ export function describeQuantitativeVersionPresetDelta(current: QuantitativeDraf
     hasChanges: true,
     title: `预设库有 ${total} 项差异`,
     detail: `${parts.join("、")}。`,
+  };
+}
+
+export function describeQuantitativeVersionActionHint(version: number, presetDelta?: QuantitativeVersionPresetDelta | null): QuantitativeVersionActionHint {
+  const loadLabel = `载入 V${version} 为草稿`;
+  if (presetDelta?.hasChanges) {
+    return {
+      title: "选择恢复范围",
+      detail: `可先只恢复 V${version} 预设库，不覆盖当前估值假设；载入整版会替换当前草稿。`,
+      restoreLabel: `恢复 V${version} 预设库`,
+      loadLabel,
+    };
+  }
+  return {
+    title: "预设库已一致",
+    detail: `当前草稿已携带 V${version} 的预设库；如需回到历史假设，可载入整版草稿。`,
+    loadLabel,
   };
 }
 

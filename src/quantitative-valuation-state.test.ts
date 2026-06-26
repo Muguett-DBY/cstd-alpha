@@ -14,6 +14,7 @@ import {
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   describeQuantitativeSaveSuccess,
+  describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
@@ -367,6 +368,28 @@ describe("quantitative valuation editor state", () => {
     expect(findAssumption(restored, "revenueGrowth")?.base).toBe(12.5);
     expect(restored.operating?.revenueGrowth.base).toBe(0.125);
     expect(restored.presets).toEqual(source.presets);
+  });
+
+  test("describes version restore action choices for the comparison panel", () => {
+    expect(describeQuantitativeVersionActionHint(4, {
+      hasChanges: true,
+      title: "预设库有 3 项差异",
+      detail: "新增 3 个方案。",
+    })).toEqual({
+      title: "选择恢复范围",
+      detail: "可先只恢复 V4 预设库，不覆盖当前估值假设；载入整版会替换当前草稿。",
+      restoreLabel: "恢复 V4 预设库",
+      loadLabel: "载入 V4 为草稿",
+    });
+    expect(describeQuantitativeVersionActionHint(4, {
+      hasChanges: false,
+      title: "预设库一致",
+      detail: "当前草稿与所选版本携带相同预设库。",
+    })).toEqual({
+      title: "预设库已一致",
+      detail: "当前草稿已携带 V4 的预设库；如需回到历史假设，可载入整版草稿。",
+      loadLabel: "载入 V4 为草稿",
+    });
   });
 
   test("builds starter preset templates from baseline assumptions", () => {
