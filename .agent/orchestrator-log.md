@@ -417,5 +417,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 30 tests passed；全量 `npm test` 843 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，进入估值工作区，版本对比区显示 `预设库有 3 项差异：新增 3 个方案。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage1-preset-delta-800.png`。
+**Commit / Push:** `74d250e feat: summarize valuation preset version deltas` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221019125`)。
 **风险记录:** 差异摘要按 preset id 与 assumption signature 对比；未来如引入跨工作区共享模板，需要升级为模板实体级 diff。
 **下一阶段:** 阶段 2/6 IMPROVE，继续把预设版本复盘推进到更强的可恢复/可操作闭环。
