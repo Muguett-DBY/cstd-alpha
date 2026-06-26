@@ -308,5 +308,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 24 tests passed；全量 `npm test` 836 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Browser/node_repl 未能使用项目 Playwright 依赖，fallback 到仓库 Playwright + `wrangler pages dev dist --port 43175`；本地 QA 账号进入量化估值工作区，生成内置模板，重命名“谨慎下修”为“谨慎复核 QA”，删除后目标预设计数为 0；摘要为 `2 个方案 · 1 个可载入 · 1 个当前匹配`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，操作按钮最小高度 44px。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-800.png`。
+**Commit / Push:** `96b6597 feat: manage valuation presets` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28217985652`)。
 **风险记录:** 预设删除/重命名仍是草稿级变更，需要保存新版本才会写回后端历史；Vite 仍有既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 2/6 IMPROVE，继续让预设管理与保存链路更可追溯，优先补齐“预设库变更需要保存”的明确待保存提示。
