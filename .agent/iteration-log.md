@@ -38,6 +38,16 @@
 - **Commit:** `b378f99 feat: add valuation action center`
 - **下一阶段:** Stage 4/6 IMPROVE，继续补齐估值版本可追溯能力，优先考虑保存后版本历史中展示预设库变更摘要。
 
+### Stage 4/6 IMPROVE — Version Preset Provenance
+
+- **承接方向:** 在行动中心和预设保存提示之后，补齐历史版本中的预设库追溯。
+- **旗舰:** 版本时间线现在显示每个版本携带的预设数量，版本对比区显示所选版本的预设库摘要和代表性方案名。
+- **真实问题修复:** 之前用户保存预设库后，历史版本只能看到决策备注和假设差异，无法判断该版本当时有没有预设上下文。
+- **验证:** 新增版本预设摘要测试；840 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43177` 验证时间线预设 pill、版本对比预设摘要、桌面和 800px 无横向溢出。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-800.png`。
+- **下一阶段:** Stage 5/6 CHECK，验证保存 API 返回的版本历史是否真实携带 presets 快照，并修复发现的真实问题。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets

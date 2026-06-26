@@ -87,6 +87,12 @@ export type QuantitativeWorkflowStep = {
   detail: string;
 };
 
+export type QuantitativeVersionPresetSummary = {
+  count: number;
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -482,6 +488,24 @@ export function describeQuantitativeWorkflowSteps(input: {
       detail: input.saveGuidance.title,
     },
   ];
+}
+
+export function describeQuantitativeVersionPresetSummary(draft?: QuantitativeDraft): QuantitativeVersionPresetSummary {
+  const presets = draft?.presets ?? [];
+  if (!presets.length) {
+    return {
+      count: 0,
+      title: "无预设",
+      detail: "该版本未携带可复用预设。",
+    };
+  }
+  const names = presets.slice(0, 3).map((preset) => preset.name).join("、");
+  const suffix = presets.length > 3 ? `，另 ${presets.length - 3} 个` : "";
+  return {
+    count: presets.length,
+    title: `${presets.length} 个预设`,
+    detail: names + suffix,
+  };
 }
 
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {

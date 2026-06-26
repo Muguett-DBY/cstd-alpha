@@ -345,3 +345,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28218883995`)。
 **风险记录:** UIUX 阶段未改变保存 API；行动中心仍依赖前端草稿状态判断，未来如果预设变为后端模板实体需同步更新状态来源。
 **下一阶段:** 阶段 4/6 IMPROVE，继续补齐估值版本可追溯能力，优先考虑保存后版本历史中展示预设库变更摘要。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 将预设库从“当前草稿可管理”推进到“历史版本可追溯”，让每个估值版本能说明当时携带了哪些预设。
+**开始状态:** 阶段 3 功能 commit `b378f99` 和日志 commit `85734ed` 均已推送，CI runs `28218883995` / `28218945107` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增 `describeQuantitativeVersionPresetSummary` 测试，先复现函数缺失。
+**完成内容:** 新增版本预设摘要状态函数；版本时间线每个版本显示“无预设 / N 个预设”pill；版本对比区显示所选历史版本的预设库摘要和代表性预设名称。
+**真实问题修复:** 阶段 1-3 让预设库可管理、可保存，但用户查看历史版本时仍看不到该版本携带的预设库状态；现在版本历史能追溯预设上下文。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 28 tests passed；全量 `npm test` 840 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43177` 验证版本时间线显示预设数量 pill，对比区显示 `V4 预设库：该版本未携带可复用预设。`，桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage4-version-preset-summary-800.png`。
+**风险记录:** 本阶段展示的是版本 draft 内的 presets 快照；历史版本若本身没有保存 presets，会显示“无预设”，这是数据真实状态。
+**下一阶段:** 阶段 5/6 CHECK，做量化估值工作区健康检查，重点验证保存 API 返回的版本历史是否带回 presets 快照并与前端摘要一致。
