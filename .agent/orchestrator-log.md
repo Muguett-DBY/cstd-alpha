@@ -434,5 +434,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 31 tests passed；全量 `npm test` 844 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 点击 `恢复 V4 预设库`，toast 显示 `已恢复 V4 预设库，保存新版本后写入历史。`，对比区变为 `预设库一致`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-800.png`。
+**Commit / Push:** `227a5d9 feat: restore historical valuation preset libraries` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221495431`)。
 **风险记录:** 恢复操作仍是本地草稿级修改，需保存新版本才会写入后端历史；按钮文案和 toast 已明确提示。
 **下一阶段:** 阶段 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。

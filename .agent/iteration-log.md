@@ -22,6 +22,8 @@
 - **验证:** 先写失败测试；844 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证恢复 V4 预设库、toast、预设库一致状态、桌面和 800px 无横向溢出。仅有登录前既有 `/api/session` 401。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221495431`)。
+- **Commit:** `227a5d9 feat: restore historical valuation preset libraries`
 - **下一阶段:** Stage 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。
 
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
