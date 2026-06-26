@@ -243,6 +243,25 @@ export function createQuantitativePreset(draft: QuantitativeDraft, name: string,
   return { ...draft, presets: [...presets, preset].slice(-12) };
 }
 
+export function renameQuantitativePreset(draft: QuantitativeDraft, presetId: string, name: string): QuantitativeDraft {
+  const presets = draft.presets ?? [];
+  const index = presets.findIndex((preset) => preset.id === presetId);
+  if (index < 0) return draft;
+  const nextName = normalizePresetName(name, index + 1);
+  if (presets[index].name === nextName) return draft;
+  return {
+    ...draft,
+    presets: presets.map((preset) => preset.id === presetId ? { ...preset, name: nextName } : preset),
+  };
+}
+
+export function deleteQuantitativePreset(draft: QuantitativeDraft, presetId: string): QuantitativeDraft {
+  const presets = draft.presets ?? [];
+  const nextPresets = presets.filter((preset) => preset.id !== presetId);
+  if (nextPresets.length === presets.length) return draft;
+  return { ...draft, presets: nextPresets };
+}
+
 export function buildQuantitativeStarterPresets(draft: QuantitativeDraft, now = new Date().toISOString()): QuantitativePreset[] {
   const stamp = now.replace(/\D/g, "").slice(0, 14);
   const templates: Array<{

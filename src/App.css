@@ -4153,7 +4153,7 @@ button:not(:disabled):active,
 }
 
 .quant-preset-create > div,
-.quant-preset-list button {
+.quant-preset-card-main {
   display: grid;
   gap: 4px;
 }
@@ -4200,20 +4200,20 @@ button:not(:disabled):active,
 }
 
 .quant-preset-create strong,
-.quant-preset-list strong {
+.quant-preset-card strong {
   color: var(--ink);
   font-size: 13px;
 }
 
 .quant-preset-create span,
-.quant-preset-list span,
-.quant-preset-list small {
+.quant-preset-card span,
+.quant-preset-card small {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
 }
 
-.quant-preset-list em {
+.quant-preset-card em {
   color: var(--body);
   font-size: 12px;
   font-style: normal;
@@ -4242,7 +4242,8 @@ button:not(:disabled):active,
 }
 
 .quant-preset-create button,
-.quant-preset-list button {
+.quant-preset-actions button,
+.quant-preset-rename button {
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -4264,37 +4265,101 @@ button:not(:disabled):active,
 
 .quant-preset-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
 }
 
-.quant-preset-list button {
+.quant-preset-card {
+  display: grid;
+  gap: 10px;
   padding: 10px 12px;
   text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
 }
 
-.quant-preset-list button:hover,
-.quant-preset-list button:focus-visible {
+.quant-preset-card:hover,
+.quant-preset-card:focus-within {
   border-color: var(--blue);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 14%, transparent);
 }
 
-.quant-preset-list button.current {
-  cursor: default;
+.quant-preset-card.current {
   border-color: color-mix(in srgb, var(--teal) 38%, var(--line));
   background: color-mix(in srgb, var(--teal) 7%, var(--surface));
 }
 
-.quant-preset-list button.invalid {
-  cursor: not-allowed;
+.quant-preset-card.invalid {
   border-color: color-mix(in srgb, var(--red) 36%, var(--line));
   background: color-mix(in srgb, var(--red) 6%, var(--surface));
 }
 
-.quant-preset-list button:disabled {
-  opacity: 0.82;
+.quant-preset-actions,
+.quant-preset-rename {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.8fr) minmax(76px, 1fr) minmax(64px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.quant-preset-actions button,
+.quant-preset-rename button {
+  padding: 0 10px;
+  background: var(--surface-subtle);
+  color: var(--body);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quant-preset-actions button:hover:not(:disabled),
+.quant-preset-actions button:focus-visible,
+.quant-preset-rename button:hover,
+.quant-preset-rename button:focus-visible {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.quant-preset-actions button:disabled {
+  cursor: default;
+  opacity: 0.66;
+}
+
+.quant-preset-apply:not(:disabled),
+.quant-preset-rename button[type="submit"] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.quant-preset-danger {
+  border-color: color-mix(in srgb, var(--red) 42%, var(--line)) !important;
+  color: var(--red) !important;
+}
+
+.quant-preset-rename {
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+}
+
+.quant-preset-rename label {
+  min-width: 0;
+}
+
+.quant-preset-rename input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font: inherit;
+}
+
+.quant-preset-rename input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 16%, transparent);
 }
 
 .quant-undo-redo {
@@ -5045,6 +5110,12 @@ button:not(:disabled):active,
   }
 
   .quant-preset-templates button {
+    min-height: 44px;
+  }
+
+  .quant-preset-actions button,
+  .quant-preset-rename input,
+  .quant-preset-rename button {
     min-height: 44px;
   }
 
