@@ -70,6 +70,15 @@
 - **验证:** 先写失败测试；848 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 恢复 V4 后确认来源块可见，再生成内置模板确认来源块和自动来源备注消失；1365px 与 800px 均无横向溢出。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-cleared-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28234536344`)。
+- **Commit:** `de162e1 feat: show restored valuation preset sources`
+
+### Round 61 Final
+
+- **状态:** 6/6 completed。
+- **功能 commits:** `74d250e`, `227a5d9`, `619b86a`, `efdeaa2`, `203a746`, `de162e1`。
+- **最终验证:** 848 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed；本地 Playwright 覆盖恢复来源显示和清理后的 1365px/800px 布局。
+- **CI:** 所有阶段功能 commit 与日志 commit 的 `Deploy Cloudflare Pages` runs 均 passed。
 
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 

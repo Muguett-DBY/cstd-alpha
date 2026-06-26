@@ -503,5 +503,16 @@
 **本地验证:** 先写失败测试并复现函数缺失；修复后定向 `src/quantitative-valuation-state.test.ts` 35 tests passed；全量 `npm test` 848 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，恢复 V4 后保存状态条显示 `预设库来源 V4` 和来源说明；随后生成内置模板，来源块和 `恢复 V4 预设库。` 自动备注均消失；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-cleared-800.png`。
+**Commit / Push:** `de162e1 feat: show restored valuation preset sources` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28234536344`)。
 **风险记录:** 来源提示依赖前端草稿状态；保存后后端仍以自动 decision note 作为持久审计记录。Vite 仍保留既有 pyodide externalization 和大 chunk warning。
 **最终状态:** Round 61 六阶段功能实现、本地验证、浏览器验证、push 与 CI 正在收尾。
+
+### Round 61 Final
+
+**状态:** ✅ 6/6 阶段全部完成
+**阶段序列:** IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE
+**累计功能 commits:** `74d250e`, `227a5d9`, `619b86a`, `efdeaa2`, `203a746`, `de162e1`
+**本地最终门禁:** 848 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+**CI 最终状态:** 六阶段功能 commit 与阶段日志 commit 对应的 `Deploy Cloudflare Pages` runs 均 passed，截至阶段 6 功能 run `28234536344`。
+**遗留风险:** Vite 仍保留既有 pyodide browser externalization 和大 chunk warning；恢复来源持久化仍依赖保存时的自动 decision note，如用户手写备注会覆盖自动备注。
