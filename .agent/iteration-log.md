@@ -38,6 +38,16 @@
 - **Commit:** `619b86a feat: clarify valuation version restore actions`
 - **下一阶段:** Stage 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
 
+### Stage 4/6 IMPROVE — Restored Preset Source Audit Trail
+
+- **承接方向:** 在阶段 2/3 的历史预设库恢复操作基础上，把恢复来源带入保存前审计摘要。
+- **旗舰:** 新增 `restoredPresetLibrary` 草稿元数据；恢复历史预设库时记录来源版本和恢复时间；自动决策说明显示 `恢复 V4 预设库。`
+- **真实问题修复:** 只恢复历史预设库后，保存新版本前能看到预设库来源，避免版本历史只记录关键假设变化而丢失恢复动作上下文。
+- **验证:** 先写失败测试；846 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证点击 `恢复 V4 预设库` 后自动审计说明和 toast 可见；1365px 与 800px 均无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-800.png`。
+- **下一阶段:** Stage 5/6 CHECK，检查恢复来源在后续预设库编辑中的一致性与 stale source 风险。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management

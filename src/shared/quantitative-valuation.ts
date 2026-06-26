@@ -104,6 +104,10 @@ export type QuantitativeDraft = {
   cyclical?: CyclicalValuationInput;
   assumptions?: EditableAssumption[];
   presets?: QuantitativePreset[];
+  restoredPresetLibrary?: {
+    version: number;
+    restoredAt: string;
+  };
   warnings?: string[];
 };
 

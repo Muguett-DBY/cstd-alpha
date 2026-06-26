@@ -605,7 +605,10 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
               <div className="quant-version-actions">
               {versionPresetDelta?.hasChanges ? (
                 <button type="button" className="quant-version-load secondary" onClick={() => {
-                  const newDraft = restoreQuantitativePresetLibrary(draft, comparisonVersion.draft);
+                  const newDraft = restoreQuantitativePresetLibrary(draft, comparisonVersion.draft, {
+                    version: comparisonVersion.version,
+                    restoredAt: new Date().toISOString(),
+                  });
                   pushHistory(newDraft);
                   setDraft(newDraft);
                   showToast(`已恢复 V${comparisonVersion.version} 预设库，保存新版本后写入历史。`, "success");

@@ -455,3 +455,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221969458`)；后续 `Build Radar Evidence` run `28230639906` 也 passed。
 **风险记录:** 本阶段仅改前端信息架构与交互提示，不改变保存 API；构建仍保留既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在“恢复历史预设库”后保留恢复来源，并在保存前审计摘要中提示预设库来源，避免用户保存新版本时丢失恢复动作上下文。
+**开始状态:** 阶段 3 功能 commit `619b86a` 和日志 commit `11a20c6` 均已推送，CI runs `28221969458` / `28232643364` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 准备新增恢复来源元数据和保存指导测试，先复现函数签名/输出缺失。
+**完成内容:** 为 `QuantitativeDraft` 增加 `restoredPresetLibrary` 草稿元数据；`restoreQuantitativePresetLibrary` 在恢复历史预设库时记录来源版本和时间；自动决策说明在保存前追加 `恢复 Vx 预设库。`，让新版本审计记录保留恢复动作来源。
+**真实问题修复:** 阶段 2 已能只恢复历史预设库，但保存新版本时自动备注仍只关注关键假设差异，容易丢失“预设库来自哪个历史版本”的上下文；现在恢复动作会进入保存前审计说明。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 33 tests passed；全量 `npm test` 846 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，点击 `恢复 V4 预设库` 后保存审计说明显示 `恢复 V4 预设库。`，toast 显示 `已恢复 V4 预设库，保存新版本后写入历史。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-800.png`。
+**风险记录:** 恢复来源元数据用于前端保存前审计说明；若用户手写版本说明，仍会覆盖自动备注。后续阶段需要检查预设库再次被编辑时是否应清理恢复来源，避免 stale source。
+**下一阶段:** 阶段 5/6 CHECK，聚焦恢复来源元数据在后续编辑流程中的一致性与残留风险。
