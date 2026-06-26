@@ -73,6 +73,12 @@ export type QuantitativePresetLibrary = {
   title: string;
 };
 
+export type YearlyOverrideSummary = {
+  count: number;
+  title: string;
+  detail: string;
+};
+
 export function describeQuantitativeDecision(input: {
   currentPrice?: number;
   scenarios: Array<{ scenario: ValuationScenarioName; perShareValue: number }>;
@@ -161,6 +167,28 @@ export function describeQuantitativeSaveGuidance(input: {
     notePreview,
     changedAssumptionCount,
     canSave: true,
+  };
+}
+
+export function describeYearlyOverrideSummary(draft: QuantitativeDraft): YearlyOverrideSummary {
+  const overrides = (draft.assumptions ?? [])
+    .filter((assumption) => assumption.forecastYear !== undefined && assumption.origin === "user" && assumption.locked)
+    .sort((left, right) => (left.forecastYear ?? 0) - (right.forecastYear ?? 0) || left.label.localeCompare(right.label, "zh-CN"));
+  if (!overrides.length) {
+    return {
+      count: 0,
+      title: "无逐年覆写",
+      detail: "高级逐年预测未覆盖基准假设。",
+    };
+  }
+  const detail = overrides.slice(0, 3).map((assumption) =>
+    `第 ${assumption.forecastYear} 年 ${assumption.label} ${formatCompactAssumption(assumption.base ?? assumption.value ?? 0, assumption.unit)}`,
+  ).join("；");
+  const suffix = overrides.length > 3 ? `；另 ${overrides.length - 3} 项` : "";
+  return {
+    count: overrides.length,
+    title: `${overrides.length} 项逐年覆写`,
+    detail: detail + suffix,
   };
 }
 

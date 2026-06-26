@@ -12,6 +12,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
+  describeYearlyOverrideSummary,
   draftWarnings,
   findAssumption,
   pushDraftHistory,
@@ -252,6 +253,21 @@ describe("quantitative valuation editor state", () => {
       tone: "ready",
       canSave: true,
       notePreview: "调整收入增速：7% → 12.5%。",
+    });
+  });
+
+  test("summarizes yearly forecast overrides before saving", () => {
+    const current = applyDraftEdit(baseDraft(), { key: "ebitMargin", scenario: "base", forecastYear: 2, rawValue: "20" });
+
+    expect(describeYearlyOverrideSummary(current)).toEqual({
+      count: 1,
+      title: "1 项逐年覆写",
+      detail: "第 2 年 EBIT 利润率 20%",
+    });
+    expect(describeYearlyOverrideSummary(baseDraft())).toEqual({
+      count: 0,
+      title: "无逐年覆写",
+      detail: "高级逐年预测未覆盖基准假设。",
     });
   });
 
