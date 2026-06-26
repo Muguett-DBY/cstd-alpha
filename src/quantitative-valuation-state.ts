@@ -508,6 +508,11 @@ export function describeQuantitativeVersionPresetSummary(draft?: QuantitativeDra
   };
 }
 
+export function describeQuantitativeSaveSuccess(draft?: QuantitativeDraft) {
+  const presetCount = draft?.presets?.length ?? 0;
+  return presetCount > 0 ? `估值版本已保存，携带 ${presetCount} 个预设。` : "估值版本已保存，未携带预设。";
+}
+
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {
   return {
     ...draft,

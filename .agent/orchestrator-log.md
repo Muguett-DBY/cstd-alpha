@@ -376,3 +376,18 @@
 **本地验证:** 定向 `functions/api/valuation-workspace.test.ts` 8 tests passed；全量 `npm test` 841 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **风险记录:** 该阶段是后端契约修复，无 UI 文件变更；构建仍保留既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 6/6 IMPROVE，基于本轮预设保存闭环继续增强前端对去重/保存后的确认反馈。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在阶段 5 后端去重约束基础上，把“保存后的预设快照状态”反馈到用户可见层，避免保存成功但不知道版本携带了多少预设。
+**开始状态:** 阶段 5 功能 commit `c4cff0a` 已推送，CI run `28219524788` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增保存成功摘要测试，先复现 `describeQuantitativeSaveSuccess is not a function`。
+**完成内容:** 新增 `describeQuantitativeSaveSuccess` 状态函数；保存成功 toast 改为基于服务端返回的最新 draft 展示 `携带 N 个预设 / 未携带预设`。
+**真实问题修复:** 保存成功提示不再只是泛化“估值版本已保存”，现在能确认版本快照是否实际携带预设库，与阶段 4 的版本追溯和阶段 5 的后端唯一性约束形成闭环。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 29 tests passed；全量 `npm test` 842 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43178` 登录本地 QA，进入“阶段三预设库验收”量化工作区，生成内置模板并保存新版本；toast 显示 `估值版本已保存，携带 3 个预设。`，最新版本变为 V5；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-800.png`。
+**风险记录:** 该提示依赖保存 API 返回的最新 draft；如果未来后端改为异步保存，需要保留保存完成后的 workspace refresh。
+**最终状态:** Round 60 六阶段代码实现与本地验证完成，等待本阶段 commit / push / CI 后进入最终汇总。

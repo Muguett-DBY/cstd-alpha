@@ -58,6 +58,15 @@
 - **验证:** 先写失败测试复现重复 id；定向 8 tests passed；全量 841 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **下一阶段:** Stage 6/6 IMPROVE，基于保存 API 的唯一性约束继续增强前端保存后的确认反馈。
 
+### Stage 6/6 IMPROVE — Preset Save Confirmation
+
+- **承接方向:** 在后端保证 preset id 唯一之后，把保存后的预设快照状态反馈到用户可见层。
+- **旗舰:** 保存成功 toast 现在基于服务端返回的最新 draft 显示“携带 N 个预设 / 未携带预设”，确认当前版本是否真的保存了预设库。
+- **真实问题修复:** 之前保存提示只说明版本已保存，无法确认预设库是否随版本进入历史；现在保存动作、版本预设追溯和 API 去重约束形成闭环。
+- **验证:** 先写失败测试；842 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43178` 验证生成 3 个内置模板后保存，新 toast 显示 `估值版本已保存，携带 3 个预设。`，桌面/800px 均无横向溢出。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-800.png`。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets
