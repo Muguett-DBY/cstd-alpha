@@ -20,6 +20,7 @@ import {
   describeQuantitativeSaveSuccess,
   describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
+  describeQuantitativeVersionReviewSummary,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
@@ -134,6 +135,17 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const versionActionHint = useMemo(() =>
     comparisonVersion ? describeQuantitativeVersionActionHint(comparisonVersion.version, versionPresetDelta) : null,
   [comparisonVersion, versionPresetDelta]);
+  const versionReviewSummary = useMemo(() =>
+    comparisonVersion && versionComparison
+      ? describeQuantitativeVersionReviewSummary({
+        version: comparisonVersion.version,
+        draft: comparisonVersion.draft,
+        changedAssumptionCount: versionComparison.assumptions.length,
+        presetDelta: versionPresetDelta,
+        decisionNote: comparisonVersion.decisionNote,
+      })
+      : null,
+  [comparisonVersion, versionComparison, versionPresetDelta]);
 
   function pushHistory(newDraft: QuantitativeDraft) {
     setHistory((current) => pushDraftHistory(current ?? createDraftHistory(draft ?? newDraft), newDraft));
@@ -653,8 +665,18 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <div className="quant-version-comparison" aria-live="polite">
             <div className="quant-version-comparison-head">
               <strong>当前草稿 vs V{comparisonVersion.version}</strong>
-              <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"} · {describeQuantitativeVersionPresetSummary(comparisonVersion.draft).title}</span>
+              <span>{versionReviewSummary?.detail}</span>
             </div>
+            {versionReviewSummary ? (
+              <div className="quant-version-review-strip" aria-label={versionReviewSummary.title}>
+                {versionReviewSummary.metrics.map((metric) => (
+                  <span key={metric.label} className={"quant-version-review-metric " + metric.tone}>
+                    <small>{metric.label}</small>
+                    <strong>{metric.value}</strong>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <p className="quant-version-preset-note">V{comparisonVersion.version} 预设库：{describeQuantitativeVersionPresetSummary(comparisonVersion.draft).detail}</p>
             {describeQuantitativeVersionSourceSummary(comparisonVersion.draft) ? (
               <p className="quant-version-preset-note source">{describeQuantitativeVersionSourceSummary(comparisonVersion.draft)?.detail}</p>
