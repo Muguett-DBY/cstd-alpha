@@ -13,9 +13,11 @@ import {
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
   describeYearlyOverrideSummary,
+  deleteQuantitativePreset,
   draftWarnings,
   findAssumption,
   pushDraftHistory,
+  renameQuantitativePreset,
   undoDraftHistory,
   userLockedAssumptions,
 } from "./quantitative-valuation-state";
@@ -158,6 +160,40 @@ describe("quantitative valuation editor state", () => {
       currentCount: 1,
       actionableCount: 0,
       title: "1 个当前匹配方案",
+    });
+  });
+
+  test("renames a valuation preset without changing its saved assumptions", () => {
+    const presetDraft = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    const next = renameQuantitativePreset(presetDraft, "preset-20260626000000-1", "  半年报复核方案  ");
+
+    expect(next.presets?.[0]).toMatchObject({
+      id: "preset-20260626000000-1",
+      name: "半年报复核方案",
+      assumptions: [expect.objectContaining({ key: "revenueGrowth", base: 12.5 })],
+    });
+  });
+
+  test("deletes a stale valuation preset and updates library summary", () => {
+    const presetDraft = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+
+    const next = deleteQuantitativePreset(presetDraft, "preset-20260626000000-1");
+
+    expect(next.presets).toEqual([]);
+    expect(describeQuantitativePresetLibrary(baseDraft(), next.presets)).toEqual({
+      total: 0,
+      currentCount: 0,
+      actionableCount: 0,
+      title: "暂无预设",
     });
   });
 

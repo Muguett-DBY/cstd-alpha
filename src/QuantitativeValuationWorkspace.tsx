@@ -16,9 +16,11 @@ import {
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
   describeYearlyOverrideSummary,
+  deleteQuantitativePreset,
   draftWarnings,
   findAssumption,
   pushDraftHistory,
+  renameQuantitativePreset,
   redoDraftHistory,
   simpleEditorFields,
   undoDraftHistory,
@@ -57,6 +59,8 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [comparisonVersionId, setComparisonVersionId] = useState<string>();
   const [decisionNote, setDecisionNote] = useState("");
   const [presetName, setPresetName] = useState("");
+  const [renamingPresetId, setRenamingPresetId] = useState<string>();
+  const [renamingPresetName, setRenamingPresetName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +126,38 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
     const next = redoDraftHistory(history);
     setHistory(next);
     setDraft(next.current);
+  }
+
+  function startRenamePreset(presetId: string, name: string) {
+    setRenamingPresetId(presetId);
+    setRenamingPresetName(name);
+  }
+
+  function cancelRenamePreset() {
+    setRenamingPresetId(undefined);
+    setRenamingPresetName("");
+  }
+
+  function commitRenamePreset(presetId: string) {
+    if (!draft) return;
+    const newDraft = renameQuantitativePreset(draft, presetId, renamingPresetName);
+    if (newDraft !== draft) {
+      pushHistory(newDraft);
+      setDraft(newDraft);
+      showToast("估值情景预设已重命名。", "success");
+    }
+    cancelRenamePreset();
+  }
+
+  function deletePreset(presetId: string, name: string) {
+    if (!draft) return;
+    if (!window.confirm(`删除「${name}」预设？删除后需保存新版本才会同步到历史草稿。`)) return;
+    const newDraft = deleteQuantitativePreset(draft, presetId);
+    if (newDraft === draft) return;
+    pushHistory(newDraft);
+    setDraft(newDraft);
+    if (renamingPresetId === presetId) cancelRenamePreset();
+    showToast("估值情景预设已删除。", "success");
   }
 
   const canUndo = Boolean(history && history.index > 0);
@@ -312,29 +348,70 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
           <div className="quant-preset-list">
             {draft.presets.map((preset) => {
               const impact = describeQuantitativePresetImpact(draft, preset);
+              const isRenaming = renamingPresetId === preset.id;
               return (
-                <button
-                  type="button"
+                <article
                   key={preset.id}
-                  className={impact.tone}
-                  disabled={!impact.canApply}
-                  onClick={() => {
-                    const newDraft = applyQuantitativePreset(draft, preset);
-                    pushHistory(newDraft);
-                    setDraft(newDraft);
-                    setScenario("base");
-                    showToast(`已载入「${preset.name}」预设。`, "success");
-                  }}
+                  className={`quant-preset-card ${impact.tone}`}
                 >
-                  <strong>{preset.name}</strong>
-                  <span>{preset.assumptions.length} 项假设 · {new Date(preset.createdAt).toLocaleDateString("zh-CN")}</span>
-                  <em>{impact.title}</em>
-                  <small>
-                    {impact.baseDelta === undefined
-                      ? impact.detail
-                      : `基准 ${formatSignedMoney(impact.baseDelta, draft.currency)}${impact.baseDeltaPercent === undefined ? "" : ` · ${formatSignedPercent(impact.baseDeltaPercent)}`}`}
-                  </small>
-                </button>
+                  <div className="quant-preset-card-main">
+                    <strong>{preset.name}</strong>
+                    <span>{preset.assumptions.length} 项假设 · {new Date(preset.createdAt).toLocaleDateString("zh-CN")}</span>
+                    <em>{impact.title}</em>
+                    <small>
+                      {impact.baseDelta === undefined
+                        ? impact.detail
+                        : `基准 ${formatSignedMoney(impact.baseDelta, draft.currency)}${impact.baseDeltaPercent === undefined ? "" : ` · ${formatSignedPercent(impact.baseDeltaPercent)}`}`}
+                    </small>
+                  </div>
+                  {isRenaming ? (
+                    <form className="quant-preset-rename" onSubmit={(event) => {
+                      event.preventDefault();
+                      commitRenamePreset(preset.id);
+                    }}>
+                      <label>
+                        <span className="sr-only">重命名 {preset.name}</span>
+                        <input
+                          value={renamingPresetName}
+                          maxLength={40}
+                          autoFocus
+                          onChange={(event) => setRenamingPresetName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelRenamePreset();
+                            }
+                          }}
+                        />
+                      </label>
+                      <button type="submit">保存</button>
+                      <button type="button" onClick={cancelRenamePreset}>取消</button>
+                    </form>
+                  ) : (
+                    <div className="quant-preset-actions">
+                      <button
+                        type="button"
+                        className="quant-preset-apply"
+                        disabled={!impact.canApply}
+                        onClick={() => {
+                          const newDraft = applyQuantitativePreset(draft, preset);
+                          pushHistory(newDraft);
+                          setDraft(newDraft);
+                          setScenario("base");
+                          showToast(`已载入「${preset.name}」预设。`, "success");
+                        }}
+                      >
+                        {impact.canApply ? "载入" : "当前"}
+                      </button>
+                      <button type="button" className="quant-preset-ghost" onClick={() => startRenamePreset(preset.id, preset.name)}>
+                        重命名
+                      </button>
+                      <button type="button" className="quant-preset-danger" onClick={() => deletePreset(preset.id, preset.name)}>
+                        删除
+                      </button>
+                    </div>
+                  )}
+                </article>
               );
             })}
           </div>

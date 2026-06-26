@@ -1,5 +1,17 @@
 # CSTD Alpha - Iteration Log
 
+## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
+
+### Stage 1/6 IMPROVE — Valuation Preset Management
+
+- **承接方向:** 接续 Round 59 的预设库能力，先处理“预设无法整理/删除”的真实工作流缺口。
+- **旗舰:** 量化估值预设卡片现在提供独立的“载入 / 重命名 / 删除”操作；重命名为内联编辑，删除有确认并可通过撤销历史恢复草稿。
+- **真实问题修复:** 之前用户一旦生成或保存错误预设，只能继续保留在草稿里；现在可重命名修正，也可删除过期方案。
+- **验证:** 先写失败测试；836 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43175` 验证生成模板、重命名“谨慎下修”、删除“谨慎复核 QA”、桌面和 800px 无横向溢出；800px 操作按钮最小高度 44px。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-800.png`。
+- **下一阶段:** Stage 2/6 IMPROVE，为预设库管理增加更明确的保存/未保存提示，避免用户误以为重命名或删除已经持久化到历史版本。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets

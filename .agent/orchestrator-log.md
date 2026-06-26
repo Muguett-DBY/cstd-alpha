@@ -294,3 +294,19 @@
 **累计功能 commits:** `56cd3ef`, `ce9c797`, `8d4d5f3`, `cd22474`, `8b11c67`, `384d56b`
 **本地最终门禁:** 834 tests passed；lint passed；functions typecheck passed；build passed。
 **CI 最终状态:** 所有阶段功能 commit 与日志 commit 对应的 `Deploy Cloudflare Pages` runs 均 passed。
+
+## Round 60 - 6 Stage Main V2
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接上一轮预设库遗留风险，为量化估值情景预设增加可管理能力，避免错误或过期预设长期堆积。
+**开始状态:** `main` 与 `origin/main` 同步在 `9634bce`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 `renameQuantitativePreset` 与 `deleteQuantitativePreset` 状态契约测试，先复现 `renameQuantitativePreset is not a function` / `deleteQuantitativePreset is not a function`。
+**完成内容:** 新增预设重命名与删除状态函数；预设卡片从整卡按钮重构为独立载入、重命名、删除操作；重命名支持内联编辑、Escape 取消、保存后进入撤销历史；删除有确认弹窗并进入撤销历史；800px 下操作按钮保持 44px 触控目标。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 24 tests passed；全量 `npm test` 836 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Browser/node_repl 未能使用项目 Playwright 依赖，fallback 到仓库 Playwright + `wrangler pages dev dist --port 43175`；本地 QA 账号进入量化估值工作区，生成内置模板，重命名“谨慎下修”为“谨慎复核 QA”，删除后目标预设计数为 0；摘要为 `2 个方案 · 1 个可载入 · 1 个当前匹配`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，操作按钮最小高度 44px。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage1-preset-management-800.png`。
+**风险记录:** 预设删除/重命名仍是草稿级变更，需要保存新版本才会写回后端历史；Vite 仍有既有 pyodide externalization 和大 chunk warning。
+**下一阶段:** 阶段 2/6 IMPROVE，继续让预设管理与保存链路更可追溯，优先补齐“预设库变更需要保存”的明确待保存提示。
