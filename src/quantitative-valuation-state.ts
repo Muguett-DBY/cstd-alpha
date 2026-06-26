@@ -111,6 +111,11 @@ export type RestoredPresetLibrarySource = {
   detail: string;
 };
 
+export type QuantitativeVersionSourceSummary = {
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -338,6 +343,15 @@ export function describeRestoredPresetLibrarySource(draft: QuantitativeDraft): R
   return {
     title: `预设库来源 V${source.version}`,
     detail: `当前预设库仍保持从 V${source.version} 恢复的状态；保存新版本会把该来源写入自动备注。`,
+  };
+}
+
+export function describeQuantitativeVersionSourceSummary(draft?: QuantitativeDraft): QuantitativeVersionSourceSummary | null {
+  const source = draft?.restoredPresetLibrary;
+  if (!source) return null;
+  return {
+    title: `预设来源 V${source.version}`,
+    detail: `该版本的预设库由 V${source.version} 恢复后保存。`,
   };
 }
 

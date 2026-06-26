@@ -14,6 +14,16 @@
 - **Commit:** `cc2661d feat: persist restored valuation preset sources`
 - **下一阶段:** Stage 2/6 IMPROVE，将已持久化的来源显示到版本时间线和版本对比区。
 
+### Stage 2/6 IMPROVE — Show Persisted Version Source
+
+- **承接方向:** 接续阶段 1 的结构化来源持久化，把已保存来源展示到用户可见的版本复盘界面。
+- **旗舰:** 新增 `describeQuantitativeVersionSourceSummary`；版本时间线显示 `预设来源 V4` pill，对比区显示“该版本的预设库由 V4 恢复后保存。”
+- **真实问题修复:** 来源不再只是隐藏在 `draft_json` 中，用户能在历史版本复盘时直接看到预设库来源。
+- **验证:** 先写失败测试；852 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 验证时间线和对比区来源展示；1365px 与 800px 均无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage2-version-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage2-version-source-800.png`。
+- **下一阶段:** Stage 3/6 UIUX，优化版本复盘区在多版本、多来源状态下的信息层级和扫描效率。
+
 ## Round 61 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Version Preset Delta Summary

@@ -17,6 +17,7 @@ import {
   describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
+  describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
   describeRestoredPresetLibrarySource,
   describeYearlyOverrideSummary,
@@ -431,6 +432,20 @@ describe("quantitative valuation editor state", () => {
       "新增复核方案",
       "2026-06-26T00:30:00.000Z",
     ))).toBeNull();
+  });
+
+  test("describes persisted restored preset source on saved versions", () => {
+    expect(describeQuantitativeVersionSourceSummary({
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: 4,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    })).toEqual({
+      title: "预设来源 V4",
+      detail: "该版本的预设库由 V4 恢复后保存。",
+    });
+    expect(describeQuantitativeVersionSourceSummary(baseDraft())).toBeNull();
   });
 
   test("describes version restore action choices for the comparison panel", () => {

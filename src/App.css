@@ -5070,6 +5070,12 @@ button:not(:disabled):active,
   font-weight: 900;
 }
 
+.quant-version-preset-pill.source {
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  color: var(--amber) !important;
+}
+
 .quant-version-heading,
 .quant-version-comparison-head {
   display: flex;
@@ -5186,6 +5192,11 @@ button:not(:disabled):active,
 .quant-version-preset-note.synced {
   border-color: color-mix(in srgb, var(--green) 28%, var(--line));
   background: color-mix(in srgb, var(--green) 7%, var(--surface));
+}
+
+.quant-version-preset-note.source {
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
 }
 
 .quant-version-scenario-grid {
