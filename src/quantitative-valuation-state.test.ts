@@ -13,6 +13,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
   draftWarnings,
@@ -241,6 +242,33 @@ describe("quantitative valuation editor state", () => {
       title: "准备保存预设库变更",
       detail: "删除 1 个方案，保存新版本后写入历史。",
     });
+  });
+
+  test("describes workflow steps for the valuation action center", () => {
+    const latest = baseDraft();
+    const current = createQuantitativePreset(
+      applyDraftEdit(latest, { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+    const saveGuidance = describeQuantitativeSaveGuidance({
+      phase: "ready",
+      warnings: [],
+      current,
+      baseline: latest,
+      decisionNote: "半年报兑现后上修收入。",
+    });
+    const presetChangeSummary = describeQuantitativePresetChangeSummary(current, latest);
+
+    expect(describeQuantitativeWorkflowSteps({
+      saveGuidance,
+      presetChangeSummary,
+      hasDecisionNote: true,
+    })).toEqual([
+      { key: "note", label: "说明", status: "done", detail: "已填写版本说明" },
+      { key: "preset", label: "预设", status: "attention", detail: "新增 1 个方案，保存新版本后写入历史。" },
+      { key: "save", label: "保存", status: "ready", detail: "准备保存新版本" },
+    ]);
   });
 
   test("builds starter preset templates from baseline assumptions", () => {
