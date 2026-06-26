@@ -36,6 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     assumptions?: UserAssumptionEdit[];
     decisionNote?: string;
     presets?: QuantitativePreset[];
+    restoredPresetLibrary?: QuantitativeDraft["restoredPresetLibrary"];
   } | null;
   if (!body?.runId?.trim() || !body.parentVersionId?.trim() || !Array.isArray(body.assumptions)) {
     return json({ error: "估值保存参数不完整。" }, 400);
@@ -46,7 +47,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!latest?.draft || !workspace.snapshot) return json({ error: "估值草稿尚未准备完成。" }, 409);
   if (body.parentVersionId !== latest.id) return json({ error: "估值版本已更新，请刷新后再保存。" }, 409);
   try {
-    const draft = mergeUserAssumptions(latest.draft, body.assumptions, { presets: body.presets });
+    const draft = mergeUserAssumptions(latest.draft, body.assumptions, {
+      presets: body.presets,
+      restoredPresetLibrary: body.restoredPresetLibrary,
+    });
     validateQuantitativeDraft(draft);
     const result = calculateQuantitativeDraft(draft);
     const version = await createQuantitativeVersion(env.REPORT_LIBRARY_DB, {
@@ -72,12 +76,24 @@ export function isAshareResearchItem(item: { entityType: string; entityId: strin
   return /\d{6}/.test(text) && /A股|沪A|深A|创业板|科创板|SH-A|SZ-A|ASTOCK/i.test(text);
 }
 
-export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssumptionEdit[], options: { presets?: QuantitativePreset[] } = {}): QuantitativeDraft {
+export function mergeUserAssumptions(
+  draft: QuantitativeDraft,
+  edits: UserAssumptionEdit[],
+  options: {
+    presets?: QuantitativePreset[];
+    restoredPresetLibrary?: QuantitativeDraft["restoredPresetLibrary"];
+  } = {},
+): QuantitativeDraft {
   const assumptions = (draft.assumptions ?? []).map((assumption) => {
     const edit = edits.find((candidate) => candidate.key === assumption.key && candidate.forecastYear === assumption.forecastYear);
     return edit ? { ...assumption, ...editableFields(edit), origin: "user" as const, locked: true } : assumption;
   }).concat(missingForecastYearAssumptions(draft.assumptions ?? [], edits));
-  const merged: QuantitativeDraft = { ...draft, assumptions, presets: normalizeValuationPresets(options.presets ?? draft.presets) };
+  const merged: QuantitativeDraft = {
+    ...draft,
+    assumptions,
+    presets: normalizeValuationPresets(options.presets ?? draft.presets),
+    restoredPresetLibrary: normalizeRestoredPresetLibrarySource(options.restoredPresetLibrary ?? draft.restoredPresetLibrary),
+  };
   if (!merged.operating) return merged;
   const lookup = (key: string) => assumptions.find((assumption) => assumption.key === key);
   const percentTriple = (key: string, fallback: { low: number; base: number; high: number }) => {
@@ -180,6 +196,17 @@ function normalizeValuationPresets(presets: QuantitativePreset[] | undefined): Q
     return items;
   }, []);
   return uniqueNewest.length ? uniqueNewest.slice(-12) : undefined;
+}
+
+function normalizeRestoredPresetLibrarySource(source: QuantitativeDraft["restoredPresetLibrary"]): QuantitativeDraft["restoredPresetLibrary"] | undefined {
+  if (!source || !Number.isInteger(source.version) || source.version <= 0) return undefined;
+  const restoredAt = typeof source.restoredAt === "string" ? source.restoredAt.trim() : "";
+  const timestamp = Date.parse(restoredAt);
+  if (!restoredAt || !Number.isFinite(timestamp)) return undefined;
+  return {
+    version: Math.min(source.version, 9999),
+    restoredAt: new Date(timestamp).toISOString(),
+  };
 }
 
 function normalizePresetAssumption(assumption: EditableAssumption): EditableAssumption[] {

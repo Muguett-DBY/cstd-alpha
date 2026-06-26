@@ -516,3 +516,20 @@
 **本地最终门禁:** 848 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 **CI 最终状态:** 六阶段功能 commit 与阶段日志 commit 对应的 `Deploy Cloudflare Pages` runs 均 passed，截至阶段 6 功能 run `28234536344`。
 **遗留风险:** Vite 仍保留既有 pyodide browser externalization 和大 chunk warning；恢复来源持久化仍依赖保存时的自动 decision note，如用户手写备注会覆盖自动备注。
+
+## Round 62 - 6 Stage Main V2
+
+### 阶段 1/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 61 遗留风险，把恢复历史预设库的来源从前端临时草稿/自动备注推进到保存 API 和版本快照，避免用户手写备注覆盖后丢失来源审计。
+**开始状态:** `main` 位于 `ff664e7`，与最新生产部署一致；既有 `.agent/orchestrator-state.json` 和 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 准备新增前端保存请求和后端 merge 测试，先复现 `restoredPresetLibrary` 未随保存请求/版本草稿持久化。
+**完成内容:** 保存 API 客户端新增 `restoredPresetLibrary` 请求字段；量化工作区保存时发送当前草稿恢复来源；后端 `mergeUserAssumptions` 清洗并持久化合法恢复来源，非法 version/date 元数据会被丢弃。
+**真实问题修复:** Round 61 的来源审计依赖自动 decision note；用户手写备注会覆盖自动备注，导致历史版本丢失“预设库来自 Vx”的结构化来源。现在来源进入保存后的 `draft_json`，与手写备注并存。
+**本地验证:** 先写失败测试并复现后端 merge 后来源为 `undefined`；修复后定向 `functions/api/valuation-workspace.test.ts` 10 tests passed、`src/api.test.ts` 24 tests passed；全量 `npm test` 851 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 登录本地 QA，恢复 V4 预设库后填写手写备注并保存；再次读取 `/api/valuation-workspace`，最新 V6 的 `draft.restoredPresetLibrary` 为 `{ version: 4, restoredAt: ... }`，`decisionNote` 保持手写备注；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-800.png`。
+**风险记录:** 本阶段只持久化结构化来源；历史版本列表尚未直接展示该结构化字段，下一阶段应把已保存来源从版本快照中显式呈现出来。
+**下一阶段:** 阶段 2/6 IMPROVE，基于持久化来源在版本时间线/对比区展示“保存版本来源”。

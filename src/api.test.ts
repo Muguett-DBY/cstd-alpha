@@ -360,6 +360,50 @@ describe("API client", () => {
     );
   });
 
+  test("sends restored preset source metadata with manual valuation saves", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      workspace: { versions: [], actualReviews: [] },
+      version: {
+        id: "version-2",
+        runId: "run-1",
+        sourceSnapshotId: "snapshot-1",
+        version: 2,
+        status: "saved",
+        archetype: "operating",
+        method: "dcf_3_statement",
+        horizonYears: 5,
+        createdBy: "user",
+        createdAt: "2026-06-22T00:00:00.000Z",
+      },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await saveQuantitativeValuationWorkspace({
+      runId: "run-1",
+      parentVersionId: "version-1",
+      assumptions: [],
+      restoredPresetLibrary: {
+        version: 4,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/valuation-workspace",
+      expect.objectContaining({
+        body: JSON.stringify({
+          runId: "run-1",
+          parentVersionId: "version-1",
+          assumptions: [],
+          restoredPresetLibrary: {
+            version: 4,
+            restoredAt: "2026-06-26T00:20:00.000Z",
+          },
+        }),
+      }),
+    );
+  });
+
   test("rejects login responses that omit the user payload", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }))));
 
