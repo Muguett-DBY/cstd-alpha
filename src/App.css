@@ -4167,6 +4167,33 @@ button:not(:disabled):active,
   font-weight: 900;
 }
 
+.quant-preset-templates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.quant-preset-templates div {
+  display: grid;
+  gap: 4px;
+}
+
+.quant-preset-templates strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.quant-preset-templates span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .quant-preset-create strong,
 .quant-preset-list strong {
   color: var(--ink);
@@ -5005,6 +5032,14 @@ button:not(:disabled):active,
   }
 
   .quant-preset-create button {
+    min-height: 44px;
+  }
+
+  .quant-preset-templates {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-preset-templates button {
     min-height: 44px;
   }
 

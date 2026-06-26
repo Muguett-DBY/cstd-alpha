@@ -6,6 +6,7 @@ import {
   applyDraftEdit,
   applyQuantitativePreset,
   applySensitivityPoint,
+  buildQuantitativeStarterPresets,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
   createQuantitativePreset,
@@ -274,6 +275,29 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             disabled={!userLockedAssumptions(draft).length}
           >
             保存当前预设
+          </button>
+        </div>
+        <div className="quant-preset-templates">
+          <div>
+            <strong>内置模板</strong>
+            <span>生成基准复核、谨慎下修和压力测试方案，再按影响摘要选择载入。</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const existingNames = new Set((draft.presets ?? []).map((preset) => preset.name));
+              const starters = buildQuantitativeStarterPresets(draft).filter((preset) => !existingNames.has(preset.name));
+              if (!starters.length) {
+                showToast("内置模板已在当前草稿中。", "success");
+                return;
+              }
+              const newDraft = { ...draft, presets: [...(draft.presets ?? []), ...starters].slice(-12) };
+              pushHistory(newDraft);
+              setDraft(newDraft);
+              showToast("已生成内置估值模板。", "success");
+            }}
+          >
+            生成内置模板
           </button>
         </div>
         {draft.presets?.length ? (
