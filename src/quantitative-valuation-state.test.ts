@@ -13,6 +13,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
@@ -269,6 +270,26 @@ describe("quantitative valuation editor state", () => {
       { key: "preset", label: "预设", status: "attention", detail: "新增 1 个方案，保存新版本后写入历史。" },
       { key: "save", label: "保存", status: "ready", detail: "准备保存新版本" },
     ]);
+  });
+
+  test("summarizes presets carried by a saved valuation version", () => {
+    const withOnePreset = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+    const withStarters = { ...withOnePreset, presets: [...(withOnePreset.presets ?? []), ...buildQuantitativeStarterPresets(baseDraft(), "2026-06-26T00:01:00.000Z")] };
+
+    expect(describeQuantitativeVersionPresetSummary(withStarters)).toEqual({
+      count: 4,
+      title: "4 个预设",
+      detail: "半年报兑现、基准复核、谨慎下修，另 1 个",
+    });
+    expect(describeQuantitativeVersionPresetSummary(baseDraft())).toEqual({
+      count: 0,
+      title: "无预设",
+      detail: "该版本未携带可复用预设。",
+    });
   });
 
   test("builds starter preset templates from baseline assumptions", () => {

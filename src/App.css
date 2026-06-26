@@ -5055,6 +5055,16 @@ button:not(:disabled):active,
   -webkit-box-orient: vertical;
 }
 
+.quant-version-preset-pill {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--blue) 26%, var(--line));
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface));
+  color: var(--blue) !important;
+  font-weight: 900;
+}
+
 .quant-version-heading,
 .quant-version-comparison-head {
   display: flex;
@@ -5105,6 +5115,17 @@ button:not(:disabled):active,
   border: 1px solid color-mix(in srgb, var(--teal) 22%, var(--line));
   border-radius: 7px;
   background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+  color: var(--body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.quant-version-preset-note {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface));
   color: var(--body);
   font-size: 12px;
   line-height: 1.5;

@@ -16,6 +16,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
@@ -598,26 +599,21 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         </div>
         <div className="quant-version-timeline">
           {workspace.versions.map((version) => (
-            <button
-              type="button"
+            <VersionTimelineButton
               key={version.id}
-              className={comparisonVersionId === version.id ? "active" : ""}
-              aria-pressed={comparisonVersionId === version.id}
-              onClick={() => setComparisonVersionId(version.id)}
-            >
-              <strong>V{version.version}</strong>
-              <span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span>
-              {version.decisionNote ? <em>{version.decisionNote}</em> : null}
-              <small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small>
-            </button>
+              active={comparisonVersionId === version.id}
+              version={version}
+              onSelect={() => setComparisonVersionId(version.id)}
+            />
           ))}
         </div>
         {comparisonVersion && versionComparison ? (
           <div className="quant-version-comparison" aria-live="polite">
             <div className="quant-version-comparison-head">
               <strong>当前草稿 vs V{comparisonVersion.version}</strong>
-              <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"}</span>
+              <span>{versionComparison.assumptions.length ? `${versionComparison.assumptions.length} 项关键假设有变化` : "关键假设未变化"} · {describeQuantitativeVersionPresetSummary(comparisonVersion.draft).title}</span>
             </div>
+            <p className="quant-version-preset-note">V{comparisonVersion.version} 预设库：{describeQuantitativeVersionPresetSummary(comparisonVersion.draft).detail}</p>
             {comparisonVersion.decisionNote ? <p className="quant-version-note">V{comparisonVersion.version} 备注：{comparisonVersion.decisionNote}</p> : null}
             <div className="quant-version-scenario-grid">
               {versionComparison.scenarios.map((item) => (
@@ -667,6 +663,32 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         ) : <p className="workbench-empty compact">新财报披露后，这里会自动对比预测与实际。</p>}
       </section>
     </section>
+  );
+}
+
+function VersionTimelineButton({
+  active,
+  version,
+  onSelect,
+}: {
+  active: boolean;
+  version: QuantitativeValuationWorkspace["versions"][number];
+  onSelect: () => void;
+}) {
+  const presetSummary = describeQuantitativeVersionPresetSummary(version.draft);
+  return (
+    <button
+      type="button"
+      className={active ? "active" : ""}
+      aria-pressed={active}
+      onClick={onSelect}
+    >
+      <strong>V{version.version}</strong>
+      <span>{version.createdBy === "user" ? "手动版本" : "自动基准"}</span>
+      <span className="quant-version-preset-pill">{presetSummary.title}</span>
+      {version.decisionNote ? <em>{version.decisionNote}</em> : null}
+      <small>{new Date(version.createdAt).toLocaleString("zh-CN")}</small>
+    </button>
   );
 }
 
