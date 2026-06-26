@@ -301,6 +301,13 @@ export function deleteQuantitativePreset(draft: QuantitativeDraft, presetId: str
   return { ...draft, presets: nextPresets };
 }
 
+export function restoreQuantitativePresetLibrary(current: QuantitativeDraft, source?: QuantitativeDraft): QuantitativeDraft {
+  return {
+    ...current,
+    presets: source?.presets?.length ? source.presets.map((preset) => ({ ...preset, assumptions: [...(preset.assumptions ?? [])] })) : undefined,
+  };
+}
+
 export function buildQuantitativeStarterPresets(draft: QuantitativeDraft, now = new Date().toISOString()): QuantitativePreset[] {
   const stamp = now.replace(/\D/g, "").slice(0, 14);
   const templates: Array<{
