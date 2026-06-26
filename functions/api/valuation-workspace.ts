@@ -172,7 +172,14 @@ function normalizeValuationPresets(presets: QuantitativePreset[] | undefined): Q
       assumptions,
     }];
   });
-  return normalized.length ? normalized.slice(-12) : undefined;
+  const seen = new Set<string>();
+  const uniqueNewest = normalized.reduceRight<QuantitativePreset[]>((items, preset) => {
+    if (seen.has(preset.id)) return items;
+    seen.add(preset.id);
+    items.unshift(preset);
+    return items;
+  }, []);
+  return uniqueNewest.length ? uniqueNewest.slice(-12) : undefined;
 }
 
 function normalizePresetAssumption(assumption: EditableAssumption): EditableAssumption[] {

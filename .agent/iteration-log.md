@@ -50,6 +50,14 @@
 - **Commit:** `3e5c92c feat: show valuation version preset provenance`
 - **下一阶段:** Stage 5/6 CHECK，验证保存 API 返回的版本历史是否真实携带 presets 快照，并修复发现的真实问题。
 
+### Stage 5/6 CHECK — Valuation Preset API Invariants
+
+- **承接方向:** 检查阶段 1-4 打通的预设保存和版本追溯链路，优先保证后端快照不会返回前端无法稳定处理的 preset key。
+- **检查发现:** 保存 API 会清洗 `presets`，但没有对规范化后的 preset id 去重；重复 id 可进入 `draft_json`，导致版本预设计数、React key、重命名/删除操作都存在歧义。
+- **真实问题修复:** 后端预设归一化现在同一 id 只保留最新一条，再截取最近 12 个预设，保存后的版本快照保持唯一 preset id。
+- **验证:** 先写失败测试复现重复 id；定向 8 tests passed；全量 841 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **下一阶段:** Stage 6/6 IMPROVE，基于保存 API 的唯一性约束继续增强前端保存后的确认反馈。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets

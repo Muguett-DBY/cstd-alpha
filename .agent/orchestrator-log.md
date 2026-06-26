@@ -362,3 +362,17 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28219172524`)。
 **风险记录:** 本阶段展示的是版本 draft 内的 presets 快照；历史版本若本身没有保存 presets，会显示“无预设”，这是数据真实状态。
 **下一阶段:** 阶段 5/6 CHECK，做量化估值工作区健康检查，重点验证保存 API 返回的版本历史是否带回 presets 快照并与前端摘要一致。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 审计量化估值保存 API 的预设快照链路，确认保存后的版本历史不会生成前端无法稳定操作的 preset key。
+**开始状态:** 阶段 4 功能 commit `3e5c92c` 和日志 commit `aec34bd` 均已推送，CI runs `28219172524` / `28219316971` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**检查发现:** `mergeUserAssumptions` 会清洗保存请求里的 `presets`，但未对规范化后的 preset id 做去重；重复 id 会被写入 `draft_json`，导致历史版本摘要计数不可靠，并让前端预设卡片 key 与重命名/删除操作出现歧义。
+**测试先行:** 新增重复 preset id 契约测试，先复现 `expected ... to have a length of 1 but got 2`。
+**完成内容:** 后端预设归一化改为从右向左去重，同一规范化 id 只保留最新一条，再维持最近 12 个预设上限；新增回归测试覆盖重复 id 保存场景。
+**真实问题修复:** 保存 API 现在不会把重复 preset id 写入版本快照，避免后续版本历史、预设库卡片和 rename/delete 操作基于非唯一 id 产生不稳定行为。
+**本地验证:** 定向 `functions/api/valuation-workspace.test.ts` 8 tests passed；全量 `npm test` 841 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**风险记录:** 该阶段是后端契约修复，无 UI 文件变更；构建仍保留既有 pyodide externalization 和大 chunk warning。
+**下一阶段:** 阶段 6/6 IMPROVE，基于本轮预设保存闭环继续增强前端对去重/保存后的确认反馈。
