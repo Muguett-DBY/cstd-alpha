@@ -198,6 +198,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         assumptions: userLockedAssumptions(draft),
         decisionNote: decisionNote.trim() || autoDecisionNote,
         presets: draft.presets ?? [],
+        restoredPresetLibrary: draft.restoredPresetLibrary,
       });
       setWorkspace(saved.workspace);
       const savedDraft = saved.workspace.versions[0]?.draft ?? draft;
