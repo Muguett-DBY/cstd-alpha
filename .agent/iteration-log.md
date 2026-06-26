@@ -10,6 +10,8 @@
 - **验证:** 先写失败测试；851 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 恢复 V4 后填写手写备注保存，API 读取最新 V6 确认 `draft.restoredPresetLibrary.version=4` 且 `decisionNote` 保持手写备注；1365px 与 800px 均无横向溢出。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28238460530`)。
+- **Commit:** `cc2661d feat: persist restored valuation preset sources`
 - **下一阶段:** Stage 2/6 IMPROVE，将已持久化的来源显示到版本时间线和版本对比区。
 
 ## Round 61 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)

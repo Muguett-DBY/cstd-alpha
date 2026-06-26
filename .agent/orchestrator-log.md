@@ -531,5 +531,7 @@
 **本地验证:** 先写失败测试并复现后端 merge 后来源为 `undefined`；修复后定向 `functions/api/valuation-workspace.test.ts` 10 tests passed、`src/api.test.ts` 24 tests passed；全量 `npm test` 851 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 登录本地 QA，恢复 V4 预设库后填写手写备注并保存；再次读取 `/api/valuation-workspace`，最新 V6 的 `draft.restoredPresetLibrary` 为 `{ version: 4, restoredAt: ... }`，`decisionNote` 保持手写备注；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage1-persist-source-800.png`。
+**Commit / Push:** `cc2661d feat: persist restored valuation preset sources` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28238460530`)。
 **风险记录:** 本阶段只持久化结构化来源；历史版本列表尚未直接展示该结构化字段，下一阶段应把已保存来源从版本快照中显式呈现出来。
 **下一阶段:** 阶段 2/6 IMPROVE，基于持久化来源在版本时间线/对比区展示“保存版本来源”。
