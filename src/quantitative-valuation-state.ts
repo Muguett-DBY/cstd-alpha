@@ -116,6 +116,16 @@ export type QuantitativeVersionSourceSummary = {
   detail: string;
 };
 
+export type QuantitativeVersionReviewSummary = {
+  title: string;
+  detail: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    tone: "neutral" | "changed" | "source" | "note";
+  }>;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -352,6 +362,51 @@ export function describeQuantitativeVersionSourceSummary(draft?: QuantitativeDra
   return {
     title: `预设来源 V${source.version}`,
     detail: `该版本的预设库由 V${source.version} 恢复后保存。`,
+  };
+}
+
+export function describeQuantitativeVersionReviewSummary(input: {
+  version: number;
+  draft?: QuantitativeDraft;
+  changedAssumptionCount: number;
+  presetDelta?: QuantitativeVersionPresetDelta | null;
+  decisionNote?: string | null;
+}): QuantitativeVersionReviewSummary {
+  const sourceSummary = describeQuantitativeVersionSourceSummary(input.draft);
+  const presetSummary = input.presetDelta?.title ?? describeQuantitativeVersionPresetSummary(input.draft).title;
+  const hasNote = Boolean(input.decisionNote?.trim());
+  const assumptionValue = input.changedAssumptionCount ? `${input.changedAssumptionCount} 项变化` : "无变化";
+  const detail = [
+    input.changedAssumptionCount ? `${input.changedAssumptionCount} 项关键假设变化` : "关键假设未变化",
+    presetSummary,
+    sourceSummary ? `保留${sourceSummary.title}` : "无恢复来源",
+    hasNote ? "含版本备注" : "无版本备注",
+  ].join("；") + "。";
+  return {
+    title: `V${input.version} 复盘摘要`,
+    detail,
+    metrics: [
+      {
+        label: "关键假设",
+        value: assumptionValue,
+        tone: input.changedAssumptionCount ? "changed" : "neutral",
+      },
+      {
+        label: "预设库",
+        value: presetSummary,
+        tone: input.presetDelta?.hasChanges ? "changed" : "neutral",
+      },
+      {
+        label: "来源",
+        value: sourceSummary?.title ?? "无恢复来源",
+        tone: sourceSummary ? "source" : "neutral",
+      },
+      {
+        label: "备注",
+        value: hasNote ? "有备注" : "无备注",
+        tone: hasNote ? "note" : "neutral",
+      },
+    ],
   };
 }
 

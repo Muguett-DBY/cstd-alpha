@@ -16,6 +16,7 @@ import {
   describeQuantitativeSaveSuccess,
   describeQuantitativeVersionActionHint,
   describeQuantitativeVersionPresetDelta,
+  describeQuantitativeVersionReviewSummary,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
@@ -446,6 +447,37 @@ describe("quantitative valuation editor state", () => {
       detail: "该版本的预设库由 V4 恢复后保存。",
     });
     expect(describeQuantitativeVersionSourceSummary(baseDraft())).toBeNull();
+  });
+
+  test("builds a compact version review summary for the comparison panel", () => {
+    const sourceDraft = {
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: 4,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    };
+
+    expect(describeQuantitativeVersionReviewSummary({
+      version: 6,
+      draft: sourceDraft,
+      changedAssumptionCount: 2,
+      presetDelta: {
+        hasChanges: true,
+        title: "预设库有 1 项差异",
+        detail: "新增 1 个方案。",
+      },
+      decisionNote: "手写备注 QA",
+    })).toEqual({
+      title: "V6 复盘摘要",
+      detail: "2 项关键假设变化；预设库有 1 项差异；保留预设来源 V4；含版本备注。",
+      metrics: [
+        { label: "关键假设", value: "2 项变化", tone: "changed" },
+        { label: "预设库", value: "预设库有 1 项差异", tone: "changed" },
+        { label: "来源", value: "预设来源 V4", tone: "source" },
+        { label: "备注", value: "有备注", tone: "note" },
+      ],
+    });
   });
 
   test("describes version restore action choices for the comparison panel", () => {

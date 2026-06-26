@@ -5160,6 +5160,52 @@ button:not(:disabled):active,
 .quant-version-comparison-head span {
   color: var(--muted);
   font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.quant-version-review-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quant-version-review-metric {
+  display: grid;
+  min-height: 58px;
+  align-content: center;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.quant-version-review-metric small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.quant-version-review-metric strong {
+  color: var(--heading);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.quant-version-review-metric.changed {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--line));
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
+}
+
+.quant-version-review-metric.source {
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--line));
+  background: color-mix(in srgb, var(--blue) 6%, var(--surface));
+}
+
+.quant-version-review-metric.note {
+  border-color: color-mix(in srgb, var(--teal) 26%, var(--line));
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
 }
 
 .quant-version-note {
@@ -5377,6 +5423,14 @@ button:not(:disabled):active,
   .quant-version-heading,
   .quant-version-comparison-head {
     display: grid;
+  }
+
+  .quant-version-comparison-head span {
+    text-align: left;
+  }
+
+  .quant-version-review-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .quant-version-action-panel {
