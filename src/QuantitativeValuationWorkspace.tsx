@@ -16,6 +16,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
   draftWarnings,
@@ -109,6 +110,11 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const presetChangeSummary = useMemo(() =>
     draft ? describeQuantitativePresetChangeSummary(draft, latestDraft) : { hasChanges: false, changedPresetCount: 0, title: "预设库已同步", detail: "当前预设库与最新版本一致。" },
   [draft, latestDraft]);
+  const workflowSteps = useMemo(() => describeQuantitativeWorkflowSteps({
+    saveGuidance,
+    presetChangeSummary,
+    hasDecisionNote: Boolean(decisionNote.trim()),
+  }), [decisionNote, presetChangeSummary, saveGuidance]);
   const versionComparison = useMemo(() => {
     if (!draft || !comparisonVersion?.draft || warnings.some((warning) => warning.level === "error")) return null;
     try { return compareQuantitativeDrafts(draft, comparisonVersion.draft); } catch { return null; }
@@ -252,43 +258,59 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         </div>
       </header>
 
-      <section className="quant-decision-note" aria-label="版本决策备注">
-        <div>
-          <strong>本次版本说明</strong>
-          <span>保存时会写入版本历史，方便复盘每次假设调整的原因。</span>
+      <section className="quant-action-center" aria-label="估值行动中心">
+        <div className="quant-action-head">
+          <div>
+            <p className="eyebrow">估值行动中心</p>
+            <h3>说明、预设与保存</h3>
+          </div>
+          <div className="quant-workflow-steps" aria-label="估值保存流程">
+            {workflowSteps.map((step) => (
+              <span key={step.key} className={step.status} title={step.detail}>
+                <strong>{step.label}</strong>
+                <small>{step.detail}</small>
+              </span>
+            ))}
+          </div>
         </div>
-        <label>
-          <textarea
-            value={decisionNote}
-            maxLength={240}
-            rows={2}
-            placeholder={autoDecisionNote || "例如：上调收入增速，等待半年报订单兑现。"}
-            onChange={(event) => setDecisionNote(event.target.value)}
-          />
-          <small>{decisionNote.trim() ? `${decisionNote.trim().length}/240` : autoDecisionNote ? `将自动记录：${autoDecisionNote}` : "可选，留空也会记录本次关键假设变化。"}</small>
-        </label>
-      </section>
 
-      <section className={`quant-save-strip ${saveGuidance.tone}`} aria-live="polite" aria-label="保存版本状态">
-        <div className="quant-save-status">
-          <span>{saveGuidance.tone === "saving" ? "写入中" : saveGuidance.canSave ? "可保存" : "需处理"}</span>
-          <strong>{saveGuidance.title}</strong>
-          <p>{saveGuidance.detail}</p>
-        </div>
-        <div className="quant-save-audit">
-          <span>{saveGuidance.changedAssumptionCount ? `${saveGuidance.changedAssumptionCount} 项变更` : "无数值变更"}</span>
-          <p>{saveGuidance.notePreview}</p>
-        </div>
-        <div className="quant-save-audit yearly">
-          <span>{yearlyOverrideSummary.title}</span>
-          <p>{yearlyOverrideSummary.detail}</p>
-        </div>
-        <button type="button" className="primary-action" onClick={() => void save()} disabled={!saveGuidance.canSave}>
-          {phase === "saving" ? "保存中…" : "保存新版本"}
-        </button>
-      </section>
+        <section className="quant-decision-note" aria-label="版本决策备注">
+          <div>
+            <strong>本次版本说明</strong>
+            <span>保存时会写入版本历史，方便复盘每次假设调整的原因。</span>
+          </div>
+          <label>
+            <textarea
+              value={decisionNote}
+              maxLength={240}
+              rows={2}
+              placeholder={autoDecisionNote || "例如：上调收入增速，等待半年报订单兑现。"}
+              onChange={(event) => setDecisionNote(event.target.value)}
+            />
+            <small>{decisionNote.trim() ? `${decisionNote.trim().length}/240` : autoDecisionNote ? `将自动记录：${autoDecisionNote}` : "可选，留空也会记录本次关键假设变化。"}</small>
+          </label>
+        </section>
 
-      <section className="quant-preset-panel" aria-label="估值情景预设">
+        <section className={`quant-save-strip ${saveGuidance.tone}`} aria-live="polite" aria-label="保存版本状态">
+          <div className="quant-save-status">
+            <span>{saveGuidance.tone === "saving" ? "写入中" : saveGuidance.canSave ? "可保存" : "需处理"}</span>
+            <strong>{saveGuidance.title}</strong>
+            <p>{saveGuidance.detail}</p>
+          </div>
+          <div className="quant-save-audit">
+            <span>{saveGuidance.changedAssumptionCount ? `${saveGuidance.changedAssumptionCount} 项变更` : "无数值变更"}</span>
+            <p>{saveGuidance.notePreview}</p>
+          </div>
+          <div className="quant-save-audit yearly">
+            <span>{yearlyOverrideSummary.title}</span>
+            <p>{yearlyOverrideSummary.detail}</p>
+          </div>
+          <button type="button" className="primary-action" onClick={() => void save()} disabled={!saveGuidance.canSave}>
+            {phase === "saving" ? "保存中…" : "保存新版本"}
+          </button>
+        </section>
+
+        <section className="quant-preset-panel" aria-label="估值情景预设">
         <div className="quant-preset-create">
           <div>
             <strong>情景预设库</strong>
@@ -423,6 +445,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
         ) : (
           <p className="workbench-empty compact">保存第一个预设后，可在基准、谨慎、压力测试等方案间快速切换。</p>
         )}
+        </section>
       </section>
 
       {message ? <div className="workbench-notice">{message}</div> : null}

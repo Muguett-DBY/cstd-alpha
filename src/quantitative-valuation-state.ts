@@ -80,6 +80,13 @@ export type QuantitativePresetChangeSummary = {
   detail: string;
 };
 
+export type QuantitativeWorkflowStep = {
+  key: "note" | "preset" | "save";
+  label: string;
+  status: "idle" | "attention" | "ready" | "done" | "blocked";
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -441,6 +448,40 @@ export function describeQuantitativePresetChangeSummary(
     title: "预设库变更待保存",
     detail: `${parts.join("、")}，保存新版本后写入历史。`,
   };
+}
+
+export function describeQuantitativeWorkflowSteps(input: {
+  saveGuidance: QuantitativeSaveGuidance;
+  presetChangeSummary: QuantitativePresetChangeSummary;
+  hasDecisionNote: boolean;
+}): QuantitativeWorkflowStep[] {
+  const saveStatus: QuantitativeWorkflowStep["status"] = input.saveGuidance.tone === "blocked"
+    ? "blocked"
+    : input.saveGuidance.tone === "saving"
+      ? "attention"
+      : input.saveGuidance.canSave
+        ? "ready"
+        : "idle";
+  return [
+    {
+      key: "note",
+      label: "说明",
+      status: input.hasDecisionNote ? "done" : "idle",
+      detail: input.hasDecisionNote ? "已填写版本说明" : "可填写保存原因",
+    },
+    {
+      key: "preset",
+      label: "预设",
+      status: input.presetChangeSummary.hasChanges ? "attention" : "done",
+      detail: input.presetChangeSummary.hasChanges ? input.presetChangeSummary.detail : "预设库与最新版本一致",
+    },
+    {
+      key: "save",
+      label: "保存",
+      status: saveStatus,
+      detail: input.saveGuidance.title,
+    },
+  ];
 }
 
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {

@@ -3942,6 +3942,7 @@ button:not(:disabled):active,
 }
 
 .quant-snapshot,
+.quant-action-center,
 .quant-decision-note,
 .quant-save-strip,
 .quant-editor-panel,
@@ -3956,6 +3957,7 @@ button:not(:disabled):active,
 }
 
 .quant-snapshot:hover,
+.quant-action-center:hover,
 .quant-decision-note:hover,
 .quant-save-strip:hover,
 .quant-editor-panel:hover,
@@ -3971,6 +3973,76 @@ button:not(:disabled):active,
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
+}
+
+.quant-action-center {
+  display: grid;
+  gap: 14px;
+  border-color: color-mix(in srgb, var(--line) 64%, var(--teal));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--teal) 5%, transparent), transparent 44%),
+    var(--surface);
+}
+
+.quant-action-head {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.quant-action-head h3 {
+  margin: 0;
+}
+
+.quant-workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quant-workflow-steps span {
+  display: grid;
+  gap: 3px;
+  min-height: 50px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.quant-workflow-steps strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.quant-workflow-steps small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quant-workflow-steps span.ready {
+  border-color: color-mix(in srgb, var(--teal) 38%, var(--line));
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+}
+
+.quant-workflow-steps span.attention {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.quant-workflow-steps span.done {
+  border-color: color-mix(in srgb, var(--blue) 26%, var(--line));
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface));
+}
+
+.quant-workflow-steps span.blocked {
+  border-color: color-mix(in srgb, var(--red) 42%, var(--line));
+  background: color-mix(in srgb, var(--red) 6%, var(--surface));
 }
 
 .quant-snapshot h2,
@@ -4013,6 +4085,10 @@ button:not(:disabled):active,
   grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .quant-decision-note strong {
@@ -4139,10 +4215,10 @@ button:not(:disabled):active,
 .quant-preset-panel {
   display: grid;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--blue));
-  border-radius: 8px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 5%, var(--surface)), var(--surface));
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .quant-preset-create {
@@ -5096,7 +5172,38 @@ button:not(:disabled):active,
   text-align: left;
 }
 
+@media (max-width: 1100px) {
+  .quant-action-head,
+  .quant-decision-note,
+  .quant-save-strip,
+  .quant-preset-create {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .quant-workflow-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quant-save-strip .primary-action {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 900px) {
+  .quant-action-center {
+    padding: 14px;
+  }
+
+  .quant-workflow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .quant-workflow-steps span {
+    min-height: 44px;
+  }
+
   .quant-save-strip {
     grid-template-columns: 1fr;
     align-items: stretch;

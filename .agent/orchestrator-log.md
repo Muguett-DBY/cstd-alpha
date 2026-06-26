@@ -329,3 +329,17 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28218283357`)。
 **风险记录:** 预设变更摘要基于当前草稿和最新版本的 preset id 对比；如果未来引入跨版本模板实体，需要把摘要迁移到后端模板变更模型。
 **下一阶段:** 阶段 3/6 UIUX，围绕预设库、保存条和版本区做更清晰的信息层级与响应式整合。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 将版本说明、保存状态、预设库从独立堆叠升级为一个清晰的“估值行动中心”，让用户第一眼理解保存前需要处理什么。
+**开始状态:** 阶段 2 功能 commit `1007e51` 和日志 commit `8ba4f72` 均已推送，CI runs `28218283357` / `28218605103` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `describeQuantitativeWorkflowSteps` 状态契约；工作区新增“估值行动中心”标题和三步状态条（说明/预设/保存）；版本说明、保存状态、预设库整合到同一行动区；子区去掉重复卡片边框，减少堆叠感；1100px 以下行动区、保存条、预设创建区单列，900px 以下流程步骤单列且保持触控高度。
+**配套体验改进:** 保存流程状态更可扫读；预设待保存 detail 通过步骤 tooltip 保留；中宽布局不再挤压保存条四列；移动端步骤卡高度稳定；行动中心 hover/focus 视觉统一。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 27 tests passed；全量 `npm test` 839 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43176` 验证行动中心标题、3 个流程步骤、桌面 `scrollWidth=clientWidth=1365`；1100px 行动区和保存条单列且无溢出；800px 流程步骤单列、最小高度 52px、`scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-1100.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-800.png`。
+**风险记录:** UIUX 阶段未改变保存 API；行动中心仍依赖前端草稿状态判断，未来如果预设变为后端模板实体需同步更新状态来源。
+**下一阶段:** 阶段 4/6 IMPROVE，继续补齐估值版本可追溯能力，优先考虑保存后版本历史中展示预设库变更摘要。

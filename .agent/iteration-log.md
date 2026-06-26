@@ -26,6 +26,16 @@
 - **Commit:** `1007e51 feat: flag unsaved valuation preset changes`
 - **下一阶段:** Stage 3/6 UIUX，围绕预设库、保存条、版本区做更清晰的信息层级和响应式整合。
 
+### Stage 3/6 UIUX — Valuation Action Center
+
+- **承接方向:** 把阶段 1-2 的预设管理和待保存反馈整合成一个更成熟的估值工作流界面。
+- **旗舰:** 新增“估值行动中心”，用说明/预设/保存三步状态条统领版本备注、保存状态和预设库，用户第一眼能看到当前保存闭环走到哪一步。
+- **配套体验:** 去掉内部重复卡片边框，减少堆叠感；1100px 以下行动区和保存条单列；900px 以下流程步骤单列并保持触控高度；步骤 tooltip 保留完整状态说明。
+- **验证:** 新增 `describeQuantitativeWorkflowSteps` 测试；839 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43176` 验证桌面/1100px/800px 行动中心无横向溢出，800px 步骤最小高度 52px。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-1100.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage3-action-center-800.png`。
+- **下一阶段:** Stage 4/6 IMPROVE，继续补齐估值版本可追溯能力，优先考虑保存后版本历史中展示预设库变更摘要。
+
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Reusable Valuation Scenario Presets
