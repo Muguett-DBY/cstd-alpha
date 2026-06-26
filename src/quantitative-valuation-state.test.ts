@@ -386,6 +386,35 @@ describe("quantitative valuation editor state", () => {
     expect(buildDraftDecisionNote(restored, baseDraft())).toBe("恢复 V4 预设库。");
   });
 
+  test("clears restored preset source after editing the preset library", () => {
+    const sourceWithPreset = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "ebitMargin", scenario: "base", rawValue: "14" }),
+      "历史基准方案",
+      "2026-06-26T00:20:00.000Z",
+    );
+    const restored = restoreQuantitativePresetLibrary(
+      baseDraft(),
+      sourceWithPreset,
+      {
+        version: 4,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    );
+
+    const created = createQuantitativePreset(
+      applyDraftEdit(restored, { key: "revenueGrowth", scenario: "base", rawValue: "13.5" }),
+      "新增复核方案",
+      "2026-06-26T00:30:00.000Z",
+    );
+    const renamed = renameQuantitativePreset(restored, restored.presets?.[0]?.id ?? "", "重命名历史方案");
+    const deleted = deleteQuantitativePreset(restored, restored.presets?.[0]?.id ?? "");
+
+    expect(created.restoredPresetLibrary).toBeUndefined();
+    expect(renamed.restoredPresetLibrary).toBeUndefined();
+    expect(deleted.restoredPresetLibrary).toBeUndefined();
+    expect(buildDraftDecisionNote(renamed, baseDraft())).toBe("保存为审计版本：关键假设未变化。");
+  });
+
   test("describes version restore action choices for the comparison panel", () => {
     expect(describeQuantitativeVersionActionHint(4, {
       hasChanges: true,
