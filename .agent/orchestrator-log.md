@@ -468,5 +468,7 @@
 **本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 33 tests passed；全量 `npm test` 846 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，点击 `恢复 V4 预设库` 后保存审计说明显示 `恢复 V4 预设库。`，toast 显示 `已恢复 V4 预设库，保存新版本后写入历史。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-800.png`。
+**Commit / Push:** `efdeaa2 feat: audit restored valuation preset sources` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28233190992`)。
 **风险记录:** 恢复来源元数据用于前端保存前审计说明；若用户手写版本说明，仍会覆盖自动备注。后续阶段需要检查预设库再次被编辑时是否应清理恢复来源，避免 stale source。
 **下一阶段:** 阶段 5/6 CHECK，聚焦恢复来源元数据在后续编辑流程中的一致性与残留风险。

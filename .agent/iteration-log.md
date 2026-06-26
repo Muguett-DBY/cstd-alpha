@@ -46,6 +46,8 @@
 - **验证:** 先写失败测试；846 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证点击 `恢复 V4 预设库` 后自动审计说明和 toast 可见；1365px 与 800px 均无横向溢出。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage4-preset-source-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28233190992`)。
+- **Commit:** `efdeaa2 feat: audit restored valuation preset sources`
 - **下一阶段:** Stage 5/6 CHECK，检查恢复来源在后续预设库编辑中的一致性与 stale source 风险。
 
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
