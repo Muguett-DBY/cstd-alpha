@@ -22,6 +22,7 @@ import {
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
+  describeRestoredPresetLibrarySource,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
   draftWarnings,
@@ -110,6 +111,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const yearlyOverrideSummary = useMemo(() =>
     draft ? describeYearlyOverrideSummary(draft) : { count: 0, title: "无逐年覆写", detail: "高级逐年预测未覆盖基准假设。" },
   [draft]);
+  const restoredPresetSource = useMemo(() => draft ? describeRestoredPresetLibrarySource(draft) : null, [draft]);
   const presetLibrary = useMemo(() =>
     draft ? describeQuantitativePresetLibrary(draft, draft.presets) : { total: 0, currentCount: 0, actionableCount: 0, title: "暂无预设" },
   [draft]);
@@ -317,6 +319,12 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             <span>{yearlyOverrideSummary.title}</span>
             <p>{yearlyOverrideSummary.detail}</p>
           </div>
+          {restoredPresetSource ? (
+            <div className="quant-save-audit source">
+              <span>{restoredPresetSource.title}</span>
+              <p>{restoredPresetSource.detail}</p>
+            </div>
+          ) : null}
           <button type="button" className="primary-action" onClick={() => void save()} disabled={!saveGuidance.canSave}>
             {phase === "saving" ? "保存中…" : "保存新版本"}
           </button>

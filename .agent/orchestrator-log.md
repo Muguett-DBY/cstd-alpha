@@ -490,3 +490,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28234090775`)。
 **风险记录:** CHECK 阶段确认恢复来源只应描述“当前预设库仍完整来自历史版本”的状态；若未来增加批量导入/外部模板同步，也必须调用同一清理 helper。
 **下一阶段:** 阶段 6/6 IMPROVE，在修复后的来源生命周期上增加更清晰的用户可见状态或保存提示。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在第 5 阶段修复恢复来源生命周期后，为保存状态区增加明确的“预设库来源”可见提示，让用户无需只依赖自动备注文本判断恢复来源是否仍有效。
+**开始状态:** 阶段 5 功能 commit `203a746` 和日志 commit `aa349f2` 均已推送，CI runs `28234090775` / `28234186676` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 准备新增恢复来源提示状态测试，先复现缺少独立来源提示函数/文案。
+**完成内容:** 新增 `describeRestoredPresetLibrarySource` 状态函数；保存状态条在恢复来源仍有效时显示 `预设库来源 Vx` 与来源说明；第 5 阶段清理来源后，该提示自动消失。
+**真实问题修复:** 用户不再只能通过版本备注框推断预设库来源是否仍有效；保存区直接展示来源状态，并与实际生命周期保持一致。
+**本地验证:** 先写失败测试并复现函数缺失；修复后定向 `src/quantitative-valuation-state.test.ts` 35 tests passed；全量 `npm test` 848 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，恢复 V4 后保存状态条显示 `预设库来源 V4` 和来源说明；随后生成内置模板，来源块和 `恢复 V4 预设库。` 自动备注均消失；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-cleared-800.png`。
+**风险记录:** 来源提示依赖前端草稿状态；保存后后端仍以自动 decision note 作为持久审计记录。Vite 仍保留既有 pyodide externalization 和大 chunk warning。
+**最终状态:** Round 61 六阶段功能实现、本地验证、浏览器验证、push 与 CI 正在收尾。

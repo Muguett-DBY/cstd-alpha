@@ -106,6 +106,11 @@ export type QuantitativeVersionActionHint = {
   loadLabel: string;
 };
 
+export type RestoredPresetLibrarySource = {
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -324,6 +329,15 @@ export function restoreQuantitativePresetLibrary(
     ...current,
     presets: source?.presets?.length ? source.presets.map((preset) => ({ ...preset, assumptions: [...(preset.assumptions ?? [])] })) : undefined,
     restoredPresetLibrary: metadata,
+  };
+}
+
+export function describeRestoredPresetLibrarySource(draft: QuantitativeDraft): RestoredPresetLibrarySource | null {
+  const source = draft.restoredPresetLibrary;
+  if (!source) return null;
+  return {
+    title: `预设库来源 V${source.version}`,
+    detail: `当前预设库仍保持从 V${source.version} 恢复的状态；保存新版本会把该来源写入自动备注。`,
   };
 }
 

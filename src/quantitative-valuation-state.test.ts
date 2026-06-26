@@ -18,6 +18,7 @@ import {
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
+  describeRestoredPresetLibrarySource,
   describeYearlyOverrideSummary,
   deleteQuantitativePreset,
   draftWarnings,
@@ -413,6 +414,23 @@ describe("quantitative valuation editor state", () => {
     expect(renamed.restoredPresetLibrary).toBeUndefined();
     expect(deleted.restoredPresetLibrary).toBeUndefined();
     expect(buildDraftDecisionNote(renamed, baseDraft())).toBe("保存为审计版本：关键假设未变化。");
+  });
+
+  test("describes the active restored preset source for the save strip", () => {
+    const restored = restoreQuantitativePresetLibrary(baseDraft(), baseDraft(), {
+      version: 4,
+      restoredAt: "2026-06-26T00:20:00.000Z",
+    });
+
+    expect(describeRestoredPresetLibrarySource(restored)).toEqual({
+      title: "预设库来源 V4",
+      detail: "当前预设库仍保持从 V4 恢复的状态；保存新版本会把该来源写入自动备注。",
+    });
+    expect(describeRestoredPresetLibrarySource(createQuantitativePreset(
+      applyDraftEdit(restored, { key: "revenueGrowth", scenario: "base", rawValue: "13.5" }),
+      "新增复核方案",
+      "2026-06-26T00:30:00.000Z",
+    ))).toBeNull();
   });
 
   test("describes version restore action choices for the comparison panel", () => {

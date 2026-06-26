@@ -4132,7 +4132,7 @@ button:not(:disabled):active,
 
 .quant-save-strip {
   display: grid;
-  grid-template-columns: minmax(170px, 0.42fr) minmax(220px, 1fr) minmax(210px, 0.9fr) auto;
+  grid-template-columns: minmax(160px, 0.4fr) minmax(200px, 1fr) minmax(190px, 0.85fr) minmax(190px, 0.85fr) auto;
   gap: 14px;
   align-items: center;
   border-color: color-mix(in srgb, var(--line) 70%, var(--teal));
@@ -4187,6 +4187,11 @@ button:not(:disabled):active,
 .quant-save-audit.yearly span {
   background: color-mix(in srgb, var(--blue) 10%, var(--surface-subtle));
   color: var(--blue);
+}
+
+.quant-save-audit.source span {
+  background: color-mix(in srgb, var(--amber) 14%, var(--surface-subtle));
+  color: var(--amber);
 }
 
 .quant-save-status strong {

@@ -62,6 +62,15 @@
 - **Commit:** `203a746 fix: clear stale valuation preset source audits`
 - **下一阶段:** Stage 6/6 IMPROVE，在恢复来源生命周期上增加更清晰的保存前状态表达。
 
+### Stage 6/6 IMPROVE — Restored Preset Source Save Strip
+
+- **承接方向:** 在第 5 阶段修复来源生命周期后，把“当前预设库是否仍来自历史版本”做成保存区的显式状态。
+- **旗舰:** 新增 `describeRestoredPresetLibrarySource`；保存状态条在来源有效时显示 `预设库来源 V4` 和来源说明，来源被后续预设编辑清理后提示自动消失。
+- **真实问题修复:** 用户不再只能通过自动备注框判断恢复来源；保存前状态区直接显示来源是否仍有效。
+- **验证:** 先写失败测试；848 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 恢复 V4 后确认来源块可见，再生成内置模板确认来源块和自动来源备注消失；1365px 与 800px 均无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage6-source-chip-cleared-800.png`。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management
