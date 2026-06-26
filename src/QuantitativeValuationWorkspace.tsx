@@ -16,6 +16,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativePresetLibrary,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeSaveSuccess,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
@@ -194,7 +195,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       setComparisonVersionId(saved.workspace.versions[1]?.id);
       setPhase("ready");
       onSaved?.(saved.workspace);
-      showToast("估值版本已保存。", "success");
+      showToast(describeQuantitativeSaveSuccess(savedDraft), "success");
     } catch (error) {
       const text = error instanceof Error ? error.message : "估值保存失败。";
       setMessage(text);

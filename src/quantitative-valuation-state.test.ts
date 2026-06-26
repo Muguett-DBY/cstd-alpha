@@ -13,6 +13,7 @@ import {
   describeQuantitativePresetImpact,
   describeQuantitativeDecision,
   describeQuantitativeSaveGuidance,
+  describeQuantitativeSaveSuccess,
   describeQuantitativeVersionPresetSummary,
   describeQuantitativeWorkflowSteps,
   describeYearlyOverrideSummary,
@@ -290,6 +291,18 @@ describe("quantitative valuation editor state", () => {
       title: "无预设",
       detail: "该版本未携带可复用预设。",
     });
+  });
+
+  test("summarizes saved preset count for the save success toast", () => {
+    const withOnePreset = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "半年报兑现",
+      "2026-06-26T00:00:00.000Z",
+    );
+    const withStarters = { ...withOnePreset, presets: [...(withOnePreset.presets ?? []), ...buildQuantitativeStarterPresets(baseDraft(), "2026-06-26T00:01:00.000Z")] };
+
+    expect(describeQuantitativeSaveSuccess(withStarters)).toBe("估值版本已保存，携带 4 个预设。");
+    expect(describeQuantitativeSaveSuccess(baseDraft())).toBe("估值版本已保存，未携带预设。");
   });
 
   test("builds starter preset templates from baseline assumptions", () => {
