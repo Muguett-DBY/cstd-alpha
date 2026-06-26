@@ -57,6 +57,18 @@
 - **Commit:** `8b11c67 fix: persist yearly valuation forecast overrides`
 - **下一阶段:** Stage 6/6 IMPROVE，在 CHECK 修复后继续增强年度覆盖的用户可见确认。
 
+### Stage 6/6 IMPROVE — Yearly Override Save Summary
+
+- **承接方向:** 接住 CHECK 阶段修复，把“年度覆盖会被保存”变成用户保存前可见的确认信息。
+- **旗舰:** 新增 `describeYearlyOverrideSummary`；保存状态条增加“逐年覆写”摘要，显示年度覆盖数量和前几项明细。
+- **真实问题修复:** 后端已能持久化年度覆盖，但用户保存前仍只能看到普通关键假设备注；现在保存按钮旁直接显示例如 `1 项逐年覆写 / 第 2 年 EBIT 利润率 20%`。
+- **验证:** 先写失败测试；834 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright 验证保存条显示年度覆盖摘要；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，保存按钮 44px。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage6-yearly-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage6-yearly-summary-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28210407049`)。
+- **Commit:** `384d56b feat: summarize yearly valuation overrides before saving`
+- **最终状态:** 6/6 阶段完成；全部功能 commit 推送到 `origin/main` 且对应 Pages CI 通过。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix

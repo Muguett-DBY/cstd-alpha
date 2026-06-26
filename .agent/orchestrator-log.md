@@ -271,3 +271,26 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28209077808`)。
 **风险记录:** CHECK 阶段确认后端持久化正确；UI 端尚未把年度覆盖项汇总成一个明确的保存前检查摘要，交由阶段 6 改进。
 **下一阶段:** 阶段 6/6 IMPROVE，增加年度覆盖摘要，让用户保存前明确知道哪些年度假设将被写入。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 将 CHECK 阶段修复后的年度覆盖项变成保存前可见确认，降低高级预测保存的不透明风险。
+**开始状态:** 阶段 5 功能 commit `8b11c67` 和日志 commit `dba8a56` 均已推送，Pages CI runs `28209077808` / `28209170475` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `describeYearlyOverrideSummary`；保存状态条增加年度覆写摘要列；桌面保存条扩展为四列，900px 以下保持单列。
+**真实问题修复:** 后端已经保存年度覆盖，但 UI 保存前无法明确告诉用户哪些年度假设会被写入；现在显示 `1 项逐年覆写 / 第 2 年 EBIT 利润率 20%` 这类摘要。
+**本地验证:** `npm test` 834 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright 验证桌面保存条年度摘要存在、保存条四列布局无溢出；800px 保存条单列、保存按钮 44px、`scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage6-yearly-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage6-yearly-summary-800.png`。
+**Commit / Push:** `384d56b feat: summarize yearly valuation overrides before saving` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28210407049`)。
+**风险记录:** Vite 仍有既有 pyodide externalization 和大 chunk warning；740px 及以下仍按既有产品逻辑进入 assistant-only shell，因此估值工作区响应式验收继续使用 800px。
+
+### Round 59 Final
+
+**状态:** ✅ 6/6 阶段全部完成
+**阶段序列:** IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE
+**累计功能 commits:** `56cd3ef`, `ce9c797`, `8d4d5f3`, `cd22474`, `8b11c67`, `384d56b`
+**本地最终门禁:** 834 tests passed；lint passed；functions typecheck passed；build passed。
+**CI 最终状态:** 所有阶段功能 commit 与日志 commit 对应的 `Deploy Cloudflare Pages` runs 均 passed。
