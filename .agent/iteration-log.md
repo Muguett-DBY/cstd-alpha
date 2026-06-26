@@ -34,6 +34,18 @@
 - **Commit:** `8d4d5f3 feat: upgrade valuation preset library UX`
 - **下一阶段:** Stage 4/6 IMPROVE，继续围绕预设库做更主动的方案模板/初始化能力。
 
+### Stage 4/6 IMPROVE — Built-In Valuation Starter Templates
+
+- **承接方向:** 在预设库状态摘要完成后，避免空库需要用户从零创建方案，提供可一键生成的内置模板。
+- **旗舰:** 新增 `buildQuantitativeStarterPresets`，基于当前草稿生成“基准复核 / 谨慎下修 / 压力测试”三套预设；工作区新增“生成内置模板”入口，生成后继续复用影响摘要和一键载入链路。
+- **真实问题修复:** 新用户此前必须先手动改参数再命名保存，才能得到基准、谨慎、压力测试等常见方案；现在可以先生成模板，再按影响摘要选择应用。
+- **验证:** 先写失败测试；832 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright 验证桌面生成 3 个模板，摘要为 `3 个方案 · 2 个可载入 · 1 个当前匹配`；载入“压力测试”后收入增速变为 `6.175`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，模板按钮 44px。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage4-starters-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage4-starters-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28208795705`)。
+- **Commit:** `cd22474 feat: add valuation starter preset templates`
+- **下一阶段:** Stage 5/6 CHECK，做针对性健康检查并修复量化估值保存链路中的真实缺陷。
+
 ## Round 58 — 2026-06-26 (Short Sprint: IMPROVE → UIUX)
 
 ### Stage 1/2 IMPROVE — Actionable DCF Sensitivity Matrix

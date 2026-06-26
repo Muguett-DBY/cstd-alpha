@@ -240,3 +240,19 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28206550454`)。
 **风险记录:** 本阶段仍未引入预设模板和删除/整理能力；阶段 4 继续推进主动方案模板，避免空预设库需要用户从零创建。
 **下一阶段:** 阶段 4/6 IMPROVE，为量化估值提供可一键生成/载入的内置方案模板。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 为量化估值预设库提供内置模板，让用户不用先手动创造方案就能比较基准、谨慎和压力情景。
+**开始状态:** 阶段 3 功能 commit `8d4d5f3` 和日志 commit `0c0fab9` 均已推送，Pages CI runs `28206550454` / `28206649252` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**完成内容:** 新增 `buildQuantitativeStarterPresets`；内置生成“基准复核 / 谨慎下修 / 压力测试”三套模板；工作区新增“内置模板”栏和“生成内置模板”按钮；生成后模板进入现有预设库，继续支持影响摘要、当前匹配禁用和载入。
+**真实问题修复:** 空预设库没有可操作起点，用户必须自行摸索参数组合；现在系统提供可解释的起始方案，同时不自动修改草稿，仍由用户选择载入。
+**本地验证:** `npm test` 832 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + local D1 fixture 验证生成 3 个模板、摘要统计正确、载入“压力测试”后收入增速为 `6.175`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，模板按钮 44px。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage4-starters-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round59-stage4-starters-800.png`。
+**Commit / Push:** `cd22474 feat: add valuation starter preset templates` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28208795705`)。
+**风险记录:** 模板目前是本地生成的草稿预设，不是独立后端模板实体；需要保存版本后才会随 draft 持久化。
+**下一阶段:** 阶段 5/6 CHECK，做保存链路健康检查并修复发现的真实问题。
