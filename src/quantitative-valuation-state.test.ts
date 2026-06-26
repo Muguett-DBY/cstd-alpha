@@ -23,6 +23,7 @@ import {
   findAssumption,
   pushDraftHistory,
   renameQuantitativePreset,
+  restoreQuantitativePresetLibrary,
   undoDraftHistory,
   userLockedAssumptions,
 } from "./quantitative-valuation-state";
@@ -346,6 +347,26 @@ describe("quantitative valuation editor state", () => {
       title: "预设库一致",
       detail: "当前草稿与所选版本携带相同预设库。",
     });
+  });
+
+  test("restores a historical preset library without replacing current assumptions", () => {
+    const current = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "revenueGrowth", scenario: "base", rawValue: "12.5" }),
+      "当前增长方案",
+      "2026-06-26T00:10:00.000Z",
+    );
+    const historicalPreset = createQuantitativePreset(
+      applyDraftEdit(baseDraft(), { key: "ebitMargin", scenario: "base", rawValue: "14" }),
+      "历史基准方案",
+      "2026-06-25T00:00:00.000Z",
+    ).presets?.[0];
+    const source = { ...baseDraft(), presets: historicalPreset ? [historicalPreset] : [] };
+
+    const restored = restoreQuantitativePresetLibrary(current, source);
+
+    expect(findAssumption(restored, "revenueGrowth")?.base).toBe(12.5);
+    expect(restored.operating?.revenueGrowth.base).toBe(0.125);
+    expect(restored.presets).toEqual(source.presets);
   });
 
   test("builds starter preset templates from baseline assumptions", () => {

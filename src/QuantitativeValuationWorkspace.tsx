@@ -27,6 +27,7 @@ import {
   pushDraftHistory,
   renameQuantitativePreset,
   redoDraftHistory,
+  restoreQuantitativePresetLibrary,
   simpleEditorFields,
   undoDraftHistory,
   userLockedAssumptions,
@@ -592,14 +593,26 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             <p>选择一个历史版本，与当前草稿逐项比较；旧版本始终保持不可变。</p>
           </div>
           {comparisonVersion?.draft ? (
-            <button type="button" className="quant-version-load" onClick={() => {
-              if (latest?.draft && JSON.stringify(draft) !== JSON.stringify(latest.draft) && !window.confirm("当前草稿存在未保存修改，载入历史版本会替换这些本地修改。继续吗？")) return;
-              setDraft(comparisonVersion.draft ?? draft);
-              setHistory(createDraftHistory(comparisonVersion.draft ?? draft));
-              showToast(`已载入 V${comparisonVersion.version}，保存时会生成最新后继版本。`, "success");
-            }}>
-              载入 V{comparisonVersion.version} 为草稿
-            </button>
+            <div className="quant-version-actions">
+              {versionPresetDelta?.hasChanges ? (
+                <button type="button" className="quant-version-load secondary" onClick={() => {
+                  const newDraft = restoreQuantitativePresetLibrary(draft, comparisonVersion.draft);
+                  pushHistory(newDraft);
+                  setDraft(newDraft);
+                  showToast(`已恢复 V${comparisonVersion.version} 预设库，保存新版本后写入历史。`, "success");
+                }}>
+                  恢复 V{comparisonVersion.version} 预设库
+                </button>
+              ) : null}
+              <button type="button" className="quant-version-load" onClick={() => {
+                if (latest?.draft && JSON.stringify(draft) !== JSON.stringify(latest.draft) && !window.confirm("当前草稿存在未保存修改，载入历史版本会替换这些本地修改。继续吗？")) return;
+                setDraft(comparisonVersion.draft ?? draft);
+                setHistory(createDraftHistory(comparisonVersion.draft ?? draft));
+                showToast(`已载入 V${comparisonVersion.version}，保存时会生成最新后继版本。`, "success");
+              }}>
+                载入 V{comparisonVersion.version} 为草稿
+              </button>
+            </div>
           ) : null}
         </div>
         <div className="quant-version-timeline">

@@ -5079,6 +5079,14 @@ button:not(:disabled):active,
   font-size: 12px;
 }
 
+.quant-version-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .quant-version-load {
   min-height: 34px;
   padding: 7px 12px;
@@ -5090,8 +5098,18 @@ button:not(:disabled):active,
   cursor: pointer;
 }
 
+.quant-version-load.secondary {
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--line));
+  background: color-mix(in srgb, var(--blue) 7%, var(--surface));
+  color: var(--blue);
+}
+
 .quant-version-load:hover {
   background: color-mix(in srgb, var(--teal) 17%, var(--surface));
+}
+
+.quant-version-load.secondary:hover {
+  background: color-mix(in srgb, var(--blue) 13%, var(--surface));
 }
 
 .quant-version-comparison {
@@ -5324,6 +5342,10 @@ button:not(:disabled):active,
   .quant-version-load {
     width: 100%;
     min-height: 44px;
+  }
+
+  .quant-version-actions {
+    justify-content: stretch;
   }
 
   .quant-version-scenario-grid {

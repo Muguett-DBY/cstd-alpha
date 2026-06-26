@@ -421,3 +421,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221019125`)。
 **风险记录:** 差异摘要按 preset id 与 assumption signature 对比；未来如引入跨工作区共享模板，需要升级为模板实体级 diff。
 **下一阶段:** 阶段 2/6 IMPROVE，继续把预设版本复盘推进到更强的可恢复/可操作闭环。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 基于阶段 1 的预设库差异摘要，新增“只恢复历史版本预设库”的可操作闭环，避免用户为了取回旧预设而覆盖当前估值假设。
+**开始状态:** 阶段 1 功能 commit `74d250e` 和日志 commit `e74c2a2` 均已推送，CI runs `28221019125` / `28221104600` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 准备新增恢复历史预设库状态函数测试，先复现函数缺失。
+**完成内容:** 新增 `restoreQuantitativePresetLibrary`，只替换当前草稿的 presets，不覆盖当前估值假设、经营输入和情景结果；版本对比区在存在预设差异时显示“恢复 Vx 预设库”按钮，操作后进入草稿历史并提示需保存新版本。
+**真实问题修复:** 用户之前若想取回历史版本预设库，只能载入整个历史版本草稿，容易覆盖当前已调整的估值假设；现在可只恢复预设库。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 31 tests passed；全量 `npm test` 844 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 点击 `恢复 V4 预设库`，toast 显示 `已恢复 V4 预设库，保存新版本后写入历史。`，对比区变为 `预设库一致`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-800.png`。
+**风险记录:** 恢复操作仍是本地草稿级修改，需保存新版本才会写入后端历史；按钮文案和 toast 已明确提示。
+**下一阶段:** 阶段 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。

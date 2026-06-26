@@ -14,6 +14,16 @@
 - **Commit:** `74d250e feat: summarize valuation preset version deltas`
 - **下一阶段:** Stage 2/6 IMPROVE，继续把预设版本复盘推进到更强的可恢复/可操作闭环。
 
+### Stage 2/6 IMPROVE — Restore Historical Preset Library
+
+- **承接方向:** 在阶段 1 的预设库差异摘要基础上，补齐历史预设库的可恢复操作。
+- **旗舰:** 版本对比区现在可一键“恢复 Vx 预设库”，只替换 presets，不覆盖当前估值假设，恢复后进入草稿历史并提示保存新版本。
+- **真实问题修复:** 之前取回旧预设必须载入整个历史版本，容易覆盖用户当前估值调整；现在预设库可单独恢复。
+- **验证:** 先写失败测试；844 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证恢复 V4 预设库、toast、预设库一致状态、桌面和 800px 无横向溢出。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage2-restore-presets-800.png`。
+- **下一阶段:** Stage 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management
