@@ -73,6 +73,13 @@ export type QuantitativePresetLibrary = {
   title: string;
 };
 
+export type QuantitativePresetChangeSummary = {
+  hasChanges: boolean;
+  changedPresetCount: number;
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -150,6 +157,19 @@ export function describeQuantitativeSaveGuidance(input: {
   }
 
   if (changedAssumptionCount === 0) {
+    const presetSummary = input.current && input.baseline
+      ? describeQuantitativePresetChangeSummary(input.current, input.baseline)
+      : undefined;
+    if (presetSummary?.hasChanges) {
+      return {
+        tone: "ready",
+        title: "准备保存预设库变更",
+        detail: presetSummary.detail,
+        notePreview,
+        changedAssumptionCount,
+        canSave: true,
+      };
+    }
     return {
       tone: "unchanged",
       title: "可保存审计快照",
@@ -382,6 +402,47 @@ export function describeQuantitativePresetLibrary(draft: QuantitativeDraft, pres
   return { total, currentCount, actionableCount, title };
 }
 
+export function describeQuantitativePresetChangeSummary(
+  current: QuantitativeDraft,
+  baseline?: QuantitativeDraft,
+): QuantitativePresetChangeSummary {
+  const currentPresets = current.presets ?? [];
+  const baselinePresets = baseline?.presets ?? [];
+  const baselineById = new Map(baselinePresets.map((preset) => [preset.id, preset]));
+  const currentById = new Map(currentPresets.map((preset) => [preset.id, preset]));
+  const added = currentPresets.filter((preset) => !baselineById.has(preset.id)).length;
+  const removed = baselinePresets.filter((preset) => !currentById.has(preset.id)).length;
+  const renamed = currentPresets.filter((preset) => {
+    const previous = baselineById.get(preset.id);
+    return previous && previous.name !== preset.name && presetAssumptionsSignature(previous) === presetAssumptionsSignature(preset);
+  }).length;
+  const edited = currentPresets.filter((preset) => {
+    const previous = baselineById.get(preset.id);
+    return previous && presetAssumptionsSignature(previous) !== presetAssumptionsSignature(preset);
+  }).length;
+  const changedPresetCount = added + removed + renamed + edited;
+  if (!changedPresetCount) {
+    return {
+      hasChanges: false,
+      changedPresetCount: 0,
+      title: "预设库已同步",
+      detail: "当前预设库与最新版本一致。",
+    };
+  }
+  const parts = [
+    added ? `新增 ${added} 个方案` : "",
+    renamed ? `重命名 ${renamed} 个方案` : "",
+    removed ? `删除 ${removed} 个方案` : "",
+    edited ? `更新 ${edited} 个方案` : "",
+  ].filter(Boolean);
+  return {
+    hasChanges: true,
+    changedPresetCount,
+    title: "预设库变更待保存",
+    detail: `${parts.join("、")}，保存新版本后写入历史。`,
+  };
+}
+
 export function clearDraftEdit(draft: QuantitativeDraft, key: string, forecastYear?: number) {
   return {
     ...draft,
@@ -562,6 +623,10 @@ function starterPresetAssumption(draft: QuantitativeDraft, key: string, transfor
     origin: "user",
     locked: true,
   };
+}
+
+function presetAssumptionsSignature(preset: QuantitativePreset) {
+  return JSON.stringify(preset.assumptions ?? []);
 }
 
 function normalizeStarterValue(key: string, value: number) {
