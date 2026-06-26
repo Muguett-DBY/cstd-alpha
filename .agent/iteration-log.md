@@ -50,6 +50,16 @@
 - **Commit:** `efdeaa2 feat: audit restored valuation preset sources`
 - **下一阶段:** Stage 5/6 CHECK，检查恢复来源在后续预设库编辑中的一致性与 stale source 风险。
 
+### Stage 5/6 CHECK — Restored Preset Source Lifecycle
+
+- **检查方向:** 验证阶段 4 的 `restoredPresetLibrary` 是否会在后续预设库编辑后残留，避免保存审计备注误导。
+- **发现并修复:** 新建预设后旧恢复来源仍然存在；新增 `clearRestoredPresetLibrarySource`，在新建、重命名、删除预设和生成内置模板时清理来源。
+- **真实问题修复:** 预设库被二次编辑后，自动备注不再继续显示 `恢复 V4 预设库。`，只在预设库仍完整来自历史版本时保留来源说明。
+- **验证:** 先写失败测试；847 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 先恢复 V4，再生成内置模板；确认旧来源备注消失、模板生成 toast 和预设库变更提示可见；1365px 与 800px 均无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-800.png`。
+- **下一阶段:** Stage 6/6 IMPROVE，在恢复来源生命周期上增加更清晰的保存前状态表达。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management

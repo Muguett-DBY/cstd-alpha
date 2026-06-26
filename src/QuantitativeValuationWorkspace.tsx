@@ -9,6 +9,7 @@ import {
   buildQuantitativeStarterPresets,
   buildDraftDecisionNote,
   compareQuantitativeDrafts,
+  clearRestoredPresetLibrarySource,
   createQuantitativePreset,
   createDraftHistory,
   describeQuantitativeDecision,
@@ -373,7 +374,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
                 showToast("内置模板已在当前草稿中。", "success");
                 return;
               }
-              const newDraft = { ...draft, presets: [...(draft.presets ?? []), ...starters].slice(-12) };
+              const newDraft = clearRestoredPresetLibrarySource({ ...draft, presets: [...(draft.presets ?? []), ...starters].slice(-12) });
               pushHistory(newDraft);
               setDraft(newDraft);
               showToast("已生成内置估值模板。", "success");

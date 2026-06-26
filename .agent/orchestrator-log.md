@@ -472,3 +472,19 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28233190992`)。
 **风险记录:** 恢复来源元数据用于前端保存前审计说明；若用户手写版本说明，仍会覆盖自动备注。后续阶段需要检查预设库再次被编辑时是否应清理恢复来源，避免 stale source。
 **下一阶段:** 阶段 5/6 CHECK，聚焦恢复来源元数据在后续编辑流程中的一致性与残留风险。
+
+### 阶段 5/6: CHECK
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 检查阶段 4 引入的恢复来源元数据是否会在后续预设库编辑后残留，修复会误导保存审计说明的 stale source 风险。
+**开始状态:** 阶段 4 功能 commit `efdeaa2` 和日志 commit `23f2b19` 均已推送，CI runs `28233190992` / `28233275222` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 准备新增“恢复来源在预设库编辑后清理”的状态测试，先复现 create/rename/delete 仍保留 `restoredPresetLibrary` 的问题。
+**检查发现:** 恢复历史预设库后，新建预设仍会保留旧 `restoredPresetLibrary`，导致保存前自动备注继续显示旧来源；这会把已经编辑过的预设库误记为完全来自历史版本。
+**完成内容:** 新增 `clearRestoredPresetLibrarySource`，在新建、重命名、删除预设以及生成内置模板时清理恢复来源；保留“应用预设”路径不清理，因为它只调整假设，不改变预设库身份。
+**真实问题修复:** 自动决策说明不再在预设库被二次编辑后继续显示 `恢复 Vx 预设库。`，避免版本审计出现 stale source。
+**本地验证:** 先写失败测试并复现 stale source；修复后定向 `src/quantitative-valuation-state.test.ts` 34 tests passed；全量 `npm test` 847 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 登录本地 QA，先恢复 V4 预设库，再生成内置模板；自动审计说明不再包含 `恢复 V4 预设库。`，toast 显示 `已生成内置估值模板。`，预设库变更提示仍可见；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage5-clear-stale-source-800.png`。
+**风险记录:** CHECK 阶段确认恢复来源只应描述“当前预设库仍完整来自历史版本”的状态；若未来增加批量导入/外部模板同步，也必须调用同一清理 helper。
+**下一阶段:** 阶段 6/6 IMPROVE，在修复后的来源生命周期上增加更清晰的用户可见状态或保存提示。

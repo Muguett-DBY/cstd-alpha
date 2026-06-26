@@ -286,7 +286,7 @@ export function createQuantitativePreset(draft: QuantitativeDraft, name: string,
     createdAt: now,
     assumptions: assumptions.map((assumption) => ({ ...assumption })),
   };
-  return { ...draft, presets: [...presets, preset].slice(-12) };
+  return clearRestoredPresetLibrarySource({ ...draft, presets: [...presets, preset].slice(-12) });
 }
 
 export function renameQuantitativePreset(draft: QuantitativeDraft, presetId: string, name: string): QuantitativeDraft {
@@ -295,17 +295,24 @@ export function renameQuantitativePreset(draft: QuantitativeDraft, presetId: str
   if (index < 0) return draft;
   const nextName = normalizePresetName(name, index + 1);
   if (presets[index].name === nextName) return draft;
-  return {
+  return clearRestoredPresetLibrarySource({
     ...draft,
     presets: presets.map((preset) => preset.id === presetId ? { ...preset, name: nextName } : preset),
-  };
+  });
 }
 
 export function deleteQuantitativePreset(draft: QuantitativeDraft, presetId: string): QuantitativeDraft {
   const presets = draft.presets ?? [];
   const nextPresets = presets.filter((preset) => preset.id !== presetId);
   if (nextPresets.length === presets.length) return draft;
-  return { ...draft, presets: nextPresets };
+  return clearRestoredPresetLibrarySource({ ...draft, presets: nextPresets });
+}
+
+export function clearRestoredPresetLibrarySource(draft: QuantitativeDraft): QuantitativeDraft {
+  if (!draft.restoredPresetLibrary) return draft;
+  const next = { ...draft };
+  delete next.restoredPresetLibrary;
+  return next;
 }
 
 export function restoreQuantitativePresetLibrary(
