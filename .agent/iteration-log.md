@@ -408,3 +408,22 @@
 - **旗舰:** 指标栏 hover 交互反馈、Hero 区域字间距优化
 - **验证:** build passed, CI passed
 - **Commit:** `feat: polish research metrics bar and workbench hero typography`
+
+---
+
+## Round 62 — 2026-06-26 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Persist Restored Preset Sources
+- **旗舰:** `restoredPresetLibrary` 从前端草稿进入保存 API 和版本 `draft_json`，手写备注不会再覆盖结构化来源审计。
+- **验证:** 851 tests passed；lint passed；functions typecheck passed；build passed；browser/API verified on `qa-valuation-stage3` V6；CI run `28238460530` passed。
+- **Commit:** `cc2661d feat: persist restored valuation preset sources`
+
+### Stage 2/6 IMPROVE — Show Persisted Preset Sources
+- **旗舰:** 历史版本时间线和对比区显示 `预设来源 Vx` 与来源说明，让隐藏 draft 字段变成可复盘信息。
+- **验证:** 852 tests passed；lint passed；functions typecheck passed；build passed；browser verified timeline/comparison source display；CI run `28238930120` passed。
+- **Commit:** `e1e46ec feat: show persisted valuation preset sources`
+
+### Stage 3/6 UIUX — Version Review Summary Strip
+- **旗舰:** `describeQuantitativeVersionReviewSummary` + 四项摘要条，将关键假设、预设库、来源、备注聚合到版本对比顶部。
+- **验证:** 先写失败测试；853 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified desktop/800px no overflow and zero console errors；CI run `28239666887` passed。
+- **Commit:** `98cfc9d feat: summarize valuation version reviews`

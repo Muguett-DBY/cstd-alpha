@@ -548,5 +548,24 @@
 **本地验证:** 先写失败测试并复现函数缺失；修复后定向 `src/quantitative-valuation-state.test.ts` 36 tests passed；全量 `npm test` 852 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
 **浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 登录本地 QA，验证版本时间线显示 `预设来源 V4`，点击来源版本后对比区显示 `该版本的预设库由 V4 恢复后保存。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage2-version-source-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage2-version-source-800.png`。
+**Commit / Push:** `e1e46ec feat: show persisted valuation preset sources` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28238930120`)。
 **风险记录:** 来源展示依赖已保存版本 draft 中的结构化字段；旧历史版本没有该字段时仍只显示预设数量和备注。
 **下一阶段:** 阶段 3/6 UIUX，围绕版本时间线和对比区的信息密度做体验升级，降低多版本、多来源状态下的扫描成本。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 降低版本时间线和对比区在多版本、多来源状态下的扫描成本，把关键假设变化、预设库差异、恢复来源和备注状态聚合成可快速阅读的复盘摘要。
+**开始状态:** 阶段 2 功能 commit `e1e46ec` 已推送，CI run `28238930120` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增 `describeQuantitativeVersionReviewSummary` 状态测试，先复现缺少版本复盘摘要函数，定向测试按预期失败 `describeQuantitativeVersionReviewSummary is not a function`。
+**完成内容:** 新增版本复盘摘要状态函数；版本对比区顶部显示一句总览；新增四项稳定指标条：关键假设、预设库、来源、备注；移动端降为两列，避免长中文摘要挤压。
+**真实问题修复:** 原对比区把来源、预设库、备注和假设变化分散在多段说明中；现在用户在选中历史版本后可以先扫摘要，再查看详细来源说明和差异表。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 37 tests passed；全量 `npm test` 853 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed（仅 Windows 换行提示，无 whitespace error）。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 使用预置 session 登录本地 QA，进入 `qa-valuation-stage3`，点击携带 `预设来源 V4` 的 V6 版本；摘要条显示关键假设/预设库/来源/备注四项，标题总览包含 `保留预设来源 V4`，来源说明为 `该版本的预设库由 V4 恢复后保存。`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，console errors 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage3-review-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage3-review-summary-800.png`。
+**Commit / Push:** `98cfc9d feat: summarize valuation version reviews` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28239666887`)。
+**风险记录:** 摘要文本依赖当前前端对比计算；旧版本缺少结构化来源时会显示 `无恢复来源`，属于预期降级。Vite 仍保留既有 pyodide externalization 和大 chunk warning。
+**下一阶段:** 阶段 4/6 IMPROVE，继续围绕历史版本来源的筛选/定位能力改进。
