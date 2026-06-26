@@ -363,11 +363,27 @@ describe("quantitative valuation editor state", () => {
     ).presets?.[0];
     const source = { ...baseDraft(), presets: historicalPreset ? [historicalPreset] : [] };
 
-    const restored = restoreQuantitativePresetLibrary(current, source);
+    const restored = restoreQuantitativePresetLibrary(current, source, {
+      version: 4,
+      restoredAt: "2026-06-26T00:20:00.000Z",
+    });
 
     expect(findAssumption(restored, "revenueGrowth")?.base).toBe(12.5);
     expect(restored.operating?.revenueGrowth.base).toBe(0.125);
     expect(restored.presets).toEqual(source.presets);
+    expect(restored.restoredPresetLibrary).toEqual({
+      version: 4,
+      restoredAt: "2026-06-26T00:20:00.000Z",
+    });
+  });
+
+  test("includes restored preset source in the automatic decision note", () => {
+    const restored = restoreQuantitativePresetLibrary(baseDraft(), baseDraft(), {
+      version: 4,
+      restoredAt: "2026-06-26T00:20:00.000Z",
+    });
+
+    expect(buildDraftDecisionNote(restored, baseDraft())).toBe("恢复 V4 预设库。");
   });
 
   test("describes version restore action choices for the comparison panel", () => {

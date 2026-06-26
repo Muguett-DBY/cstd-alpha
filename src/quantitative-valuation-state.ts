@@ -308,10 +308,15 @@ export function deleteQuantitativePreset(draft: QuantitativeDraft, presetId: str
   return { ...draft, presets: nextPresets };
 }
 
-export function restoreQuantitativePresetLibrary(current: QuantitativeDraft, source?: QuantitativeDraft): QuantitativeDraft {
+export function restoreQuantitativePresetLibrary(
+  current: QuantitativeDraft,
+  source?: QuantitativeDraft,
+  metadata?: NonNullable<QuantitativeDraft["restoredPresetLibrary"]>,
+): QuantitativeDraft {
   return {
     ...current,
     presets: source?.presets?.length ? source.presets.map((preset) => ({ ...preset, assumptions: [...(preset.assumptions ?? [])] })) : undefined,
+    restoredPresetLibrary: metadata,
   };
 }
 
@@ -673,12 +678,13 @@ export function compareQuantitativeDrafts(current: QuantitativeDraft, baseline: 
 export function buildDraftDecisionNote(current: QuantitativeDraft, baseline?: QuantitativeDraft) {
   if (!baseline) return "";
   const comparison = compareQuantitativeDrafts(current, baseline);
-  if (!comparison.assumptions.length) return "保存为审计版本：关键假设未变化。";
+  const presetSource = current.restoredPresetLibrary ? `恢复 V${current.restoredPresetLibrary.version} 预设库。` : "";
+  if (!comparison.assumptions.length) return presetSource || "保存为审计版本：关键假设未变化。";
   const summary = comparison.assumptions.slice(0, 3).map((item) =>
     `${item.label}：${formatCompactAssumption(item.baselineValue, item.unit)} → ${formatCompactAssumption(item.currentValue, item.unit)}`,
   ).join("；");
   const suffix = comparison.assumptions.length > 3 ? `；另 ${comparison.assumptions.length - 3} 项` : "";
-  return `调整${summary}${suffix}。`;
+  return `调整${summary}${suffix}。${presetSource}`;
 }
 
 function synchronizeDraft(draft: QuantitativeDraft, changed: EditableAssumption): QuantitativeDraft {
