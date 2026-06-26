@@ -148,4 +148,38 @@ describe("valuation workspace API contract", () => {
       assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 0, base: 2, bull: 5, unit: "%", origin: "user", locked: true }],
     }]);
   });
+
+  test("keeps only the newest saved preset for duplicate normalized ids", () => {
+    const draft: QuantitativeDraft = {
+      method: "dcf_3_statement", archetype: "operating", currency: "CNY", asOf: "2026-06-21",
+      assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 3, base: 7, bull: 11, unit: "%", origin: "formula", locked: false }],
+      operating: {
+        currency: "CNY", asOf: "2026-06-21", baseRevenue: 100, sharesOutstanding: 10, netDebt: 5,
+        revenueGrowth: { low: 0.03, base: 0.07, high: 0.11 }, ebitMargin: { low: 0.08, base: 0.13, high: 0.18 },
+        taxRate: 0.2, depreciationRate: 0.035, capexRate: { low: 0.04, base: 0.06, high: 0.08 }, workingCapitalRate: 0.015,
+        discountRate: { low: 0.085, base: 0.1, high: 0.115 }, terminalGrowthRate: { low: 0.015, base: 0.025, high: 0.035 },
+      },
+    };
+
+    const merged = mergeUserAssumptions(draft, [], {
+      presets: [{
+        id: "preset-1",
+        name: "旧压力测试",
+        createdAt: "2026-06-26T00:00:00.000Z",
+        assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 0, base: 2, bull: 5, unit: "%", origin: "user", locked: true }],
+      }, {
+        id: "preset-1",
+        name: "新压力测试",
+        createdAt: "2026-06-26T00:01:00.000Z",
+        assumptions: [{ key: "revenueGrowth", label: "收入增速", bear: 1, base: 3, bull: 6, unit: "%", origin: "user", locked: true }],
+      }],
+    });
+
+    expect(merged.presets).toHaveLength(1);
+    expect(merged.presets?.[0]).toMatchObject({
+      id: "preset-1",
+      name: "新压力测试",
+      assumptions: [{ key: "revenueGrowth", base: 3 }],
+    });
+  });
 });
