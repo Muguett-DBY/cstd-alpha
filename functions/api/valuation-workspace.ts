@@ -76,7 +76,7 @@ export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssump
   const assumptions = (draft.assumptions ?? []).map((assumption) => {
     const edit = edits.find((candidate) => candidate.key === assumption.key && candidate.forecastYear === assumption.forecastYear);
     return edit ? { ...assumption, ...editableFields(edit), origin: "user" as const, locked: true } : assumption;
-  });
+  }).concat(missingForecastYearAssumptions(draft.assumptions ?? [], edits));
   const merged: QuantitativeDraft = { ...draft, assumptions, presets: normalizeValuationPresets(options.presets ?? draft.presets) };
   if (!merged.operating) return merged;
   const lookup = (key: string) => assumptions.find((assumption) => assumption.key === key);
@@ -115,12 +115,43 @@ export function mergeUserAssumptions(draft: QuantitativeDraft, edits: UserAssump
     netDebt: numberScalar("netDebt", merged.operating.netDebt),
     sharesOutstanding: numberScalar("sharesOutstanding", merged.operating.sharesOutstanding),
   };
+  const forecastOverrides = mergeForecastOverrides(merged.operating.forecastOverrides, assumptions);
+  if (forecastOverrides.length) merged.operating.forecastOverrides = forecastOverrides;
   merged.scenarios = {
     bear: { discountRate: merged.operating.discountRate.high, terminalGrowthRate: merged.operating.terminalGrowthRate.low },
     base: { discountRate: merged.operating.discountRate.base, terminalGrowthRate: merged.operating.terminalGrowthRate.base },
     bull: { discountRate: merged.operating.discountRate.low, terminalGrowthRate: merged.operating.terminalGrowthRate.high },
   };
   return merged;
+}
+
+function missingForecastYearAssumptions(assumptions: EditableAssumption[], edits: UserAssumptionEdit[]) {
+  return edits.flatMap((edit): EditableAssumption[] => {
+    if (edit.forecastYear === undefined || assumptions.some((assumption) => assumption.key === edit.key && assumption.forecastYear === edit.forecastYear)) return [];
+    const base = assumptions.find((assumption) => assumption.key === edit.key && assumption.forecastYear === undefined);
+    if (!base) return [];
+    return [{ ...base, ...editableFields(edit), origin: "user", locked: true }];
+  });
+}
+
+function mergeForecastOverrides(existing: NonNullable<NonNullable<QuantitativeDraft["operating"]>["forecastOverrides"]> | undefined, assumptions: EditableAssumption[]) {
+  const overrides = [...(existing ?? [])];
+  for (const assumption of assumptions) {
+    if (assumption.forecastYear === undefined) continue;
+    const field = forecastOverrideField(assumption.key);
+    const value = assumption.base ?? assumption.value;
+    if (!field || typeof value !== "number" || !Number.isFinite(value)) continue;
+    const index = overrides.findIndex((item) => item.year === assumption.forecastYear);
+    const current = index >= 0 ? overrides[index] : { year: assumption.forecastYear };
+    const next = { ...current, [field]: value / 100 };
+    if (index >= 0) overrides[index] = next; else overrides.push(next);
+  }
+  return overrides.sort((left, right) => left.year - right.year);
+}
+
+function forecastOverrideField(key: string) {
+  if (key === "revenueGrowth" || key === "ebitMargin" || key === "capexRate" || key === "workingCapitalRate") return key;
+  return undefined;
 }
 
 function editableFields(edit: UserAssumptionEdit) {
