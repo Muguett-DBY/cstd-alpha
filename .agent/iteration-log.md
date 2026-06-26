@@ -26,6 +26,16 @@
 - **Commit:** `227a5d9 feat: restore historical valuation preset libraries`
 - **下一阶段:** Stage 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。
 
+### Stage 3/6 UIUX — Version Restore Action Panel
+
+- **承接方向:** 在阶段 2 的“恢复历史预设库”操作基础上，降低用户误解恢复范围的风险。
+- **旗舰:** 版本对比区新增“选择恢复范围”操作面板，明确只恢复预设库不会覆盖当前估值假设，载入整版会替换草稿。
+- **体验修复:** 原来两个按钮缺少上下文，用户难以判断“恢复预设库”和“载入历史版本”的风险边界；现在说明和按钮成为一个完整操作组。
+- **验证:** 新增操作提示状态测试；845 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
+- **浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证面板文案、按钮存在、桌面/800px 无横向溢出，800px 按钮高度均为 44px。仅有登录前既有 `/api/session` 401。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-800.png`。
+- **下一阶段:** Stage 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
+
 ## Round 60 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Valuation Preset Management

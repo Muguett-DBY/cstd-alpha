@@ -438,3 +438,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28221495431`)。
 **风险记录:** 恢复操作仍是本地草稿级修改，需保存新版本才会写入后端历史；按钮文案和 toast 已明确提示。
 **下一阶段:** 阶段 3/6 UIUX，围绕版本对比操作区做更清晰的视觉层级、按钮布局和响应式体验。
+
+### 阶段 3/6: UIUX
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 将版本对比区的两个恢复/载入按钮升级为“恢复范围”操作面板，清晰说明只恢复预设库与载入整版草稿的差异，并优化桌面/移动端布局。
+**开始状态:** 阶段 2 功能 commit `227a5d9` 和日志 commit `d48fe9c` 均已推送，CI runs `28221495431` / `28221580358` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 准备新增版本操作提示状态测试，先复现函数缺失。
+**完成内容:** 新增 `describeQuantitativeVersionActionHint`，将恢复/载入的标题、说明和按钮文案集中管理；版本对比区按钮升级为“选择恢复范围”操作面板，明确“只恢复预设库不覆盖当前估值假设”和“载入整版会替换草稿”的差异；按钮触控高度统一到 44px。
+**UI/UX 改进:** 操作区从孤立按钮变为说明 + 操作组合，桌面右侧紧凑、800px 下单列全宽；恢复预设和载入整版的风险边界更清晰。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 32 tests passed；全量 `npm test` 845 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43179` 验证操作面板显示 `选择恢复范围`、说明包含 `不覆盖当前估值假设`，恢复/载入按钮存在；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，移动按钮高度均为 44px。仅有登录前既有 `/api/session` 401。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round61-stage3-version-action-panel-800.png`。
+**风险记录:** 本阶段仅改前端信息架构与交互提示，不改变保存 API；构建仍保留既有 pyodide externalization 和大 chunk warning。
+**下一阶段:** 阶段 4/6 IMPROVE，继续扩展预设复盘闭环，优先考虑保存前/恢复后的预设变更审计说明。
