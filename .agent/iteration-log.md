@@ -66,6 +66,8 @@
 - **验证:** 先写失败测试；842 tests passed；lint passed；functions typecheck passed；build passed；`git diff --check` passed。
 - **浏览器验证:** Playwright + `wrangler pages dev dist --port 43178` 验证生成 3 个内置模板后保存，新 toast 显示 `估值版本已保存，携带 3 个预设。`，桌面/800px 均无横向溢出。仅有登录前既有 `/api/session` 401。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round60-stage6-save-toast-800.png`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28219832841`)。
+- **Commit:** `b940b39 feat: confirm saved valuation preset count`
 
 ## Round 59 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
