@@ -356,7 +356,7 @@ export function restoreQuantitativePresetLibrary(
 
 export function describeRestoredPresetLibrarySource(draft: QuantitativeDraft): RestoredPresetLibrarySource | null {
   const source = draft.restoredPresetLibrary;
-  if (!source) return null;
+  if (!isValidRestoredPresetLibrarySource(source)) return null;
   return {
     title: `预设库来源 V${source.version}`,
     detail: `当前预设库仍保持从 V${source.version} 恢复的状态；保存新版本会把该来源写入自动备注。`,
@@ -365,11 +365,20 @@ export function describeRestoredPresetLibrarySource(draft: QuantitativeDraft): R
 
 export function describeQuantitativeVersionSourceSummary(draft?: QuantitativeDraft): QuantitativeVersionSourceSummary | null {
   const source = draft?.restoredPresetLibrary;
-  if (!source) return null;
+  if (!isValidRestoredPresetLibrarySource(source)) return null;
   return {
     title: `预设来源 V${source.version}`,
     detail: `该版本的预设库由 V${source.version} 恢复后保存。`,
   };
+}
+
+function isValidRestoredPresetLibrarySource(source?: QuantitativeDraft["restoredPresetLibrary"]): source is NonNullable<QuantitativeDraft["restoredPresetLibrary"]> {
+  return Boolean(
+    source &&
+    Number.isInteger(source.version) &&
+    source.version > 0 &&
+    Number.isFinite(Date.parse(source.restoredAt)),
+  );
 }
 
 export function describeQuantitativeVersionReviewSummary(input: {

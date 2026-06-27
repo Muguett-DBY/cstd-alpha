@@ -434,6 +434,13 @@ describe("quantitative valuation editor state", () => {
       "新增复核方案",
       "2026-06-26T00:30:00.000Z",
     ))).toBeNull();
+    expect(describeRestoredPresetLibrarySource({
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: Number.NaN,
+        restoredAt: "not-a-date",
+      },
+    })).toBeNull();
   });
 
   test("describes persisted restored preset source on saved versions", () => {
@@ -448,6 +455,13 @@ describe("quantitative valuation editor state", () => {
       detail: "该版本的预设库由 V4 恢复后保存。",
     });
     expect(describeQuantitativeVersionSourceSummary(baseDraft())).toBeNull();
+    expect(describeQuantitativeVersionSourceSummary({
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: 0,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    })).toBeNull();
   });
 
   test("builds a compact version review summary for the comparison panel", () => {
@@ -493,6 +507,7 @@ describe("quantitative valuation editor state", () => {
     expect(describeQuantitativeVersionSourceFilter([
       { draft: baseDraft() },
       { draft: sourceDraft },
+      { draft: { ...baseDraft(), restoredPresetLibrary: { version: -1, restoredAt: "2026-06-26T00:20:00.000Z" } } },
       { draft: sourceDraft },
     ])).toEqual({
       sourceCount: 2,
