@@ -569,3 +569,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28239666887`)。
 **风险记录:** 摘要文本依赖当前前端对比计算；旧版本缺少结构化来源时会显示 `无恢复来源`，属于预期降级。Vite 仍保留既有 pyodide externalization 和大 chunk warning。
 **下一阶段:** 阶段 4/6 IMPROVE，继续围绕历史版本来源的筛选/定位能力改进。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接阶段 3 的版本复盘可扫描方向，给历史版本时间线增加“仅看来源版本”定位能力，减少多版本场景下查找恢复来源版本的成本。
+**开始状态:** 阶段 3 功能 commit `98cfc9d` 和日志 commit `871de4b` 均已推送，CI runs `28239666887` / `28239790328` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增 `describeQuantitativeVersionSourceFilter` 状态测试，先复现缺少来源版本筛选摘要函数，定向测试按预期失败 `describeQuantitativeVersionSourceFilter is not a function`。
+**完成内容:** 新增来源版本筛选摘要；版本时间线前新增来源版本筛选条和切换按钮；开启筛选时只显示携带 `restoredPresetLibrary` 的历史版本，并自动选中第一条来源版本；移动端筛选条改为纵向布局。
+**真实问题修复:** 在版本历史较多时，用户需要手动横向扫所有版本才能找到 `预设来源 Vx`；现在可以一键只看来源版本，并保持对比面板同步到来源版本。
+**本地验证:** 定向 `src/quantitative-valuation-state.test.ts` 38 tests passed；全量 `npm test` 854 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed（仅 Windows 换行提示，无 whitespace error）。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 使用预置 session 登录本地 QA，进入 `qa-valuation-stage3`；点击 `仅看来源版本` 后，时间线从 6 个版本筛为 1 个来源版本，按钮变为 `显示全部版本`，对比标题包含 `保留预设来源 V4`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，console errors 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage4-source-filter-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage4-source-filter-800.png`。
+**Commit / Push:** `e9003c1 feat: filter valuation versions by preset source` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298188048`)。
+**风险记录:** 筛选只针对已持久化结构化来源；旧历史版本没有 `restoredPresetLibrary` 时不会被纳入筛选，属于预期降级。
+**下一阶段:** 阶段 5/6 CHECK，系统检查来源版本筛选与版本保存/恢复流程的边界，并修复真实稳定性或一致性问题。

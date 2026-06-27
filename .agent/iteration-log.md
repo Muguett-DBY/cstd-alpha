@@ -427,3 +427,8 @@
 - **旗舰:** `describeQuantitativeVersionReviewSummary` + 四项摘要条，将关键假设、预设库、来源、备注聚合到版本对比顶部。
 - **验证:** 先写失败测试；853 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified desktop/800px no overflow and zero console errors；CI run `28239666887` passed。
 - **Commit:** `98cfc9d feat: summarize valuation version reviews`
+
+### Stage 4/6 IMPROVE — Source-backed Version Filter
+- **旗舰:** 历史版本时间线新增 `仅看来源版本`，一键定位由历史预设库恢复后保存的版本，并同步对比面板。
+- **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified 6→1 source filter, desktop/800px no overflow and zero console errors；CI run `28298188048` passed。
+- **Commit:** `e9003c1 feat: filter valuation versions by preset source`
