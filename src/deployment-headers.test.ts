@@ -17,10 +17,11 @@ describe("Cloudflare Pages headers", () => {
     expect(headers).toContain("Cross-Origin-Opener-Policy: same-origin");
     expect(headers).toContain("Content-Security-Policy:");
     expect(headers).toContain("default-src 'self'");
-    expect(headers).toContain("script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'");
+    expect(csp).toContain("script-src 'self' https://cdn.jsdelivr.net");
+    expect(headers).toContain("https://static.cloudflareinsights.com");
     expect(csp).toContain(`'${inlineThemeHash}'`);
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
-    expect(headers).toContain("connect-src 'self' https://cdn.jsdelivr.net");
+    expect(headers).toContain("connect-src 'self' https://cdn.jsdelivr.net https://cloudflareinsights.com");
     expect(headers).toContain("object-src 'none'");
     expect(headers).toContain("frame-ancestors 'none'");
     expect(headers).toMatch(/\/assets\/\*\s+Cache-Control: public, max-age=31536000, immutable/s);
