@@ -16,6 +16,19 @@
 - **风险记录:** 本阶段没有加入 CSP，避免在未完成策略设计前破坏 Pyodide CDN ESM/WASM；后续可单独做 CSP 设计与验证。
 - **下一阶段:** Stage 2/6 IMPROVE，继续在当前生产基线上做用户可见的产品改进，并保持每阶段本地门禁、浏览器验证、push、CI 与日志闭环。
 
+### Stage 2/6 IMPROVE — Strict CSP Deployment Policy
+
+- **承接方向:** 收口阶段 1 明确留下的 CSP 安全风险，在不破坏 Pyodide CDN ESM/WASM、首屏主题脚本和 Cloudflare Web Analytics 的前提下加固生产响应策略。
+- **旗舰:** Pages `_headers` 新增 Content-Security-Policy：默认仅允许 self；Pyodide 只放行 `cdn.jsdelivr.net` 和 WASM 编译；首屏主题 inline script 使用 SHA-256 hash 放行；Cloudflare Insights 只放行 `static.cloudflareinsights.com` 与 `cloudflareinsights.com`；继续禁止 object、base-uri 外部注入和 frame 嵌入。
+- **真实问题修复:** 生产从无 CSP 变为明确 allowlist；第一次生产验证发现 Cloudflare Analytics beacon 被 CSP 拦截，随后补充 Cloudflare Insights allowlist 并重新验证通过。
+- **验证:** 先写失败测试复现缺少 CSP；修复后 `src/deployment-headers.test.ts` passed，且测试会从 `index.html` 计算主题脚本 hash；全量 `npm test` 862 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+- **浏览器验证:** 本地 `wrangler pages dev dist --port 43262 --local` 解析 2 条 header 规则；Playwright 检查 CSP header、`/api/session` 200 envelope、桌面无横向溢出、首屏 modulepreload 仍仅 runtime + `vendor-react`，console CSP violation 为空。
+- **生产验证:** `https://alpha.custard.top` 返回 CSP header；Playwright 桌面 1366px / 移动 390px 均无 CSP violation、无失败响应，Cloudflare Insights 不再被拦截。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, runs `28305499510` / `28305624592`)。
+- **Commit:** `2005313 feat: add CSP for pages deployment`；`87d90c6 fix: allow Cloudflare analytics in CSP`
+- **风险记录:** `style-src` 仍保留 `'unsafe-inline'` 以兼容现有样式注入/内联样式；如要进一步收紧，需要单独做样式 nonce/hash 迁移。
+- **下一阶段:** Stage 3/6 UIUX，利用阶段 1 的懒加载基础改善 authenticated view 加载体验，避免重型视图懒加载后出现过于简陋的空状态。
+
 ## Round 62 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Persist Restored Preset Source

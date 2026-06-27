@@ -650,3 +650,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28305205002`)。
 **风险记录:** 本阶段未加入 CSP，以免在未完整设计 `script-src` / `connect-src` / WASM 兼容前破坏 Pyodide CDN 加载；建议后续单独做 CSP 阶段。
 **下一阶段:** 阶段 2/6 IMPROVE，继续在当前生产基线上做用户可见改进并完整执行本地验证、push、CI 与日志闭环。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 补齐阶段 1 遗留的 CSP 安全策略，同时保持 Pyodide CDN ESM/WASM、首屏主题脚本、Cloudflare Web Analytics 和登录壳可用。
+**开始状态:** 阶段 1 功能 commit `1ababfd` 与日志 commit `e499211` 均已推送，CI runs `28305205002` / `28305273826` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 扩展 `src/deployment-headers.test.ts`，先复现 `_headers` 缺少 `Content-Security-Policy`；随后让测试从 `index.html` 计算首屏主题 inline script SHA-256 hash，防止脚本变更后 CSP hash 失效。
+**完成内容:** Pages `_headers` 新增 CSP：默认 self；`script-src` 放行 self、jsDelivr Pyodide、Cloudflare Insights、WASM 编译和主题脚本 hash；`connect-src` 放行 self、jsDelivr、Cloudflare Insights；补齐 worker/style/img/font/manifest/object/base/form/frame 限制。
+**真实问题修复:** 生产从无 CSP 变为明确 allowlist；首次生产验证发现 Cloudflare Analytics beacon 被 CSP 拦截，已用 `87d90c6` 补充 Cloudflare Insights allowlist 并重新验证通过。
+**本地验证:** `src/deployment-headers.test.ts` passed；全量 `npm test` 862 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**浏览器验证:** `wrangler pages dev dist --port 43262 --local` 解析 2 条 header 规则；Playwright 验证 CSP header、登录页、`/api/session` 200 envelope、无横向溢出、无失败响应、无 CSP console violation。
+**生产验证:** `https://alpha.custard.top` 返回 CSP header；Playwright 桌面 1366px / 移动 390px 均无 CSP violation、无失败响应，Cloudflare Insights 不再被拦截。
+**Commit / Push:** `2005313 feat: add CSP for pages deployment` 与 `87d90c6 fix: allow Cloudflare analytics in CSP` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, runs `28305499510` / `28305624592`)。
+**风险记录:** `style-src` 仍保留 `'unsafe-inline'` 以兼容当前样式模式；后续若要继续收紧，需单独迁移样式 nonce/hash。
+**下一阶段:** 阶段 3/6 UIUX，改善 authenticated view 懒加载后的加载体验，让阶段 1 的性能优化不以简陋空状态为代价。
