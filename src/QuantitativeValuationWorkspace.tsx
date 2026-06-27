@@ -22,6 +22,7 @@ import {
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionReviewSummary,
   describeQuantitativeVersionPresetSummary,
+  describeQuantitativeVersionSourceFilter,
   describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
   describeRestoredPresetLibrarySource,
@@ -68,6 +69,7 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<DraftHistory | null>(null);
   const [comparisonVersionId, setComparisonVersionId] = useState<string>();
+  const [showSourceVersionsOnly, setShowSourceVersionsOnly] = useState(false);
   const [decisionNote, setDecisionNote] = useState("");
   const [presetName, setPresetName] = useState("");
   const [renamingPresetId, setRenamingPresetId] = useState<string>();
@@ -146,6 +148,17 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
       })
       : null,
   [comparisonVersion, versionComparison, versionPresetDelta]);
+  const versionSourceFilter = useMemo(() =>
+    describeQuantitativeVersionSourceFilter(workspace?.versions ?? []),
+  [workspace]);
+  const sourceVersions = useMemo(() =>
+    (workspace?.versions ?? []).filter((version) => describeQuantitativeVersionSourceSummary(version.draft)),
+  [workspace]);
+  const visibleVersions = useMemo(() => {
+    const versions = workspace?.versions ?? [];
+    if (!showSourceVersionsOnly || !versionSourceFilter.canFilter) return versions;
+    return sourceVersions;
+  }, [showSourceVersionsOnly, sourceVersions, versionSourceFilter.canFilter, workspace]);
 
   function pushHistory(newDraft: QuantitativeDraft) {
     setHistory((current) => pushDraftHistory(current ?? createDraftHistory(draft ?? newDraft), newDraft));
@@ -651,8 +664,28 @@ export function QuantitativeValuationWorkspace({ run, onSaved }: Props) {
             </div>
           ) : null}
         </div>
+        <div className="quant-version-filter">
+          <div>
+            <strong>{versionSourceFilter.title}</strong>
+            <span>{showSourceVersionsOnly ? "时间线正在只显示携带恢复来源的版本。" : versionSourceFilter.detail}</span>
+          </div>
+          <button
+            type="button"
+            aria-pressed={showSourceVersionsOnly}
+            disabled={!versionSourceFilter.canFilter}
+            onClick={() => {
+              const next = !showSourceVersionsOnly;
+              if (next && sourceVersions[0] && !sourceVersions.some((version) => version.id === comparisonVersionId)) {
+                setComparisonVersionId(sourceVersions[0].id);
+              }
+              setShowSourceVersionsOnly(next);
+            }}
+          >
+            {showSourceVersionsOnly ? "显示全部版本" : "仅看来源版本"}
+          </button>
+        </div>
         <div className="quant-version-timeline">
-          {workspace.versions.map((version) => (
+          {visibleVersions.map((version) => (
             <VersionTimelineButton
               key={version.id}
               active={comparisonVersionId === version.id}

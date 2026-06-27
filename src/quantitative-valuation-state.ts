@@ -126,6 +126,13 @@ export type QuantitativeVersionReviewSummary = {
   }>;
 };
 
+export type QuantitativeVersionSourceFilter = {
+  sourceCount: number;
+  canFilter: boolean;
+  title: string;
+  detail: string;
+};
+
 export type YearlyOverrideSummary = {
   count: number;
   title: string;
@@ -407,6 +414,24 @@ export function describeQuantitativeVersionReviewSummary(input: {
         tone: hasNote ? "note" : "neutral",
       },
     ],
+  };
+}
+
+export function describeQuantitativeVersionSourceFilter(versions: Array<{ draft?: QuantitativeDraft }>): QuantitativeVersionSourceFilter {
+  const sourceCount = versions.filter((version) => Boolean(describeQuantitativeVersionSourceSummary(version.draft))).length;
+  if (!sourceCount) {
+    return {
+      sourceCount: 0,
+      canFilter: false,
+      title: "暂无来源版本",
+      detail: "当前历史版本尚未记录恢复来源。",
+    };
+  }
+  return {
+    sourceCount,
+    canFilter: true,
+    title: `${sourceCount} 个来源版本`,
+    detail: "可只查看由历史预设库恢复后保存的版本。",
   };
 }
 

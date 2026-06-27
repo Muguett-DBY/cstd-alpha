@@ -5114,6 +5114,57 @@ button:not(:disabled):active,
   line-height: 1.45;
 }
 
+.quant-version-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--blue) 4%, var(--surface));
+}
+
+.quant-version-filter strong,
+.quant-version-filter span {
+  display: block;
+}
+
+.quant-version-filter strong {
+  color: var(--heading);
+  font-size: 12px;
+}
+
+.quant-version-filter span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.quant-version-filter button {
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--blue) 34%, var(--line));
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--blue);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quant-version-filter button[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+}
+
+.quant-version-filter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .quant-version-actions {
   display: flex;
   align-items: center;
@@ -5435,6 +5486,14 @@ button:not(:disabled):active,
 
   .quant-version-action-panel {
     min-width: 0;
+  }
+
+  .quant-version-filter {
+    display: grid;
+  }
+
+  .quant-version-filter button {
+    width: 100%;
   }
 
   .quant-version-load {
