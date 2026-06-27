@@ -230,14 +230,7 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
 }
 
 async function loadOpportunityECharts() {
-  const [core, charts, components, renderers] = await Promise.all([
-    import("echarts/core"),
-    import("echarts/charts"),
-    import("echarts/components"),
-    import("echarts/renderers"),
-  ]);
-  core.use([charts.ScatterChart, components.GridComponent, components.TooltipComponent, renderers.CanvasRenderer]);
-  return core;
+  return import("./echarts-loader").then((module) => module.loadSharedECharts());
 }
 
 function OpportunityMatrix({ items, onSelect }: { items: ResearchOpportunitySignal[]; onSelect: (item: ResearchOpportunitySignal) => void }) {

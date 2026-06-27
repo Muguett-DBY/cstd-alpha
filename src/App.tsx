@@ -2,16 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./App.css";
-import { RadarView, type RadarPhase } from "./RadarView";
-import { ReportView, EmptyState } from "./ReportView";
+import type { RadarPhase } from "./RadarView";
 import { ProgressPanel } from "./ProgressPanel";
 import { CandidateModal } from "./CandidateModal";
 import { displayExchange } from "./company-utils";
-import { ChartDashboard, type ChartPhase } from "./ReportCharts";
+import type { ChartPhase } from "./ReportCharts";
 const OpportunityDashboard = lazy(() => import("./OpportunityDashboard").then((module) => ({ default: module.OpportunityDashboard })));
-import { ResearchWorkspace } from "./ResearchWorkspace";
-import { MarketWorkspace } from "./MarketWorkspace";
-import { ValuationLabView } from "./ValuationLabView";
 import { ToastContainer } from "./Toast";
 import { showToast } from "./toast-state";
 import { ThemeControl } from "./ThemeControl";
@@ -31,6 +27,12 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type AppView = "opportunities" | "research" | "market" | "valuation" | "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
 
 export const DEFAULT_APP_VIEW: AppView = "opportunities";
+const ResearchWorkspace = lazy(() => import("./ResearchWorkspace").then((module) => ({ default: module.ResearchWorkspace })));
+const MarketWorkspace = lazy(() => import("./MarketWorkspace").then((module) => ({ default: module.MarketWorkspace })));
+const ValuationLabView = lazy(() => import("./ValuationLabView").then((module) => ({ default: module.ValuationLabView })));
+const RadarView = lazy(() => import("./RadarView").then((module) => ({ default: module.RadarView })));
+const ReportView = lazy(() => import("./ReportView").then((module) => ({ default: module.ReportView })));
+const ChartDashboard = lazy(() => import("./ReportCharts").then((module) => ({ default: module.ChartDashboard })));
 const RankingView = lazy(() => import("./RankingView").then((module) => ({ default: module.RankingView })));
 const WatchlistRankingView = lazy(() => import("./WatchlistRankingView").then((module) => ({ default: module.WatchlistRankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
@@ -828,6 +830,16 @@ function InstallPromptBanner({ visible, onInstall, onDismiss }: { visible: boole
         </button>
       </div>
     </aside>
+  );
+}
+
+function EmptyState() {
+  return (
+    <section className="empty-state">
+      <h2>先选择具体上市公司</h2>
+      <p>输入公司名后会先弹出候选项，确认公司名、代码和上市地点，再生成完整评分报告。</p>
+      <p className="muted">快捷键：Ctrl+1 今日机会 / Ctrl+2 研究 / Ctrl+3 市场 / Ctrl+4 估值</p>
+    </section>
   );
 }
 
