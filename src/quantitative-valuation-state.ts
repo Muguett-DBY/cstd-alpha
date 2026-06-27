@@ -109,11 +109,13 @@ export type QuantitativeVersionActionHint = {
 export type RestoredPresetLibrarySource = {
   title: string;
   detail: string;
+  restoredAtLabel: string;
 };
 
 export type QuantitativeVersionSourceSummary = {
   title: string;
   detail: string;
+  restoredAtLabel: string;
 };
 
 export type QuantitativeVersionReviewSummary = {
@@ -357,18 +359,22 @@ export function restoreQuantitativePresetLibrary(
 export function describeRestoredPresetLibrarySource(draft: QuantitativeDraft): RestoredPresetLibrarySource | null {
   const source = draft.restoredPresetLibrary;
   if (!isValidRestoredPresetLibrarySource(source)) return null;
+  const restoredAtLabel = formatRestoredPresetLibraryTimestamp(source.restoredAt);
   return {
     title: `预设库来源 V${source.version}`,
-    detail: `当前预设库仍保持从 V${source.version} 恢复的状态；保存新版本会把该来源写入自动备注。`,
+    detail: `当前预设库仍保持从 V${source.version} 恢复的状态；恢复时间 ${restoredAtLabel}，保存新版本会把该来源写入自动备注。`,
+    restoredAtLabel,
   };
 }
 
 export function describeQuantitativeVersionSourceSummary(draft?: QuantitativeDraft): QuantitativeVersionSourceSummary | null {
   const source = draft?.restoredPresetLibrary;
   if (!isValidRestoredPresetLibrarySource(source)) return null;
+  const restoredAtLabel = formatRestoredPresetLibraryTimestamp(source.restoredAt);
   return {
     title: `预设来源 V${source.version}`,
-    detail: `该版本的预设库由 V${source.version} 恢复后保存。`,
+    detail: `该版本的预设库由 V${source.version} 恢复后保存；恢复时间 ${restoredAtLabel}。`,
+    restoredAtLabel,
   };
 }
 
@@ -379,6 +385,12 @@ function isValidRestoredPresetLibrarySource(source?: QuantitativeDraft["restored
     source.version > 0 &&
     Number.isFinite(Date.parse(source.restoredAt)),
   );
+}
+
+function formatRestoredPresetLibraryTimestamp(restoredAt: string): string {
+  const date = new Date(restoredAt);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
 }
 
 export function describeQuantitativeVersionReviewSummary(input: {
