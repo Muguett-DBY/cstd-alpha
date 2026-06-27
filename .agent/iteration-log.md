@@ -1,5 +1,21 @@
 # CSTD Alpha - Iteration Log
 
+## Round 63 — 2026-06-28 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
+
+### Stage 1/6 IMPROVE — Login Shell Risk Hardening
+
+- **承接方向:** 先修复当前真实风险和线上可见问题：未登录 session 探测 401 噪声、Pyodide 运行时版本错配、Wrangler audit 风险、安全/缓存 headers 缺失、登录壳首屏预加载过重、无效恢复来源备注污染。
+- **旗舰:** 登录壳和运行时风险硬化：`/api/session` 未登录返回 200 envelope，重型视图懒加载，Vite 首页 modulepreload 只保留 runtime 与 React vendor，ECharts 改为 named loader，Pyodide CDN 版本锁定到已安装版本，Cloudflare Pages `_headers` 补齐安全与缓存策略。
+- **真实问题修复:** 登录页不再产生预期内 401 失败响应；构建不再出现 Pyodide Node builtin externalization 和大 chunk warning；生产静态资源获得 immutable cache；无效 `restoredPresetLibrary` 不再生成 `恢复 V0 预设库。` 自动备注。
+- **验证:** 先写失败测试覆盖 session、Pyodide helper、Pages headers、懒加载边界、无效来源备注、ECharts loader、首页 modulepreload；修复后 `npm ci`、`npm test` 862 tests passed、`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --json`、`npm audit --omit=dev --json`、`git diff --check` 均通过。
+- **数据验证:** 远程 D1 只读检查 `valuation_forecast_versions`：`total_versions=2`、`invalid_json=0`、`source_rows=0`，无需生产数据迁移。
+- **浏览器验证:** 本地 `wrangler pages dev dist --port 43261 --local` 与生产 `https://alpha.custard.top` 均通过 Playwright 桌面 1366px / 移动 390px 验证；登录页标题、H1、进入按钮正常，`/api/session` 返回 200 `{ authenticated:false,user:null }`，console errors 为空，无失败响应，无横向溢出，首页 modulepreload 仅 runtime + `vendor-react`。
+- **生产验证:** `https://alpha.custard.top` 返回 HTTP 200，安全 headers 包含 HSTS、X-Frame-Options、X-Content-Type-Options、Referrer-Policy、Permissions-Policy；入口 JS asset 返回 `max-age=31536000, immutable`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28305205002`)。
+- **Commit:** `1ababfd fix: harden login shell performance and runtime risks`
+- **风险记录:** 本阶段没有加入 CSP，避免在未完成策略设计前破坏 Pyodide CDN ESM/WASM；后续可单独做 CSP 设计与验证。
+- **下一阶段:** Stage 2/6 IMPROVE，继续在当前生产基线上做用户可见的产品改进，并保持每阶段本地门禁、浏览器验证、push、CI 与日志闭环。
+
 ## Round 62 — 2026-06-26 (Long Cycle: IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE)
 
 ### Stage 1/6 IMPROVE — Persist Restored Preset Source

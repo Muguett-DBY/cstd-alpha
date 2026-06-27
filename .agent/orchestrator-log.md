@@ -630,3 +630,23 @@
 **生产检查:** `https://alpha.custard.top` 与 `https://cstd-alpha.pages.dev` 均返回 HTTP 200，标题为 `CSTD Alpha — AI 公司深度研究`；Playwright 在两条生产入口均确认登录界面完整可用。未登录 `/api/session` 返回 401，符合认证探测预期。
 **阶段 CI:** 六阶段功能与日志提交对应的 Deploy Cloudflare Pages runs `28238460530`、`28238557458`、`28238930120`、`28239666887`、`28239790328`、`28298188048`、`28298242055`、`28298394625`、`28298447065`、`28298594792`、`28298651617` 均 passed。
 **遗留风险:** Vite 仍报告既有 pyodide Node builtin externalization 与大 chunk warning；旧版本没有结构化来源时不会进入来源筛选；无效历史来源会被隐藏但未在数据库中迁移清理；来源时间统一按 UTC 展示。
+
+## Round 63 - 6 Stage Main V2
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 先把当前项目中已验证的风险和网站真实问题收口：登录页 401 噪声、Pyodide 版本错配、Wrangler audit 风险、安全/缓存 headers、首屏重型预加载、无效恢复来源备注污染。
+**开始状态:** `main` 位于 `d5fd37f`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 先写失败测试覆盖 `/api/session` 未登录 envelope、Pyodide runtime helper、Cloudflare Pages `_headers`、App 懒加载边界、无效 `restoredPresetLibrary` 自动备注、ECharts shared loader、Vite 首页 modulepreload 过滤。
+**完成内容:** `/api/session` GET 未登录返回 200 `{ authenticated:false,user:null }`；Pyodide 改为 CDN ESM 加载并锁定 `0.29.4`；Wrangler 升级到 `4.105.0`；新增 Pages `_headers`；重型 authenticated views 改为 lazy import；ECharts 改为 named static loader；Vite 首页 HTML 过滤 deferred vendor preloads；自动 decision note 只接受有效恢复来源。
+**真实问题修复:** 登录页不再产生预期内 401 失败响应；构建不再报告 Pyodide Node builtin externalization 和 ECharts 大 chunk warning；生产安全 headers 与静态资源缓存策略已生效；非法来源不会再显示 `恢复 V0 预设库。`。
+**本地验证:** `npm ci` passed；`npm test` 862 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无警告；`npm audit --json` 与 `npm audit --omit=dev --json` 均 0 vulnerabilities；`git diff --check` passed。
+**数据验证:** 远程 D1 只读检查 `valuation_forecast_versions`：`total_versions=2`、`invalid_json=0`、`source_rows=0`，无需生产数据迁移。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 43261 --local` 和生产 `https://alpha.custard.top` 均通过 Playwright 桌面 1366px / 移动 390px 检查；标题、H1、进入按钮正常，`/api/session` 返回 200 未登录 envelope，console errors 为空，无失败响应，无横向溢出，首页 modulepreload 仅 runtime + `vendor-react`。
+**生产验证:** `https://alpha.custard.top` 返回 HTTP 200；HSTS、X-Frame-Options、X-Content-Type-Options、Referrer-Policy、Permissions-Policy 已生效；入口 JS asset 返回 `max-age=31536000, immutable`。
+**Commit / Push:** `1ababfd fix: harden login shell performance and runtime risks` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28305205002`)。
+**风险记录:** 本阶段未加入 CSP，以免在未完整设计 `script-src` / `connect-src` / WASM 兼容前破坏 Pyodide CDN 加载；建议后续单独做 CSP 阶段。
+**下一阶段:** 阶段 2/6 IMPROVE，继续在当前生产基线上做用户可见改进并完整执行本地验证、push、CI 与日志闭环。
