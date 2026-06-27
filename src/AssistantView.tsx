@@ -16,6 +16,7 @@ import { composeClarifiedAssistantMessage, type AssistantClarificationOption, ty
 import { assistantKeyIntent, canRestartSpeechAfterError, mergeSpeechTranscript, resolveSpeechPermissionState, shouldBlockSpeechForPermissionState, speechErrorMessage } from "./assistant-input";
 import { parseAssistantMarkdown } from "./assistant-markdown";
 import { assistantSupplementaryBlocks, mergeAssistantDeepResearchJobs, mergeAssistantDelta, stripInternalAssistantCompletion } from "./assistant-state";
+import { loadPyodideModule, PYODIDE_INDEX_URL } from "./pyodide-runtime";
 import type { AssistantBlock, AssistantChartBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantThread } from "./shared/assistant";
 
 type AssistantPhase = "loading" | "ready" | "streaming" | "error";
@@ -572,9 +573,9 @@ export function AssistantView({ prefillMessage, onPrefillUsed }: { prefillMessag
     try {
       if (!pyodideRef.current) {
         setPyodideReady("loading");
-        const pyodideModule = await import("pyodide");
+        const pyodideModule = await loadPyodideModule();
         const pyodide = await pyodideModule.loadPyodide({
-          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.0/full/",
+          indexURL: PYODIDE_INDEX_URL,
         });
         pyodideRef.current = pyodide;
         setPyodideReady("ready");
@@ -1042,23 +1043,7 @@ function CollapsibleAssistantChart({ block }: { block: AssistantChartBlock }) {
 }
 
 async function loadAssistantECharts() {
-  const [core, charts, components, renderers] = await Promise.all([
-    import("echarts/core"),
-    import("echarts/charts"),
-    import("echarts/components"),
-    import("echarts/renderers"),
-  ]);
-  core.use([
-    charts.PieChart,
-    charts.LineChart,
-    charts.BarChart,
-    charts.ScatterChart,
-    components.GridComponent,
-    components.TooltipComponent,
-    components.LegendComponent,
-    renderers.CanvasRenderer,
-  ]);
-  return core;
+  return import("./echarts-loader").then((module) => module.loadSharedECharts());
 }
 
 function AssistantChart({ block }: { block: AssistantChartBlock }) {

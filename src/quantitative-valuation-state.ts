@@ -814,7 +814,7 @@ export function compareQuantitativeDrafts(current: QuantitativeDraft, baseline: 
 export function buildDraftDecisionNote(current: QuantitativeDraft, baseline?: QuantitativeDraft) {
   if (!baseline) return "";
   const comparison = compareQuantitativeDrafts(current, baseline);
-  const presetSource = current.restoredPresetLibrary ? `恢复 V${current.restoredPresetLibrary.version} 预设库。` : "";
+  const presetSource = isValidRestoredPresetLibrarySource(current.restoredPresetLibrary) ? `恢复 V${current.restoredPresetLibrary.version} 预设库。` : "";
   if (!comparison.assumptions.length) return presetSource || "保存为审计版本：关键假设未变化。";
   const summary = comparison.assumptions.slice(0, 3).map((item) =>
     `${item.label}：${formatCompactAssumption(item.baselineValue, item.unit)} → ${formatCompactAssumption(item.currentValue, item.unit)}`,

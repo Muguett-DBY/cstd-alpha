@@ -27,9 +27,7 @@ export function RadarVisualCharts({ packets, onSelectIndustry }: RadarVisualChar
 }
 
 async function loadRadarECharts() {
-  const [core, charts, components, renderers] = await Promise.all([import("echarts/core"), import("echarts/charts"), import("echarts/components"), import("echarts/renderers")]);
-  core.use([charts.ScatterChart, charts.BarChart, components.GridComponent, components.TooltipComponent, renderers.CanvasRenderer]);
-  return core;
+  return import("./echarts-loader").then((module) => module.loadSharedECharts());
 }
 
 function RadarBubbleChart({ packets, onSelectIndustry }: RadarVisualChartsProps) {

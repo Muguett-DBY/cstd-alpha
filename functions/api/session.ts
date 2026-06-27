@@ -8,7 +8,7 @@ type Env = {
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await readSessionCookie(request.headers.get("cookie"), env);
-  return json({ authenticated: Boolean(session), user: session ? publicUser(session) : null }, session ? 200 : 401);
+  return json({ authenticated: Boolean(session), user: session ? publicUser(session) : null });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

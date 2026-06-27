@@ -390,6 +390,18 @@ describe("quantitative valuation editor state", () => {
     expect(buildDraftDecisionNote(restored, baseDraft())).toBe("恢复 V4 预设库。");
   });
 
+  test("ignores invalid restored preset source in the automatic decision note", () => {
+    const restored = {
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: 0,
+        restoredAt: "not-a-date",
+      },
+    };
+
+    expect(buildDraftDecisionNote(restored, baseDraft())).toBe("保存为审计版本：关键假设未变化。");
+  });
+
   test("clears restored preset source after editing the preset library", () => {
     const sourceWithPreset = createQuantitativePreset(
       applyDraftEdit(baseDraft(), { key: "ebitMargin", scenario: "base", rawValue: "14" }),
