@@ -620,4 +620,13 @@
 **Commit / Push:** `42c18d1 feat: show valuation preset source timestamps` pushed to `origin/main`。
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298594792`)。
 **风险记录:** 来源时间按 UTC 展示，避免浏览器/服务器时区差异；Vite 仍保留既有 pyodide externalization 和大 chunk warning。
-**最终状态:** Round 62 六阶段功能实现、本地验证、浏览器验证、push 与 CI 均已完成，等待最终生产检查和日志提交收口。
+**最终状态:** Round 62 六阶段功能实现、本地验证、浏览器验证、push 与阶段 CI 均已完成。
+
+### Round 62 最终收口
+
+**状态:** ✅ 6/6 完成
+**功能 Commits:** `cc2661d`、`e1e46ec`、`98cfc9d`、`e9003c1`、`a1a7bc8`、`42c18d1`。
+**最终本地门禁:** `npm test` 74 files / 854 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed。
+**生产检查:** `https://alpha.custard.top` 与 `https://cstd-alpha.pages.dev` 均返回 HTTP 200，标题为 `CSTD Alpha — AI 公司深度研究`；Playwright 在两条生产入口均确认登录界面完整可用。未登录 `/api/session` 返回 401，符合认证探测预期。
+**阶段 CI:** 六阶段功能与日志提交对应的 Deploy Cloudflare Pages runs `28238460530`、`28238557458`、`28238930120`、`28239666887`、`28239790328`、`28298188048`、`28298242055`、`28298394625`、`28298447065`、`28298594792`、`28298651617` 均 passed。
+**遗留风险:** Vite 仍报告既有 pyodide Node builtin externalization 与大 chunk warning；旧版本没有结构化来源时不会进入来源筛选；无效历史来源会被隐藏但未在数据库中迁移清理；来源时间统一按 UTC 展示。

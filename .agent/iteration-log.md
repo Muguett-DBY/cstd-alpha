@@ -411,7 +411,7 @@
 
 ---
 
-## Round 62 — 2026-06-26 (6 Stage Main V2, in progress)
+## Round 62 — 2026-06-26 (6 Stage Main V2, completed)
 
 ### Stage 1/6 IMPROVE — Persist Restored Preset Sources
 - **旗舰:** `restoredPresetLibrary` 从前端草稿进入保存 API 和版本 `draft_json`，手写备注不会再覆盖结构化来源审计。
@@ -442,3 +442,9 @@
 - **旗舰:** 来源说明新增 UTC 恢复时间，历史版本不只显示 `预设来源 Vx`，还显示恢复发生时间。
 - **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified source timestamp, desktop/800px no overflow and zero console errors；CI run `28298594792` passed。
 - **Commit:** `42c18d1 feat: show valuation preset source timestamps`
+
+### Final Closure
+- **状态:** 6/6 completed；六个功能 commits 与各阶段日志 commits 已推送至 `main`，阶段 CI 全部通过。
+- **最终门禁:** 74 test files / 854 tests passed；lint、functions typecheck、build、diff check passed。
+- **生产验收:** `alpha.custard.top` 与 `cstd-alpha.pages.dev` 均 HTTP 200；Playwright 确认两条入口的登录界面可见且结构完整。
+- **遗留:** 既有 pyodide externalization / chunk-size warnings；旧版本无结构化来源时按设计不参与来源筛选；无效历史来源仅隐藏、未迁移；时间按 UTC 展示。
