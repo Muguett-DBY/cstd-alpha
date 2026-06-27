@@ -432,3 +432,8 @@
 - **旗舰:** 历史版本时间线新增 `仅看来源版本`，一键定位由历史预设库恢复后保存的版本，并同步对比面板。
 - **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified 6→1 source filter, desktop/800px no overflow and zero console errors；CI run `28298188048` passed。
 - **Commit:** `e9003c1 feat: filter valuation versions by preset source`
+
+### Stage 5/6 CHECK — Invalid Source Guard
+- **修复:** 展示层忽略 `version <= 0`、`NaN` 或无效 `restoredAt` 的历史来源，避免出现 `预设来源 V0/V-1/VNaN` 并污染来源筛选。
+- **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified valid V4 source still displays；CI run `28298394625` passed。
+- **Commit:** `a1a7bc8 fix: ignore invalid valuation preset sources`

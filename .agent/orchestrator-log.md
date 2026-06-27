@@ -586,3 +586,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298188048`)。
 **风险记录:** 筛选只针对已持久化结构化来源；旧历史版本没有 `restoredPresetLibrary` 时不会被纳入筛选，属于预期降级。
 **下一阶段:** 阶段 5/6 CHECK，系统检查来源版本筛选与版本保存/恢复流程的边界，并修复真实稳定性或一致性问题。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统检查来源版本筛选和来源展示的边界，修复旧数据或外部写入无效 `restoredPresetLibrary` 时误显示来源版本的稳定性问题。
+**开始状态:** 阶段 4 功能 commit `e9003c1` 和日志 commit `15952a3` 均已推送，CI runs `28298188048` / `28298242055` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增无效来源测试，先复现 `version: 0/-1/NaN` 会显示 `预设来源 V0` 并计入来源筛选；定向测试按预期失败 2 项。
+**检查发现:** 后端保存路径会清洗新保存的来源，但前端历史展示层仍信任已存在 draft 的来源元数据；旧数据、迁移数据或外部写入可能让时间线展示无效来源并污染筛选计数。
+**完成内容:** 新增 `isValidRestoredPresetLibrarySource` 展示层校验；保存状态条、版本时间线、来源筛选统一要求来源版本为正整数且 `restoredAt` 可解析；无效来源自动降级为无来源。
+**真实问题修复:** 避免历史版本出现 `预设来源 V0/V-1/VNaN`，也避免无效来源被 `仅看来源版本` 纳入结果。
+**本地验证:** 先写失败测试并复现无效来源误展示；修复后定向 `src/quantitative-valuation-state.test.ts` 38 tests passed；全量 `npm test` 854 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed（仅 Windows 换行提示，无 whitespace error）。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 使用预置 session 登录本地 QA，确认有效 V4 来源仍显示在筛选条和时间线中，来源说明正常；桌面 `scrollWidth=clientWidth=1365`，console errors 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage5-source-validation-check.png`。
+**Commit / Push:** `a1a7bc8 fix: ignore invalid valuation preset sources` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298394625`)。
+**风险记录:** 展示层现在会隐藏无效历史来源；如果需要数据治理，后续可增加后台迁移/诊断报表，但当前前端不会误导用户。
+**下一阶段:** 阶段 6/6 IMPROVE，完成最后一个用户可见改进，并做最终生产/CI收口。
