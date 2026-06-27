@@ -427,7 +427,8 @@ describe("quantitative valuation editor state", () => {
 
     expect(describeRestoredPresetLibrarySource(restored)).toEqual({
       title: "预设库来源 V4",
-      detail: "当前预设库仍保持从 V4 恢复的状态；保存新版本会把该来源写入自动备注。",
+      detail: "当前预设库仍保持从 V4 恢复的状态；恢复时间 2026-06-26 00:20 UTC，保存新版本会把该来源写入自动备注。",
+      restoredAtLabel: "2026-06-26 00:20 UTC",
     });
     expect(describeRestoredPresetLibrarySource(createQuantitativePreset(
       applyDraftEdit(restored, { key: "revenueGrowth", scenario: "base", rawValue: "13.5" }),
@@ -452,7 +453,8 @@ describe("quantitative valuation editor state", () => {
       },
     })).toEqual({
       title: "预设来源 V4",
-      detail: "该版本的预设库由 V4 恢复后保存。",
+      detail: "该版本的预设库由 V4 恢复后保存；恢复时间 2026-06-26 00:20 UTC。",
+      restoredAtLabel: "2026-06-26 00:20 UTC",
     });
     expect(describeQuantitativeVersionSourceSummary(baseDraft())).toBeNull();
     expect(describeQuantitativeVersionSourceSummary({
