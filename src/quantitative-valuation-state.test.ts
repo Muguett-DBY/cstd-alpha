@@ -18,6 +18,7 @@ import {
   describeQuantitativeVersionPresetDelta,
   describeQuantitativeVersionReviewSummary,
   describeQuantitativeVersionPresetSummary,
+  describeQuantitativeVersionSourceFilter,
   describeQuantitativeVersionSourceSummary,
   describeQuantitativeWorkflowSteps,
   describeRestoredPresetLibrarySource,
@@ -477,6 +478,33 @@ describe("quantitative valuation editor state", () => {
         { label: "来源", value: "预设来源 V4", tone: "source" },
         { label: "备注", value: "有备注", tone: "note" },
       ],
+    });
+  });
+
+  test("summarizes source-backed versions for timeline filtering", () => {
+    const sourceDraft = {
+      ...baseDraft(),
+      restoredPresetLibrary: {
+        version: 4,
+        restoredAt: "2026-06-26T00:20:00.000Z",
+      },
+    };
+
+    expect(describeQuantitativeVersionSourceFilter([
+      { draft: baseDraft() },
+      { draft: sourceDraft },
+      { draft: sourceDraft },
+    ])).toEqual({
+      sourceCount: 2,
+      canFilter: true,
+      title: "2 个来源版本",
+      detail: "可只查看由历史预设库恢复后保存的版本。",
+    });
+    expect(describeQuantitativeVersionSourceFilter([{ draft: baseDraft() }])).toEqual({
+      sourceCount: 0,
+      canFilter: false,
+      title: "暂无来源版本",
+      detail: "当前历史版本尚未记录恢复来源。",
     });
   });
 
