@@ -437,3 +437,8 @@
 - **修复:** 展示层忽略 `version <= 0`、`NaN` 或无效 `restoredAt` 的历史来源，避免出现 `预设来源 V0/V-1/VNaN` 并污染来源筛选。
 - **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified valid V4 source still displays；CI run `28298394625` passed。
 - **Commit:** `a1a7bc8 fix: ignore invalid valuation preset sources`
+
+### Stage 6/6 IMPROVE — Source Timestamp Audit
+- **旗舰:** 来源说明新增 UTC 恢复时间，历史版本不只显示 `预设来源 Vx`，还显示恢复发生时间。
+- **验证:** 先写失败测试；854 tests passed；lint passed；functions typecheck passed；build passed；Playwright verified source timestamp, desktop/800px no overflow and zero console errors；CI run `28298594792` passed。
+- **Commit:** `42c18d1 feat: show valuation preset source timestamps`

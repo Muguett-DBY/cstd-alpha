@@ -604,3 +604,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298394625`)。
 **风险记录:** 展示层现在会隐藏无效历史来源；如果需要数据治理，后续可增加后台迁移/诊断报表，但当前前端不会误导用户。
 **下一阶段:** 阶段 6/6 IMPROVE，完成最后一个用户可见改进，并做最终生产/CI收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在来源版本展示、筛选和校验完成后，把来源审计从仅显示版本号提升到同时显示恢复时间，增强历史复盘证据。
+**开始状态:** 阶段 5 功能 commit `a1a7bc8` 和日志 commit `7d797e6` 均已推送，CI runs `28298394625` / `28298447065` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 更新来源摘要测试，先复现保存状态条和历史版本来源摘要缺少 `restoredAtLabel` 与 UTC 恢复时间文案，定向测试按预期失败 2 项。
+**完成内容:** `describeRestoredPresetLibrarySource` 与 `describeQuantitativeVersionSourceSummary` 新增 `restoredAtLabel`；来源说明展示 `恢复时间 yyyy-mm-dd hh:mm UTC`；复用阶段 5 的有效来源校验，避免无效日期进入展示。
+**真实问题修复:** 用户此前只能知道预设库来自 Vx，无法在历史对比区确认恢复操作发生时间；现在可在来源说明中看到可复盘的 UTC 时间。
+**本地验证:** 先写失败测试并复现缺少时间字段；修复后定向 `src/quantitative-valuation-state.test.ts` 38 tests passed；全量 `npm test` 854 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；`git diff --check` passed（仅 Windows 换行提示，无 whitespace error）。
+**浏览器验证:** Playwright + `wrangler pages dev dist --port 43180` 使用预置 session 登录本地 QA，进入来源版本筛选；来源说明显示 `恢复时间 2026-06-26 12:35 UTC`，时间线仍显示 `预设来源 V4`；桌面 `scrollWidth=clientWidth=1365`，800px `scrollWidth=clientWidth=800`，console errors 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage6-source-time-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-round62-stage6-source-time-800.png`。
+**Commit / Push:** `42c18d1 feat: show valuation preset source timestamps` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28298594792`)。
+**风险记录:** 来源时间按 UTC 展示，避免浏览器/服务器时区差异；Vite 仍保留既有 pyodide externalization 和大 chunk warning。
+**最终状态:** Round 62 六阶段功能实现、本地验证、浏览器验证、push 与 CI 均已完成，等待最终生产检查和日志提交收口。
