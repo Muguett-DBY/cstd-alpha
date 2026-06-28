@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { clearImportedRankingReports, loadImportedRankingReports, parseRankingReportJson, saveImportedRankingReports, upsertImportedRankingReports } from "./ranking-storage";
+import { canPersistImportedRankingReports, clearImportedRankingReports, loadImportedRankingReports, parseRankingReportJson, saveImportedRankingReports, upsertImportedRankingReports } from "./ranking-storage";
 import { SCORE_ITEMS_20, validateReportPayload } from "./shared/report";
 
 describe("ranking report storage", () => {
@@ -53,6 +53,18 @@ describe("ranking report storage", () => {
 
     expect(saveImportedRankingReports([])).toBe(false);
     expect(() => clearImportedRankingReports()).not.toThrow();
+  });
+
+  test("reports imported ranking cache as unavailable when the browser storage getter is blocked", () => {
+    const blockedWindow = {};
+    Object.defineProperty(blockedWindow, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("localStorage disabled", "SecurityError");
+      },
+    });
+
+    expect(canPersistImportedRankingReports(blockedWindow as Window)).toBe(false);
   });
 });
 
