@@ -722,3 +722,30 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28311421691`)。
 **风险记录:** storage 被浏览器禁用时不会持久化主题选择或 PWA 忽略状态，这是有意降级；`npm ci` 在本地 Pages 预览运行时可能因 Miniflare 文件锁失败，后续执行依赖安装前需先停预览进程。npm 仍提示 allow-scripts 待审批项，但安装、测试和 audit 均通过。
 **下一阶段:** 阶段 6/6 IMPROVE，在当前生产基线上做最后一个真实问题改进并完成最终收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 完成浏览器受限存储环境的可靠性闭环：最近搜索安全持久化，并让用户明确知道本地缓存已降级。
+**开始状态:** 阶段 5 功能 commit `6867e49` 与日志 commit `b2eaa27` 均已推送，CI runs `28311421691` / `28311546206` passed；继续保留既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。
+**测试先行:** 新增 `src/recent-searches.test.ts`，先复现缺少 `recent-searches` 模块；随后用 4 项测试覆盖去重/8 项上限、storage getter 抛 `SecurityError`、写入配额失败和探针清理。
+**完成内容:** 新增 recent-search storage adapter，统一安全读取、规范化、去重、限长、写入与可用性探测；成功搜索后即使持久化失败也保留当前页内历史；登录壳和 authenticated rail 在本地缓存不可用时显示紧凑、可访问的状态提示。
+**真实问题修复:** 原成功搜索路径直接执行 `localStorage.setItem`，受限浏览器会在候选公司已返回后抛错并把成功流程转成失败；现在搜索结果继续可用，且用户能看到最近搜索和报告缓存只在当前页面生效。
+**本地验证:** TDD 红绿完成；`npm ci` passed（257 packages，0 vulnerabilities）；`npm test` 84 files / 877 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-CWX3gczo.js`；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` 与 staged diff check 无 whitespace error。
+**浏览器验证:** 本地 Pages 预览在 desktop 1280×800 和 mobile 390×844 注入 `window.localStorage` getter `SecurityError`；登录页和 mock authenticated workspace 均显示唯一缓存降级提示，无 console issue、failed request 或横向溢出。内置 Browser 线上确认页面身份、非空 DOM、console health，并实际切换主题验证交互。
+**生产验证:** Cloudflare Pages deployment `824fdb85-83f3-4ab2-9768-a40a4b2a819e` source `564577b`；`https://alpha.custard.top` 与 `https://824fdb85.cstd-alpha.pages.dev` 均使用 `index-CWX3gczo.js`。两条入口在 1280×800 / 390×844 storage-blocked 验证中标题、H1、唯一缓存提示和 `/api/session` 200 `{ authenticated:false,user:null }` 均正确，无 console error/warning、page error、failed request 或横向溢出。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-storage-notice-auth.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-storage-notice-workspace.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-storage-notice-mobile-auth.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-storage-notice-mobile-workspace-user.png`；生产 `cstd-alpha-stage6-prod-alpha-custard-top-desktop.png` / `mobile.png`。
+**Commit / Push:** `564577b feat: surface browser cache fallback` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28312771084`)。
+**风险记录:** storage 被禁用时最近搜索、主题选择、PWA 忽略状态和报告缓存不会跨页面持久化，这是明确展示的降级行为；API 与当前页内搜索仍可用。npm 仍提示 3 个 allow-scripts 待审批包，但安装、构建和两类 audit 均通过。
+**最终状态:** Round 63 六阶段功能实现、本地门禁、浏览器验证、push、阶段 CI 与生产部署均已完成。
+
+### Round 63 最终收口
+
+**状态:** ✅ 6/6 完成
+**功能 Commits:** `1ababfd`、`2005313`、`87d90c6`、`c757a69`、`3588ed8`、`6867e49`、`564577b`。
+**最终本地门禁:** `npm ci` passed；84 test files / 877 tests passed；lint、functions typecheck、build、开发/生产 audit、diff check 全部通过；Vite 生产构建无 warning。
+**生产验收:** `alpha.custard.top` 与最新直连部署均 HTTP 200；桌面/移动端均无横向溢出、console/page/request 错误；`/api/session` 未登录 envelope 为 200；CSP、安全 headers、懒加载反馈、旧 chunk 恢复和 storage 降级链路均完成线上验证。
+**阶段 CI:** 功能与前五阶段日志对应的 Deploy Cloudflare Pages runs `28305205002`、`28305273826`、`28305499510`、`28305624592`、`28305677608`、`28306117860`、`28306188837`、`28307103541`、`28307184131`、`28311421691`、`28311546206`、`28312771084` 均 passed。
+**遗留风险:** storage 被禁用时本地偏好和缓存按设计不持久化；CSP `style-src` 仍为兼容现有样式保留 `'unsafe-inline'`；npm allow-scripts 提示需在未来依赖治理阶段单独审批，不影响当前 0-vulnerability 结果。

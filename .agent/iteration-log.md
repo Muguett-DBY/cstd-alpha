@@ -503,3 +503,18 @@
 - **浏览器验收:** 本地与生产移动端注入 `window.localStorage` getter 抛 `SecurityError`，登录页正常、`/api/session` 200 envelope、`beforeinstallprompt.defaultPrevented=true`、无 console issue / failed request / 横向溢出。
 - **生产:** Pages deployment `25c0fb2f-7fea-4a23-bd87-824909c02536` source `6867e49`；`alpha.custard.top` 和部署域均使用 `index-DhsoxLAL.js`；CI run `28311421691` passed。
 - **Commit:** `6867e49 fix: harden browser storage fallbacks`
+
+### Stage 6/6 IMPROVE — Safe Recent Search Persistence
+- **旗舰:** 新增 recent-search storage adapter；安全读取、去重、8 项限长、写入降级和可用性探针统一处理，并在登录壳/工作区显示本地缓存状态。
+- **真实问题修复:** 成功公司搜索不再因 `localStorage.setItem` 抛错而转成失败；持久化不可用时，最近搜索仍保留在当前页面并向用户明确说明限制。
+- **验证:** TDD 红绿；84 files / 877 tests passed；lint、functions typecheck、build、dev/prod audit、staged diff check passed；Vite build 无 warning。
+- **浏览器验收:** 内置 Browser 验证线上页面身份、非空 DOM、console health 和主题交互；Playwright 在 desktop 1280×800 / mobile 390×844、两条生产入口注入 storage `SecurityError`，唯一降级提示可见，无 console/page/request issue 或横向溢出。
+- **生产:** Pages deployment `824fdb85-83f3-4ab2-9768-a40a4b2a819e` source `564577b`；自定义域和部署域均使用 `index-CWX3gczo.js`；CI run `28312771084` passed。
+- **Commit:** `564577b feat: surface browser cache fallback`
+
+### Final Closure
+- **状态:** 6/6 completed；7 个功能 commits 与前五阶段日志 commits 已推送至 `main`，对应阶段 CI 全部通过。
+- **最终门禁:** `npm ci`、84 test files / 877 tests、lint、functions typecheck、build、开发/生产 audit、diff check 全部通过。
+- **生产验收:** `alpha.custard.top` 与最新部署域 HTTP 200；桌面/移动端页面、API、CSP、动态分块恢复和受限存储降级均验证通过。
+- **遗留:** storage 被禁用时本地偏好/缓存不会跨页；CSP `style-src` 仍保留 `'unsafe-inline'`；npm allow-scripts 待未来依赖治理单独审批。
+- **下一建议:** 将剩余可选浏览器存储消费者逐步统一到同一 adapter，并增加带实际 Pages 认证测试夹具的登录后搜索端到端用例。
