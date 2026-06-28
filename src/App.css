@@ -116,6 +116,25 @@
   margin-top: 10px;
 }
 
+.storage-health {
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0 0;
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line));
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface));
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.auth-storage-health {
+  margin-inline: auto;
+  text-align: left;
+}
+
 .theme-control {
   display: inline-grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

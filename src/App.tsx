@@ -15,6 +15,7 @@ import { useThemePreference } from "./theme";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import { canPersistRecentSearches, loadRecentSearches, rememberRecentSearch } from "./recent-searches";
 import { clearImportedRankingReports } from "./ranking-storage";
 import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
@@ -28,6 +29,7 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type AppView = AppViewLoadingTarget;
 
 export const DEFAULT_APP_VIEW: AppView = "opportunities";
+export const LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE = "本地缓存不可用；最近搜索和报告缓存只在当前页面生效。";
 const ResearchWorkspace = lazy(() => import("./ResearchWorkspace").then((module) => ({ default: module.ResearchWorkspace })));
 const MarketWorkspace = lazy(() => import("./MarketWorkspace").then((module) => ({ default: module.MarketWorkspace })));
 const ValuationLabView = lazy(() => import("./ValuationLabView").then((module) => ({ default: module.ValuationLabView })));
@@ -51,9 +53,8 @@ function App() {
   const [query, setQuery] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState<CompanyCandidate[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("cstd-alpha:recent-searches") || "[]"); } catch { return []; }
-  });
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => loadRecentSearches());
+  const [localPersistenceAvailable] = useState(() => canPersistRecentSearches());
   const suggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
@@ -258,11 +259,15 @@ function App() {
       setCandidates(nextCandidates);
       setPhase("selecting");
       if (nextCandidates.length === 0) setError("没有找到候选公司，请尝试输入股票代码或更完整的公司名。");
-      setRecentSearches((prev) => {
-        const next = [query.trim(), ...prev.filter((s) => s !== query.trim())].slice(0, 8);
-        localStorage.setItem("cstd-alpha:recent-searches", JSON.stringify(next));
-        return next;
-      });
+      const recentSearchUpdate = rememberRecentSearch(query.trim(), recentSearches);
+      setRecentSearches(recentSearchUpdate.searches);
+      if (!recentSearchUpdate.persisted) {
+        setCacheNotice(
+          recentSearchUpdate.persistenceAvailable
+            ? "公司候选已返回；浏览器本地缓存写入失败，最近搜索仅保留在当前页面。"
+            : "公司候选已返回；浏览器本地缓存不可用，最近搜索仅保留在当前页面。",
+        );
+      }
     } catch (err) {
       setPhase("error");
       setError(errorMessage(err, "公司搜索失败。"));
@@ -540,6 +545,7 @@ function App() {
             />
             <button type="submit" disabled={isLoggingIn}>{isLoggingIn ? "验证中..." : "进入"}</button>
           </form>
+          {!localPersistenceAvailable ? <p className="storage-health auth-storage-health" role="status">{LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE}</p> : null}
           {error ? <p className="error-text">{error}</p> : null}
         </section>
       </main>
@@ -572,6 +578,7 @@ function App() {
               退出登录
             </button>
           </div>
+          {!localPersistenceAvailable ? <p className="storage-health" role="status">{LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE}</p> : null}
         </div>
 
         <nav className="view-tabs" aria-label="工作区">
