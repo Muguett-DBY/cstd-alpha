@@ -99,6 +99,12 @@ export type ValuationsResult = {
   runs: ValuationRunSummary[];
 };
 
+type AssistantThreadSummary = {
+  id: string;
+  title: string;
+  updatedAt: string;
+};
+
 export async function fetchOpportunities(): Promise<OpportunitiesResult> {
   const response = await fetch("/api/opportunities", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "今日机会读取失败。");
@@ -555,7 +561,8 @@ export async function fetchAssistantThread(threadId?: string): Promise<Assistant
 export async function listAssistantThreads(): Promise<Array<{ id: string; title: string; updatedAt: string }>> {
   const response = await fetch("/api/assistant/threads", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "线程列表读取失败。");
-  const data = (await response.json()) as { threads: Array<{ id: string; title: string; updatedAt: string }> };
+  const data = (await response.json()) as { threads?: unknown };
+  if (!Array.isArray(data.threads) || !data.threads.every(isAssistantThreadSummary)) throw new Error("线程列表读取失败。");
   return data.threads;
 }
 
@@ -567,7 +574,8 @@ export async function createAssistantThread(title?: string): Promise<{ id: strin
     body: JSON.stringify({ title }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "线程创建失败。");
-  const data = (await response.json()) as { thread: { id: string; title: string } };
+  const data = (await response.json()) as { thread?: unknown };
+  if (!isCreatedAssistantThread(data.thread)) throw new Error("线程创建失败。");
   return data.thread;
 }
 
@@ -812,6 +820,20 @@ function isNetworkLikeError(error: unknown) {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
   return error instanceof TypeError || message.includes("network") || message.includes("failed to fetch") || message.includes("load failed");
+}
+
+function isAssistantThreadSummary(value: unknown): value is AssistantThreadSummary {
+  if (!isPlainRecord(value)) return false;
+  return typeof value.id === "string" && typeof value.title === "string" && typeof value.updatedAt === "string";
+}
+
+function isCreatedAssistantThread(value: unknown): value is Pick<AssistantThreadSummary, "id" | "title"> {
+  if (!isPlainRecord(value)) return false;
+  return typeof value.id === "string" && typeof value.title === "string";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function parseNdjsonLine(line: string): Record<string, unknown> {
