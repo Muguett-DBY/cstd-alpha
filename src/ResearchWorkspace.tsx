@@ -6,6 +6,7 @@ import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
 import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./research-queue-order";
+import { hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
 
 type Props = {
   onOpenLegacyMine: () => void;
@@ -21,13 +22,12 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 }
 
 export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenReport }: Props) {
+  const [initialPreferences] = useState(loadResearchWorkspacePreferences);
   const [items, setItems] = useState<ResearchWorkbenchItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
-  const [queueQuery, setQueueQuery] = useState(() => {
-    try { return localStorage.getItem("cstd_research_queue_query") || ""; } catch { return ""; }
-  });
+  const [queueQuery, setQueueQuery] = useState(initialPreferences.queueQuery);
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [quickAddSuggestions, setQuickAddSuggestions] = useState<Array<{ id: string; name: string; code: string; listingPlace: string; source: string }>>([]);
   const [quickAddLoading, setQuickAddLoading] = useState(false);
@@ -42,30 +42,22 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [catalystPhase, setCatalystPhase] = useState<"idle" | "loading" | "syncing" | "error">("idle");
   const [updatingCatalystId, setUpdatingCatalystId] = useState("");
   const [catalystStatusFilter, setCatalystStatusFilter] = useState<ResearchCatalystStatusFilter>("all");
-  const [stageFilter, setStageFilter] = useState<string>(() => {
-    try { return localStorage.getItem("cstd_research_stage_filter") || "all"; } catch { return "all"; }
-  });
-  const [thesisFilter, setThesisFilter] = useState<"all" | "with" | "without">(() => {
-    try { return (localStorage.getItem("cstd_research_thesis_filter") as "all" | "with" | "without") || "all"; } catch { return "all"; }
-  });
-  const [sortOrder, setSortOrder] = useState<"recent" | "name" | "stage">(() => {
-    try { return (localStorage.getItem("cstd_research_sort_order") as "recent" | "name" | "stage") || "recent"; } catch { return "recent"; }
-  });
-  const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month">("all");
+  const [stageFilter, setStageFilter] = useState(initialPreferences.stageFilter);
+  const [thesisFilter, setThesisFilter] = useState(initialPreferences.thesisFilter);
+  const [sortOrder, setSortOrder] = useState(initialPreferences.sortOrder);
+  const [dateFilter, setDateFilter] = useState(initialPreferences.dateFilter);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [valuationRuns, setValuationRuns] = useState<ValuationRunSummary[]>([]);
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
-  const [viewMode, setViewMode] = useState<"kanban" | "list" | "compact">("kanban");
+  const [viewMode, setViewMode] = useState(initialPreferences.viewMode);
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "after" | "inside" | null>(null);
-  const [itemOrder, setItemOrder] = useState<Record<string, string[]>>(() => {
-    try { return JSON.parse(localStorage.getItem("cstd_research_item_order") || "{}"); } catch { return {}; }
-  });
+  const [itemOrder, setItemOrder] = useState(initialPreferences.itemOrder);
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const selectedReadiness = selected ? describeResearchReadiness(selected) : null;
   const selectedStageProgress = selected ? describeResearchStageProgress(selected.stage) : null;
@@ -125,7 +117,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   const saveItemOrder = useCallback((order: Record<string, string[]>) => {
     setItemOrder(order);
-    try { localStorage.setItem("cstd_research_item_order", JSON.stringify(order)); } catch { /* ignore */ }
+    saveResearchWorkspacePreference("itemOrder", order);
   }, []);
 
   useEffect(() => {
@@ -312,22 +304,29 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     return () => { cancelled = true; };
   }, []);
 
-  // Persist filter state to localStorage
   useEffect(() => {
-    try { localStorage.setItem("cstd_research_queue_query", queueQuery); } catch { /* ignore */ }
+    saveResearchWorkspacePreference("queueQuery", queueQuery);
   }, [queueQuery]);
 
   useEffect(() => {
-    try { localStorage.setItem("cstd_research_stage_filter", stageFilter); } catch { /* ignore */ }
+    saveResearchWorkspacePreference("stageFilter", stageFilter);
   }, [stageFilter]);
 
   useEffect(() => {
-    try { localStorage.setItem("cstd_research_thesis_filter", thesisFilter); } catch { /* ignore */ }
+    saveResearchWorkspacePreference("thesisFilter", thesisFilter);
   }, [thesisFilter]);
 
   useEffect(() => {
-    try { localStorage.setItem("cstd_research_sort_order", sortOrder); } catch { /* ignore */ }
+    saveResearchWorkspacePreference("sortOrder", sortOrder);
   }, [sortOrder]);
+
+  useEffect(() => {
+    saveResearchWorkspacePreference("dateFilter", dateFilter);
+  }, [dateFilter]);
+
+  useEffect(() => {
+    saveResearchWorkspacePreference("viewMode", viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     if (!selected?.id) {
@@ -928,7 +927,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <div className="filter-bar">
                 <div className="filter-group">
                   <span className="filter-label">阶段</span>
-                  <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                  <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as typeof stageFilter)}>
                     <option value="all">全部阶段</option>
                     {RESEARCH_STAGES.map((stage) => <option key={stage} value={stage}>{RESEARCH_STAGE_LABELS[stage]}</option>)}
                   </select>
@@ -958,11 +957,11 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     <option value="month">本月</option>
                   </select>
                 </div>
-                {(queueQuery || stageFilter !== "all" || thesisFilter !== "all") ? (
+                {hasActiveResearchWorkspaceFilters({ queueQuery, stageFilter, thesisFilter, sortOrder, dateFilter }) ? (
                   <button
                     type="button"
                     className="filter-reset"
-                    onClick={() => { setQueueQuery(""); setStageFilter("all"); setThesisFilter("all"); setSortOrder("recent"); }}
+                    onClick={() => { setQueueQuery(""); setStageFilter("all"); setThesisFilter("all"); setSortOrder("recent"); setDateFilter("all"); }}
                     aria-label="重置所有筛选"
                   >
                     重置

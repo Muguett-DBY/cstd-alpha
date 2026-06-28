@@ -766,3 +766,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28320091168`)。
 **风险记录:** 本阶段统一的是本地缓存健康检查和报告/榜单缓存访问；研究工作台筛选、模板最近使用、新闻缓存等剩余消费者留给后续阶段继续收口。
 **下一阶段:** 阶段 2/6 IMPROVE，继续统一研究工作台筛选和排序持久化。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** 🚧 本地验证完成，等待 commit / push / CI
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 统一研究工作台筛选、排序、视图和卡片顺序持久化，避免损坏或不可用本地存储影响研究队列。
+**开始状态:** 阶段 1 功能 commit `82b5a01` 与日志 commit `480194c` 均已推送，CI runs `28320091168` / `28320682401` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 `src/research-workspace-preferences.test.ts`，先复现缺少偏好模块；随后红绿覆盖合法偏好恢复、无效枚举 fallback、损坏 item order 清理、写入失败返回 false，以及排序/日期也触发活动筛选重置入口。
+**完成内容:** 新增 `research-workspace-preferences` adapter；ResearchWorkspace 的搜索、阶段、论点、排序、活动时间、视图模式和卡片顺序统一通过 adapter 初始化和保存；活动时间与视图模式现在可跨刷新保留；重置按钮覆盖排序和活动时间。
+**真实问题修复:** 无效 storage 值不再进入受控 select；损坏 `cstd_research_item_order` 不再使 `.map/.includes` 崩溃；用户单独修改“排序”或“活动时间”也能看到重置入口并一键恢复默认。
+**本地验证:** TDD 红绿完成；定向 `src/research-workspace-preferences.test.ts` / `src/research-queue-order.test.ts` 2 files / 7 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 86 files / 891 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-B1zlshhD.js`；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8793 --local`；Playwright + Edge 使用本地 QA 账号登录，进入研究工作台；验证 4 个筛选控件存在，选择“本周”和“紧凑视图”后刷新并重新进入研究视图，确认 date filter 仍为 `week`、紧凑视图按钮仍 active、重置入口可见；点击重置后活动时间恢复 `all` 且重置入口消失；console errors / warnings 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage2-research-preferences-edge.png`
+**Commit / Push:** 待提交 `feat: persist research workspace preferences` 并 push `origin/main`。
+**CI:** 待 push 后检查。
+**风险记录:** 视图模式是独立偏好，不随筛选重置一起清除；storage 被禁用时研究视图仍在当前页面工作，但不会跨刷新保留。阶段浏览器验收创建了仅用于本地 D1 的 `codex-stage2` QA 账号，未进入 git。
+**下一阶段:** 阶段 3/6 UIUX，优化研究队列筛选/视图状态的可见反馈和移动端操作密度。

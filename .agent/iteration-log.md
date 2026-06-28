@@ -529,3 +529,13 @@
 - **CI:** `Deploy Cloudflare Pages` run `28320091168` passed。
 - **Commit:** `82b5a01 feat: unify local cache persistence checks`
 - **下一阶段:** 统一研究工作台筛选和排序持久化，继续收口剩余 storage 直接访问。
+
+### Stage 2/6 IMPROVE — Research Workspace Preferences
+- **承接方向:** 继续收口剩余直接 `localStorage` 访问，把研究工作台筛选、排序、视图和卡片顺序迁移到安全 adapter。
+- **旗舰:** 新增 `research-workspace-preferences` adapter；搜索、阶段、论点、排序、活动时间、视图模式和 item order 统一安全读取/保存，并验证活动时间和紧凑视图可跨刷新恢复。
+- **真实问题修复:** 无效 storage 值不会污染受控 select；损坏 item order 不会触发 `.map/.includes` 崩溃；只改排序或活动时间时也会出现“重置所有筛选”入口。
+- **验证:** TDD 红绿；86 files / 891 tests passed；lint、functions typecheck、build、开发/生产 audit、diff check 全部通过；`npm ci` 0 vulnerabilities。
+- **浏览器验收:** Playwright + Edge + 本地 Pages 8793 登录本地 QA，验证 4 个筛选控件、`week` 日期偏好刷新恢复、紧凑视图 active、重置后恢复 `all`，无 console issue。
+- **CI:** 待 push 后检查。
+- **Commit:** 待提交 `feat: persist research workspace preferences`
+- **下一阶段:** Stage 3/6 UIUX，优化研究队列筛选/视图状态的可见反馈和移动端操作密度。
