@@ -536,6 +536,6 @@
 - **真实问题修复:** 无效 storage 值不会污染受控 select；损坏 item order 不会触发 `.map/.includes` 崩溃；只改排序或活动时间时也会出现“重置所有筛选”入口。
 - **验证:** TDD 红绿；86 files / 891 tests passed；lint、functions typecheck、build、开发/生产 audit、diff check 全部通过；`npm ci` 0 vulnerabilities。
 - **浏览器验收:** Playwright + Edge + 本地 Pages 8793 登录本地 QA，验证 4 个筛选控件、`week` 日期偏好刷新恢复、紧凑视图 active、重置后恢复 `all`，无 console issue。
-- **CI:** 待 push 后检查。
-- **Commit:** 待提交 `feat: persist research workspace preferences`
+- **CI:** `Deploy Cloudflare Pages` run `28321385076` passed。
+- **Commit:** `708793a feat: persist research workspace preferences`
 - **下一阶段:** Stage 3/6 UIUX，优化研究队列筛选/视图状态的可见反馈和移动端操作密度。
