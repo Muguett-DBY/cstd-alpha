@@ -749,3 +749,20 @@
 **生产验收:** `alpha.custard.top` 与最新直连部署均 HTTP 200；桌面/移动端均无横向溢出、console/page/request 错误；`/api/session` 未登录 envelope 为 200；CSP、安全 headers、懒加载反馈、旧 chunk 恢复和 storage 降级链路均完成线上验证。
 **阶段 CI:** 功能与前五阶段日志对应的 Deploy Cloudflare Pages runs `28305205002`、`28305273826`、`28305499510`、`28305624592`、`28305677608`、`28306117860`、`28306188837`、`28307103541`、`28307184131`、`28311421691`、`28311546206`、`28312771084` 均 passed。
 **遗留风险:** storage 被禁用时本地偏好和缓存按设计不持久化；CSP `style-src` 仍为兼容现有样式保留 `'unsafe-inline'`；npm allow-scripts 提示需在未来依赖治理阶段单独审批，不影响当前 0-vulnerability 结果。
+
+## Round 64 - 6 Stage Main V2
+
+### 阶段 1/6: IMPROVE
+
+**状态:** 🚧 本地验证完成，等待 push 后 CI。
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 63 的“统一剩余浏览器存储消费者”方向，先把报告缓存和导入榜单缓存从分散 `localStorage` 访问升级到统一安全 storage helper，并让全局降级提示覆盖真实受影响范围。
+**开始状态:** `main` 位于 `a9f3e37` 且与 `origin/main` 对齐；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 `src/browser-storage.test.ts`，并在 `src/storage.test.ts` / `src/ranking-storage.test.ts` 先复现缺少统一 helper 与健康探针；定向测试按预期因缺少模块/导出失败。
+**完成内容:** 新增 `src/browser-storage.ts`，统一安全获取、读取、写入、删除、列举和 probe 本地存储；报告缓存、最近报告、图表缓存、导入榜单缓存接入 helper；App 本地缓存降级提示从“最近搜索和报告缓存”扩展为“最近搜索、报告缓存和导入榜单”。
+**真实问题修复:** 受限浏览器环境下，报告缓存与导入榜单缓存不再各自分散吞错且缺少统一可用性判断；用户看到的降级提示现在覆盖导入榜单，避免误以为榜单导入可跨页面保留。
+**本地验证:** TDD 红绿完成；定向 4 files / 29 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 85 files / 885 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-BnM-qZD8.js`；`git diff --check` passed。
+**Commit / Push:** 待提交 `feat: unify local cache persistence checks` 并 push `origin/main`。
+**CI:** 待 push 后检查。
+**风险记录:** 本阶段统一的是本地缓存健康检查和报告/榜单缓存访问；研究工作台筛选、模板最近使用、新闻缓存等剩余消费者留给后续阶段继续收口。
+**下一阶段:** 阶段 2/6 IMPROVE，继续统一研究工作台筛选和排序持久化。

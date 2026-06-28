@@ -1,12 +1,14 @@
 import { validateReportPayload, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyCandidate } from "./shared/report";
+import { canWriteStorage, getBrowserLocalStorage, safeGetStorageItem, safeListStorageKeys, safeRemoveStorageItem, safeSetStorageItem, type BrowserStorageWindow } from "./browser-storage";
 
 const LAST_REPORT_KEY = "cstd-alpha:last-report";
 const RECENT_REPORTS_KEY = "cstd-alpha:recent-reports";
 const REPORT_CACHE_PREFIX = "cstd-alpha:report-cache:";
 const CHART_CACHE_PREFIX = "cstd-alpha:chart-cache:";
 const REPORT_CACHE_VERSION = "v5-report-cleanup";
+const REPORT_STORAGE_PROBE_KEY = "cstd-alpha:report-cache:probe";
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type CachedReport = {
@@ -27,8 +29,12 @@ export type StoredReportEntry = {
   metrics?: ReportGenerationMetrics;
 };
 
+export function canPersistLocalReportStorage(browserWindow?: BrowserStorageWindow) {
+  return canWriteStorage(getBrowserLocalStorage(browserWindow), REPORT_STORAGE_PROBE_KEY);
+}
+
 export function saveLastReport(report: InvestmentReport, metrics?: ReportGenerationMetrics) {
-  const result = safeSetLocalStorage(LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
+  const result = safeSetStorageItem(getBrowserLocalStorage(), LAST_REPORT_KEY, JSON.stringify(metrics ? { report, metrics } : report));
   saveRecentReport(report);
   return result;
 }
@@ -39,13 +45,14 @@ export function loadLastReport() {
 
 export function loadLastReportEntry(): StoredReportEntry | null {
   try {
-    const raw = localStorage.getItem(LAST_REPORT_KEY);
+    const storage = getBrowserLocalStorage();
+    const raw = safeGetStorageItem(storage, LAST_REPORT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const entry = unwrapStoredReport(parsed);
     const report = validateReportPayload(entry.report);
     if (isLegacyModelFailureReport(report)) {
-      localStorage.removeItem(LAST_REPORT_KEY);
+      safeRemoveStorageItem(storage, LAST_REPORT_KEY);
       return null;
     }
     return { report, metrics: normalizeGenerationMetrics(entry.metrics) };
@@ -69,24 +76,25 @@ export function saveCachedReport(company: CompanyCandidate, report: InvestmentRe
     expiresAt: now + CACHE_TTL_MS,
     metrics,
   };
-  return safeSetLocalStorage(buildReportCacheKey(company), JSON.stringify(payload));
+  return safeSetStorageItem(getBrowserLocalStorage(), buildReportCacheKey(company), JSON.stringify(payload));
 }
 
 export function loadCachedReport(company: CompanyCandidate, now = Date.now()): CachedReport | null {
   try {
+    const storage = getBrowserLocalStorage();
     const cacheKeys = reportCacheKeys(company);
-    const cacheKey = cacheKeys.find((key) => localStorage.getItem(key));
+    const cacheKey = cacheKeys.find((key) => safeGetStorageItem(storage, key));
     if (!cacheKey) return null;
-    const raw = localStorage.getItem(cacheKey);
+    const raw = safeGetStorageItem(storage, cacheKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedReport>;
     if (!parsed.expiresAt || parsed.expiresAt <= now || !parsed.report) {
-      localStorage.removeItem(cacheKey);
+      safeRemoveStorageItem(storage, cacheKey);
       return null;
     }
     const report = validateReportPayload(parsed.report);
     if (isLegacyModelFailureReport(report)) {
-      localStorage.removeItem(cacheKey);
+      safeRemoveStorageItem(storage, cacheKey);
       return null;
     }
     return { report, cachedAt: Number(parsed.cachedAt) || now, expiresAt: parsed.expiresAt, metrics: normalizeGenerationMetrics(parsed.metrics) };
@@ -101,16 +109,18 @@ export function saveCachedChart(company: CompanyCandidate, priceMode: PriceMode,
     cachedAt: now,
     expiresAt: now + CACHE_TTL_MS,
   };
-  return safeSetLocalStorage(buildChartCacheKey(company, priceMode), JSON.stringify(payload));
+  return safeSetStorageItem(getBrowserLocalStorage(), buildChartCacheKey(company, priceMode), JSON.stringify(payload));
 }
 
 export function loadCachedChart(company: CompanyCandidate, priceMode: PriceMode, now = Date.now()): CachedChart | null {
   try {
-    const raw = localStorage.getItem(buildChartCacheKey(company, priceMode));
+    const storage = getBrowserLocalStorage();
+    const cacheKey = buildChartCacheKey(company, priceMode);
+    const raw = safeGetStorageItem(storage, cacheKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedChart>;
     if (!parsed.expiresAt || parsed.expiresAt <= now || !parsed.chart) {
-      localStorage.removeItem(buildChartCacheKey(company, priceMode));
+      safeRemoveStorageItem(storage, cacheKey);
       return null;
     }
     return {
@@ -124,14 +134,9 @@ export function loadCachedChart(company: CompanyCandidate, priceMode: PriceMode,
 }
 
 export function clearLocalReportStorage() {
-  try {
-    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).filter(
-      (key): key is string => typeof key === "string" && (key === LAST_REPORT_KEY || key.startsWith(REPORT_CACHE_PREFIX) || key.startsWith(CHART_CACHE_PREFIX)),
-    );
-    for (const key of keys) localStorage.removeItem(key);
-  } catch {
-    // Local report caches are optional; ignore storage access failures.
-  }
+  const storage = getBrowserLocalStorage();
+  const keys = safeListStorageKeys(storage, (key) => key === LAST_REPORT_KEY || key.startsWith(REPORT_CACHE_PREFIX) || key.startsWith(CHART_CACHE_PREFIX));
+  for (const key of keys) safeRemoveStorageItem(storage, key);
 }
 
 export type RecentReport = {
@@ -153,7 +158,7 @@ export function saveRecentReport(report: InvestmentReport) {
       generatedAt: new Date().toISOString(),
     };
     const next = [newEntry, ...existing.filter((r) => r.name !== newEntry.name)].slice(0, 10);
-    safeSetLocalStorage(RECENT_REPORTS_KEY, JSON.stringify(next));
+    safeSetStorageItem(getBrowserLocalStorage(), RECENT_REPORTS_KEY, JSON.stringify(next));
   } catch {
     // Storage failure is non-critical
   }
@@ -161,20 +166,11 @@ export function saveRecentReport(report: InvestmentReport) {
 
 export function loadRecentReportHistory(): RecentReport[] {
   try {
-    const raw = localStorage.getItem(RECENT_REPORTS_KEY);
+    const raw = safeGetStorageItem(getBrowserLocalStorage(), RECENT_REPORTS_KEY);
     if (!raw) return [];
     return JSON.parse(raw) as RecentReport[];
   } catch {
     return [];
-  }
-}
-
-function safeSetLocalStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
   }
 }
 

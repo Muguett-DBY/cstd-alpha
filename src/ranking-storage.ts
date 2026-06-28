@@ -1,14 +1,20 @@
 import { parseReportLibraryReportsJson, validateLibraryReport, type ImportedLibraryReport } from "./shared/report-library";
 import type { InvestmentReport } from "./shared/report";
 import { reportIdentityKey } from "./shared/report-identity";
+import { canWriteStorage, getBrowserLocalStorage, safeGetStorageItem, safeRemoveStorageItem, safeSetStorageItem, type BrowserStorageWindow } from "./browser-storage";
 
 const IMPORTED_REPORTS_KEY = "cstd-alpha:ranking-imported-reports:v1";
+const IMPORTED_REPORTS_PROBE_KEY = "cstd-alpha:ranking-imported-reports:probe";
 
 export type ImportedRankingReport = ImportedLibraryReport;
 
+export function canPersistImportedRankingReports(browserWindow?: BrowserStorageWindow) {
+  return canWriteStorage(getBrowserLocalStorage(browserWindow), IMPORTED_REPORTS_PROBE_KEY);
+}
+
 export function loadImportedRankingReports(): ImportedRankingReport[] {
   try {
-    const raw = localStorage.getItem(IMPORTED_REPORTS_KEY);
+    const raw = safeGetStorageItem(getBrowserLocalStorage(), IMPORTED_REPORTS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -26,7 +32,7 @@ export function loadImportedRankingReports(): ImportedRankingReport[] {
 }
 
 export function saveImportedRankingReports(entries: ImportedRankingReport[]) {
-  return safeSetLocalStorage(IMPORTED_REPORTS_KEY, JSON.stringify(entries));
+  return safeSetStorageItem(getBrowserLocalStorage(), IMPORTED_REPORTS_KEY, JSON.stringify(entries));
 }
 
 export function upsertImportedRankingReports(reports: InvestmentReport[], now = new Date().toISOString()) {
@@ -45,11 +51,7 @@ export function deleteImportedRankingReport(report: InvestmentReport) {
 }
 
 export function clearImportedRankingReports() {
-  try {
-    localStorage.removeItem(IMPORTED_REPORTS_KEY);
-  } catch {
-    // Local imported ranking cache is optional.
-  }
+  safeRemoveStorageItem(getBrowserLocalStorage(), IMPORTED_REPORTS_KEY);
 }
 
 export function parseRankingReportJson(raw: string): InvestmentReport[] {
@@ -58,13 +60,4 @@ export function parseRankingReportJson(raw: string): InvestmentReport[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function safeSetLocalStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
 }

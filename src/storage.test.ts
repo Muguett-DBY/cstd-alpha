@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   buildChartCacheKey,
   buildReportCacheKey,
+  canPersistLocalReportStorage,
   clearLocalReportStorage,
   loadCachedChart,
   loadCachedReport,
@@ -76,6 +77,18 @@ describe("report storage", () => {
     expect(saveCachedReport(company, report)).toBe(false);
     expect(saveCachedChart(company, "adjusted", chart)).toBe(false);
     expect(() => clearLocalReportStorage()).not.toThrow();
+  });
+
+  test("reports local report cache as unavailable when the browser storage getter is blocked", () => {
+    const blockedWindow = {};
+    Object.defineProperty(blockedWindow, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("localStorage disabled", "SecurityError");
+      },
+    });
+
+    expect(canPersistLocalReportStorage(blockedWindow as Window)).toBe(false);
   });
 
   test("loads a cached report for the same company within the TTL", () => {

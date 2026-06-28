@@ -518,3 +518,14 @@
 - **生产验收:** `alpha.custard.top` 与最新部署域 HTTP 200；桌面/移动端页面、API、CSP、动态分块恢复和受限存储降级均验证通过。
 - **遗留:** storage 被禁用时本地偏好/缓存不会跨页；CSP `style-src` 仍保留 `'unsafe-inline'`；npm allow-scripts 待未来依赖治理单独审批。
 - **下一建议:** 将剩余可选浏览器存储消费者逐步统一到同一 adapter，并增加带实际 Pages 认证测试夹具的登录后搜索端到端用例。
+
+## Round 64 — 2026-06-28 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Local Cache Persistence Checks
+- **承接方向:** 延续 Round 63 的 storage 降级主线，把剩余本地缓存消费者逐步统一到安全 adapter。
+- **旗舰:** 新增通用 `browser-storage` helper，并让报告缓存、图表缓存、最近报告和导入榜单缓存使用同一套安全读取/写入/探针。
+- **真实问题修复:** 本地缓存降级提示现在覆盖“导入榜单”，不会再只提示最近搜索和报告缓存。
+- **验证:** TDD 红绿；85 files / 885 tests passed；lint、functions typecheck、build、diff check passed；`npm ci` 0 vulnerabilities。
+- **CI:** 待 push 后检查。
+- **Commit:** 待提交 `feat: unify local cache persistence checks`
+- **下一阶段:** 统一研究工作台筛选和排序持久化，继续收口剩余 storage 直接访问。

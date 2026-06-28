@@ -1,11 +1,17 @@
 import { describe, expect, test } from "vitest";
-import { DEFAULT_APP_VIEW } from "./App";
+import { DEFAULT_APP_VIEW, LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE } from "./App";
 import { buildRadarSourceLibrary, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation, radarRefreshFallbackMessage } from "./radar-ui";
 import type { RadarCitation, RadarIndustryPacket, RadarItem } from "./shared/radar";
 
 describe("app initial workspace", () => {
   test("opens on the opportunities workbench by default", () => {
     expect(DEFAULT_APP_VIEW).toBe("opportunities");
+  });
+
+  test("describes every local cache affected by blocked browser persistence", () => {
+    expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("最近搜索");
+    expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("报告缓存");
+    expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("导入榜单");
   });
 
   test("keeps radar refresh fallback brief when an old scan is still visible", () => {

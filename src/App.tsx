@@ -14,9 +14,9 @@ import { ThemeControl } from "./ThemeControl";
 import { useThemePreference } from "./theme";
 import type { RankingMarket } from "./RankingView";
 import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
-import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
+import { canPersistLocalReportStorage, clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { canPersistRecentSearches, loadRecentSearches, rememberRecentSearch } from "./recent-searches";
-import { clearImportedRankingReports } from "./ranking-storage";
+import { canPersistImportedRankingReports, clearImportedRankingReports } from "./ranking-storage";
 import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
 import type { ChartBundle, PriceMode } from "./shared/chart";
@@ -29,7 +29,7 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type AppView = AppViewLoadingTarget;
 
 export const DEFAULT_APP_VIEW: AppView = "opportunities";
-export const LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE = "本地缓存不可用；最近搜索和报告缓存只在当前页面生效。";
+export const LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE = "本地缓存不可用；最近搜索、报告缓存和导入榜单只在当前页面生效。";
 const ResearchWorkspace = lazy(() => import("./ResearchWorkspace").then((module) => ({ default: module.ResearchWorkspace })));
 const MarketWorkspace = lazy(() => import("./MarketWorkspace").then((module) => ({ default: module.MarketWorkspace })));
 const ValuationLabView = lazy(() => import("./ValuationLabView").then((module) => ({ default: module.ValuationLabView })));
@@ -40,6 +40,10 @@ const RankingView = lazy(() => import("./RankingView").then((module) => ({ defau
 const WatchlistRankingView = lazy(() => import("./WatchlistRankingView").then((module) => ({ default: module.WatchlistRankingView })));
 const MyResearchView = lazy(() => import("./MyResearchView").then((module) => ({ default: module.MyResearchView })));
 const AssistantView = lazy(() => import("./AssistantView").then((module) => ({ default: module.AssistantView })));
+
+function canPersistLocalUserData() {
+  return canPersistRecentSearches() && canPersistLocalReportStorage() && canPersistImportedRankingReports();
+}
 
 function App() {
   const theme = useThemePreference();
@@ -54,7 +58,7 @@ function App() {
   const [searchSuggestions, setSearchSuggestions] = useState<CompanyCandidate[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => loadRecentSearches());
-  const [localPersistenceAvailable] = useState(() => canPersistRecentSearches());
+  const [localPersistenceAvailable] = useState(() => canPersistLocalUserData());
   const suggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [candidates, setCandidates] = useState<CompanyCandidate[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<CompanyCandidate | null>(null);
