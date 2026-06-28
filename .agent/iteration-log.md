@@ -526,6 +526,6 @@
 - **旗舰:** 新增通用 `browser-storage` helper，并让报告缓存、图表缓存、最近报告和导入榜单缓存使用同一套安全读取/写入/探针。
 - **真实问题修复:** 本地缓存降级提示现在覆盖“导入榜单”，不会再只提示最近搜索和报告缓存。
 - **验证:** TDD 红绿；85 files / 885 tests passed；lint、functions typecheck、build、diff check passed；`npm ci` 0 vulnerabilities。
-- **CI:** 待 push 后检查。
-- **Commit:** 待提交 `feat: unify local cache persistence checks`
+- **CI:** `Deploy Cloudflare Pages` run `28320091168` passed。
+- **Commit:** `82b5a01 feat: unify local cache persistence checks`
 - **下一阶段:** 统一研究工作台筛选和排序持久化，继续收口剩余 storage 直接访问。
