@@ -703,3 +703,22 @@
 **生产验证:** Cloudflare Pages production deployment `eaf03ac9-1c86-4594-ab10-bea436ac3d6a` source `3588ed8`；`https://alpha.custard.top` 与 `https://eaf03ac9.cstd-alpha.pages.dev` 均返回新入口 `index-CqMzFA_0.js` 且包含恢复监听器。两条生产入口首次事件均触发 reload 并写入恢复标记，第二次事件不再 reload；干净加载检查无 console errors / failed requests。
 **风险记录:** 合成事件验证覆盖 Vite 文档定义的 `vite:preloadError` 行为；真实网络失败的首个动态 chunk 请求会先失败一次，自动 reload 后由新入口恢复。强制 reload 时在途 `/api/session` 或 RUM 请求会出现 `ERR_ABORTED`，这是验证过程主动 reload 的预期副作用。
 **下一阶段:** 阶段 5/6 CHECK，对当前生产基线做系统检查，并把发现的真实问题转入阶段 6 修复。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 对阶段 4 后的生产基线做系统检查，修复浏览器存储不可用时会影响主题初始化和 PWA 安装提示的真实稳定性问题。
+**开始状态:** 阶段 4 功能 commit `3588ed8` 与日志 commit `aea1331` 均已推送，CI runs `28307103541` / `28307184131` passed；继续保留既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。
+**系统检查:** 复核 GitHub Pages workflow、提交历史、依赖锁文件、生产部署和仓库敏感信息；未发现 P0/P1 阻塞或已提交真实 secret。发现浏览器隐私/受限环境下 `window.localStorage` 属性访问可能抛 `SecurityError`，导致主题初始化或 PWA 安装提示处理链路异常。
+**测试先行:** 先新增 PWA 安装提示 storage helper 测试，复现缺少可测试 fallback；再新增主题 storage getter 测试，先复现 `window.localStorage` getter 抛错时没有安全降级入口。
+**完成内容:** `usePwaInstallPrompt` 新增可测试的安全 storage helper、dismiss/read/write helper，并在安装、忽略、appinstalled 路径统一使用；`theme` 新增 `getBrowserThemeStorage`，初始化和持久化时都在 storage getter 不可用时降级为无持久化。
+**真实问题修复:** 浏览器禁用/拦截本地存储时，应用不再因为直接读取 `window.localStorage` 崩溃；主题使用系统默认值继续渲染，PWA 提示仍可拦截 `beforeinstallprompt`，只是无法持久化忽略状态。
+**本地验证:** `npm ci` 初次因本地 `wrangler pages dev` 锁住 `node_modules\miniflare\dist\local-explorer-ui` 报 `EBUSY`，定位并停止仅属于本仓库端口 `8792` 的预览进程后重跑通过；`npm test` 83 files / 873 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` 无 whitespace error（仅 Windows 换行提示）。
+**浏览器验证:** 本地 Pages 预览移动端 390×844 在脚本注入 `window.localStorage` getter 抛 `SecurityError` 后仍能加载登录页，`beforeinstallprompt` 合成事件 `defaultPrevented=true`，console errors / warnings 与 failed requests 均为空；内置 Browser 普通加载也确认页面身份、DOM 和 console health 正常。
+**生产验证:** Cloudflare Pages production deployment `25c0fb2f-7fea-4a23-bd87-824909c02536` source `6867e49`；`https://alpha.custard.top` 与 `https://25c0fb2f.cstd-alpha.pages.dev` 均返回入口 `index-DhsoxLAL.js`。两条生产入口在 storage-blocked 移动端验证中标题、H1、`/api/session` 200 envelope、无横向溢出、无 console errors / warnings、无 failed requests，`beforeinstallprompt` 均被正确 `preventDefault`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage5-storage-blocked-mobile.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage5-prod-storage-alpha-custard-top.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage5-prod-storage-25c0fb2f-cstd-alpha-pages-dev.png`。
+**Commit / Push:** `6867e49 fix: harden browser storage fallbacks` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28311421691`)。
+**风险记录:** storage 被浏览器禁用时不会持久化主题选择或 PWA 忽略状态，这是有意降级；`npm ci` 在本地 Pages 预览运行时可能因 Miniflare 文件锁失败，后续执行依赖安装前需先停预览进程。npm 仍提示 allow-scripts 待审批项，但安装、测试和 audit 均通过。
+**下一阶段:** 阶段 6/6 IMPROVE，在当前生产基线上做最后一个真实问题改进并完成最终收口。

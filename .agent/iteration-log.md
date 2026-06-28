@@ -495,3 +495,11 @@
 - **浏览器验收:** 本地 Pages 预览和生产入口触发合成 `vite:preloadError`：首次 `defaultPrevented=true` 且 reload，第二次在恢复窗口内不 reload；干净线上加载无 console issue 或 failed request。
 - **生产:** Pages deployment `eaf03ac9-1c86-4594-ab10-bea436ac3d6a` source `3588ed8`；`alpha.custard.top` 和部署域均使用 `index-CqMzFA_0.js`；CI run `28307103541` passed。
 - **Commit:** `3588ed8 fix: recover from stale preload chunks`
+
+### Stage 5/6 CHECK — Browser Storage Fallbacks
+- **检查:** 复核 workflow、提交历史、依赖锁、生产部署和敏感信息；未发现 P0/P1 或真实 secret。
+- **真实问题修复:** 主题初始化和 PWA 安装提示不再直接信任 `window.localStorage`；浏览器禁用/拦截本地存储时降级为无持久化，不影响登录页渲染或 `beforeinstallprompt` 处理。
+- **验证:** TDD 红绿；83 files / 873 tests passed；lint、functions typecheck、build、dev/prod audit、diff check passed；`npm ci` 在停止本仓库本地 Pages 预览后通过。
+- **浏览器验收:** 本地与生产移动端注入 `window.localStorage` getter 抛 `SecurityError`，登录页正常、`/api/session` 200 envelope、`beforeinstallprompt.defaultPrevented=true`、无 console issue / failed request / 横向溢出。
+- **生产:** Pages deployment `25c0fb2f-7fea-4a23-bd87-824909c02536` source `6867e49`；`alpha.custard.top` 和部署域均使用 `index-DhsoxLAL.js`；CI run `28311421691` passed。
+- **Commit:** `6867e49 fix: harden browser storage fallbacks`
