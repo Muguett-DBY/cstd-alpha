@@ -18,6 +18,16 @@ type ThemeMeta = { setAttribute(name: string, value: string): void };
 
 const themeOrder: ThemePreference[] = ["system", "light", "dark"];
 
+export function getBrowserThemeStorage(
+  browserWindow: Pick<Window, "localStorage"> | undefined = typeof window === "undefined" ? undefined : window,
+): (StorageReader & StorageWriter) | undefined {
+  try {
+    return browserWindow?.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 export function readThemePreference(storage?: StorageReader): ThemePreference {
   try {
     const value = storage?.getItem(THEME_STORAGE_KEY);
@@ -61,7 +71,7 @@ export function applyThemePreference(
 
 export function useThemePreference() {
   const [preference, setPreference] = useState<ThemePreference>(() =>
-    readThemePreference(typeof window === "undefined" ? undefined : window.localStorage),
+    readThemePreference(getBrowserThemeStorage()),
   );
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -79,7 +89,7 @@ export function useThemePreference() {
     applyThemePreference(preference, {
       root: document.documentElement,
       meta: document.querySelector('meta[name="theme-color"]'),
-      storage: window.localStorage,
+      storage: getBrowserThemeStorage(),
       systemPrefersDark,
     });
   }, [preference, systemPrefersDark]);
