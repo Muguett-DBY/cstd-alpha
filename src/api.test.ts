@@ -16,6 +16,8 @@ import {
   sendAssistantMessage,
   fetchAssistantDeepResearchJob,
   stopAssistantDeepResearchJob,
+  listAssistantThreads,
+  createAssistantThread,
 } from "./api";
 
 describe("API client", () => {
@@ -270,6 +272,18 @@ describe("API client", () => {
     await expect(stopAssistantDeepResearchJob("deep-1")).resolves.toMatchObject({ id: "deep-1", status: "stopping", stopRequested: true });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/assistant/deep-research/deep-1", { credentials: "include", cache: "no-store" });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/assistant/deep-research/deep-1/stop", { method: "POST", credentials: "include" });
+  });
+
+  test("rejects malformed assistant thread list responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ thread: { id: "wrong-shape" } })));
+
+    await expect(listAssistantThreads()).rejects.toThrow("线程列表读取失败。");
+  });
+
+  test("rejects malformed assistant thread creation responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ threads: [] })));
+
+    await expect(createAssistantThread("临时线程")).rejects.toThrow("线程创建失败。");
   });
 
   test("sends valuation version decision notes with manual saves", async () => {
