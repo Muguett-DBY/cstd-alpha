@@ -17,6 +17,7 @@ import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { clearImportedRankingReports } from "./ranking-storage";
 import { radarRefreshFallbackMessage } from "./radar-ui";
+import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
@@ -24,7 +25,7 @@ import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics } from
 import type { UserSession, WatchlistRankingEntry } from "./shared/user-research";
 
 type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "error";
-type AppView = "opportunities" | "research" | "market" | "valuation" | "report" | "ranking" | "watchlist-ranking" | "mine" | "radar" | "assistant";
+type AppView = AppViewLoadingTarget;
 
 export const DEFAULT_APP_VIEW: AppView = "opportunities";
 const ResearchWorkspace = lazy(() => import("./ResearchWorkspace").then((module) => ({ default: module.ResearchWorkspace })));
@@ -722,7 +723,7 @@ function App() {
 
       <section id="workspace" className="workspace">
         <ErrorBoundary>
-        <Suspense fallback={<section className="empty-state"><div className="button-spinner" /><h2>正在加载</h2></section>}>
+        <Suspense fallback={<ModuleLoadingFallback view={renderedView} />}>
           {renderedView === "opportunities" ? (
             <OpportunityDashboard onOpenResearch={() => setActiveView("research")} />
           ) : renderedView === "research" ? (
@@ -839,6 +840,34 @@ function EmptyState() {
       <h2>先选择具体上市公司</h2>
       <p>输入公司名后会先弹出候选项，确认公司名、代码和上市地点，再生成完整评分报告。</p>
       <p className="muted">快捷键：Ctrl+1 今日机会 / Ctrl+2 研究 / Ctrl+3 市场 / Ctrl+4 估值</p>
+    </section>
+  );
+}
+
+function ModuleLoadingFallback({ view }: { view: AppView }) {
+  const loading = describeAppViewLoading(view);
+
+  return (
+    <section className="module-loading-state" role="status" aria-live="polite" aria-label={loading.title}>
+      <header className="module-loading-header">
+        <span className="module-loading-spinner" aria-hidden="true" />
+        <div>
+          <p className="module-loading-label">{loading.label}</p>
+          <h2>{loading.title}</h2>
+          <p className="module-loading-detail">{loading.detail}</p>
+        </div>
+      </header>
+      <div className="module-loading-progress" aria-hidden="true">
+        <span />
+      </div>
+      <ul className="module-loading-checkpoints">
+        {loading.checkpoints.map((checkpoint, index) => (
+          <li key={checkpoint}>
+            <span aria-hidden="true">{index + 1}</span>
+            {checkpoint}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
