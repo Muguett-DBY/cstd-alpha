@@ -5,7 +5,36 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
+export const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
+
+type InstallPromptStorage = Pick<Storage, "getItem" | "setItem">;
+
+function getInstallPromptStorage(): InstallPromptStorage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+export function hasDismissedInstallPrompt(storage = getInstallPromptStorage()) {
+  if (!storage) return false;
+  try {
+    return storage.getItem(INSTALL_PROMPT_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function rememberInstallPromptDismissed(storage = getInstallPromptStorage()) {
+  if (!storage) return false;
+  try {
+    storage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function usePwaInstallPrompt() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -14,7 +43,7 @@ export function usePwaInstallPrompt() {
   useEffect(() => {
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
-      if (window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY) === "1") return;
+      if (hasDismissedInstallPrompt()) return;
       if (!window.matchMedia("(max-width: 820px), (pointer: coarse)").matches) return;
       setInstallPrompt(event as BeforeInstallPromptEvent);
       setVisible(true);
@@ -22,7 +51,7 @@ export function usePwaInstallPrompt() {
     const onInstalled = () => {
       setVisible(false);
       setInstallPrompt(null);
-      window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+      rememberInstallPromptDismissed();
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onInstalled);
@@ -36,13 +65,13 @@ export function usePwaInstallPrompt() {
     if (!installPrompt) return;
     await installPrompt.prompt();
     const choice = await installPrompt.userChoice.catch(() => ({ outcome: "dismissed" as const, platform: "" }));
-    if (choice.outcome !== "accepted") window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    if (choice.outcome !== "accepted") rememberInstallPromptDismissed();
     setVisible(false);
     setInstallPrompt(null);
   }
 
   function dismiss() {
-    window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, "1");
+    rememberInstallPromptDismissed();
     setVisible(false);
   }
 

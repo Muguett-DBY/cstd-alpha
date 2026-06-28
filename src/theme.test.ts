@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   applyThemePreference,
+  getBrowserThemeStorage,
   nextThemePreference,
   readThemePreference,
   resolveThemePreference,
@@ -12,6 +13,19 @@ describe("theme preferences", () => {
     expect(readThemePreference()).toBe("system");
     expect(readThemePreference({ getItem: () => "sepia" })).toBe("system");
     expect(readThemePreference({ getItem: () => { throw new Error("blocked"); } })).toBe("system");
+  });
+
+  test("does not throw when browser localStorage is blocked at the property getter", () => {
+    const blockedWindow = {};
+    Object.defineProperty(blockedWindow, "localStorage", {
+      get() {
+        throw new Error("storage blocked");
+      },
+    });
+    const writableStorage = { getItem: vi.fn(), setItem: vi.fn() };
+
+    expect(getBrowserThemeStorage(blockedWindow as Pick<Window, "localStorage">)).toBeUndefined();
+    expect(getBrowserThemeStorage({ localStorage: writableStorage } as Pick<Window, "localStorage">)).toBe(writableStorage);
   });
 
   test("resolves system preference and explicit overrides", () => {
