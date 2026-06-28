@@ -685,3 +685,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28306117860`)。
 **风险记录:** 加载检查点描述的是前端模块准备过程，不代表后台任务进度；真实网络/分块失败仍会进入 ErrorBoundary，下一阶段将补强分块加载故障恢复。
 **下一阶段:** 阶段 4/6 IMPROVE，处理部署切换或缓存不一致导致动态 import 分块加载失败时的自动恢复。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 处理 Cloudflare Pages 部署切换或浏览器旧缓存导致的 Vite 动态 import 分块加载失败，避免用户卡在旧 chunk 白屏/坏页。
+**开始状态:** 阶段 3 功能 commit `c757a69` 与日志 commit `dfbd826` 均已推送，CI runs `28306117860` / `28306188837` passed；继续保留既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/`，不纳入本阶段。
+**测试先行:** 新增 `src/preload-recovery.test.ts`，先复现缺少 `preload-recovery` 模块；随后验证首次 `vite:preloadError` 会 `preventDefault`、写入恢复标记并刷新，恢复窗口内第二次错误不再循环刷新，恢复窗口过期后允许再次恢复，storage 不可用时不隐藏错误。
+**完成内容:** 新增 `installPreloadErrorRecovery`；入口 `src/main.tsx` 在渲染前安装 `vite:preloadError` 监听；使用 `sessionStorage` 记录 `cstd-alpha:preload-recovery-at`，30 秒内只自动刷新一次，避免无限刷新。
+**真实问题修复:** 旧部署 HTML 或运行中页面引用已被新部署清理的动态 chunk 时，用户现在会自动刷新到新资源；若刷新后仍失败，则不再反复刷新并保留原错误路径供 ErrorBoundary/浏览器处理。
+**本地验证:** 定向 `src/preload-recovery.test.ts` 5 tests passed；全量 `npm test` 82 files / 869 tests passed（仅既有 Node localStorage ExperimentalWarning）；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` 无 whitespace error（仅 Windows 换行提示）。
+**浏览器验证:** 内置 Browser 验证 `http://localhost:8792` 页面身份、非空 DOM 和 console health；Playwright 在本地 Pages 预览触发合成 `vite:preloadError`：首次事件 `defaultPrevented=true` 且主 frame reload，第二次事件 `defaultPrevented=false` 且不再 reload；普通加载无 console errors / failed requests。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage4-local-preload-recovery.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage4-prod-alpha.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage4-prod-pages.png`。
+**Commit / Push:** `3588ed8 fix: recover from stale preload chunks` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28307103541`)。
+**生产验证:** Cloudflare Pages production deployment `eaf03ac9-1c86-4594-ab10-bea436ac3d6a` source `3588ed8`；`https://alpha.custard.top` 与 `https://eaf03ac9.cstd-alpha.pages.dev` 均返回新入口 `index-CqMzFA_0.js` 且包含恢复监听器。两条生产入口首次事件均触发 reload 并写入恢复标记，第二次事件不再 reload；干净加载检查无 console errors / failed requests。
+**风险记录:** 合成事件验证覆盖 Vite 文档定义的 `vite:preloadError` 行为；真实网络失败的首个动态 chunk 请求会先失败一次，自动 reload 后由新入口恢复。强制 reload 时在途 `/api/session` 或 RUM 请求会出现 `ERR_ABORTED`，这是验证过程主动 reload 的预期副作用。
+**下一阶段:** 阶段 5/6 CHECK，对当前生产基线做系统检查，并把发现的真实问题转入阶段 6 修复。

@@ -487,3 +487,11 @@
 - **浏览器验收:** 内置 Browser 验证登录壳桌面/移动端；Playwright 延迟真实动态分块，验证桌面今日机会、移动端研究助理，均无 console issue、failed request 或横向溢出。
 - **生产:** 三条 Pages/自定义域入口 HTTP 200 且使用 `index-B5KzBXur.js`；生产加载态与 CSP/HSTS 验证通过；CI run `28306117860` passed。
 - **Commit:** `c757a69 feat: improve lazy workspace loading feedback`
+
+### Stage 4/6 IMPROVE — Stale Chunk Recovery
+- **旗舰:** 入口安装 `vite:preloadError` 恢复监听器，旧部署动态 chunk 失效时自动刷新一次并用 `sessionStorage` 防止 30 秒内刷新循环。
+- **真实问题修复:** 解决 Pages 部署切换后用户仍持有旧入口/旧分块引用时可能卡在坏页的问题；storage 不可用或刷新后仍失败时不吞掉错误。
+- **验证:** TDD 红绿；`src/preload-recovery.test.ts` 5 tests passed；82 files / 869 tests passed；lint、functions typecheck、build、dev/prod audit、diff check passed。
+- **浏览器验收:** 本地 Pages 预览和生产入口触发合成 `vite:preloadError`：首次 `defaultPrevented=true` 且 reload，第二次在恢复窗口内不 reload；干净线上加载无 console issue 或 failed request。
+- **生产:** Pages deployment `eaf03ac9-1c86-4594-ab10-bea436ac3d6a` source `3588ed8`；`alpha.custard.top` 和部署域均使用 `index-CqMzFA_0.js`；CI run `28307103541` passed。
+- **Commit:** `3588ed8 fix: recover from stale preload chunks`
