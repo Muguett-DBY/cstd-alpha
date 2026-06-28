@@ -477,3 +477,13 @@
 - **最终门禁:** 74 test files / 854 tests passed；lint、functions typecheck、build、diff check passed。
 - **生产验收:** `alpha.custard.top` 与 `cstd-alpha.pages.dev` 均 HTTP 200；Playwright 确认两条入口的登录界面可见且结构完整。
 - **遗留:** 既有 pyodide externalization / chunk-size warnings；旧版本无结构化来源时按设计不参与来源筛选；无效历史来源仅隐藏、未迁移；时间按 UTC 展示。
+
+## Round 63 — 2026-06-28 (6 Stage Main V2, in progress)
+
+### Stage 3/6 UIUX — Authenticated Workspace Loading Feedback
+- **旗舰:** 10 个 authenticated views 使用视图特定加载标题、说明和三项检查点；`Suspense` fallback 提供 `role=status` / `aria-live=polite`，桌面三列、移动端单列，并保持稳定最小高度。
+- **真实问题修复:** 替换通用 hero 级 `正在加载` 空状态；移动端管理员自动进入助理时显示正确模块信息；`prefers-reduced-motion` 下停止加载动画。
+- **验证:** TDD 两轮红绿；81 files / 864 tests passed；lint、functions typecheck、build、dev/prod audit、diff check passed；构建无 warning。
+- **浏览器验收:** 内置 Browser 验证登录壳桌面/移动端；Playwright 延迟真实动态分块，验证桌面今日机会、移动端研究助理，均无 console issue、failed request 或横向溢出。
+- **生产:** 三条 Pages/自定义域入口 HTTP 200 且使用 `index-B5KzBXur.js`；生产加载态与 CSP/HSTS 验证通过；CI run `28306117860` passed。
+- **Commit:** `c757a69 feat: improve lazy workspace loading feedback`

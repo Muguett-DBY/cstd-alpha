@@ -667,3 +667,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, runs `28305499510` / `28305624592`)。
 **风险记录:** `style-src` 仍保留 `'unsafe-inline'` 以兼容当前样式模式；后续若要继续收紧，需单独迁移样式 nonce/hash。
 **下一阶段:** 阶段 3/6 UIUX，改善 authenticated view 懒加载后的加载体验，让阶段 1 的性能优化不以简陋空状态为代价。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 改善 authenticated workspace 的懒加载反馈，让阶段 1 的分包性能收益具备清晰、稳定、可访问的过渡体验。
+**开始状态:** 阶段 2 功能 commits `2005313` / `87d90c6` 与日志 commit `337de1f` 均已推送，CI runs `28305499510` / `28305624592` / `28305677608` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
+**测试先行:** 新增 `src/app-view-loading.test.ts`，先复现缺少 `app-view-loading` 模块；随后新增 reduced-motion 回归测试，先复现加载动画仍会持续 2.8 秒。
+**完成内容:** 为 10 个 authenticated views 提供视图特定标题、说明和 3 个加载检查点；`Suspense` fallback 改为 `role=status` + `aria-live=polite` 的稳定加载面板；桌面三列检查点、移动端单列；固定指示器尺寸和最小高度避免布局跳动；减弱动态效果时完全停止动画并显示静态进度。
+**真实问题修复:** 原 fallback 仅显示通用 `正在加载`，无法说明正在准备的模块，且沿用 hero 级空状态排版；现在用户可识别当前工作台和准备步骤，移动端管理员进入研究助理时也有对应反馈。
+**本地验证:** 定向 2 tests passed；全量 `npm test` 81 files / 864 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` 无 whitespace error。
+**浏览器验证:** 内置 Browser 先验证登录壳桌面 1280×720 / 移动 390×844 的页面身份、非空内容、console health 与无横向溢出；项目 Playwright 再通过同源 session 替身和 2.5 秒分块延迟，验证桌面 `正在加载今日机会` 与移动端 `正在加载研究助理`，ARIA、文本、固定布局均正确，console issues / failed requests 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage3-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage3-mobile.png`；生产截图对应 `cstd-alpha-stage3-prod-desktop.png` / `cstd-alpha-stage3-prod-mobile.png`。
+**生产验证:** `alpha.custard.top`、`cstd-alpha.pages.dev`、部署域 `781cb866.cstd-alpha.pages.dev` 均 HTTP 200，入口资源一致为 `index-B5KzBXur.js`，CSP/HSTS 生效；生产桌面/移动加载态无 console error、失败请求或横向溢出。
+**Commit / Push:** `c757a69 feat: improve lazy workspace loading feedback` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28306117860`)。
+**风险记录:** 加载检查点描述的是前端模块准备过程，不代表后台任务进度；真实网络/分块失败仍会进入 ErrorBoundary，下一阶段将补强分块加载故障恢复。
+**下一阶段:** 阶段 4/6 IMPROVE，处理部署切换或缓存不一致导致动态 import 分块加载失败时的自动恢复。
