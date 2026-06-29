@@ -640,3 +640,19 @@
 - **生产:** Pages deployment `2698d663.cstd-alpha.pages.dev`；CI run `28406019734` passed。
 - **Commit:** `28d4432 fix: harden incomplete api payloads`
 - **下一阶段:** Stage 6/6 IMPROVE，做最后一轮可验证的稳定性增量并完成生产收口。
+
+### Stage 6/6 IMPROVE — Malformed List Payload Guards
+- **承接方向:** 在 Stage 5 修复空对象/缺字段 payload 后，继续挡住“字段存在但类型不是数组”的列表契约错误。
+- **真实问题修复:** company search、activity events、report library、imported reports、watchlist、watchlist ranking、template analyses 和 research templates 现在都会把非数组字段归一化为空数组；报告库 `total/limit/offset` 只接受 finite number，避免字符串/对象进入分页状态。
+- **验证:** TDD 红绿；`src/api.test.ts` 35 tests passed；全量 `npm test` 90 files / 916 tests passed；lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 8799 + Playwright malformed list 夹具，研究、我的研究、市场、自选股排行、A 股排行、搜索候选空降级全部无 ErrorBoundary；`badResponses=[]`、`errors=[]`、`overflow=false`。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-list-normalization.png`
+- **生产:** Pages deployment `6f1c64f9.cstd-alpha.pages.dev`；`alpha.custard.top`、`alpha.custard.top/api/session`、直连部署域及其 `/api/session` 均 HTTP 200；CI run `28406510997` passed。
+- **Commit:** `6bd6dc8 fix: normalize malformed list payloads`
+
+### Round 65 Final Closure
+- **状态:** 6/6 completed；功能 commits `f5d6524`、`0969fe9`、`e46ddc7`、`dcc4344`、`28d4432`、`6bd6dc8` 均已推送至 `main`，对应功能 CI 全部通过。
+- **最终门禁:** 90 files / 916 tests passed；lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过。
+- **生产验收:** 最新功能部署 `6f1c64f9.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均 HTTP 200；`/api/session` 返回 unauth envelope HTTP 200；GitHub Actions 最新 main runs 无失败。
+- **遗留风险:** API list payload 现在防御非数组/缺字段，但单条对象内部字段仍依赖各页面和服务端契约；新闻 payload 缺必需结构时按受控错误处理；`.dev.vars.example` 仍保留 API key 占位符；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入本轮提交。
+- **最终状态:** Round 65 六阶段已按总控完成；阶段 6 日志提交将在本条记录后提交并等待 CI。

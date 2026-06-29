@@ -949,3 +949,32 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28406019734`；90 files / 915 tests；lint、typecheck、build、deploy 均通过；deployment `2698d663.cstd-alpha.pages.dev`)。
 **风险记录:** 新闻 payload 缺少必需结构时选择受控错误而非推测补全公司信息，避免显示误导性摘要；secret scan 命中均为 `.dev.vars.example` placeholder，不是实际密钥。
 **下一阶段:** 阶段 6/6 IMPROVE，基于第 5 阶段审计结果做最后一轮可验证的稳定性增量，并完成生产收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 5 的 payload hardening，把列表型 API 的“字段存在但类型错误”也挡在客户端边界外，避免 UI 消费者 `.map`、`new Set` 或分页状态被对象/字符串击穿。
+**开始状态:** 阶段 5 功能 commit `28d4432` 与日志 commit `1731c0d` 均已推送，CI runs `28406019734` / `28406179822` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 扩展 `src/api.test.ts`，先红灯复现 `searchCompanies` 在 `{ candidates: { not: "an array" } }` 时直接返回对象；同一测试覆盖 activity events、report library、imported reports、watchlist、watchlist ranking、template analyses 和 research templates 的 malformed list envelope。
+**完成内容:** 新增 `arrayPayload<T>` 与 `finiteNumber` helper；`searchCompanies`、`fetchActivityEvents`、`fetchReportLibrary`、`importReportLibraryReports`、`fetchWatchlist`、`fetchWatchlistRanking`、`refreshWatchlistRanking`、`fetchTemplateAnalyses`、`fetchResearchTemplates`、模板保存/默认/重置统一用数组守卫；报告库 `total/limit/offset` 只接受 finite number。
+**真实问题修复:** 后端返回 `{ entries: {} }`、`{ items: {} }`、`{ candidates: {} }`、`{ templates: {} }` 等 malformed list 时，研究、我的研究、市场、榜单和搜索路径不再拿对象当数组迭代；报告库分页不会被字符串 total/limit/offset 污染。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 35 tests passed；全量 `npm test` 90 files / 916 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-CeDr1_zd.js`；开发/生产依赖 audit 均 0 vulnerabilities；secret scan 只命中 `.dev.vars.example` 占位符；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让研究项、估值、自选、模板、排行、报告库、公司搜索等接口返回 malformed list object，验证研究、我的研究、市场、自选股排行、A 股排行和搜索候选为空降级均可渲染；`startCrash=0`、`researchCrash=0`、`mineCrash=0`、`marketCrash=0`、`watchlistRankingCrash=0`、`rankingCrash=0`、`searchCrash=0`、`searchErrorVisible=true`、`badResponses=[]`、`errors=[]`、`overflow=false`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-list-normalization.png`
+**Commit / Push:** `6bd6dc8 fix: normalize malformed list payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28406510997`；90 files / 916 tests；lint、typecheck、build、deploy 均通过；deployment `6f1c64f9.cstd-alpha.pages.dev`)。
+**生产验收:** `https://alpha.custard.top/` HTTP 200，title `CSTD Alpha — AI 公司深度研究`；`https://alpha.custard.top/api/session` HTTP 200 unauth envelope；`https://6f1c64f9.cstd-alpha.pages.dev/` HTTP 200；`https://6f1c64f9.cstd-alpha.pages.dev/api/session` HTTP 200。
+**风险记录:** 本阶段只归一化列表容器和有限数字字段，单条列表对象内部字段仍按既有页面/服务端契约处理；malformed company search 现在降级为空结果，用户会看到“没有找到候选公司”。
+**最终状态:** Round 65 六阶段功能工作完成，进入最终日志提交和 CI 确认。
+
+### Round 65 最终收口
+
+**状态:** ✅ 6/6 完成
+**功能 Commits:** `f5d6524 fix: clarify watchlist upsert flows`、`0969fe9 feat: sync report watchlist membership`、`e46ddc7 feat: refine report research actions`、`dcc4344 fix: normalize report payloads in api client`、`28d4432 fix: harden incomplete api payloads`、`6bd6dc8 fix: normalize malformed list payloads`。
+**日志 Commits:** `768f84f`、`af3a07b`、`bb9a545`、`085fb2e`、`1731c0d`，阶段 6/最终日志提交待本条记录后完成。
+**最终本地门禁:** `src/api.test.ts` 35 tests passed；全量 `npm test` 90 files / 916 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、开发/生产 `npm audit`、secret scan、`git diff --check` 全部通过。
+**浏览器验收:** Stage 1 搜索/生成/重复加入自选/查看研究；Stage 2 慢 watchlist membership；Stage 3 报告头部桌面/移动布局；Stage 4 旧版 report payload；Stage 5 incomplete payload `{}`；Stage 6 malformed list payload object，均无 ErrorBoundary、failed response、console error 或横向溢出。
+**生产验收:** 最新功能部署 `6f1c64f9.cstd-alpha.pages.dev` 与 `alpha.custard.top` HTTP 200；两者 `/api/session` 均 HTTP 200 unauth envelope；GitHub Actions main 最新 runs `28406510997`、`28406179822`、`28406019734` 及前序阶段 deploy runs 均 success。
+**遗留风险:** 单条列表对象内部字段仍依赖现有类型契约；新闻 payload 缺必需结构时按受控错误处理；`.dev.vars.example` 保留 API key placeholder；既有未纳入的 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未提交。
+**最终状态:** Round 65 按 `03_LONG_6_STAGE_MAIN_V2.txt` 完成 6 个阶段，功能与验证闭环完成；本条日志提交后再等待最后一次 CI。
