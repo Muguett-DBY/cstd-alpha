@@ -70,6 +70,12 @@
   font-weight: 700;
 }
 
+.toast-message {
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .toast-success {
   background: var(--success);
 }
@@ -99,6 +105,28 @@
 
 .toast-dismiss:hover {
   color: white;
+}
+
+.auth-page + .toast-container {
+  top: max(64px, calc(env(safe-area-inset-top) + 64px));
+}
+
+@media (max-width: 520px) {
+  .toast-container {
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    max-width: none;
+  }
+
+  .toast-item {
+    align-items: flex-start;
+    padding: 11px 12px;
+  }
+
+  .auth-page + .toast-container {
+    top: max(64px, calc(env(safe-area-inset-top) + 64px));
+  }
 }
 
 .auth-theme-control {

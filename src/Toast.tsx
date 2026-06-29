@@ -1,13 +1,10 @@
-import { useEffect, useState } from "react";
-import { subscribeToToasts, type ToastItem } from "./toast-state";
+import { useSyncExternalStore } from "react";
+import { subscribeToToasts } from "./toast-state";
+
+const toastStore = subscribeToToasts();
 
 export function ToastContainer() {
-  const [items, setItems] = useState<ToastItem[]>([]);
-
-  useEffect(() => {
-    const unsub = subscribeToToasts().subscribe(setItems);
-    return unsub;
-  }, []);
+  const items = useSyncExternalStore(toastStore.subscribe, toastStore.getSnapshot, toastStore.getSnapshot);
 
   if (!items.length) return null;
   return (

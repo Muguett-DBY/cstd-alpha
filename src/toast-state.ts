@@ -24,7 +24,7 @@ export function showToast(message: string, type: ToastItem["type"] = "info", dur
 
 export function subscribeToToasts() {
   return {
-    getSnapshot: () => [...toasts],
+    getSnapshot: () => toasts,
     subscribe: (listener: (toasts: ToastItem[]) => void) => {
       listeners.push(listener);
       return () => { listeners = listeners.filter((l) => l !== listener); };

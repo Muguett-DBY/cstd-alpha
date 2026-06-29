@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  hasRecentPreloadRecovery,
   installPreloadErrorRecovery,
+  PRELOAD_RECOVERY_HISTORY_STATE_KEY,
   PRELOAD_RECOVERY_STORAGE_KEY,
   PRELOAD_RECOVERY_TTL_MS,
 } from "./preload-recovery";
@@ -67,8 +69,8 @@ describe("installPreloadErrorRecovery", () => {
     vi.unstubAllGlobals();
   });
 
-  test("does not throw when the browser sessionStorage getter is blocked", () => {
-    const { target } = createTarget();
+  test("uses browser history as a recovery guard when the sessionStorage getter is blocked", () => {
+    const { target, dispatch } = createTarget();
     const blockedWindow = {} as Window;
     Object.defineProperty(blockedWindow, "sessionStorage", {
       configurable: true,
@@ -76,10 +78,27 @@ describe("installPreloadErrorRecovery", () => {
         throw new DOMException("sessionStorage disabled", "SecurityError");
       },
     });
+    const history = {
+      state: { existing: "state" },
+      replaceState: vi.fn(function replaceState(this: { state: unknown }, nextState: unknown) {
+        this.state = nextState;
+      }),
+    };
+    const reload = vi.fn();
     vi.stubGlobal("window", blockedWindow);
 
-    expect(() => installPreloadErrorRecovery({ location: { reload: vi.fn() }, target })).not.toThrow();
-    expect(target.addEventListener).not.toHaveBeenCalled();
+    expect(() => installPreloadErrorRecovery({ history, location: { reload }, now: () => 12_000, target })).not.toThrow();
+
+    const { event, preventDefault } = createPreloadEvent();
+    dispatch(event);
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(history.replaceState).toHaveBeenCalledWith(
+      { existing: "state", [PRELOAD_RECOVERY_HISTORY_STATE_KEY]: 12_000 },
+      "",
+    );
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   test("reloads once and suppresses the first Vite preload error", () => {
@@ -168,6 +187,16 @@ describe("installPreloadErrorRecovery", () => {
     expect(preventDefault).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("reports whether a recent preload recovery should be surfaced to the user", () => {
+    expect(hasRecentPreloadRecovery({ now: () => 12_000 + PRELOAD_RECOVERY_TTL_MS - 1, storage: createStorage("12000") })).toBe(true);
+    expect(hasRecentPreloadRecovery({ now: () => 12_000 + PRELOAD_RECOVERY_TTL_MS + 1, storage: createStorage("12000") })).toBe(false);
+    expect(hasRecentPreloadRecovery({
+      history: { state: { [PRELOAD_RECOVERY_HISTORY_STATE_KEY]: 12_000 }, replaceState: vi.fn() },
+      now: () => 12_000 + PRELOAD_RECOVERY_TTL_MS - 1,
+      storage: undefined,
+    })).toBe(true);
   });
 
   test("removes the installed listener", () => {
