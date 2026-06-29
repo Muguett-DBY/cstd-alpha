@@ -835,3 +835,32 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28366164962`)。
 **风险记录:** Playwright 对模板生成 API 使用 mock 以避免真实模型调用；storage 被禁用时跨页面持久化仍按设计不可用；本地 QA 创建的临时 watchlist 行已从本地 D1 清理。
 **下一阶段:** 阶段 6/6 IMPROVE，完成最后一轮产品稳定性增量并做生产收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 storage-blocked / stale chunk 恢复链路，把旧分块自动恢复从“能启动”升级为“能恢复、能提示、移动端不遮挡”的用户可感知闭环。
+**开始状态:** 阶段 5 功能 commit `d7c5c40` 与日志 commit `a69c429` 均已推送，CI runs `28366164962` / `28366298575` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 扩展 `src/preload-recovery.test.ts`，先复现 storage getter 被禁用时无法继续恢复，以及缺少恢复状态提示 helper；目标测试先红后绿。
+**完成内容:** preload recovery 新增 `history.state` guard 与内存 fallback；新增 `hasRecentPreloadRecovery` 和恢复提示常量；App 在检测到最近自动恢复后展示成功 toast；ToastContainer 改为 `useSyncExternalStore`，不会丢失早期 toast；loading、未登录和登录后都渲染全局 toast；移动端 toast 增加换行、宽度和 auth 页面避让规则。
+**真实问题修复:** 隐私/受限浏览器禁用 `sessionStorage` 时，旧 chunk 失败仍可自动刷新一次；刷新成功后用户能看到“已刷新到最新版”的反馈；未登录页不再因为没有 toast 容器而吞掉恢复提示；移动端恢复提示不再遮挡主题控件或横向溢出。
+**本地验证:** TDD 红绿完成；定向 `src/preload-recovery.test.ts` / `src/App.test.ts` 2 files / 18 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 87 files / 900 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-D3hyfTHh.js`；开发/生产依赖 audit 均 0 vulnerabilities；secret scan 无命中；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8798 --local`；内置 Browser 验证本地页面标题、非空 DOM、console health 和 1280px 无溢出；Playwright fallback 用于页面加载前禁用 `sessionStorage` 与合成 `vite:preloadError`，桌面首次事件 `defaultPrevented=true`、history timestamp 写入、reload 后恢复 toast 可见、TTL 内第二次事件不重复 reload，移动端 390px toast 可见且不遮挡主题控件，最终无 console/page/request issue、`scrollWidth=clientWidth`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-final-preload-recovery-toast.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage6-final-preload-recovery-mobile.png`
+**Commit / Push:** `522311b feat: surface preload recovery status` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28369161211`)。
+**生产验收:** Cloudflare Pages production deployment `39e15152-2144-4961-bae5-d180f78be8b7` source `522311b`；`https://alpha.custard.top/` HTTP 200，title `CSTD Alpha — AI 公司深度研究`；`/api/session` HTTP 200 unauth envelope；`https://39e15152.cstd-alpha.pages.dev/` HTTP 200。
+**风险记录:** `history.state` fallback 覆盖同标签页 reload 恢复，storage 与 history 都不可写时仍只能放行原错误；storage 被禁用时跨页面偏好/缓存仍按设计不可持久化；npm allow-scripts 审批提示仍是依赖治理遗留项，不影响本轮 0-vulnerability 结果。
+**最终状态:** Round 64 六阶段全部完成并推送，阶段功能和日志 CI 均通过。
+
+### Round 64 最终收口
+
+**状态:** ✅ 6/6 完成
+**功能 Commits:** `82b5a01`、`708793a`、`522828c`、`da31ffb`、`d7c5c40`、`522311b`。
+**日志 Commits:** `480194c`、`046e376`、`dbf8280`、`a5dc58d`、`a69c429`，阶段 6 日志提交待本条记录后完成。
+**最终本地门禁:** `npm ci` passed；87 test files / 900 tests passed；lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过；Vite 生产构建无 warning。
+**生产验收:** `alpha.custard.top`、`alpha.custard.top/api/session` 与 latest deployment `39e15152.cstd-alpha.pages.dev` 均 HTTP 200；最新 Cloudflare Pages production deployment source 为 `522311b`；本地浏览器验收覆盖桌面/移动端、storage-blocked、preload recovery toast、无横向溢出和 console/page/request health。
+**阶段 CI:** 功能与日志对应 Deploy Cloudflare Pages runs `28320091168`、`28320682401`、`28321385076`、`28321440242`、`28363267568`、`28363390121`、`28364546258`、`28364653379`、`28366164962`、`28366298575`、`28369161211` 均 passed；阶段 6 日志提交 CI 待提交后补记。
+**遗留风险:** storage 被禁用时本地偏好/缓存不跨页面持久化；`history.state` 和 storage 都不可写时 stale chunk 恢复无法安全防循环；CSP `style-src` 仍保留 `'unsafe-inline'`；npm allow-scripts 提示需未来依赖治理单独审批。
+**下一建议:** 下一轮优先做带真实 Pages 认证夹具的登录后核心流程 E2E，覆盖搜索、加入自选、模板研究和恢复提示线上链路。

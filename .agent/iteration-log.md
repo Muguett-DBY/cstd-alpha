@@ -568,3 +568,19 @@
 - **CI:** `Deploy Cloudflare Pages` run `28366164962` passed。
 - **Commit:** `d7c5c40 fix: stabilize storage-blocked research flows`
 - **下一阶段:** Stage 6/6 IMPROVE，做最后一轮产品稳定性增量并完成生产收口。
+
+### Stage 6/6 IMPROVE — Visible Preload Recovery
+- **承接方向:** 完成 storage-blocked / stale chunk 恢复链路，让旧分块失败在受限浏览器里也能恢复并给用户明确反馈。
+- **旗舰:** preload recovery 增加 `history.state` guard 与内存 fallback；App 检测最近恢复后展示“已刷新到最新版”toast，loading/auth/app 三种状态都能承载全局提示。
+- **真实问题修复:** 禁用 `sessionStorage` 时旧 chunk 失败不再只能放行错误；未登录页不会吞掉恢复提示；移动端 toast 不遮挡主题控件、不横向溢出。
+- **验证:** TDD 红绿；87 files / 900 tests passed；lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过；`npm ci` 0 vulnerabilities。
+- **浏览器验收:** 内置 Browser 验证本地 Pages 页面身份、非空 DOM 和 console health；Playwright fallback 验证桌面 storage-blocked preload recovery reload/toast/TTL guard，移动端 390px toast 可见、无 console/page/request issue 或横向溢出。
+- **生产:** Pages deployment `39e15152-2144-4961-bae5-d180f78be8b7` source `522311b`；`alpha.custard.top`、`/api/session` 和直连部署域均 HTTP 200；CI run `28369161211` passed。
+- **Commit:** `522311b feat: surface preload recovery status`
+
+### Round 64 Final Closure
+- **状态:** 6/6 completed；功能 commits `82b5a01`、`708793a`、`522828c`、`da31ffb`、`d7c5c40`、`522311b` 均已推送至 `main`，对应阶段 CI 全部通过。
+- **最终门禁:** `npm ci`、87 files / 900 tests、lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过。
+- **生产验收:** Cloudflare Pages 最新 production source `522311b`；自定义域、API envelope、直连部署域均 200；桌面/移动端 storage-blocked preload recovery 体验已验证。
+- **遗留:** storage 被禁用时本地偏好/缓存不跨页面；history/storage 都不可写时恢复无法安全防循环；CSP `unsafe-inline` 与 npm allow-scripts 审批留作后续治理。
+- **下一建议:** 下一轮优先建设真实 Pages 认证夹具下的登录后 E2E，覆盖搜索、加入自选、模板研究和线上恢复提示。
