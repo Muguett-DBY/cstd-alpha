@@ -32,7 +32,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   } | null;
   if (body?.entityType !== "company" && body?.entityType !== "industry") return json({ error: "entityType must be company or industry." }, 400);
   if (!body.entityId?.trim() || !body.title?.trim()) return json({ error: "缺少研究对象。" }, 400);
-  const item = await upsertResearchItem(env.REPORT_LIBRARY_DB, {
+  const result = await upsertResearchItem(env.REPORT_LIBRARY_DB, {
     userKey: session.userId,
     entityType: body.entityType,
     entityId: body.entityId.trim(),
@@ -42,5 +42,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     evidenceHash: body.evidenceHash?.trim(),
     stage: body.stage,
   });
-  return json({ item });
+  return json(result);
 };

@@ -50,6 +50,13 @@ export type ResearchWorkbenchItem = {
   archivedAt?: string;
 };
 
+export type ResearchItemUpsertStatus = "created" | "updated";
+
+export type ResearchItemUpsertResult = {
+  item: ResearchWorkbenchItem;
+  status: ResearchItemUpsertStatus;
+};
+
 export type ResearchReadiness = {
   score: number;
   level: "low" | "medium" | "high";

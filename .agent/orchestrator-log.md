@@ -978,3 +978,21 @@
 **生产验收:** 最新功能部署 `6f1c64f9.cstd-alpha.pages.dev` 与 `alpha.custard.top` HTTP 200；两者 `/api/session` 均 HTTP 200 unauth envelope；GitHub Actions main 最新 runs `28406510997`、`28406179822`、`28406019734` 及前序阶段 deploy runs 均 success。
 **遗留风险:** 单条列表对象内部字段仍依赖现有类型契约；新闻 payload 缺必需结构时按受控错误处理；`.dev.vars.example` 保留 API key placeholder；既有未纳入的 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未提交。
 **最终状态:** Round 65 按 `03_LONG_6_STAGE_MAIN_V2.txt` 完成 6 个阶段，功能与验证闭环完成；本条日志提交后再等待最后一次 CI。
+
+## Round 66 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### 阶段 1/6: IMPROVE
+
+**状态:** 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接上一轮单条 API 记录内部字段仍缺少边界校验的风险，先把研究队列快速加入升级为能识别既有项目、精确聚焦新项目、防止旧搜索结果回写且兼容旧数据库 ID 的可靠闭环。
+**开始状态:** `main` 与 `origin/main` 同步于 `99094ab`；基线 90 files / 916 tests passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** TDD 覆盖研究项 upsert created/updated 契约和旧 ID 读回、候选公司项级校验、快速加入状态推导；实现后运行定向与全量门禁，完成桌面/移动浏览器流程、独立 commit、push main、GitHub Actions 和日志闭环。
+**测试先行:** 新增 `upsertResearchItem` 旧 ID/created status、`research-quick-add` 候选标记与去重、API client malformed company candidate 与 upsert status 测试；红灯先复现旧 ID 读回失败、缺少 status、坏候选未过滤和 quick-add helper 缺失。
+**完成内容:** `upsertResearchItem` 先按 `(user_key, entity_type, entity_id)` 识别既有记录并按真实存储 ID 返回；`POST /api/research-items` 返回 `{ item, status }`；前端 quick-add 支持 AbortController、搜索状态、既有项定位、新项按真实 item.id 选中、候选与研究项项级校验。
+**真实问题修复:** 旧数据库中已有不同 ID 的研究项不再导致 upsert 后按错误确定性 ID 读回失败；快速添加后不再选中公司 ID 而非研究项 ID；重复候选不再再次 POST；坏候选/坏研究项不会进入 UI。
+**本地验证:** TDD 红绿完成；定向 `functions/_shared/research-workbench-db.test.ts`、`src/research-quick-add.test.ts`、`src/api.test.ts` 3 files / 48 tests passed；全量 `npm test` 91 files / 921 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具返回既有研究项、坏研究项、坏候选、既有候选和新候选，验证坏数据被过滤、既有候选显示“已在队列 · 查看”并定位、平安银行新增后队列变为 2/2 且右侧选中真实返回研究项；移动 390x844 无横向溢出。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-research-quick-add-mobile.png`
+**安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用、测试假 key 和未纳入提交的历史目录记录；无新增真实密钥。
+**当前状态:** 功能与本地验证完成，进入 Stage 1 功能提交、push 和 GitHub Actions 跟踪。

@@ -1,5 +1,70 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun, createResearchThesisVersion, deleteResearchItems, updateResearchCatalystStatus, upsertResearchCatalystDrafts } from "./research-workbench-db";
+import { claimValuationRun, createResearchThesisVersion, deleteResearchItems, updateResearchCatalystStatus, upsertResearchCatalystDrafts, upsertResearchItem } from "./research-workbench-db";
+
+type ResearchItemTestRow = {
+  id: string;
+  user_key: string;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  subtitle: string | null;
+  stage: string;
+  status: string;
+  source: string;
+  evidence_hash: string | null;
+  current_thesis_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+describe("upsertResearchItem", () => {
+  test("returns the stored legacy id and updated status for an existing entity", async () => {
+    const db = researchItemDb({
+      id: "legacy-research-id",
+      user_key: "user-1",
+      entity_type: "company",
+      entity_id: "eastmoney:1.600519",
+      title: "旧名称",
+      subtitle: "600519 / A股",
+      stage: "screening",
+      status: "active",
+      source: "manual",
+      evidence_hash: null,
+      current_thesis_version_id: null,
+      created_at: "2026-06-01T00:00:00.000Z",
+      updated_at: "2026-06-01T00:00:00.000Z",
+      archived_at: null,
+    });
+
+    const result = await upsertResearchItem(db, {
+      userKey: "user-1",
+      entityType: "company",
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      subtitle: "600519 / A股",
+      source: "eastmoney",
+    });
+
+    expect(result.status).toBe("updated");
+    expect(result.item).toMatchObject({ id: "legacy-research-id", title: "贵州茅台" });
+  });
+
+  test("returns created status and the new item", async () => {
+    const db = researchItemDb();
+
+    const result = await upsertResearchItem(db, {
+      userKey: "user-1",
+      entityType: "company",
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      source: "eastmoney",
+    });
+
+    expect(result.status).toBe("created");
+    expect(result.item).toMatchObject({ entityId: "eastmoney:1.600519", title: "贵州茅台" });
+  });
+});
 
 describe("claimValuationRun", () => {
   test("claims only queued or failed runs and reports whether the atomic update won", async () => {
@@ -312,3 +377,56 @@ describe("updateResearchCatalystStatus", () => {
     })).rejects.toThrow("invalid research catalyst status");
   });
 });
+
+function researchItemDb(initialRow: ResearchItemTestRow | null = null) {
+  let storedRow = initialRow ? { ...initialRow } : null;
+  return {
+    async batch() {
+      return [];
+    },
+    prepare(sql: string) {
+      let bindings: unknown[] = [];
+      const statement = {
+        bind(...values: unknown[]) {
+          bindings = values;
+          return statement;
+        },
+        async run() {
+          if (sql.includes("INSERT INTO research_items")) {
+            const [id, userKey, entityType, entityId, title, subtitle, stage, source, evidenceHash, now] = bindings as string[];
+            storedRow = {
+              id: storedRow?.id ?? id,
+              user_key: userKey,
+              entity_type: entityType,
+              entity_id: entityId,
+              title,
+              subtitle: subtitle || null,
+              stage: storedRow?.stage ?? stage,
+              status: storedRow?.status ?? "active",
+              source,
+              evidence_hash: evidenceHash || storedRow?.evidence_hash || null,
+              current_thesis_version_id: storedRow?.current_thesis_version_id ?? null,
+              created_at: storedRow?.created_at ?? now,
+              updated_at: now,
+              archived_at: storedRow?.archived_at ?? null,
+            };
+          }
+          return { meta: { changes: 1 } };
+        },
+        async first<T>() {
+          if (!sql.includes("FROM research_items") || !storedRow) return null as T;
+          if (sql.includes("entity_type = ?2") && sql.includes("entity_id = ?3")) {
+            const [userKey, entityType, entityId] = bindings;
+            return storedRow.user_key === userKey && storedRow.entity_type === entityType && storedRow.entity_id === entityId ? storedRow as T : null as T;
+          }
+          if (sql.includes("id = ?2")) {
+            const [userKey, id] = bindings;
+            return storedRow.user_key === userKey && storedRow.id === id ? storedRow as T : null as T;
+          }
+          return null as T;
+        },
+      };
+      return statement;
+    },
+  } as unknown as D1Database;
+}
