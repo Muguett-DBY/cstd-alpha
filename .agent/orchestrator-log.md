@@ -983,7 +983,7 @@
 
 ### 阶段 1/6: IMPROVE
 
-**状态:** 进行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接上一轮单条 API 记录内部字段仍缺少边界校验的风险，先把研究队列快速加入升级为能识别既有项目、精确聚焦新项目、防止旧搜索结果回写且兼容旧数据库 ID 的可靠闭环。
 **开始状态:** `main` 与 `origin/main` 同步于 `99094ab`；基线 90 files / 916 tests passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -995,4 +995,7 @@
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具返回既有研究项、坏研究项、坏候选、既有候选和新候选，验证坏数据被过滤、既有候选显示“已在队列 · 查看”并定位、平安银行新增后队列变为 2/2 且右侧选中真实返回研究项；移动 390x844 无横向溢出。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-research-quick-add-mobile.png`
 **安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用、测试假 key 和未纳入提交的历史目录记录；无新增真实密钥。
-**当前状态:** 功能与本地验证完成，进入 Stage 1 功能提交、push 和 GitHub Actions 跟踪。
+**Commit / Push:** `f8fd930 fix: stabilize research quick add` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28408694655`；91 files / 921 tests；lint、typecheck、build、deploy 均通过；deployment `517a7e37.cstd-alpha.pages.dev`)。
+**风险记录:** quick-add 现在过滤候选和研究项基础字段，但研究项更深层关联数据仍依赖后续页面/接口契约；本阶段保留既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入提交。
+**下一阶段:** 阶段 2/6 IMPROVE，继续处理研究工作区单条记录/关联数据边界，优先选择能用 TDD 和浏览器流闭环的真实问题。

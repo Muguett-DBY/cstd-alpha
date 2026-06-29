@@ -656,3 +656,16 @@
 - **生产验收:** 最新功能部署 `6f1c64f9.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均 HTTP 200；`/api/session` 返回 unauth envelope HTTP 200；GitHub Actions 最新 main runs 无失败。
 - **遗留风险:** API list payload 现在防御非数组/缺字段，但单条对象内部字段仍依赖各页面和服务端契约；新闻 payload 缺必需结构时按受控错误处理；`.dev.vars.example` 仍保留 API key 占位符；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入本轮提交。
 - **最终状态:** Round 65 六阶段已按总控完成；阶段 6 日志提交将在本条记录后提交并等待 CI。
+
+## Round 66 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Research Quick Add Reliability
+- **承接方向:** 继续修复上一轮记录的“单条 API 记录内部字段仍依赖契约”风险，先收紧研究队列 quick-add 的服务端 upsert、候选数据和前端选中状态。
+- **旗舰:** 研究项 upsert 现在返回 `{ item, status }`，旧数据库中已存在但 ID 与当前确定性 ID 不同的研究项也按真实存储 ID 返回；前端新增后直接聚焦返回的 research item。
+- **真实问题修复:** 快速添加不再把 `company.id` 当作 `ResearchWorkbenchItem.id` 选中；重复候选显示“已在队列 · 查看”并只定位不重复 POST；坏公司候选和坏研究项基础字段会被过滤；搜索请求支持 AbortController，避免慢响应污染新查询。
+- **验证:** TDD 红绿；定向 3 files / 48 tests passed；全量 `npm test` 91 files / 921 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、secret/debug scan、`git diff --check` passed。
+- **浏览器验收:** 本地 Pages 8799 + Playwright API 夹具验证坏数据过滤、既有候选定位、新候选加入后队列 2/2 且右侧选中平安银行；移动 390x844 无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-research-quick-add-mobile.png`
+- **生产:** Pages deployment `517a7e37.cstd-alpha.pages.dev`；CI run `28408694655` passed。
+- **Commit:** `f8fd930 fix: stabilize research quick add`
+- **下一阶段:** Stage 2/6 IMPROVE，继续修复研究工作区单条记录/关联数据边界问题，并保持每阶段独立验证、提交、推送与 CI。
