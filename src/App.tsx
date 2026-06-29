@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
+import { addWatchlistItem, checkSession, fetchChartData, fetchRadarScan, fetchReportLibraryRecord, fetchWatchlist, generateReport, login, logout, refreshRadarScan, REPORT_CANCELLED_MESSAGE, searchCompanies, type ReportProgress } from "./api";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./App.css";
 import type { RadarPhase } from "./RadarView";
@@ -21,6 +21,7 @@ import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
 import { hasRecentPreloadRecovery, PRELOAD_RECOVERY_NOTICE } from "./preload-recovery";
 import { watchlistAddToastMessage } from "./watchlist-add-status";
+import { resolveWatchlistMembership, type WatchlistMembership } from "./watchlist-membership";
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
@@ -79,7 +80,7 @@ function App() {
   const [cacheNotice, setCacheNotice] = useState("");
   const [reportAbortController, setReportAbortController] = useState<AbortController | null>(null);
   const [activeView, setActiveView] = useState<AppView>(DEFAULT_APP_VIEW);
-  const [isInWatchlist, setIsInWatchlist] = useState(false);
+  const [watchlistMembership, setWatchlistMembership] = useState<WatchlistMembership>("unavailable");
   const [comparisonReport, setComparisonReport] = useState<InvestmentReport | null>(null);
   const [rankingMarket, setRankingMarket] = useState<RankingMarket>("a-share");
   const [radar, setRadar] = useState<RadarScan | null>(null);
@@ -152,6 +153,26 @@ function App() {
   useEffect(() => {
     selectedCompanyRef.current = selectedCompany;
   }, [selectedCompany]);
+
+  useEffect(() => {
+    if (!authenticated || !selectedCompany) return;
+
+    const requestCompany = selectedCompany;
+    let active = true;
+    void fetchWatchlist()
+      .then(({ items }) => {
+        if (!active || !isSameCompany(selectedCompanyRef.current, requestCompany)) return;
+        setWatchlistMembership(resolveWatchlistMembership(items, requestCompany));
+      })
+      .catch(() => {
+        if (!active || !isSameCompany(selectedCompanyRef.current, requestCompany)) return;
+        setWatchlistMembership("unavailable");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authenticated, selectedCompany]);
 
   useEffect(() => {
     if (!authenticated || activeView !== "radar" || radar || radarPhase !== "idle") return;
@@ -248,7 +269,7 @@ function App() {
     if (!selectedCompany) return;
     try {
       const result = await addWatchlistItem({ company: selectedCompany });
-      setIsInWatchlist(true);
+      setWatchlistMembership("present");
       showToast(watchlistAddToastMessage(selectedCompany.name, result.status), "success");
     } catch (err) {
       showToast(errorMessage(err, "加入自选失败。"), "error");
@@ -407,7 +428,7 @@ function App() {
     setQuery(entry.name);
     setChartBundle(null);
     setChartError("");
-    setIsInWatchlist(false);
+    setWatchlistMembership("checking");
     setActiveView("report");
     if (entry.report) {
       setReport(entry.report);
@@ -481,7 +502,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
-    setIsInWatchlist(true);
+    setWatchlistMembership("present");
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -505,7 +526,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
-    setIsInWatchlist(true);
+    setWatchlistMembership("present");
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -656,6 +677,7 @@ function App() {
                     e.preventDefault();
                     setQuery(item.name);
                     setSelectedCompany(item);
+                    setWatchlistMembership("checking");
                     setShowSuggestions(false);
                     setSearchSuggestions([]);
                     setPhase("idle");
@@ -770,7 +792,7 @@ function App() {
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
                 <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
               ) : null}
-              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} onOpenWatchlistResearch={() => setActiveView("mine")} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} onSaveComparison={() => {
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} onOpenWatchlistResearch={() => setActiveView("mine")} watchlistMembership={selectedCompany ? watchlistMembership : "unavailable"} chartBundle={chartBundle ?? undefined} onSaveComparison={() => {
                 if (comparisonReport?.company.name === report.company.name) { showToast("已取消对比。", "info"); setComparisonReport(null); }
                 else if (comparisonReport) { showToast(`对比已更新：${report.company.name} vs ${comparisonReport.company.name}`, "success"); setComparisonReport(report); }
                 else { showToast(`${report.company.name} 已保存为对比基准。`, "success"); setComparisonReport(report); }
@@ -787,6 +809,7 @@ function App() {
           onClose={() => setPhase("idle")}
           onSelect={(candidate) => {
             setSelectedCompany(candidate);
+            setWatchlistMembership("checking");
             setPhase("idle");
           }}
         />

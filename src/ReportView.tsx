@@ -4,6 +4,7 @@ import { printReportAsPdf } from "./pdf/export-report";
 import { showToast } from "./toast-state";
 import type { ChartBundle } from "./shared/chart";
 import type { InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
+import { watchlistActionLabel, type WatchlistMembership } from "./watchlist-membership";
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -74,7 +75,7 @@ const fullSectionTitles = {
   accountRules: "账户管理与仓位规则",
 } as const;
 
-export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistResearch, isWatchlisted, chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; onOpenWatchlistResearch?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
+export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistResearch, watchlistMembership = "unavailable", chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; onOpenWatchlistResearch?: () => void; watchlistMembership?: WatchlistMembership; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
   const [activeSection, setActiveSection] = useState("scores");
   const [readProgress, setReadProgress] = useState(0);
@@ -238,11 +239,18 @@ export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistR
         </div>
         <div className="report-actions">
           {onAddToWatchlist ? (
-            <button type="button" className="secondary-button" onClick={onAddToWatchlist} disabled={isWatchlisted}>
-              {isWatchlisted ? "已加入自选" : "加入自选"}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onAddToWatchlist}
+              disabled={watchlistMembership === "present" || watchlistMembership === "checking"}
+              aria-busy={watchlistMembership === "checking"}
+              title={watchlistMembership === "unavailable" ? "暂未能确认自选状态，仍可尝试加入" : undefined}
+            >
+              {watchlistActionLabel(watchlistMembership)}
             </button>
           ) : null}
-          {isWatchlisted && onOpenWatchlistResearch ? (
+          {watchlistMembership === "present" && onOpenWatchlistResearch ? (
             <button type="button" className="secondary-button" onClick={onOpenWatchlistResearch}>
               查看研究
             </button>
