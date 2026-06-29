@@ -16,6 +16,13 @@ export type WatchlistItem = {
   addedAt: string;
 };
 
+export type WatchlistAddStatus = "created" | "updated";
+
+export type WatchlistAddResult = {
+  item: WatchlistItem;
+  status: WatchlistAddStatus;
+};
+
 export type WatchlistRankingStatus = "pending" | "running" | "completed" | "failed_retryable" | "failed";
 
 export type WatchlistRankingEntry = {

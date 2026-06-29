@@ -74,7 +74,7 @@ const fullSectionTitles = {
   accountRules: "账户管理与仓位规则",
 } as const;
 
-export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
+export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistResearch, isWatchlisted, chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; onOpenWatchlistResearch?: () => void; isWatchlisted?: boolean; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
   const [activeSection, setActiveSection] = useState("scores");
   const [readProgress, setReadProgress] = useState(0);
@@ -240,6 +240,11 @@ export function ReportView({ report, metrics, onAddToWatchlist, isWatchlisted, c
           {onAddToWatchlist ? (
             <button type="button" className="secondary-button" onClick={onAddToWatchlist} disabled={isWatchlisted}>
               {isWatchlisted ? "已加入自选" : "加入自选"}
+            </button>
+          ) : null}
+          {isWatchlisted && onOpenWatchlistResearch ? (
+            <button type="button" className="secondary-button" onClick={onOpenWatchlistResearch}>
+              查看研究
             </button>
           ) : null}
           <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
