@@ -8,6 +8,7 @@ import { showToast } from "./toast-state";
 import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./research-queue-order";
 import { describeResearchWorkspacePreferenceSummary, hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
 import { decorateResearchQuickAddCandidates, upsertResearchWorkspaceItem, type ResearchQuickAddCandidate } from "./research-quick-add";
+import { describeResearchDetailRecovery, type ResearchDetailRecoverySection } from "./research-detail-recovery";
 import type { CompanyCandidate } from "./shared/report";
 
 type Props = {
@@ -55,6 +56,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const thesisRequestRef = useRef<{ itemId: string; controller: AbortController } | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [activityItemId, setActivityItemId] = useState("");
+  const [activityPhase, setActivityPhase] = useState<"idle" | "error">("idle");
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [viewMode, setViewMode] = useState(initialPreferences.viewMode);
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
@@ -67,6 +71,14 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const visibleThesisVersions = thesisItemId === selected?.id ? thesisVersions : [];
   const displayedThesis = visibleThesisVersions.find((thesis) => thesis.id === displayedThesisId) ?? visibleThesisVersions[0];
   const thesisLoading = Boolean(selected?.id && thesisItemId !== selected.id && thesisPhase !== "generating");
+  const thesisError = Boolean(selected?.id && thesisItemId === selected.id && thesisPhase === "error");
+  const catalystForSelected = Boolean(selected?.id && catalystItemId === selected.id);
+  const catalystLoading = Boolean(selected?.id && !catalystForSelected && catalystPhase !== "syncing");
+  const catalystError = Boolean(catalystForSelected && catalystPhase === "error");
+  const activityForSelected = Boolean(selected?.id && activityItemId === selected.id);
+  const visibleActivityEvents = activityForSelected ? activityEvents : [];
+  const activityLoading = Boolean(selected?.id && !activityForSelected);
+  const activityError = Boolean(activityForSelected && activityPhase === "error");
   const templateGroups = useMemo(() => groupResearchTemplates(RESEARCH_TEMPLATES), []);
   const filteredItems = useMemo(() => {
     let result = filterResearchWorkbenchItems(items, queueQuery);
@@ -297,9 +309,22 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   useEffect(() => {
     if (!selected?.id) return;
     let cancelled = false;
-    void fetchActivityEvents(selected.id).then((events) => { if (!cancelled) setActivityEvents(events); });
+    void fetchActivityEvents(selected.id)
+      .then((events) => {
+        if (cancelled) return;
+        setActivityEvents(events);
+        setActivityItemId(selected.id);
+        setActivityPhase("idle");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setActivityEvents([]);
+        setActivityItemId(selected.id);
+        setActivityPhase("error");
+        setMessage("研究动态暂时无法读取，已显示可恢复提示。");
+      });
     return () => { cancelled = true; };
-  }, [selected?.id]);
+  }, [selected?.id, detailReloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,16 +387,16 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         setDisplayedThesisId(data.current?.id || data.versions[0]?.id || "");
         setThesisPhase("idle");
       })
-      .catch((error) => {
+      .catch(() => {
         if (cancelled) return;
         setThesisItemId(selected.id);
-        setMessage(error instanceof Error ? error.message : "研究论点读取失败。");
+        setMessage("研究论点暂时无法读取，已显示可恢复提示。");
         setThesisPhase("error");
       });
     return () => {
       cancelled = true;
     };
-  }, [selected?.id]);
+  }, [selected?.id, detailReloadKey]);
 
   useEffect(() => {
     if (!selected?.id) {
@@ -385,17 +410,17 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         setCatalystItemId(selected.id);
         setCatalystPhase("idle");
       })
-      .catch((error) => {
+      .catch(() => {
         if (cancelled) return;
         setCatalysts([]);
         setCatalystItemId(selected.id);
         setCatalystPhase("error");
-        setMessage(error instanceof Error ? error.message : "研究跟踪项读取失败。");
+        setMessage("研究跟踪项暂时无法读取，已显示可恢复提示。");
       });
     return () => {
       cancelled = true;
     };
-  }, [selected?.id]);
+  }, [selected?.id, detailReloadKey]);
 
   useEffect(() => {
     if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current);
@@ -429,6 +454,17 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     setQuickAddQuery("");
     setQuickAddSuggestions([]);
     setQuickAddPhase("idle");
+  }
+
+  function retrySelectedDetails() {
+    if (!selected?.id) return;
+    setThesisItemId("");
+    setCatalystItemId("");
+    setActivityItemId("");
+    setThesisPhase("idle");
+    setCatalystPhase("idle");
+    setActivityPhase("idle");
+    setDetailReloadKey((current) => current + 1);
   }
 
   async function quickAddCompany(company: ResearchQuickAddCandidate) {
@@ -1249,7 +1285,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     </label>
                   ) : null}
                   {thesisLoading ? <p className="thesis-status">正在读取当前论点…</p> : null}
-                  {displayedThesis ? (
+                  {thesisError ? (
+                    <DetailRecoveryNotice section="thesis" onRetry={retrySelectedDetails} />
+                  ) : displayedThesis ? (
                     <>
                       <ResearchThesisContent markdown={displayedThesis.thesisMarkdown} />
                       <div className="thesis-meta">
@@ -1280,8 +1318,10 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                       {catalystPhase === "syncing" ? "同步中…" : "从论点同步"}
                     </button>
                   </div>
-                  {catalystPhase === "loading" ? <p className="thesis-status">正在读取跟踪项…</p> : null}
-                  {catalystItemId === selected.id && catalysts.length ? (
+                  {catalystLoading ? <p className="thesis-status">正在读取跟踪项…</p> : null}
+                  {catalystError ? (
+                    <DetailRecoveryNotice section="catalysts" onRetry={retrySelectedDetails} />
+                  ) : catalystItemId === selected.id && catalysts.length ? (
                     <>
                       <div className="catalyst-filter">
                         <button type="button" className={catalystStatusFilter === "all" ? "active" : ""} onClick={() => setCatalystStatusFilter("all")}>
@@ -1324,7 +1364,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                         </div>
                       )}
                     </>
-                  ) : catalystPhase !== "loading" ? (
+                  ) : !catalystLoading ? (
                     <div className="thesis-empty">
                       <p>暂无跟踪项。</p>
                       <span>生成论点后点击同步，将关键催化剂、反证和跟踪清单沉淀为可复核事项。</span>
@@ -1403,8 +1443,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
             </header>
             {selected ? (
               <div className="activity-timeline">
-                {selected && activityEvents.length === 0 ? <p className="activity-loading">正在读取最近动态...</p> : null}
-                {activityEvents.length > 0 ? activityEvents.map((event) => (
+                {activityLoading ? <p className="activity-loading">正在读取最近动态...</p> : null}
+                {activityError ? <DetailRecoveryNotice section="activity" onRetry={retrySelectedDetails} /> : null}
+                {visibleActivityEvents.length > 0 ? visibleActivityEvents.map((event) => (
                   <div key={event.id} className="timeline-item">
                     <span className={`timeline-dot ${event.eventType === "thesis_generated" ? "thesis" : event.eventType === "stage_change" ? "confirmed" : event.eventType === "evidence_collected" ? "evidence" : event.eventType === "valuation_updated" ? "valuation" : "created"}`} />
                     <div className="timeline-content">
@@ -1413,7 +1454,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                       <time>{new Date(event.createdAt).toLocaleString("zh-CN", { hour12: false })}</time>
                     </div>
                   </div>
-                )) : activityEvents.length === 0 ? (
+                )) : !activityLoading ? (
                   <>
                     {selected.currentThesisVersionId ? (
                       <div className="timeline-item">
@@ -1481,6 +1522,19 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         </div>
       ) : null}
     </section>
+  );
+}
+
+function DetailRecoveryNotice({ section, onRetry }: { section: ResearchDetailRecoverySection; onRetry: () => void }) {
+  const copy = describeResearchDetailRecovery(section);
+  return (
+    <div className="detail-recovery-notice" role="alert">
+      <div>
+        <strong>{copy.title}</strong>
+        <p>{copy.body}</p>
+      </div>
+      <button type="button" className="secondary-button" onClick={onRetry}>{copy.actionLabel}</button>
+    </div>
   );
 }
 

@@ -2927,6 +2927,42 @@ button:not(:disabled):active,
   color: var(--muted);
 }
 
+.detail-recovery-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-left: 4px solid var(--danger);
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.detail-recovery-notice strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.detail-recovery-notice p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.detail-recovery-notice button {
+  min-height: 34px;
+  white-space: normal;
+}
+
+@media (max-width: 520px) {
+  .detail-recovery-notice {
+    grid-template-columns: 1fr;
+  }
+}
+
 .research-catalysts .catalyst-list {
   padding: 0;
 }

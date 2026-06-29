@@ -1018,3 +1018,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28409255213`；91 files / 922 tests；lint、typecheck、build、deploy 均通过；deployment `860b2558.cstd-alpha.pages.dev`)。
 **风险记录:** 关联记录现在做必需字段项级过滤；可选字段仍保守接受字符串/undefined，不推测补全缺失内容；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入提交。
 **下一阶段:** 阶段 3/6 UIUX，基于前两阶段的研究详情可靠性，做一次可见的研究工作区恢复/空态/坏数据降级体验改进并验证桌面与移动端。
+
+### 阶段 3/6: UIUX
+
+**状态:** 进行中
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 把 Stage 2 的详情数据防护转成可见恢复体验：论点、跟踪项和最近动态读取失败时显示分区恢复提示、保留可推断内容，并提供重试入口。
+**开始状态:** `main` 与 `origin/main` 同步于 `87fd89e`；Stage 2 功能与日志 CI 均 passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 `src/research-detail-recovery.test.ts` 和 `describeResearchDetailRecovery`，锁定三个详情分区的标题与重试标签；定向测试先覆盖文案契约。
+**完成内容:** `ResearchWorkspace` 新增 activity phase/itemId、detail reload key 和统一 `DetailRecoveryNotice`；论点/跟踪项/动态读取失败显示分区 alert 与重试按钮，点击重试会重新读取全部详情；顶部全局消息改为稳定中文提示，不泄露后端原文。
+**真实问题修复:** 详情接口临时 503 时不再把失败伪装成“尚未形成/暂无跟踪/正在读取”，也不再在顶部直接展示 `catalysts unavailable` 这类后端原文；最近动态失败时保留本地可推断时间线。
+**本地验证:** TDD 红绿完成；定向 2 files / 38 tests passed；全量 `npm test` 92 files / 923 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具让 thesis/catalysts/activity 首次返回 503，确认三个恢复提示和重试按钮可见、顶部只显示中文通用提示、无后端原文泄露、无 ErrorBoundary、桌面无横向溢出；点击重试后论点/跟踪项/动态恢复，恢复提示消失；移动 390x844 无横向溢出。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-detail-recovery-mobile.png`
+**安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用和测试假 key；无新增真实密钥或调试输出。
+**当前状态:** 功能与本地验证完成，进入 Stage 3 功能提交、push 和 GitHub Actions 跟踪。
