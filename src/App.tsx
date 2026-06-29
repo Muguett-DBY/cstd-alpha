@@ -19,6 +19,7 @@ import { canPersistRecentSearches, loadRecentSearches, rememberRecentSearch } fr
 import { canPersistImportedRankingReports, clearImportedRankingReports } from "./ranking-storage";
 import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
+import { hasRecentPreloadRecovery, PRELOAD_RECOVERY_NOTICE } from "./preload-recovery";
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
@@ -177,6 +178,10 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [user?.role]);
+
+  useEffect(() => {
+    if (hasRecentPreloadRecovery()) showToast(PRELOAD_RECOVERY_NOTICE, "success", 6000);
+  }, []);
 
   useEffect(() => {
     const goOffline = () => showToast("网络连接已断开，部分功能暂时不可用。", "error", 8000);
@@ -510,49 +515,55 @@ function App() {
   }
 
   if (checking) return (
-    <main className="loading-screen">
-      <img src="/app-icon.svg" alt="CSTD Alpha" className="loading-icon" />
-      <p className="brand">CSTD Alpha</p>
-      <div className="loading-spinner" />
-    </main>
+    <>
+      <main className="loading-screen">
+        <img src="/app-icon.svg" alt="CSTD Alpha" className="loading-icon" />
+        <p className="brand">CSTD Alpha</p>
+        <div className="loading-spinner" />
+      </main>
+      <ToastContainer />
+    </>
   );
 
   if (!authenticated) {
     return (
-      <main className="auth-page">
-        <div className="auth-theme-control">
-          <ThemeControl value={theme.preference} onChange={theme.setPreference} compact />
-        </div>
-        <section className="auth-panel" aria-labelledby="auth-title">
-          <img src="/app-icon.svg" alt="CSTD Alpha" className="auth-icon" />
-          <p className="brand">CSTD Alpha</p>
-          <h1 id="auth-title">私人公司深度研究工具</h1>
-          <p className="auth-tagline">AI 驱动的深度研究，从公司质量评分到投资吸引力分析</p>
-          <form onSubmit={submitLogin} className="auth-form">
-            <label htmlFor="username">账号</label>
-            <input
-              id="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoComplete="username"
-              placeholder="请输入预设账号"
-              required
-            />
-            <label htmlFor="password">访问密码</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-            <button type="submit" disabled={isLoggingIn}>{isLoggingIn ? "验证中..." : "进入"}</button>
-          </form>
-          {!localPersistenceAvailable ? <p className="storage-health auth-storage-health" role="status">{LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE}</p> : null}
-          {error ? <p className="error-text">{error}</p> : null}
-        </section>
-      </main>
+      <>
+        <main className="auth-page">
+          <div className="auth-theme-control">
+            <ThemeControl value={theme.preference} onChange={theme.setPreference} compact />
+          </div>
+          <section className="auth-panel" aria-labelledby="auth-title">
+            <img src="/app-icon.svg" alt="CSTD Alpha" className="auth-icon" />
+            <p className="brand">CSTD Alpha</p>
+            <h1 id="auth-title">私人公司深度研究工具</h1>
+            <p className="auth-tagline">AI 驱动的深度研究，从公司质量评分到投资吸引力分析</p>
+            <form onSubmit={submitLogin} className="auth-form">
+              <label htmlFor="username">账号</label>
+              <input
+                id="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                placeholder="请输入预设账号"
+                required
+              />
+              <label htmlFor="password">访问密码</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+              <button type="submit" disabled={isLoggingIn}>{isLoggingIn ? "验证中..." : "进入"}</button>
+            </form>
+            {!localPersistenceAvailable ? <p className="storage-health auth-storage-health" role="status">{LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE}</p> : null}
+            {error ? <p className="error-text">{error}</p> : null}
+          </section>
+        </main>
+        <ToastContainer />
+      </>
     );
   }
 
