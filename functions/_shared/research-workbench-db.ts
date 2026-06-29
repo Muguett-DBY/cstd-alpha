@@ -186,6 +186,7 @@ export async function upsertResearchItem(db: D1Database, input: {
   const now = new Date().toISOString();
   const id = await sha256(`${input.userKey}:${input.entityType}:${input.entityId}`);
   const stage = normalizeResearchStage(input.stage) ?? "screening";
+  const existing = await readResearchItemByEntity(db, input.userKey, input.entityType, input.entityId);
   await db.prepare(
     `INSERT INTO research_items (
        id, user_key, entity_type, entity_id, title, subtitle, stage, source, evidence_hash, created_at, updated_at
@@ -197,18 +198,18 @@ export async function upsertResearchItem(db: D1Database, input: {
        evidence_hash = COALESCE(excluded.evidence_hash, research_items.evidence_hash),
        updated_at = excluded.updated_at`,
   ).bind(id, input.userKey, input.entityType, input.entityId, input.title, input.subtitle ?? null, stage, input.source ?? "manual", input.evidenceHash ?? null, now).run();
-  const item = await readResearchItemById(db, input.userKey, id);
+  const item = await readResearchItemByEntity(db, input.userKey, input.entityType, input.entityId);
   if (!item) throw new Error("research item upsert failed");
-  if (item.createdAt === now) {
+  if (!existing) {
     await recordActivityEvent(db, input.userKey, {
-      itemId: id,
+      itemId: item.id,
       eventType: "created",
       title: "研究项创建",
       description: `来源: ${input.source ?? "manual"}`,
       metadata: { source: input.source ?? "manual", entityType: input.entityType },
     }).catch(() => {});
   }
-  return item;
+  return { item, status: existing ? "updated" as const : "created" as const };
 }
 
 export async function listResearchItems(db: D1Database, userKey: string) {
@@ -226,6 +227,14 @@ export async function readResearchItemById(db: D1Database, userKey: string, id: 
     `SELECT id, user_key, entity_type, entity_id, title, subtitle, stage, status, source, evidence_hash, current_thesis_version_id, created_at, updated_at, archived_at
      FROM research_items WHERE user_key = ?1 AND id = ?2`,
   ).bind(userKey, id).first<ResearchItemRow>();
+  return row ? researchItemRowToItem(row) : null;
+}
+
+async function readResearchItemByEntity(db: D1Database, userKey: string, entityType: ResearchEntityType, entityId: string) {
+  const row = await db.prepare(
+    `SELECT id, user_key, entity_type, entity_id, title, subtitle, stage, status, source, evidence_hash, current_thesis_version_id, created_at, updated_at, archived_at
+     FROM research_items WHERE user_key = ?1 AND entity_type = ?2 AND entity_id = ?3`,
+  ).bind(userKey, entityType, entityId).first<ResearchItemRow>();
   return row ? researchItemRowToItem(row) : null;
 }
 

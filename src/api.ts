@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchCatalyst, ResearchCatalystStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
+import type { ResearchCatalyst, ResearchCatalystStatus, ResearchItemUpsertResult, ResearchItemUpsertStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistAddResult, WatchlistAddStatus, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
@@ -139,7 +139,7 @@ export async function addResearchItem(input: {
   source?: string;
   evidenceHash?: string;
   stage?: ResearchStage;
-}): Promise<ResearchWorkbenchItem> {
+}): Promise<ResearchItemUpsertResult> {
   const response = await fetch("/api/research-items", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -147,9 +147,9 @@ export async function addResearchItem(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "加入研究队列失败。");
-  const data = (await response.json()) as { item?: ResearchWorkbenchItem };
-  if (!data.item) throw new Error("加入研究队列失败。");
-  return data.item;
+  const data = (await response.json()) as { item?: unknown; status?: ResearchItemUpsertStatus };
+  if (!isResearchWorkbenchItem(data.item)) throw new Error("加入研究队列失败。");
+  return { item: data.item, status: data.status === "updated" ? "updated" : "created" };
 }
 
 export async function updateResearchItemStage(id: string, stage: ResearchStage, sortOrder?: number): Promise<ResearchWorkbenchItem> {
@@ -256,7 +256,7 @@ export async function fetchValuations(): Promise<ValuationsResult> {
 
 function normalizeResearchItemsResult(payload: unknown): ResearchItemsResult {
   const data = objectPayload(payload) as Partial<ResearchItemsResult>;
-  return { items: Array.isArray(data.items) ? data.items : [] };
+  return { items: arrayPayload<unknown>(data.items).filter(isResearchWorkbenchItem) };
 }
 
 function normalizeResearchThesesResult(payload: unknown): ResearchThesesResult {
@@ -374,11 +374,11 @@ export async function logout(): Promise<void> {
   await fetch("/api/session", { method: "DELETE", credentials: "include" });
 }
 
-export async function searchCompanies(query: string): Promise<CompanyCandidate[]> {
-  const response = await fetch(`/api/company-search?q=${encodeURIComponent(query)}`, { credentials: "include" });
+export async function searchCompanies(query: string, signal?: AbortSignal): Promise<CompanyCandidate[]> {
+  const response = await fetch(`/api/company-search?q=${encodeURIComponent(query)}`, { credentials: "include", signal });
   if (!response.ok) throw new Error((await readError(response)) || "公司搜索失败。");
   const data = (await response.json()) as { candidates?: CompanyCandidate[] };
-  return arrayPayload<CompanyCandidate>(data.candidates);
+  return arrayPayload<unknown>(data.candidates).filter(isCompanyCandidate);
 }
 
 export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<ReportGenerationResult> {
@@ -900,6 +900,35 @@ function isAssistantThreadSummary(value: unknown): value is AssistantThreadSumma
 function isCreatedAssistantThread(value: unknown): value is Pick<AssistantThreadSummary, "id" | "title"> {
   if (!isPlainRecord(value)) return false;
   return typeof value.id === "string" && typeof value.title === "string";
+}
+
+function isCompanyCandidate(value: unknown): value is CompanyCandidate {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.name === "string" && value.name.trim().length > 0 &&
+    typeof value.code === "string" && value.code.trim().length > 0 &&
+    typeof value.exchange === "string" &&
+    typeof value.listingPlace === "string" && value.listingPlace.trim().length > 0 &&
+    typeof value.marketType === "string" && value.marketType.trim().length > 0 &&
+    (value.source === "eastmoney" || value.source === "yahoo")
+  );
+}
+
+function isResearchWorkbenchItem(value: unknown): value is ResearchWorkbenchItem {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.userKey === "string" &&
+    (value.entityType === "company" || value.entityType === "industry") &&
+    typeof value.entityId === "string" && value.entityId.trim().length > 0 &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    typeof value.stage === "string" && ["screening", "deepResearch", "awaitingCatalyst", "opinionFormed", "archived"].includes(value.stage) &&
+    typeof value.status === "string" &&
+    typeof value.source === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
 }
 
 function objectPayload(value: unknown): Record<string, unknown> {

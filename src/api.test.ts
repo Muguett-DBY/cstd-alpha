@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  addResearchItem,
   addWatchlistItem,
   completeResearchTemplateDraft,
   fetchActivityEvents,
@@ -913,6 +914,43 @@ describe("API client", () => {
     await expect(saveResearchTemplates([])).resolves.toEqual([]);
     await expect(saveResearchTemplatesAsDefault()).resolves.toEqual([]);
     await expect(resetResearchTemplatesToDefault()).resolves.toEqual([]);
+  });
+
+  test("filters malformed company candidates and returns research upsert status", async () => {
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "A股",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const item = {
+      id: "research-row-1",
+      userKey: "user-1",
+      entityType: "company" as const,
+      entityId: company.id,
+      title: company.name,
+      stage: "screening" as const,
+      status: "active",
+      source: company.source,
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidates: [{ name: "坏数据" }, company, null] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ item, status: "updated" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchCompanies("茅台")).resolves.toEqual([company]);
+    await expect(addResearchItem({
+      entityType: "company",
+      entityId: company.id,
+      title: company.name,
+      source: company.source,
+    })).resolves.toEqual({ item, status: "updated" });
   });
 
   test("preserves radar refresh warnings returned with cached fallback data", async () => {

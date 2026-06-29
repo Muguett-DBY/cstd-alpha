@@ -1768,8 +1768,18 @@ button:not(:disabled):active,
 .quick-add-section {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+}
+
+.quick-add-status {
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.quick-add-status.error {
+  color: var(--danger);
 }
 
 .quick-add-suggestions {
@@ -1808,9 +1818,24 @@ button:not(:disabled):active,
   background: color-mix(in srgb, var(--teal) 8%, var(--surface));
 }
 
+.quick-add-item.existing {
+  background: color-mix(in srgb, var(--teal) 5%, var(--surface));
+}
+
+.quick-add-item:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .quick-add-item:focus-visible {
   position: relative;
   z-index: 1;
+}
+
+.quick-add-company {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .quick-add-item strong {
@@ -1818,15 +1843,17 @@ button:not(:disabled):active,
   color: var(--ink);
 }
 
-.quick-add-item span {
+.quick-add-company > span {
   font-size: 12px;
   color: var(--muted);
 }
 
 .quick-add-item small {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--teal-strong);
   margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .filter-bar {

@@ -7,6 +7,8 @@ import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
 import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./research-queue-order";
 import { describeResearchWorkspacePreferenceSummary, hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
+import { decorateResearchQuickAddCandidates, upsertResearchWorkspaceItem, type ResearchQuickAddCandidate } from "./research-quick-add";
+import type { CompanyCandidate } from "./shared/report";
 
 type Props = {
   onOpenLegacyMine: () => void;
@@ -29,8 +31,9 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [message, setMessage] = useState("");
   const [queueQuery, setQueueQuery] = useState(initialPreferences.queueQuery);
   const [quickAddQuery, setQuickAddQuery] = useState("");
-  const [quickAddSuggestions, setQuickAddSuggestions] = useState<Array<{ id: string; name: string; code: string; listingPlace: string; source: string }>>([]);
-  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [quickAddSuggestions, setQuickAddSuggestions] = useState<CompanyCandidate[]>([]);
+  const [quickAddPhase, setQuickAddPhase] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [quickAddingId, setQuickAddingId] = useState("");
   const quickAddTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [assistantCollapsed, setAssistantCollapsed] = useState(false);
   const [thesisVersions, setThesisVersions] = useState<ResearchThesisVersion[]>([]);
@@ -98,6 +101,10 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     dateFilter,
     viewMode,
   }, filteredItems.length, items.length), [dateFilter, filteredItems.length, items.length, queueQuery, sortOrder, stageFilter, thesisFilter, viewMode]);
+  const quickAddCandidates = useMemo(
+    () => decorateResearchQuickAddCandidates(quickAddSuggestions, items),
+    [items, quickAddSuggestions],
+  );
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
   const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -392,19 +399,47 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
 
   useEffect(() => {
     if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current);
-    if (!quickAddQuery.trim() || quickAddQuery.trim().length < 2) return;
+    const query = quickAddQuery.trim();
+    if (query.length < 2) return;
+    const controller = new AbortController();
     quickAddTimerRef.current = setTimeout(() => {
-      searchCompanies(quickAddQuery.trim()).then((results) => {
+      searchCompanies(query, controller.signal).then((results) => {
+        if (controller.signal.aborted) return;
         setQuickAddSuggestions(results.slice(0, 6));
-        setQuickAddLoading(false);
-      }).catch(() => setQuickAddLoading(false));
+        setQuickAddPhase("ready");
+      }).catch((error) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        setQuickAddSuggestions([]);
+        setQuickAddPhase("error");
+      });
     }, 300);
-    return () => { if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current); };
+    return () => {
+      controller.abort();
+      if (quickAddTimerRef.current) clearTimeout(quickAddTimerRef.current);
+    };
   }, [quickAddQuery]);
 
-  async function quickAddCompany(company: { id: string; name: string; code: string; listingPlace: string; source: string }) {
+  function revealResearchItem(itemId: string) {
+    setQueueQuery("");
+    setStageFilter("all");
+    setThesisFilter("all");
+    setDateFilter("all");
+    setSelectedId(itemId);
+    setExpandedCardId(itemId);
+    setQuickAddQuery("");
+    setQuickAddSuggestions([]);
+    setQuickAddPhase("idle");
+  }
+
+  async function quickAddCompany(company: ResearchQuickAddCandidate) {
+    if (company.existingItemId) {
+      revealResearchItem(company.existingItemId);
+      showToast(`${company.name} 已在研究队列，已为你定位。`, "info");
+      return;
+    }
+    setQuickAddingId(company.id);
     try {
-      await addResearchItem({
+      const result = await addResearchItem({
         entityType: "company",
         entityId: company.id,
         title: company.name,
@@ -412,14 +447,16 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         source: company.source,
         stage: "screening",
       });
-      const data = await fetchResearchItems();
-      setItems(data.items);
-      setSelectedId(company.id);
-      setQuickAddQuery("");
-      setQuickAddSuggestions([]);
-      showToast(`${company.name} 已加入研究队列。`, "success");
+      setItems((current) => upsertResearchWorkspaceItem(current, result.item));
+      revealResearchItem(result.item.id);
+      showToast(
+        result.status === "updated" ? `${company.name} 已在研究队列，已刷新并定位。` : `${company.name} 已加入研究队列并打开。`,
+        result.status === "updated" ? "info" : "success",
+      );
     } catch (error) {
       showToast(error instanceof Error ? error.message : "加入研究队列失败。", "error");
+    } finally {
+      setQuickAddingId("");
     }
   }
 
@@ -987,18 +1024,32 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
               <div className="quick-add-section">
                 <label className="research-queue-search">
                   <span>快速添加</span>
-                  <input value={quickAddQuery} onChange={(event) => { setQuickAddQuery(event.target.value); if (event.target.value.trim().length < 2) { setQuickAddSuggestions([]); setQuickAddLoading(false); } else { setQuickAddLoading(true); } }} placeholder="搜索公司名称或代码添加到研究队列" />
+                  <input value={quickAddQuery} onChange={(event) => {
+                    const nextQuery = event.target.value;
+                    setQuickAddQuery(nextQuery);
+                    setQuickAddSuggestions([]);
+                    setQuickAddPhase(nextQuery.trim().length >= 2 ? "loading" : "idle");
+                  }} placeholder="搜索公司名称或代码添加到研究队列" aria-describedby="quick-add-status" />
                 </label>
-                {quickAddLoading ? <span className="inline-loading">搜索中...</span> : null}
-                {quickAddSuggestions.length > 0 ? (
-                  <div className="quick-add-suggestions">
-                    {quickAddSuggestions.map((company) => (
-                      <button key={company.id} type="button" className="quick-add-item" onClick={() => void quickAddCompany(company)}>
-                        <strong>{company.name}</strong>
-                        <span>{company.code}</span>
-                        <small>{company.listingPlace}</small>
-                      </button>
-                    ))}
+                <span id="quick-add-status" className={`quick-add-status ${quickAddPhase}`} role="status" aria-live="polite">
+                  {quickAddPhase === "loading" ? "正在搜索公司..." : null}
+                  {quickAddPhase === "error" ? "搜索暂时不可用，请稍后重试。" : null}
+                  {quickAddPhase === "ready" && quickAddCandidates.length === 0 ? "没有找到可用的上市公司候选。" : null}
+                </span>
+                {quickAddCandidates.length > 0 ? (
+                  <div className="quick-add-suggestions" aria-label="公司候选">
+                    {quickAddCandidates.map((company) => {
+                      const isAdding = quickAddingId === company.id;
+                      return (
+                        <button key={company.id} type="button" className={`quick-add-item ${company.existingItemId ? "existing" : ""}`} onClick={() => void quickAddCompany(company)} disabled={Boolean(quickAddingId)} aria-busy={isAdding}>
+                          <span className="quick-add-company">
+                            <strong>{company.name}</strong>
+                            <span>{company.code} · {company.listingPlace}</span>
+                          </span>
+                          <small>{isAdding ? "正在加入" : company.existingItemId ? "已在队列 · 查看" : "加入队列"}</small>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
