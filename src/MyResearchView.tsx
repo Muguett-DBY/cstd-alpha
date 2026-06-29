@@ -17,6 +17,7 @@ import {
 import type { CompanyNewsBundle, NewsItem } from "./shared/news";
 import type { CompanyCandidate } from "./shared/report";
 import { normalizeMarkdownForReading } from "./markdown-report";
+import { watchlistAddToastMessage } from "./watchlist-add-status";
 import {
   FULL_ANALYSIS_TEMPLATE_ID,
   isRetryableTemplateStatus,
@@ -193,12 +194,13 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     setError("");
     setNotice("");
     try {
-      const item = await addWatchlistItem({ company });
+      const result = await addWatchlistItem({ company });
+      const item = result.item;
       setItems((current) => mergeWatchlistItems(current, item));
       setSelectedWatchlistId(item.id);
       setActiveAnalysis(null);
       setActiveNews(false);
-      setNotice(`已加入自选：${item.company.name}`);
+      setNotice(watchlistAddToastMessage(item.company.name, result.status));
     } catch (err) {
       setError(err instanceof Error ? err.message : "加入自选失败。");
     }

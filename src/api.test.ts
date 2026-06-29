@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  addWatchlistItem,
   completeResearchTemplateDraft,
   fetchChartData,
   fetchRadarScan,
@@ -422,6 +423,29 @@ describe("API client", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }))));
 
     await expect(login("pw", "admin")).rejects.toThrow("服务端未返回账号信息");
+  });
+
+  test("returns watchlist add status with the stored item", async () => {
+    const item = {
+      id: "watch-1",
+      userId: "user-1",
+      company: {
+        id: "eastmoney:1.600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "上海证券交易所",
+        listingPlace: "A股",
+        marketType: "AStock",
+        source: "eastmoney",
+      },
+      addedAt: "2026-06-30T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ item, status: "updated" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await addWatchlistItem({ company: item.company });
+
+    expect(result).toEqual({ item, status: "updated" });
   });
 
   test("sends cache mode and force refresh flags when generating reports", async () => {

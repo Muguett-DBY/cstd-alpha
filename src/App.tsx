@@ -20,6 +20,7 @@ import { canPersistImportedRankingReports, clearImportedRankingReports } from ".
 import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
 import { hasRecentPreloadRecovery, PRELOAD_RECOVERY_NOTICE } from "./preload-recovery";
+import { watchlistAddToastMessage } from "./watchlist-add-status";
 import type { ChartBundle, PriceMode } from "./shared/chart";
 import { companyCandidateFromRanking, type RankingEntry } from "./shared/ranking";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
@@ -246,9 +247,9 @@ function App() {
   async function addToWatchlist() {
     if (!selectedCompany) return;
     try {
-      await addWatchlistItem({ company: selectedCompany });
+      const result = await addWatchlistItem({ company: selectedCompany });
       setIsInWatchlist(true);
-      showToast(`${selectedCompany.name} 已加入自选股。`, "success");
+      showToast(watchlistAddToastMessage(selectedCompany.name, result.status), "success");
     } catch (err) {
       showToast(errorMessage(err, "加入自选失败。"), "error");
     }
@@ -480,7 +481,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
-    setIsInWatchlist(false);
+    setIsInWatchlist(true);
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -504,7 +505,7 @@ function App() {
     setQuery(company.name);
     setChartBundle(null);
     setChartError("");
-    setIsInWatchlist(false);
+    setIsInWatchlist(true);
     setReport(null);
     setReportMetrics(null);
     setProgress([]);
@@ -769,7 +770,7 @@ function App() {
               {chartBundle || chartPhase === "loading" || chartPhase === "error" ? (
                 <ChartDashboard chartBundle={chartBundle} chartPhase={chartPhase} report={report} priceMode={priceMode} />
               ) : null}
-              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} onSaveComparison={() => {
+              {report ? <ReportView report={report} metrics={reportMetrics ?? undefined} onAddToWatchlist={addToWatchlist} onOpenWatchlistResearch={() => setActiveView("mine")} isWatchlisted={isInWatchlist} chartBundle={chartBundle ?? undefined} onSaveComparison={() => {
                 if (comparisonReport?.company.name === report.company.name) { showToast("已取消对比。", "info"); setComparisonReport(null); }
                 else if (comparisonReport) { showToast(`对比已更新：${report.company.name} vs ${comparisonReport.company.name}`, "success"); setComparisonReport(report); }
                 else { showToast(`${report.company.name} 已保存为对比基准。`, "success"); setComparisonReport(report); }

@@ -57,6 +57,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const now = new Date().toISOString();
   const id = await sha256(`${session.userId}:${company.listingPlace}:${company.code}`);
+  const existingRow = await readWatchlistRowBySymbol(env.REPORT_LIBRARY_DB, session.userId, company.code, company.listingPlace);
+  const status = existingRow ? "updated" : "created";
   await env.REPORT_LIBRARY_DB.prepare(
     `INSERT INTO user_watchlist (
       id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
@@ -73,7 +75,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     .bind(id, session.userId, session.userId, company.name, company.code, company.listingPlace, company.exchange, company.listingPlace, company.marketType, company.source, body?.reportLibraryId || null, now)
     .run();
 
-  const row = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, id);
+  const row = await readWatchlistRowBySymbol(env.REPORT_LIBRARY_DB, session.userId, company.code, company.listingPlace);
   if (row && env.REPORT_LIBRARY_BUCKET) {
     context.waitUntil(
       fetchAndStoreCompanyEvidence({
@@ -92,7 +94,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }),
     );
   }
-  return json({ item: row ? watchlistRowToItem(row) : null });
+  return json({ item: row ? watchlistRowToItem(row) : null, status });
 };
 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
@@ -106,14 +108,14 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   return json({ ok: true });
 };
 
-async function readWatchlistRow(db: D1Database, userKey: string, id: string) {
+async function readWatchlistRowBySymbol(db: D1Database, userKey: string, ticker: string, market: string) {
   return db
     .prepare(
       `SELECT id, user_id, user_key, company_name, ticker, market, exchange_name, listing_place, market_type, source, report_library_id, added_at
        FROM user_watchlist
-       WHERE user_key = ?1 AND id = ?2`,
+       WHERE user_key = ?1 AND ticker = ?2 AND market = ?3`,
     )
-    .bind(userKey, id)
+    .bind(userKey, ticker, market)
     .first<WatchlistRow>();
 }
 
