@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_RESEARCH_WORKSPACE_PREFERENCES,
+  describeResearchWorkspacePreferenceSummary,
   hasActiveResearchWorkspaceFilters,
   loadResearchWorkspacePreferences,
   saveResearchWorkspacePreference,
@@ -86,6 +87,41 @@ describe("research workspace preferences", () => {
       dateFilter: "week",
     })).toBe(true);
     expect(hasActiveResearchWorkspaceFilters(DEFAULT_RESEARCH_WORKSPACE_PREFERENCES)).toBe(false);
+  });
+
+  test("describes active filters as compact queue status chips", () => {
+    expect(describeResearchWorkspacePreferenceSummary({
+      ...DEFAULT_RESEARCH_WORKSPACE_PREFERENCES,
+      queueQuery: "  very long research query for 贵州茅台 catalyst review  ",
+      stageFilter: "deepResearch",
+      thesisFilter: "without",
+      sortOrder: "stage",
+      dateFilter: "week",
+      viewMode: "compact",
+    }, 3, 12)).toEqual({
+      resultLabel: "3/12 项可见",
+      activeCount: 5,
+      chips: [
+        { key: "query", label: "搜索：very long research…", tone: "active" },
+        { key: "stage", label: "阶段：深入研究", tone: "active" },
+        { key: "thesis", label: "论点：未生成", tone: "active" },
+        { key: "date", label: "时间：本周", tone: "active" },
+        { key: "sort", label: "排序：阶段", tone: "active" },
+        { key: "view", label: "视图：紧凑", tone: "neutral" },
+      ],
+    });
+  });
+
+  test("uses an all-queue chip when filters are default", () => {
+    expect(describeResearchWorkspacePreferenceSummary(DEFAULT_RESEARCH_WORKSPACE_PREFERENCES, 8, 8)).toEqual({
+      resultLabel: "8/8 项可见",
+      activeCount: 0,
+      chips: [
+        { key: "all", label: "全部队列", tone: "neutral" },
+        { key: "sort", label: "排序：最近更新", tone: "neutral" },
+        { key: "view", label: "视图：看板", tone: "neutral" },
+      ],
+    });
   });
 });
 

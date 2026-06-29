@@ -6,7 +6,7 @@ import { RESEARCH_TEMPLATES } from "./shared/user-research";
 import type { ValuationRunSummary } from "./shared/valuation";
 import { showToast } from "./toast-state";
 import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./research-queue-order";
-import { hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
+import { describeResearchWorkspacePreferenceSummary, hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
 
 type Props = {
   onOpenLegacyMine: () => void;
@@ -90,6 +90,14 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
     }
     return result;
   }, [items, queueQuery, stageFilter, thesisFilter, sortOrder, dateFilter]);
+  const preferenceSummary = useMemo(() => describeResearchWorkspacePreferenceSummary({
+    queueQuery,
+    stageFilter,
+    thesisFilter,
+    sortOrder,
+    dateFilter,
+    viewMode,
+  }, filteredItems.length, items.length), [dateFilter, filteredItems.length, items.length, queueQuery, sortOrder, stageFilter, thesisFilter, viewMode]);
   const catalystStatusSummary = useMemo(() => summarizeResearchCatalystStatuses(catalysts), [catalysts]);
   const filteredCatalysts = useMemo(() => filterResearchCatalystsByStatus(catalysts, catalystStatusFilter), [catalysts, catalystStatusFilter]);
   const [recentCutoff] = useState(() => Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -967,6 +975,14 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
                     重置
                   </button>
                 ) : null}
+              </div>
+              <div className={`filter-summary-strip ${preferenceSummary.activeCount ? "has-active" : ""}`} aria-label="当前队列状态">
+                <span className="filter-summary-count"><strong>{preferenceSummary.resultLabel}</strong>{preferenceSummary.activeCount ? ` · ${preferenceSummary.activeCount} 项条件` : ""}</span>
+                <div className="filter-summary-chips">
+                  {preferenceSummary.chips.map((chip) => (
+                    <span key={chip.key} className={`filter-summary-chip ${chip.tone}`}>{chip.label}</span>
+                  ))}
+                </div>
               </div>
               <div className="quick-add-section">
                 <label className="research-queue-search">

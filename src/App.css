@@ -1868,6 +1868,65 @@ button:not(:disabled):active,
   border-style: solid;
 }
 
+.filter-summary-strip {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 78%, var(--surface-subtle));
+}
+
+.filter-summary-strip.has-active {
+  border-color: color-mix(in srgb, var(--teal) 38%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--teal) 7%, transparent), transparent 58%),
+    var(--surface);
+}
+
+.filter-summary-count {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.filter-summary-count strong {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.filter-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.filter-summary-chip.active {
+  border-color: color-mix(in srgb, var(--teal) 45%, var(--line));
+  background: color-mix(in srgb, var(--teal) 9%, var(--surface));
+  color: var(--teal);
+}
+
 .card-checkbox {
   flex-shrink: 0;
   width: 16px;
@@ -12040,6 +12099,16 @@ button:not(:disabled):active,
     padding: 10px;
   }
 
+  .filter-summary-strip {
+    padding: 10px;
+  }
+
+  .filter-summary-chip {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
   .filter-reset {
     min-height: 44px;
     padding: 10px 16px;
@@ -12091,6 +12160,14 @@ button:not(:disabled):active,
 
   .filter-bar {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .filter-summary-strip {
+    gap: 10px;
+  }
+
+  .filter-summary-chips {
     gap: 8px;
   }
 
