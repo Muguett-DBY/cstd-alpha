@@ -3,6 +3,7 @@ import {
   addWatchlistItem,
   completeResearchTemplateDraft,
   fetchChartData,
+  fetchOpportunities,
   fetchRadarScan,
   fetchReportLibrary,
   fetchResearchTemplates,
@@ -738,6 +739,24 @@ describe("API client", () => {
         credentials: "include",
       }),
     );
+  });
+
+  test("normalizes incomplete opportunities payloads to empty dashboard data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchOpportunities()).resolves.toEqual({
+      generatedAt: "",
+      opportunities: [],
+      topResearch: [],
+      riskWorsening: [],
+      catalysts: [],
+      funnel: [],
+      inbox: [],
+      researchItems: [],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/opportunities", expect.objectContaining({ credentials: "include" }));
   });
 
   test("preserves radar refresh warnings returned with cached fallback data", async () => {

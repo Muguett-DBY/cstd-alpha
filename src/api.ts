@@ -108,7 +108,21 @@ type AssistantThreadSummary = {
 export async function fetchOpportunities(): Promise<OpportunitiesResult> {
   const response = await fetch("/api/opportunities", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "今日机会读取失败。");
-  return (await response.json()) as OpportunitiesResult;
+  return normalizeOpportunitiesResult(await response.json());
+}
+
+function normalizeOpportunitiesResult(payload: unknown): OpportunitiesResult {
+  const data = (payload && typeof payload === "object" ? payload : {}) as Partial<OpportunitiesResult>;
+  return {
+    generatedAt: typeof data.generatedAt === "string" ? data.generatedAt : "",
+    opportunities: Array.isArray(data.opportunities) ? data.opportunities : [],
+    topResearch: Array.isArray(data.topResearch) ? data.topResearch : [],
+    riskWorsening: Array.isArray(data.riskWorsening) ? data.riskWorsening : [],
+    catalysts: Array.isArray(data.catalysts) ? data.catalysts : [],
+    funnel: Array.isArray(data.funnel) ? data.funnel : [],
+    inbox: Array.isArray(data.inbox) ? data.inbox : [],
+    researchItems: Array.isArray(data.researchItems) ? data.researchItems : [],
+  };
 }
 
 export async function fetchResearchItems(): Promise<ResearchItemsResult> {

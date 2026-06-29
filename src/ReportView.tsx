@@ -4,7 +4,7 @@ import { printReportAsPdf } from "./pdf/export-report";
 import { showToast } from "./toast-state";
 import type { ChartBundle } from "./shared/chart";
 import type { InvestmentReport, ModuleScore, ReportGenerationMetrics, ScoreItem } from "./shared/report";
-import { watchlistActionLabel, type WatchlistMembership } from "./watchlist-membership";
+import { watchlistMembershipPresentation, type WatchlistMembership } from "./watchlist-membership";
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -77,6 +77,7 @@ const fullSectionTitles = {
 
 export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistResearch, watchlistMembership = "unavailable", chartBundle, onSaveComparison, comparisonReport }: { report: InvestmentReport; metrics?: ReportGenerationMetrics; onAddToWatchlist?: () => void; onOpenWatchlistResearch?: () => void; watchlistMembership?: WatchlistMembership; chartBundle?: ChartBundle; onSaveComparison?: () => void; comparisonReport?: InvestmentReport | null }) {
   const tokenSummary = summarizeTokenUsage(metrics?.tokenUsage);
+  const watchlistState = watchlistMembershipPresentation(watchlistMembership);
   const [activeSection, setActiveSection] = useState("scores");
   const [readProgress, setReadProgress] = useState(0);
 
@@ -237,67 +238,75 @@ export function ReportView({ report, metrics, onAddToWatchlist, onOpenWatchlistR
             </p>
           ) : null}
         </div>
-        <div className="report-actions">
-          {onAddToWatchlist ? (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onAddToWatchlist}
-              disabled={watchlistMembership === "present" || watchlistMembership === "checking"}
-              aria-busy={watchlistMembership === "checking"}
-              title={watchlistMembership === "unavailable" ? "暂未能确认自选状态，仍可尝试加入" : undefined}
-            >
-              {watchlistActionLabel(watchlistMembership)}
+        <div className="report-actions" aria-live="polite">
+          <div className="report-research-status" data-status={watchlistState.status} aria-busy={watchlistState.ariaBusy}>
+            <span>{watchlistState.statusLabel}</span>
+            <p>{watchlistState.detail}</p>
+          </div>
+          <div className="report-primary-actions">
+            {onAddToWatchlist ? (
+              <button
+                type="button"
+                className="secondary-button report-primary-action"
+                onClick={onAddToWatchlist}
+                disabled={watchlistState.actionDisabled}
+                aria-busy={watchlistState.ariaBusy}
+                title={watchlistMembership === "unavailable" ? "暂未能确认自选状态，仍可尝试加入" : undefined}
+              >
+                {watchlistState.actionLabel}
+              </button>
+            ) : null}
+            {watchlistState.showResearchLink && onOpenWatchlistResearch ? (
+              <button type="button" className="secondary-button report-primary-action" onClick={onOpenWatchlistResearch}>
+                查看研究
+              </button>
+            ) : null}
+          </div>
+          <div className="report-tool-actions" aria-label="报告导出和分享工具">
+            <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
+              下载 Word
             </button>
-          ) : null}
-          {watchlistMembership === "present" && onOpenWatchlistResearch ? (
-            <button type="button" className="secondary-button" onClick={onOpenWatchlistResearch}>
-              查看研究
+            <button type="button" className="secondary-button" onClick={() => {
+              try {
+                printReportAsPdf(report);
+                showToast("已打开打印窗口，可选择“另存为 PDF”。", "success");
+              } catch {
+                showToast("无法打开打印窗口，请检查浏览器打印权限。", "error");
+              }
+            }}>
+              导出 PDF
             </button>
-          ) : null}
-          <button type="button" className="secondary-button" onClick={() => downloadReportDocx(report, chartBundle)}>
-            下载 Word
-          </button>
-          <button type="button" className="secondary-button" onClick={() => {
-            try {
-              printReportAsPdf(report);
-              showToast("已打开打印窗口，可选择“另存为 PDF”。", "success");
-            } catch {
-              showToast("无法打开打印窗口，请检查浏览器打印权限。", "error");
-            }
-          }}>
-            导出 PDF
-          </button>
-          <button type="button" className="secondary-button" onClick={() => {
-            const text = `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`;
-            navigator.clipboard.writeText(text).then(() => showToast("摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
-          }}>
-            复制摘要
-          </button>
-          <button type="button" className="secondary-button" onClick={() => {
-            const shareData = {
-              title: `${report.company.name} 投资分析报告`,
-              text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
-            };
-            if (navigator.share) {
-              navigator.share(shareData).catch((err) => {
-                if (err?.name !== "AbortError") {
-                  navigator.clipboard.writeText(shareData.text)
-                    .then(() => showToast("分享失败，摘要已复制到剪贴板。", "success"))
-                    .catch(() => showToast("分享失败，请手动复制。", "error"));
-                }
-              });
-            } else {
-              navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
-            }
-          }}>
-            分享
-          </button>
-          {onSaveComparison ? (
-            <button type="button" className="secondary-button" onClick={onSaveComparison}>
-              {comparisonReport ? "对比中" : "保存对比"}
+            <button type="button" className="secondary-button" onClick={() => {
+              const text = `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`;
+              navigator.clipboard.writeText(text).then(() => showToast("摘要已复制到剪贴板。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+            }}>
+              复制摘要
             </button>
-          ) : null}
+            <button type="button" className="secondary-button" onClick={() => {
+              const shareData = {
+                title: `${report.company.name} 投资分析报告`,
+                text: `${report.company.name}（${report.company.ticker || "未知代码"}）\nCQS: ${report.cqs} / IAS: ${report.ias}\n结论: ${report.conclusion}（${report.qualitativeBand}）\n${report.oneSentence}`,
+              };
+              if (navigator.share) {
+                navigator.share(shareData).catch((err) => {
+                  if (err?.name !== "AbortError") {
+                    navigator.clipboard.writeText(shareData.text)
+                      .then(() => showToast("分享失败，摘要已复制到剪贴板。", "success"))
+                      .catch(() => showToast("分享失败，请手动复制。", "error"));
+                  }
+                });
+              } else {
+                navigator.clipboard.writeText(shareData.text).then(() => showToast("报告摘要已复制，可粘贴分享。", "success")).catch(() => showToast("复制失败，请手动选择复制。", "error"));
+              }
+            }}>
+              分享
+            </button>
+            {onSaveComparison ? (
+              <button type="button" className="secondary-button" onClick={onSaveComparison}>
+                {comparisonReport ? "对比中" : "保存对比"}
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
