@@ -29,7 +29,7 @@ type Phase = "idle" | "searching" | "selecting" | "generating" | "ready" | "erro
 type AppView = AppViewLoadingTarget;
 
 export const DEFAULT_APP_VIEW: AppView = "opportunities";
-export const LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE = "本地缓存不可用；最近搜索、报告缓存和导入榜单只在当前页面生效。";
+export const LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE = "本地缓存不可用；最近搜索、报告缓存、导入榜单、最近模板和新闻缓存只在当前页面生效。";
 const ResearchWorkspace = lazy(() => import("./ResearchWorkspace").then((module) => ({ default: module.ResearchWorkspace })));
 const MarketWorkspace = lazy(() => import("./MarketWorkspace").then((module) => ({ default: module.MarketWorkspace })));
 const ValuationLabView = lazy(() => import("./ValuationLabView").then((module) => ({ default: module.ValuationLabView })));
