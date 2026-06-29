@@ -680,3 +680,14 @@
 - **生产:** Pages deployment `860b2558.cstd-alpha.pages.dev`；CI run `28409255213` passed。
 - **Commit:** `08eccae fix: guard research detail records`
 - **下一阶段:** Stage 3/6 UIUX，基于研究详情可靠性做可见的研究工作区降级/空态体验改进，并进行桌面与移动验收。
+
+### Stage 3/6 UIUX — Research Detail Recovery Notices
+- **承接方向:** 把 Stage 2 的详情记录防护转成可见恢复体验，避免用户把远端读取失败误判为“真的没有内容”。
+- **旗舰:** 论点、跟踪项和最近动态各自有分区级恢复提示和重试按钮；点击任一重试入口会重新读取当前研究项详情。
+- **真实问题修复:** 详情接口 503 时不再显示普通空态或一直“读取中”；顶部全局消息不再泄露 `catalysts unavailable` 这类后端原文；动态读取失败时仍保留本地可推断时间线。
+- **验证:** TDD 红绿；定向 2 files / 38 tests passed；全量 `npm test` 92 files / 923 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、secret/debug scan、`git diff --check` passed。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 夹具让 thesis/catalysts/activity 首次返回 503，确认三个恢复提示、中文通用提示、无原始后端文案、无 ErrorBoundary；点击重试后论点/跟踪项/动态恢复，桌面与 390x844 移动端均无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-detail-recovery-mobile.png`
+- **生产:** Pages deployment `6d857cc6.cstd-alpha.pages.dev`；CI run `28410223086` passed。
+- **Commit:** `becaf15 feat: add research detail recovery UI`
+- **下一阶段:** Stage 4/6 IMPROVE，继续修复研究工作区可靠性问题，并维持每阶段独立 CI/部署闭环。

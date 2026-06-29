@@ -1021,7 +1021,7 @@
 
 ### 阶段 3/6: UIUX
 
-**状态:** 进行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
 **阶段目标:** 把 Stage 2 的详情数据防护转成可见恢复体验：论点、跟踪项和最近动态读取失败时显示分区恢复提示、保留可推断内容，并提供重试入口。
 **开始状态:** `main` 与 `origin/main` 同步于 `87fd89e`；Stage 2 功能与日志 CI 均 passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -1032,4 +1032,7 @@
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具让 thesis/catalysts/activity 首次返回 503，确认三个恢复提示和重试按钮可见、顶部只显示中文通用提示、无后端原文泄露、无 ErrorBoundary、桌面无横向溢出；点击重试后论点/跟踪项/动态恢复，恢复提示消失；移动 390x844 无横向溢出。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-detail-recovery-mobile.png`
 **安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用和测试假 key；无新增真实密钥或调试输出。
-**当前状态:** 功能与本地验证完成，进入 Stage 3 功能提交、push 和 GitHub Actions 跟踪。
+**Commit / Push:** `becaf15 feat: add research detail recovery UI` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28410223086`；92 files / 923 tests；lint、typecheck、build、deploy 均通过；deployment `6d857cc6.cstd-alpha.pages.dev`)。
+**风险记录:** 恢复提示会重新加载当前选中研究项的三个详情分区；如果后端持续失败，会继续停留在可恢复提示和本地推断时间线，不推测远端内容。
+**下一阶段:** 阶段 4/6 IMPROVE，继续从研究工作区的真实可靠性风险中选择一个可 TDD、可浏览器闭环的问题修复。
