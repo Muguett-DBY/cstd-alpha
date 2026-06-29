@@ -2,7 +2,7 @@ import type { ChartBundle, PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
-import type { CompanyCandidate, InvestmentReport, ReportGenerationMetrics, ReportTokenUsage } from "./shared/report";
+import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import type { ResearchCatalyst, ResearchCatalystStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
@@ -380,7 +380,7 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
       if (event.type === "progress") onProgress?.(event as ReportProgress);
       if (event.type === "error") throw new Error(String(event.error || "报告生成失败。"));
       if (event.type === "final") {
-        finalReport = event.report as InvestmentReport;
+        finalReport = validateReportPayload(event.report);
         finalMetrics = normalizeMetrics(event.metrics);
       }
     }
@@ -439,7 +439,8 @@ export async function fetchReportLibrary(
 export async function fetchReportLibraryRecord(id: string): Promise<ReportLibraryRecord> {
   const response = await fetch(`/api/report-library?id=${encodeURIComponent(id)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "报告读取失败。");
-  return (await response.json()) as ReportLibraryRecord;
+  const data = (await response.json()) as { entry: ReportLibraryEntry; report: unknown };
+  return { entry: data.entry, report: validateReportPayload(data.report) };
 }
 
 export async function importReportLibraryReports(reports: InvestmentReport[]): Promise<ReportLibraryEntry[]> {
