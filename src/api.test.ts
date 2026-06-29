@@ -6,6 +6,7 @@ import {
   fetchOpportunities,
   fetchRadarScan,
   fetchReportLibrary,
+  fetchReportLibraryRecord,
   fetchResearchTemplates,
   generateReport,
   login,
@@ -480,6 +481,55 @@ describe("API client", () => {
         body: JSON.stringify({ company, forceRefresh: true, cacheMode: "refresh" }),
       }),
     );
+  });
+
+  test("normalizes streamed final reports before returning them to the UI", async () => {
+    const report = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况", industry: "行业旧字段" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(`${JSON.stringify({ type: "final", report })}\n`, { status: 200 })));
+
+    const result = await generateReport({
+      company: {
+        id: "eastmoney:1.600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "上海证券交易所",
+        listingPlace: "沪A",
+        marketType: "AStock",
+        quoteId: "1.600519",
+        source: "eastmoney",
+      },
+    });
+
+    expect(result.report.fullSections.industryTrack).toBe("行业旧字段");
+    expect(result.report.summaryDashboard.valuationView).toBe("待验证");
+  });
+
+  test("normalizes report library records before returning them to the UI", async () => {
+    const report = {
+      company: { name: "微软", ticker: "MSFT", market: "美股" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况", industry: "行业旧字段" },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ entry: { id: "report-1" }, report })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchReportLibraryRecord("report-1");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/report-library?id=report-1", expect.objectContaining({ credentials: "include" }));
+    expect(result.report.fullSections.industryTrack).toBe("行业旧字段");
+    expect(result.report.financialTenYear.interpretation).toContain("数据不足");
   });
 
   test("passes an abort signal to report generation fetches", async () => {
