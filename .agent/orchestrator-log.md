@@ -897,3 +897,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28390353349`；90 files / 907 tests；deployment `784e4f70.cstd-alpha.pages.dev`)。
 **风险记录:** 本阶段使用 API 拦截稳定复现慢响应；验收夹具曾因错误报告字段触发 ErrorBoundary，已确认是夹具问题，同时记录客户端畸形报告防御作为 CHECK 审计项。
 **下一阶段:** 阶段 3/6 UIUX，优化报告操作区视觉层级、状态反馈和移动端密度。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 重构报告头部操作层级，让自选研究状态、主操作和导出/分享工具有明确分区，并验证桌面与移动端不溢出。
+**开始状态:** 阶段 2 功能 commit `0969fe9` 与日志 commit `af3a07b` 均已推送，CI runs `28390353349` / `28390492792` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 扩展 `src/watchlist-membership.test.ts`，先复现缺少 `watchlistMembershipPresentation`；扩展 `src/api.test.ts`，先复现 `/api/opportunities` 返回 `{}` 时客户端不归一化导致页面可崩溃。
+**完成内容:** 新增 watchlist 状态展示契约；`ReportView` 将研究状态说明、主操作和报告工具拆为三个区域；`App.css` 新增报告头部双栏/移动布局、状态面板、主按钮和工具按钮网格；`fetchOpportunities` 对缺失字段返回空数组结构。
+**真实问题修复:** 报告页按钮不再混在一个 flex 按钮堆里，用户能直接看到是否已在自选及下一步；不完整机会 payload 不再让默认首页因 `.length` 或数组操作进入 ErrorBoundary。
+**本地验证:** TDD 红绿完成；定向 `src/api.test.ts` / `src/watchlist-membership.test.ts` / `src/App.test.ts` 3 files / 43 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-BtIuK--q.js`；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具在桌面 1365x900 与移动 390x844 走通首页、研究页、报告生成、公司搜索和既有自选状态，确认“已加入自选”禁用、“查看研究”可见、工具按钮 5 个、状态面板 present、无横向溢出、无 failed response 或 console error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-stage3-mobile.png`
+**Commit / Push:** `e46ddc7 feat: refine report research actions` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393002133`；90 files / 909 tests；deployment `e10a1593.cstd-alpha.pages.dev`)。
+**风险记录:** 移动端 admin 仍会按既有规则进入 Assistant-only 视图，本阶段移动报告验收使用普通用户会话；`/api/valuations` 等其他不完整 payload 客户端防御留给后续 CHECK 系统检查。
+**下一阶段:** 阶段 4/6 IMPROVE，优先修复报告 payload 兼容/归一化，避免旧版或畸形报告使 ReportView 进入 ErrorBoundary。

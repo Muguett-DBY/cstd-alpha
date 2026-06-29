@@ -605,3 +605,16 @@
 - **生产:** Pages deployment `784e4f70.cstd-alpha.pages.dev`；CI run `28390353349` passed。
 - **Commit:** `0969fe9 feat: sync report watchlist membership`
 - **下一阶段:** Stage 3/6 UIUX，重构报告头部的研究状态、主操作和导出工具层级，并验证桌面/移动端。
+
+### Stage 3/6 UIUX — Report Research Action Panel
+- **承接方向:** 在阶段 2 的四态自选状态机基础上，把报告页头部操作从混排按钮升级为可扫读的研究状态、主操作和导出工具分区。
+- **旗舰:** 报告头部新增 `report-research-status` 状态面板；“加入/已加入/查看研究”进入主操作区，Word/PDF/复制/分享/对比进入工具区；桌面为双栏，移动端自动单列与双列工具按钮。
+- **支持改进:** 状态面板显示检查中、已在自选、未加入、暂不可确认的说明；主按钮沿用禁用与 `aria-busy`；工具区有独立 `aria-label`；按钮允许换行并防止长中文撑出容器。
+- **真实问题修复:** 浏览器验收发现 `/api/opportunities` 返回不完整对象时默认首页可能因 `.length` 崩溃；API client 现在把缺失字段归一化为空机会面板数据。
+- **验证:** TDD 红绿；`watchlist-membership` 新增展示契约测试，`api.test` 新增不完整机会 payload 测试；定向 3 files / 43 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、diff check passed。
+- **浏览器验收:** 本地 Pages 8799 + Playwright API 夹具，桌面 1365x900 与移动 390x844 走通首页 -> 研究 -> 生成报告 -> 搜索贵州茅台 -> 已在自选报告头；`addDisabled=true`、`researchVisible=true`、工具按钮 5 个、状态面板可见、`overflow=false`、`badResponses=[]`、`errors=[]`。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-stage3-mobile.png`
+- **Commit / Push:** `e46ddc7 feat: refine report research actions` pushed to `origin/main`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393002133`；90 files / 909 tests；lint、typecheck、build、deploy 均通过；deployment `e10a1593.cstd-alpha.pages.dev`)。
+- **风险记录:** 移动端 admin 会话仍按既有设计强制进入 Assistant-only 视图；本阶段移动验收使用普通用户会话验证报告页布局。`/api/valuations` 等其他不完整 payload 防御已记录到后续 CHECK 审计范围。
+- **下一阶段:** Stage 4/6 IMPROVE，优先修复畸形/旧版报告 payload 进入 ReportView 时可能触发 ErrorBoundary 的真实稳定性问题。
