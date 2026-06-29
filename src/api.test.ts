@@ -2,12 +2,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addWatchlistItem,
   completeResearchTemplateDraft,
+  fetchActivityEvents,
   fetchChartData,
   fetchCompanyNews,
   fetchOpportunities,
   fetchRadarScan,
   fetchReportLibrary,
   fetchReportLibraryRecord,
+  fetchTemplateAnalyses,
+  fetchWatchlist,
+  fetchWatchlistRanking,
+  importReportLibraryReports,
   fetchResearchCatalysts,
   fetchResearchItems,
   fetchResearchTemplates,
@@ -21,6 +26,7 @@ import {
   saveQuantitativeValuationWorkspace,
   searchCompanies,
   refreshRadarScan,
+  refreshWatchlistRanking,
   sendAssistantMessage,
   fetchAssistantDeepResearchJob,
   stopAssistantDeepResearchJob,
@@ -874,6 +880,39 @@ describe("API client", () => {
 
     await expect(fetchCompanyNews("watch-1")).rejects.toThrow("新闻读取失败。");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/company-news?watchlistId=watch-1"), expect.objectContaining({ credentials: "include", cache: "no-store" }));
+  });
+
+  test("normalizes malformed list envelopes before UI consumers iterate them", async () => {
+    const user = { userId: "user-admin", username: "admin", displayName: "Admin", role: "admin" as const };
+    const malformedList = { not: "an array" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidates: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ events: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: malformedList, total: "many", limit: "20", offset: "0", matchedTickers: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imported: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: malformedList, user })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: malformedList, watchlist: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: malformedList, queued: malformedList, reused: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ analyses: malformedList, templates: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: malformedList })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: malformedList })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchCompanies("茅台")).resolves.toEqual([]);
+    await expect(fetchActivityEvents("research-1")).resolves.toEqual([]);
+    await expect(fetchReportLibrary()).resolves.toEqual({ entries: [], total: 0, limit: undefined, offset: undefined, matchedTickers: [] });
+    await expect(importReportLibraryReports([])).resolves.toEqual([]);
+    await expect(fetchWatchlist()).resolves.toEqual({ items: [], user });
+    await expect(fetchWatchlistRanking()).resolves.toEqual({ entries: [], watchlist: [] });
+    await expect(refreshWatchlistRanking()).resolves.toEqual({ entries: [], queued: [], reused: [] });
+    await expect(fetchTemplateAnalyses()).resolves.toEqual({ analyses: [], templates: [] });
+    await expect(fetchResearchTemplates()).resolves.toEqual([]);
+    await expect(saveResearchTemplates([])).resolves.toEqual([]);
+    await expect(saveResearchTemplatesAsDefault()).resolves.toEqual([]);
+    await expect(resetResearchTemplatesToDefault()).resolves.toEqual([]);
   });
 
   test("preserves radar refresh warnings returned with cached fallback data", async () => {
