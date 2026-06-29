@@ -34,7 +34,7 @@ import {
   type TemplateManagerView,
 } from "./template-manager-state";
 import { filterWatchlistItems, findWatchlistItemForCompany, summarizeWatchlistAnalysis } from "./my-research-state";
-import { clearRecentTemplateIds, loadCachedCompanyNewsBundle, loadRecentTemplateIds, rememberRecentTemplateId, saveCachedCompanyNewsBundle } from "./my-research-storage";
+import { clearRecentTemplateIds, loadCachedCompanyNewsBundle, loadRecentTemplateIds, mergeRecentTemplateIds, rememberRecentTemplateId, saveCachedCompanyNewsBundle } from "./my-research-storage";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -65,6 +65,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [error, setError] = useState("");
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
+  const [recentTemplateIds, setRecentTemplateIds] = useState<string[]>(loadRecentTemplateIds);
   const [savingTemplates, setSavingTemplates] = useState(false);
   const selectedWatchlistIdRef = useRef(selectedWatchlistId);
   const initialDataLoadedRef = useRef(false);
@@ -241,7 +242,13 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   const recordRecentTemplate = useCallback((templateId: string) => {
+    setRecentTemplateIds((current) => mergeRecentTemplateIds(templateId, current));
     rememberRecentTemplateId(templateId);
+  }, []);
+
+  const clearRecentTemplates = useCallback(() => {
+    clearRecentTemplateIds();
+    setRecentTemplateIds([]);
   }, []);
 
   async function generate(templateId: string, forceRefresh = false) {
@@ -554,6 +561,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               activeNews={activeNews}
               phase={phase}
               templates={templates}
+              recentTemplateIds={recentTemplateIds}
               activeGeneration={activeGeneration}
               analysisSummary={selectedAnalysisSummary}
               onGenerate={(templateId, forceRefresh) => { recordRecentTemplate(templateId); void generate(templateId, forceRefresh); }}
@@ -562,6 +570,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
               onOpenNews={() => setActiveNews(true)}
               onBackToTemplates={() => setActiveAnalysis(null)}
               onBackFromNews={() => setActiveNews(false)}
+              onClearRecentTemplates={clearRecentTemplates}
             />
           ) : (
             <>
@@ -908,6 +917,7 @@ function CompanyWorkbench({
   activeNews,
   phase,
   templates,
+  recentTemplateIds,
   activeGeneration,
   analysisSummary,
   onGenerate,
@@ -916,6 +926,7 @@ function CompanyWorkbench({
   onOpenNews,
   onBackToTemplates,
   onBackFromNews,
+  onClearRecentTemplates,
 }: {
   item: WatchlistItem;
   analysisByTemplate: Map<string, TemplateAnalysisResult>;
@@ -923,6 +934,7 @@ function CompanyWorkbench({
   activeNews: boolean;
   phase: TemplateGenerationPhase;
   templates: ResearchTemplate[];
+  recentTemplateIds: string[];
   activeGeneration: ActiveGeneration | null;
   analysisSummary: ReturnType<typeof summarizeWatchlistAnalysis>;
   onGenerate: (templateId: string, forceRefresh?: boolean) => void;
@@ -931,6 +943,7 @@ function CompanyWorkbench({
   onOpenNews: () => void;
   onBackToTemplates: () => void;
   onBackFromNews: () => void;
+  onClearRecentTemplates: () => void;
 }) {
   const activeTemplates = templates.filter((template) => template.enabled !== false);
   const fullAnalysis = analysisByTemplate.get(FULL_ANALYSIS_TEMPLATE_ID);
@@ -988,7 +1001,9 @@ function CompanyWorkbench({
 
       <RecentTemplatesBar
         templates={templates}
+        recentIds={recentTemplateIds}
         onSelect={onGenerate}
+        onClear={onClearRecentTemplates}
         disabled={phase === "generating"}
       />
 
@@ -1405,8 +1420,7 @@ function renderInline(value: string): ReactNode[] {
   });
 }
 
-function RecentTemplatesBar({ templates, onSelect, disabled }: { templates: ResearchTemplate[]; onSelect: (id: string) => void; disabled: boolean }) {
-  const [recentIds, setRecentIds] = useState<string[]>(loadRecentTemplateIds);
+function RecentTemplatesBar({ templates, recentIds, onSelect, onClear, disabled }: { templates: ResearchTemplate[]; recentIds: string[]; onSelect: (id: string) => void; onClear: () => void; disabled: boolean }) {
   if (recentIds.length === 0) return null;
   const recentTemplates = recentIds
     .map((id) => templates.find((t) => t.id === id))
@@ -1432,10 +1446,7 @@ function RecentTemplatesBar({ templates, onSelect, disabled }: { templates: Rese
         <button
           type="button"
           className="recent-template-clear"
-          onClick={() => {
-            clearRecentTemplateIds();
-            setRecentIds([]);
-          }}
+          onClick={onClear}
           aria-label="清除最近使用"
         >
           清除

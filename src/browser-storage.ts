@@ -3,12 +3,23 @@ export type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" 
 };
 
 export type BrowserStorageWindow = Pick<Window, "localStorage">;
+export type BrowserSessionStorageWindow = Pick<Window, "sessionStorage">;
 
 export function getBrowserLocalStorage(browserWindow?: BrowserStorageWindow): BrowserStorage | undefined {
   try {
     if (browserWindow) return browserWindow.localStorage;
     if (typeof window !== "undefined") return window.localStorage;
     return (globalThis as typeof globalThis & { localStorage?: BrowserStorage }).localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+export function getBrowserSessionStorage(browserWindow?: BrowserSessionStorageWindow): BrowserStorage | undefined {
+  try {
+    if (browserWindow) return browserWindow.sessionStorage;
+    if (typeof window !== "undefined") return window.sessionStorage;
+    return (globalThis as typeof globalThis & { sessionStorage?: BrowserStorage }).sessionStorage;
   } catch {
     return undefined;
   }
