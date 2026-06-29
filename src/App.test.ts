@@ -12,6 +12,8 @@ describe("app initial workspace", () => {
     expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("最近搜索");
     expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("报告缓存");
     expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("导入榜单");
+    expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("最近模板");
+    expect(LOCAL_PERSISTENCE_UNAVAILABLE_NOTICE).toContain("新闻缓存");
   });
 
   test("keeps radar refresh fallback brief when an old scan is still visible", () => {

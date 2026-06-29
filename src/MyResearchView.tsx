@@ -34,6 +34,7 @@ import {
   type TemplateManagerView,
 } from "./template-manager-state";
 import { filterWatchlistItems, findWatchlistItemForCompany, summarizeWatchlistAnalysis } from "./my-research-state";
+import { clearRecentTemplateIds, loadCachedCompanyNewsBundle, loadRecentTemplateIds, rememberRecentTemplateId, saveCachedCompanyNewsBundle } from "./my-research-storage";
 
 type MyResearchViewProps = {
   user: UserSession | null;
@@ -240,11 +241,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   }
 
   const recordRecentTemplate = useCallback((templateId: string) => {
-    try {
-      const previous = JSON.parse(localStorage.getItem("cstd_recent_templates") || "[]") as string[];
-      const next = [templateId, ...previous.filter((id) => id !== templateId)].slice(0, 4);
-      localStorage.setItem("cstd_recent_templates", JSON.stringify(next));
-    } catch { /* ignore */ }
+    rememberRecentTemplateId(templateId);
   }, []);
 
   async function generate(templateId: string, forceRefresh = false) {
@@ -1136,7 +1133,7 @@ function TemplateReportReader({ analysis, onBack }: { analysis: TemplateAnalysis
 }
 
 function NewsEntryCard({ item, onOpen }: { item: WatchlistItem; onOpen: () => void }) {
-  const cached = loadCachedNewsBundle(item);
+  const cached = loadCachedCompanyNewsBundle(item);
   const companyTotal = cached?.companySummary.total ?? 0;
   const industryTotal = cached?.industrySummary.total ?? 0;
   const sourceCount = (cached?.companySummary.sourceCount ?? 0) + (cached?.industrySummary.sourceCount ?? 0);
@@ -1177,8 +1174,8 @@ function NewsReportReader({ item, onBack }: { item: WatchlistItem; onBack: () =>
 }
 
 function NewsRadar({ item }: { item: WatchlistItem }) {
-  const [bundle, setBundle] = useState<CompanyNewsBundle | null>(() => loadCachedNewsBundle(item));
-  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">(() => (loadCachedNewsBundle(item) ? "ready" : "idle"));
+  const [bundle, setBundle] = useState<CompanyNewsBundle | null>(() => loadCachedCompanyNewsBundle(item));
+  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">(() => (loadCachedCompanyNewsBundle(item) ? "ready" : "idle"));
   const [error, setError] = useState("");
 
   async function refreshNews() {
@@ -1186,7 +1183,7 @@ function NewsRadar({ item }: { item: WatchlistItem }) {
     setError("");
     await fetchCompanyNews(item.id)
       .then((data) => {
-        saveCachedNewsBundle(item, data);
+        saveCachedCompanyNewsBundle(item, data);
         setBundle(data);
         setPhase("ready");
       })
@@ -1313,33 +1310,6 @@ function NewsColumn({ title, items, loading, idle }: { title: string; items: New
   );
 }
 
-function loadCachedNewsBundle(item: WatchlistItem) {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(newsCacheKey(item));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CompanyNewsBundle;
-    if (!parsed?.fetchedAt || !Array.isArray(parsed.companyNews) || !Array.isArray(parsed.industryNews)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveCachedNewsBundle(item: WatchlistItem, bundle: CompanyNewsBundle) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(newsCacheKey(item), JSON.stringify(bundle));
-  } catch {
-    // News cache is an optimization; ignore storage quota or privacy-mode failures.
-  }
-}
-
-function newsCacheKey(item: WatchlistItem) {
-  const company = item.company;
-  return `cstd-news-cache:v5:${company.marketType || ""}:${company.listingPlace || ""}:${company.code || company.name}`;
-}
-
 function MarkdownReport({ markdown }: { markdown: string }) {
   const blocks = normalizeMarkdownForReading(markdown)
     .split(/\n{2,}/)
@@ -1436,9 +1406,7 @@ function renderInline(value: string): ReactNode[] {
 }
 
 function RecentTemplatesBar({ templates, onSelect, disabled }: { templates: ResearchTemplate[]; onSelect: (id: string) => void; disabled: boolean }) {
-  const [recentIds, setRecentIds] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("cstd_recent_templates") || "[]"); } catch { return []; }
-  });
+  const [recentIds, setRecentIds] = useState<string[]>(loadRecentTemplateIds);
   if (recentIds.length === 0) return null;
   const recentTemplates = recentIds
     .map((id) => templates.find((t) => t.id === id))
@@ -1465,7 +1433,7 @@ function RecentTemplatesBar({ templates, onSelect, disabled }: { templates: Rese
           type="button"
           className="recent-template-clear"
           onClick={() => {
-            try { localStorage.removeItem("cstd_recent_templates"); } catch { /* ignore */ }
+            clearRecentTemplateIds();
             setRecentIds([]);
           }}
           aria-label="清除最近使用"
