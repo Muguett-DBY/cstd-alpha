@@ -786,7 +786,7 @@
 
 ### 阶段 3/6: UIUX
 
-**状态:** 🚧 本地验证完成，等待 commit / push / CI
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
 **阶段目标:** 把研究队列的筛选、排序、时间和视图状态做成可扫读的状态摘要，降低用户判断当前队列视图条件的成本，并保持移动端不溢出。
 **开始状态:** 阶段 2 功能 commit `708793a` 与日志 commit `046e376` 均已推送，CI runs `28321385076` / `28321440242` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -796,7 +796,7 @@
 **本地验证:** TDD 红绿完成；定向 `src/research-workspace-preferences.test.ts` 8 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 86 files / 893 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-K_ztZnfg.js`；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` passed。
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8794 --local`；Playwright + Edge 使用本地 QA 账号登录，进入研究工作台；桌面 1365px 和 800px 均验证摘要条显示 `0/0 项可见 · 2 项条件`、`时间：本周`、`排序：阶段`、`视图：紧凑`，800px chip 高度 34px，`scrollWidth=clientWidth`，console errors / warnings 为空。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage3-filter-summary-desktop.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage3-filter-summary-800.png`
-**Commit / Push:** 待提交 `feat: summarize research workspace filters` 并 push `origin/main`。
-**CI:** 待 push 后检查。
+**Commit / Push:** `522828c feat: summarize research workspace filters` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28363267568`)。
 **风险记录:** 本地 QA D1 当前无研究项，因此浏览器验收确认的是控制状态与布局稳定性；筛选摘要计算本身由单元测试覆盖非空计数和长搜索词。
 **下一阶段:** 阶段 4/6 IMPROVE，继续收口剩余本地偏好或研究工作台真实稳定性问题。

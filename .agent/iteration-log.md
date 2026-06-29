@@ -546,6 +546,6 @@
 - **真实问题修复:** 用户不再需要逐个回看 select 和视图按钮来判断当前队列为什么过滤成当前结果；排序也会以 active chip 形式和重置行为对齐。
 - **验证:** TDD 红绿；86 files / 893 tests passed；lint、functions typecheck、build、开发/生产 audit、diff check 全部通过；`npm ci` 0 vulnerabilities。
 - **浏览器验收:** Playwright + Edge + 本地 Pages 8794 登录本地 QA；1365px 与 800px 验证摘要条、active chips、800px chip 34px、`scrollWidth=clientWidth`，无 console issue。
-- **CI:** 待 push 后检查。
-- **Commit:** 待提交 `feat: summarize research workspace filters`
+- **CI:** `Deploy Cloudflare Pages` run `28363267568` passed。
+- **Commit:** `522828c feat: summarize research workspace filters`
 - **下一阶段:** Stage 4/6 IMPROVE，继续收口剩余本地偏好或研究工作台真实稳定性问题。
