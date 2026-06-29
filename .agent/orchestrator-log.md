@@ -800,3 +800,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28363267568`)。
 **风险记录:** 本地 QA D1 当前无研究项，因此浏览器验收确认的是控制状态与布局稳定性；筛选摘要计算本身由单元测试覆盖非空计数和长搜索词。
 **下一阶段:** 阶段 4/6 IMPROVE，继续收口剩余本地偏好或研究工作台真实稳定性问题。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 统一“我的研究”最近模板和新闻缓存持久化，避免受限浏览器直接访问 `localStorage` 引发异常，并让降级提示覆盖真实影响范围。
+**开始状态:** 阶段 3 功能 commit `522828c` 与日志 commit `dbf8280` 均已推送，CI runs `28363267568` / `28363390121` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 `src/my-research-storage.test.ts`，先复现缺少 storage 模块；扩展 App notice 测试后先复现提示缺少“最近模板”，再完成实现。
+**完成内容:** 新增 `my-research-storage` adapter，统一最近模板读取、去重、4 项限长、记录、清除，以及公司新闻缓存 key、读取和保存；`MyResearchView` 移除对应直接 storage 访问；全局降级提示新增“最近模板”和“新闻缓存”。
+**真实问题修复:** `localStorage` getter 被拦截、损坏 JSON 或 quota 写入失败时，“我的研究”不再抛异常；最近模板会清理无效/重复 ID，新闻缓存解析失败时安全回退；用户能准确看到受影响范围。
+**本地验证:** TDD 红绿完成；定向 2 files / 15 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 87 files / 897 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed且无 warning，入口 `index-Bkz2BiQw.js`；开发/生产依赖 audit 均 0 vulnerabilities；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8795 --local`；Playwright + Edge 在页面加载前让 `window.localStorage` getter 抛 `SecurityError`，登录本地 QA 后从研究页打开模板研究；“我的研究”正常显示，全局提示包含最近模板和新闻缓存，1365px 下 `scrollWidth=clientWidth`，console errors / warnings 为空。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage4-myresearch-storage-blocked-final.png`
+**Commit / Push:** `da31ffb fix: harden my research cache persistence` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28364546258`)。
+**风险记录:** 本地 QA 数据中没有可渲染的新闻条目，新闻缓存序列化、key 和异常回退由单元测试覆盖；storage 被禁用时缓存按设计仅在当前页面有效。
+**下一阶段:** 阶段 5/6 CHECK，系统检查剩余 storage 消费者和研究流程状态一致性，发现真实问题后直接修复。

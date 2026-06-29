@@ -549,3 +549,13 @@
 - **CI:** `Deploy Cloudflare Pages` run `28363267568` passed。
 - **Commit:** `522828c feat: summarize research workspace filters`
 - **下一阶段:** Stage 4/6 IMPROVE，继续收口剩余本地偏好或研究工作台真实稳定性问题。
+
+### Stage 4/6 IMPROVE — My Research Cache Persistence
+- **承接方向:** 继续统一 storage 降级链路，将“我的研究”的最近模板和新闻缓存迁移到安全 adapter。
+- **旗舰:** 新增 `my-research-storage` adapter；最近模板规范化、去重和限长，新闻缓存 key/load/save 统一处理；全局提示覆盖最近模板与新闻缓存。
+- **真实问题修复:** storage getter、损坏 JSON 或 quota 失败不再中断“我的研究”，页面明确展示缓存仅当前页有效。
+- **验证:** TDD 红绿；87 files / 897 tests passed；lint、functions typecheck、build、开发/生产 audit、diff check 全部通过；`npm ci` 0 vulnerabilities。
+- **浏览器验收:** Playwright + Edge + 本地 Pages 8795 在 storage getter 抛 `SecurityError` 时登录并打开模板研究；页面、降级提示、1365px 无溢出和 console health 均正常。
+- **CI:** `Deploy Cloudflare Pages` run `28364546258` passed。
+- **Commit:** `da31ffb fix: harden my research cache persistence`
+- **下一阶段:** Stage 5/6 CHECK，系统检查剩余 storage 消费者及研究状态一致性。
