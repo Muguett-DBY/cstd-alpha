@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/rad
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import type { ResearchCatalyst, ResearchCatalystStatus, ResearchItemUpsertResult, ResearchItemUpsertStatus, ResearchOpportunitySignal, ResearchStage, ResearchThesisVersion, ResearchWorkbenchItem } from "./shared/research-workbench";
+import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistAddResult, WatchlistAddStatus, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
@@ -198,8 +198,8 @@ export type ActivityEvent = {
 export async function fetchActivityEvents(itemId: string, limit = 20): Promise<ActivityEvent[]> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(itemId)}/activity?limit=${limit}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "活动事件读取失败。");
-  const data = (await response.json()) as { events?: ActivityEvent[] };
-  return arrayPayload<ActivityEvent>(data.events);
+  const data = objectPayload(await response.json());
+  return arrayPayload<unknown>(data.events).filter(isActivityEvent);
 }
 
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
@@ -215,8 +215,8 @@ export async function refreshResearchThesis(id: string, signal?: AbortSignal): P
     signal,
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究论点生成失败。");
-  const data = (await response.json()) as { thesis?: ResearchThesisVersion; item?: ResearchWorkbenchItem };
-  if (!data.thesis || !data.item) throw new Error("研究论点生成失败。");
+  const data = objectPayload(await response.json());
+  if (!isResearchThesisVersion(data.thesis) || !isResearchWorkbenchItem(data.item)) throw new Error("研究论点生成失败。");
   return { thesis: data.thesis, item: data.item };
 }
 
@@ -243,8 +243,8 @@ export async function updateResearchCatalystStatus(id: string, catalystId: strin
     body: JSON.stringify({ catalystId, status }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项状态更新失败。");
-  const data = (await response.json()) as { catalyst?: ResearchCatalyst };
-  if (!data.catalyst) throw new Error("研究跟踪项状态更新失败。");
+  const data = objectPayload(await response.json());
+  if (!isResearchCatalyst(data.catalyst)) throw new Error("研究跟踪项状态更新失败。");
   return data.catalyst;
 }
 
@@ -261,16 +261,17 @@ function normalizeResearchItemsResult(payload: unknown): ResearchItemsResult {
 
 function normalizeResearchThesesResult(payload: unknown): ResearchThesesResult {
   const data = objectPayload(payload) as Partial<ResearchThesesResult>;
+  const current = isResearchThesisVersion(data.current) ? data.current : null;
   return {
-    current: data.current && typeof data.current === "object" ? data.current : null,
-    versions: Array.isArray(data.versions) ? data.versions : [],
+    current,
+    versions: arrayPayload<unknown>(data.versions).filter(isResearchThesisVersion),
   };
 }
 
 function normalizeResearchCatalystsResult(payload: unknown): ResearchCatalystsResult & { created?: number } {
   const data = objectPayload(payload) as Partial<ResearchCatalystsResult & { created?: number }>;
   return {
-    catalysts: Array.isArray(data.catalysts) ? data.catalysts : [],
+    catalysts: arrayPayload<unknown>(data.catalysts).filter(isResearchCatalyst),
     ...(Number.isFinite(data.created) ? { created: data.created } : {}),
   };
 }
@@ -929,6 +930,54 @@ function isResearchWorkbenchItem(value: unknown): value is ResearchWorkbenchItem
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
+}
+
+function isActivityEvent(value: unknown): value is ActivityEvent {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.itemId === "string" && value.itemId.trim().length > 0 &&
+    typeof value.eventType === "string" && value.eventType.trim().length > 0 &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    (typeof value.description === "string" || value.description === null) &&
+    isPlainRecord(value.metadata) &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isResearchThesisVersion(value: unknown): value is ResearchThesisVersion {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.itemId === "string" && value.itemId.trim().length > 0 &&
+    typeof value.version === "number" && Number.isFinite(value.version) &&
+    typeof value.thesisMarkdown === "string" &&
+    isStringArray(value.coreCitations) &&
+    isStringArray(value.counterEvidence) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    typeof value.createdBy === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isResearchCatalyst(value: unknown): value is ResearchCatalyst {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.itemId === "string" && value.itemId.trim().length > 0 &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    (value.description === undefined || typeof value.description === "string") &&
+    (value.dueAt === undefined || typeof value.dueAt === "string") &&
+    typeof value.status === "string" &&
+    RESEARCH_CATALYST_STATUSES.includes(value.status as ResearchCatalystStatus) &&
+    isStringArray(value.evidenceRefs) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function objectPayload(value: unknown): Record<string, unknown> {

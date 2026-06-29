@@ -999,3 +999,19 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28408694655`；91 files / 921 tests；lint、typecheck、build、deploy 均通过；deployment `517a7e37.cstd-alpha.pages.dev`)。
 **风险记录:** quick-add 现在过滤候选和研究项基础字段，但研究项更深层关联数据仍依赖后续页面/接口契约；本阶段保留既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入提交。
 **下一阶段:** 阶段 2/6 IMPROVE，继续处理研究工作区单条记录/关联数据边界，优先选择能用 TDD 和浏览器流闭环的真实问题。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 1 对研究项本体的项级校验，把研究工作区 activity、thesis、catalyst 关联数据也挡在 API client 边界外，避免坏对象进入详情面板后触发 `.length/.join/.slice` 等运行时错误。
+**开始状态:** `main` 与 `origin/main` 同步于 `53b8b66`；Stage 1 功能与日志 CI 均 passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先写 API client 红灯测试覆盖 malformed activity/thesis/catalyst payload，再实现项级 guard；随后跑定向、全量门禁、本地 Pages + Playwright 详情面板浏览器验收、独立 commit、push main、GitHub Actions 和日志闭环。
+**测试先行:** 扩展 `src/api.test.ts`，红灯复现 malformed activity event 会原样返回；同一测试覆盖 thesis/catalyst 列表过滤、生成论点坏返回和催化剂状态更新坏返回。
+**完成内容:** `src/api.ts` 新增 `isActivityEvent`、`isResearchThesisVersion`、`isResearchCatalyst`、`isStringArray`；activity/thesis/catalyst 列表改为项级过滤；`refreshResearchThesis` 与 `updateResearchCatalystStatus` 对坏返回改为受控错误。
+**真实问题修复:** 后端返回 `{ id: "broken" }` 这类关联记录时，不再进入研究详情面板导致 `coreCitations.length`、`evidenceRefs.join`、状态 label 等读取坏字段；坏 mutation 返回不会污染本地 state。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 37 tests passed；全量 `npm test` 91 files / 922 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让 activity/thesis/catalyst 各返回坏对象+有效对象，研究详情正常展示有效论点、有效跟踪项和有效动态；`broken=false`、`undefined=false`、`hasErrorBoundary=false`、`badResponses=[]`、`errors=[]`、桌面/移动均无横向溢出。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage2-research-detail-guards-mobile.png`
+**安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用和测试假 key；无新增真实密钥或调试输出。
+**当前状态:** 功能与本地验证完成，进入 Stage 2 功能提交、push 和 GitHub Actions 跟踪。
