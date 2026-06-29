@@ -21,6 +21,7 @@ import {
   fetchValuations,
   generateReport,
   login,
+  refreshResearchThesis,
   resetResearchTemplatesToDefault,
   saveResearchTemplates,
   saveResearchTemplatesAsDefault,
@@ -34,6 +35,7 @@ import {
   listAssistantThreads,
   createAssistantThread,
   syncResearchCatalystsFromThesis,
+  updateResearchCatalystStatus,
 } from "./api";
 
 describe("API client", () => {
@@ -840,6 +842,66 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/research-items/research-1/thesis", expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/research-items/research-1/catalysts", expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/research-items/research-1/catalysts", expect.objectContaining({ method: "POST", credentials: "include" }));
+  });
+
+  test("guards malformed research detail records before workspace consumers render them", async () => {
+    const activity = {
+      id: "activity-1",
+      itemId: "research-1",
+      eventType: "created",
+      title: "研究项创建",
+      description: null,
+      metadata: { source: "eastmoney" },
+      createdAt: "2026-06-30T00:00:00.000Z",
+    };
+    const thesis = {
+      id: "thesis-1",
+      itemId: "research-1",
+      version: 1,
+      thesisMarkdown: "## 论点",
+      coreCitations: ["E1"],
+      counterEvidence: [],
+      createdBy: "assistant",
+      createdAt: "2026-06-30T00:00:00.000Z",
+    };
+    const catalyst = {
+      id: "catalyst-1",
+      itemId: "research-1",
+      title: "销量确认",
+      status: "open" as const,
+      evidenceRefs: ["E1"],
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    const item = {
+      id: "research-1",
+      userKey: "user-1",
+      entityType: "company" as const,
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      stage: "deepResearch" as const,
+      status: "active",
+      source: "eastmoney",
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    const malformed = { id: "broken" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ events: [malformed, activity] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ current: malformed, versions: [malformed, thesis] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ catalysts: [malformed, catalyst] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ catalysts: [malformed, catalyst], created: "2" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ thesis: malformed, item })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ catalyst: malformed })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchActivityEvents("research-1")).resolves.toEqual([activity]);
+    await expect(fetchResearchTheses("research-1")).resolves.toEqual({ current: null, versions: [thesis] });
+    await expect(fetchResearchCatalysts("research-1")).resolves.toEqual({ catalysts: [catalyst] });
+    await expect(syncResearchCatalystsFromThesis("research-1")).resolves.toEqual({ catalysts: [catalyst] });
+    await expect(refreshResearchThesis("research-1")).rejects.toThrow("研究论点生成失败。");
+    await expect(updateResearchCatalystStatus("research-1", "catalyst-1", "confirmed")).rejects.toThrow("研究跟踪项状态更新失败。");
   });
 
   test("normalizes incomplete valuations payloads to an empty run list", async () => {
