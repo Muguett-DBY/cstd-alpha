@@ -64,6 +64,22 @@ function createStorage(initialValue?: string) {
 describe("installPreloadErrorRecovery", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  test("does not throw when the browser sessionStorage getter is blocked", () => {
+    const { target } = createTarget();
+    const blockedWindow = {} as Window;
+    Object.defineProperty(blockedWindow, "sessionStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("sessionStorage disabled", "SecurityError");
+      },
+    });
+    vi.stubGlobal("window", blockedWindow);
+
+    expect(() => installPreloadErrorRecovery({ location: { reload: vi.fn() }, target })).not.toThrow();
+    expect(target.addEventListener).not.toHaveBeenCalled();
   });
 
   test("reloads once and suppresses the first Vite preload error", () => {

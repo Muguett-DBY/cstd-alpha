@@ -1,8 +1,9 @@
+import { getBrowserLocalStorage, type BrowserStorage } from "./browser-storage";
+
 const RECENT_SEARCHES_KEY = "cstd-alpha:recent-searches";
 const RECENT_SEARCHES_PROBE_KEY = "cstd-alpha:recent-searches:probe";
 const RECENT_SEARCH_LIMIT = 8;
 
-type RecentSearchStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type RecentSearchWindow = Pick<Window, "localStorage">;
 
 export type RecentSearchUpdate = {
@@ -69,14 +70,10 @@ function normalizeRecentSearches(value: unknown) {
 }
 
 function getRecentSearchStorage(browserWindow: RecentSearchWindow | undefined) {
-  try {
-    return browserWindow?.localStorage;
-  } catch {
-    return undefined;
-  }
+  return getBrowserLocalStorage(browserWindow);
 }
 
-function safeGetStorageItem(storage: RecentSearchStorage, key: string) {
+function safeGetStorageItem(storage: BrowserStorage, key: string) {
   try {
     return storage.getItem(key);
   } catch {
@@ -84,7 +81,7 @@ function safeGetStorageItem(storage: RecentSearchStorage, key: string) {
   }
 }
 
-function safeSetStorageItem(storage: RecentSearchStorage, key: string, value: string) {
+function safeSetStorageItem(storage: BrowserStorage, key: string, value: string) {
   try {
     storage.setItem(key, value);
     return true;

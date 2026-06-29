@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getBrowserLocalStorage } from "./browser-storage";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -10,11 +11,7 @@ export const INSTALL_PROMPT_DISMISSED_KEY = "cstd-alpha-install-dismissed";
 type InstallPromptStorage = Pick<Storage, "getItem" | "setItem">;
 
 function getInstallPromptStorage(): InstallPromptStorage | undefined {
-  try {
-    return typeof window === "undefined" ? undefined : window.localStorage;
-  } catch {
-    return undefined;
-  }
+  return getBrowserLocalStorage();
 }
 
 export function hasDismissedInstallPrompt(storage = getInstallPromptStorage()) {

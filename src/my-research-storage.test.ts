@@ -4,6 +4,7 @@ import {
   clearRecentTemplateIds,
   loadCachedCompanyNewsBundle,
   loadRecentTemplateIds,
+  mergeRecentTemplateIds,
   rememberRecentTemplateId,
   saveCachedCompanyNewsBundle,
 } from "./my-research-storage";
@@ -11,6 +12,20 @@ import type { CompanyNewsBundle } from "./shared/news";
 import type { WatchlistItem } from "./shared/user-research";
 
 describe("my research storage", () => {
+  test("returns the next recent template state for immediate UI updates", () => {
+    expect(mergeRecentTemplateIds(" template-3 ", ["template-2", "template-1", "template-2", ""])).toEqual([
+      "template-3",
+      "template-2",
+      "template-1",
+    ]);
+    expect(mergeRecentTemplateIds("template-5", ["template-4", "template-3", "template-2", "template-1"])).toEqual([
+      "template-5",
+      "template-4",
+      "template-3",
+      "template-2",
+    ]);
+  });
+
   test("keeps recent templates unique and bounded", () => {
     const storage = memoryStorage({
       cstd_recent_templates: JSON.stringify(["template-2", "template-1", "template-2", "", 3]),

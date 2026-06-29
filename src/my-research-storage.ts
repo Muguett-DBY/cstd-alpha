@@ -17,11 +17,16 @@ export function loadRecentTemplateIds(storage: BrowserStorage | undefined = getB
 }
 
 export function rememberRecentTemplateId(templateId: string, storage: BrowserStorage | undefined = getBrowserLocalStorage()) {
-  const normalizedId = templateId.trim();
-  if (!normalizedId) return loadRecentTemplateIds(storage);
-  const next = [normalizedId, ...loadRecentTemplateIds(storage).filter((id) => id !== normalizedId)].slice(0, MAX_RECENT_TEMPLATES);
+  const next = mergeRecentTemplateIds(templateId, loadRecentTemplateIds(storage));
   safeSetStorageItem(storage, RECENT_TEMPLATE_KEY, JSON.stringify(next));
   return next;
+}
+
+export function mergeRecentTemplateIds(templateId: string, currentIds: readonly string[]) {
+  const normalizedId = templateId.trim();
+  const normalizedCurrentIds = normalizeRecentTemplateIdList(currentIds);
+  if (!normalizedId) return normalizedCurrentIds;
+  return [normalizedId, ...normalizedCurrentIds.filter((id) => id !== normalizedId)].slice(0, MAX_RECENT_TEMPLATES);
 }
 
 export function clearRecentTemplateIds(storage: BrowserStorage | undefined = getBrowserLocalStorage()) {
@@ -58,11 +63,15 @@ function normalizeRecentTemplateIds(serialized: string | null) {
   if (!serialized) return [];
   try {
     const parsed: unknown = JSON.parse(serialized);
-    if (!Array.isArray(parsed)) return [];
-    return Array.from(new Set(parsed.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean))).slice(0, MAX_RECENT_TEMPLATES);
+    return normalizeRecentTemplateIdList(parsed);
   } catch {
     return [];
   }
+}
+
+function normalizeRecentTemplateIdList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean))).slice(0, MAX_RECENT_TEMPLATES);
 }
 
 function isCompanyNewsBundle(value: unknown): value is CompanyNewsBundle {

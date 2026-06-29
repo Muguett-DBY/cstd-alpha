@@ -1,3 +1,5 @@
+import { getBrowserSessionStorage } from "./browser-storage";
+
 export const PRELOAD_RECOVERY_STORAGE_KEY = "cstd-alpha:preload-recovery-at";
 export const PRELOAD_RECOVERY_TTL_MS = 30_000;
 
@@ -22,7 +24,7 @@ type PreloadRecoveryOptions = {
 export function installPreloadErrorRecovery(options: PreloadRecoveryOptions = {}) {
   const browserWindow = typeof window === "undefined" ? undefined : window;
   const target = options.target ?? browserWindow;
-  const storage = options.storage ?? browserWindow?.sessionStorage;
+  const storage = options.storage ?? getBrowserSessionStorage(browserWindow);
   const reloadLocation = options.location ?? browserWindow?.location;
   const now = options.now ?? Date.now;
 

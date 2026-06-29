@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getBrowserLocalStorage } from "./browser-storage";
 
 export const THEME_STORAGE_KEY = "cstd-alpha:theme";
 
@@ -21,11 +22,7 @@ const themeOrder: ThemePreference[] = ["system", "light", "dark"];
 export function getBrowserThemeStorage(
   browserWindow: Pick<Window, "localStorage"> | undefined = typeof window === "undefined" ? undefined : window,
 ): (StorageReader & StorageWriter) | undefined {
-  try {
-    return browserWindow?.localStorage;
-  } catch {
-    return undefined;
-  }
+  return getBrowserLocalStorage(browserWindow);
 }
 
 export function readThemePreference(storage?: StorageReader): ThemePreference {
