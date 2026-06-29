@@ -914,3 +914,20 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393002133`；90 files / 909 tests；deployment `e10a1593.cstd-alpha.pages.dev`)。
 **风险记录:** 移动端 admin 仍会按既有规则进入 Assistant-only 视图，本阶段移动报告验收使用普通用户会话；`/api/valuations` 等其他不完整 payload 客户端防御留给后续 CHECK 系统检查。
 **下一阶段:** 阶段 4/6 IMPROVE，优先修复报告 payload 兼容/归一化，避免旧版或畸形报告使 ReportView 进入 ErrorBoundary。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 把报告 payload 归一化前置到 API client，避免旧版或字段不完整的报告进入 ReportView 后触发错误边界。
+**开始状态:** 阶段 3 功能 commit `e46ddc7` 与日志 commit `bb9a545` 均已推送，CI runs `28393002133` / `28393162414` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 扩展 `src/api.test.ts`，先复现 streaming final report 和 report-library record 返回旧版 report 时 `fullSections.industryTrack` 为 undefined；报告库测试先补 import 后确认同一目标失败。
+**完成内容:** `src/api.ts` 引入 `validateReportPayload`；`generateReport` 处理 final NDJSON 事件时立即归一化 report；`fetchReportLibraryRecord` 返回前归一化 record.report。
+**真实问题修复:** 只有旧 `sections.industry`、缺少 `fullSections/summaryDashboard/financialTenYear` 的报告不再进入 ReportView 后崩溃；报告库打开路径与新生成路径使用同一防护。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 30 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-CxaxlgRN.js`；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 旧版 report 夹具仅返回 `sections` 和少量基础字段，确认报告页可渲染、行业旧字段可见、dashboard/financial fallback 可见、无 ErrorBoundary、无横向溢出、无 failed response 或 console error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-legacy-report-normalized.png`
+**Commit / Push:** `dcc4344 fix: normalize report payloads in api client` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393555662`；90 files / 911 tests；deployment `c6303f64.cstd-alpha.pages.dev`)。
+**风险记录:** 缺少 `company.name` 的 report 仍按 `validateReportPayload` 契约抛错；这是服务端数据契约错误而非 UI 兼容路径。剩余 API payload 防御和生产级扫描留给 Stage 5 CHECK。
+**下一阶段:** 阶段 5/6 CHECK，系统审计全项目真实问题、依赖/安全/CI/浏览器流，并修复发现的问题。

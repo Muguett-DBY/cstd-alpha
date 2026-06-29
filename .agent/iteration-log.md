@@ -618,3 +618,15 @@
 - **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393002133`；90 files / 909 tests；lint、typecheck、build、deploy 均通过；deployment `e10a1593.cstd-alpha.pages.dev`)。
 - **风险记录:** 移动端 admin 会话仍按既有设计强制进入 Assistant-only 视图；本阶段移动验收使用普通用户会话验证报告页布局。`/api/valuations` 等其他不完整 payload 防御已记录到后续 CHECK 审计范围。
 - **下一阶段:** Stage 4/6 IMPROVE，优先修复畸形/旧版报告 payload 进入 ReportView 时可能触发 ErrorBoundary 的真实稳定性问题。
+
+### Stage 4/6 IMPROVE — Report Payload Normalization Gate
+- **承接方向:** 修复阶段 3 验收中暴露的旧版/畸形报告字段进入 UI 后可能触发 ErrorBoundary 的稳定性风险。
+- **旗舰:** `generateReport` 和 `fetchReportLibraryRecord` 在返回给 UI 前统一调用 `validateReportPayload`，补齐 `fullSections`、dashboard、财务、估值、风险和账户规则等 ReportView 必需结构。
+- **真实问题修复:** 旧版 report 只有 `sections.industry`、缺少 `fullSections/summaryDashboard/financialTenYear` 时，不再让 ReportView 读取 undefined；报告库读取也获得同样防护。
+- **验证:** TDD 红绿；`src/api.test.ts` 新增 streaming final 与 report-library record 归一化测试；红灯分别复现 `fullSections.industryTrack` undefined，修复后 `src/api.test.ts` 30 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、diff check passed。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 旧版 report 夹具，报告缺少 `fullSections/summaryDashboard/financialTenYear` 仍可渲染；`hasErrorBoundary=false`、`hasIndustry=true`、fallback dashboard/financial 文案可见、`overflow=false`、`badResponses=[]`、`errors=[]`。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-legacy-report-normalized.png`
+- **Commit / Push:** `dcc4344 fix: normalize report payloads in api client` pushed to `origin/main`。
+- **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393555662`；90 files / 911 tests；deployment `c6303f64.cstd-alpha.pages.dev`)。
+- **风险记录:** 严重缺失 `company.name` 的报告仍会按 schema 抛错，保留为数据契约错误；其他 API payload 的系统性归一化审计留给 Stage 5 CHECK。
+- **下一阶段:** Stage 5/6 CHECK，做全项目审计、依赖/安全/剩余 payload 防御检查，并修复实际 P0/P1/P2。
