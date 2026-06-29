@@ -3,11 +3,16 @@ import {
   addWatchlistItem,
   completeResearchTemplateDraft,
   fetchChartData,
+  fetchCompanyNews,
   fetchOpportunities,
   fetchRadarScan,
   fetchReportLibrary,
   fetchReportLibraryRecord,
+  fetchResearchCatalysts,
+  fetchResearchItems,
   fetchResearchTemplates,
+  fetchResearchTheses,
+  fetchValuations,
   generateReport,
   login,
   resetResearchTemplatesToDefault,
@@ -21,6 +26,7 @@ import {
   stopAssistantDeepResearchJob,
   listAssistantThreads,
   createAssistantThread,
+  syncResearchCatalystsFromThesis,
 } from "./api";
 
 describe("API client", () => {
@@ -807,6 +813,67 @@ describe("API client", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/opportunities", expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("normalizes incomplete research workspace payloads to empty collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ current: undefined })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchResearchItems()).resolves.toEqual({ items: [] });
+    await expect(fetchResearchTheses("research-1")).resolves.toEqual({ current: null, versions: [] });
+    await expect(fetchResearchCatalysts("research-1")).resolves.toEqual({ catalysts: [] });
+    await expect(syncResearchCatalystsFromThesis("research-1")).resolves.toEqual({ catalysts: [] });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/research-items", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/research-items/research-1/thesis", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/research-items/research-1/catalysts", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/research-items/research-1/catalysts", expect.objectContaining({ method: "POST", credentials: "include" }));
+  });
+
+  test("normalizes incomplete valuations payloads to an empty run list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchValuations()).resolves.toEqual({ runs: [] });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/valuations", expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("normalizes incomplete chart payloads using the requested company", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetchMock);
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "沪A",
+      marketType: "AStock",
+      quoteId: "1.600519",
+      source: "eastmoney" as const,
+    };
+
+    await expect(fetchChartData({ company, priceMode: "adjusted" })).resolves.toMatchObject({
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      priceMode: "adjusted",
+      priceSeries: [],
+      drawdownSeries: [],
+      marketSnapshot: {},
+      evidence: [],
+    });
+  });
+
+  test("rejects incomplete company news payloads before storing them in UI state", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({})));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchCompanyNews("watch-1")).rejects.toThrow("新闻读取失败。");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/company-news?watchlistId=watch-1"), expect.objectContaining({ credentials: "include", cache: "no-store" }));
   });
 
   test("preserves radar refresh warnings returned with cached fallback data", async () => {

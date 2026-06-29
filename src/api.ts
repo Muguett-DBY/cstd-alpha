@@ -1,4 +1,4 @@
-import type { ChartBundle, PriceMode } from "./shared/chart";
+import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
@@ -128,7 +128,7 @@ function normalizeOpportunitiesResult(payload: unknown): OpportunitiesResult {
 export async function fetchResearchItems(): Promise<ResearchItemsResult> {
   const response = await fetch("/api/research-items", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "研究队列读取失败。");
-  return (await response.json()) as ResearchItemsResult;
+  return normalizeResearchItemsResult(await response.json());
 }
 
 export async function addResearchItem(input: {
@@ -205,7 +205,7 @@ export async function fetchActivityEvents(itemId: string, limit = 20): Promise<A
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/thesis`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "研究论点读取失败。");
-  return (await response.json()) as ResearchThesesResult;
+  return normalizeResearchThesesResult(await response.json());
 }
 
 export async function refreshResearchThesis(id: string, signal?: AbortSignal): Promise<{ thesis: ResearchThesisVersion; item: ResearchWorkbenchItem }> {
@@ -223,7 +223,7 @@ export async function refreshResearchThesis(id: string, signal?: AbortSignal): P
 export async function fetchResearchCatalysts(id: string): Promise<ResearchCatalystsResult> {
   const response = await fetch(`/api/research-items/${encodeURIComponent(id)}/catalysts`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项读取失败。");
-  return (await response.json()) as ResearchCatalystsResult;
+  return normalizeResearchCatalystsResult(await response.json());
 }
 
 export async function syncResearchCatalystsFromThesis(id: string): Promise<ResearchCatalystsResult & { created?: number }> {
@@ -232,7 +232,7 @@ export async function syncResearchCatalystsFromThesis(id: string): Promise<Resea
     credentials: "include",
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究跟踪项同步失败。");
-  return (await response.json()) as ResearchCatalystsResult & { created?: number };
+  return normalizeResearchCatalystsResult(await response.json());
 }
 
 export async function updateResearchCatalystStatus(id: string, catalystId: string, status: ResearchCatalystStatus): Promise<ResearchCatalyst> {
@@ -251,7 +251,33 @@ export async function updateResearchCatalystStatus(id: string, catalystId: strin
 export async function fetchValuations(): Promise<ValuationsResult> {
   const response = await fetch("/api/valuations", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "估值历史读取失败。");
-  return (await response.json()) as ValuationsResult;
+  return normalizeValuationsResult(await response.json());
+}
+
+function normalizeResearchItemsResult(payload: unknown): ResearchItemsResult {
+  const data = objectPayload(payload) as Partial<ResearchItemsResult>;
+  return { items: Array.isArray(data.items) ? data.items : [] };
+}
+
+function normalizeResearchThesesResult(payload: unknown): ResearchThesesResult {
+  const data = objectPayload(payload) as Partial<ResearchThesesResult>;
+  return {
+    current: data.current && typeof data.current === "object" ? data.current : null,
+    versions: Array.isArray(data.versions) ? data.versions : [],
+  };
+}
+
+function normalizeResearchCatalystsResult(payload: unknown): ResearchCatalystsResult & { created?: number } {
+  const data = objectPayload(payload) as Partial<ResearchCatalystsResult & { created?: number }>;
+  return {
+    catalysts: Array.isArray(data.catalysts) ? data.catalysts : [],
+    ...(Number.isFinite(data.created) ? { created: data.created } : {}),
+  };
+}
+
+function normalizeValuationsResult(payload: unknown): ValuationsResult {
+  const data = objectPayload(payload) as Partial<ValuationsResult>;
+  return { runs: Array.isArray(data.runs) ? data.runs : [] };
 }
 
 export async function createValuationRun(input: {
@@ -403,7 +429,28 @@ export async function fetchChartData(input: FetchChartDataInput): Promise<ChartB
   });
 
   if (!response.ok) throw new Error((await readError(response)) || "图表数据生成失败。");
-  return (await response.json()) as ChartBundle;
+  return normalizeChartDataResult(input, await response.json());
+}
+
+function normalizeChartDataResult(input: FetchChartDataInput, payload: unknown): ChartBundle {
+  const data = objectPayload(payload) as Partial<ChartBundle>;
+  return normalizeChartBundle({
+    company: isPlainRecord(data.company)
+      ? data.company
+      : {
+          name: input.company.name,
+          ticker: input.company.code,
+          market: input.company.listingPlace,
+          industry: input.company.industry,
+          sector: input.company.sector,
+        },
+    asOf: typeof data.asOf === "string" ? data.asOf : "",
+    priceMode: data.priceMode === "raw" || data.priceMode === "adjusted" ? data.priceMode : input.priceMode,
+    priceSeries: Array.isArray(data.priceSeries) ? data.priceSeries : [],
+    drawdownSeries: Array.isArray(data.drawdownSeries) ? data.drawdownSeries : [],
+    marketSnapshot: isPlainRecord(data.marketSnapshot) ? data.marketSnapshot : {},
+    evidence: Array.isArray(data.evidence) ? data.evidence : [],
+  });
 }
 
 export async function fetchReportLibrary(
@@ -697,7 +744,9 @@ export async function fetchTemplateAnalysis(analysisId: string): Promise<Templat
 export async function fetchCompanyNews(watchlistId: string): Promise<CompanyNewsBundle> {
   const response = await fetch(`/api/company-news?watchlistId=${encodeURIComponent(watchlistId)}&t=${Date.now()}`, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw new Error((await readError(response)) || "新闻读取失败。");
-  return (await response.json()) as CompanyNewsBundle;
+  const data = await response.json();
+  if (!isCompanyNewsBundle(data)) throw new Error("新闻读取失败。");
+  return data;
 }
 
 export async function generateTemplateAnalysis(
@@ -845,6 +894,43 @@ function isAssistantThreadSummary(value: unknown): value is AssistantThreadSumma
 function isCreatedAssistantThread(value: unknown): value is Pick<AssistantThreadSummary, "id" | "title"> {
   if (!isPlainRecord(value)) return false;
   return typeof value.id === "string" && typeof value.title === "string";
+}
+
+function objectPayload(value: unknown): Record<string, unknown> {
+  return isPlainRecord(value) ? value : {};
+}
+
+function isCompanyNewsBundle(value: unknown): value is CompanyNewsBundle {
+  if (!isPlainRecord(value)) return false;
+  return (
+    isPlainRecord(value.company) &&
+    Array.isArray(value.companyNews) &&
+    Array.isArray(value.industryNews) &&
+    isNewsSentimentSummary(value.companySummary) &&
+    isNewsSentimentSummary(value.industrySummary) &&
+    typeof value.companyQuery === "string" &&
+    typeof value.industryQuery === "string" &&
+    typeof value.industryLabel === "string" &&
+    typeof value.fetchedAt === "string"
+  );
+}
+
+function isNewsSentimentSummary(value: unknown): value is CompanyNewsBundle["companySummary"] {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.total === "number" &&
+    typeof value.positive === "number" &&
+    typeof value.negative === "number" &&
+    typeof value.neutral === "number" &&
+    typeof value.positivePct === "number" &&
+    typeof value.negativePct === "number" &&
+    typeof value.neutralPct === "number" &&
+    (value.overall === "positive" || value.overall === "negative" || value.overall === "neutral") &&
+    typeof value.overallLabel === "string" &&
+    typeof value.sourceCount === "number" &&
+    Array.isArray(value.sources) &&
+    typeof value.qualityLabel === "string"
+  );
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
