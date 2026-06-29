@@ -864,3 +864,21 @@
 **阶段 CI:** 功能与日志对应 Deploy Cloudflare Pages runs `28320091168`、`28320682401`、`28321385076`、`28321440242`、`28363267568`、`28363390121`、`28364546258`、`28364653379`、`28366164962`、`28366298575`、`28369161211` 均 passed；阶段 6 日志提交 CI 待提交后补记。
 **遗留风险:** storage 被禁用时本地偏好/缓存不跨页面持久化；`history.state` 和 storage 都不可写时 stale chunk 恢复无法安全防循环；CSP `style-src` 仍保留 `'unsafe-inline'`；npm allow-scripts 提示需未来依赖治理单独审批。
 **下一建议:** 下一轮优先做带真实 Pages 认证夹具的登录后核心流程 E2E，覆盖搜索、加入自选、模板研究和恢复提示线上链路。
+
+## Round 65 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 修复自选股 upsert 读回和用户反馈问题，并打通报告到“我的研究”的直接入口。
+**开始状态:** Round 64 已完成；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**测试先行:** 新增 API handler 与状态文案测试，扩展 API client 测试；先复现旧记录 upsert 返回空 item、缺少 created/updated 契约和客户端只返回 item，随后完成红绿。
+**完成内容:** `/api/watchlist` 按用户、ticker、market 判断新建或更新，并按唯一公司键读回实际存储行；共享契约新增 `WatchlistAddResult`；报告和“我的研究”使用一致状态文案；报告已加入时提供“查看研究”入口。
+**真实问题修复:** 兼容旧数据库行 ID；重复加入不再伪装成首次加入；从“我的研究”或自选排行榜打开报告时正确保留已加入状态。
+**本地验证:** 定向 4 files / 41 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`git diff --check` passed。
+**浏览器验证:** 本地 Pages + Playwright API 登录夹具，完整验证 Research -> 搜索贵州茅台 -> 生成报告 -> 重复加入 -> 已加入状态/同步 toast -> 查看研究 -> 列表命中；`badResponses=[]`、`errors=[]`。
+**Commit / Push:** `f5d6524 fix: clarify watchlist upsert flows` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28389155914`；89 files / 904 tests；lint、typecheck、build、deploy 均通过；deployment `2cc17496.cstd-alpha.pages.dev`)。
+**风险记录:** 报告从普通搜索进入时仍需在用户操作前主动核对是否已在自选；本阶段浏览器夹具拦截认证/API，数据库兼容逻辑由 handler 单测覆盖。
+**下一阶段:** 阶段 2/6 IMPROVE，加入既有自选状态校验和竞态防护。

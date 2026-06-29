@@ -584,3 +584,15 @@
 - **生产验收:** Cloudflare Pages 最新 production source `522311b`；自定义域、API envelope、直连部署域均 200；桌面/移动端 storage-blocked preload recovery 体验已验证。
 - **遗留:** storage 被禁用时本地偏好/缓存不跨页面；history/storage 都不可写时恢复无法安全防循环；CSP `unsafe-inline` 与 npm allow-scripts 审批留作后续治理。
 - **下一建议:** 下一轮优先建设真实 Pages 认证夹具下的登录后 E2E，覆盖搜索、加入自选、模板研究和线上恢复提示。
+
+## Round 65 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Watchlist Upsert Feedback And Research Handoff
+- **承接方向:** 落实真实登录后核心流程验收，先修复搜索、生成报告、加入自选和进入“我的研究”之间的状态断点。
+- **旗舰:** 自选股 POST 现在返回 `created/updated` 状态，报告页区分新加入与已存在公司，并在成功后直接提供“查看研究”入口。
+- **真实问题修复:** 旧记录 ID 与当前确定性 ID 不一致时，upsert 后不再按错误 ID 读回空值；从“我的研究”或排行榜打开公司时不再错误显示未加入自选。
+- **验证:** TDD 红绿；定向 4 files / 41 tests passed；lint、functions typecheck、build、diff check passed；CI 全量 89 files / 904 tests passed。
+- **浏览器验收:** 本地 Pages 登录夹具完整走通搜索贵州茅台、生成报告、重复加入自选、识别“已加入自选”、显示同步提示、点击“查看研究”并在列表找到公司；无 console/page/request issue。
+- **生产:** Pages deployment `2cc17496.cstd-alpha.pages.dev`；CI run `28389155914` passed。
+- **Commit:** `f5d6524 fix: clarify watchlist upsert flows`
+- **下一阶段:** Stage 2/6 IMPROVE，补齐从搜索/报告直接进入时的既有自选状态校验，避免重复操作后才发现已存在。
