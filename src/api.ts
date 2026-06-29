@@ -199,7 +199,7 @@ export async function fetchActivityEvents(itemId: string, limit = 20): Promise<A
   const response = await fetch(`/api/research-items/${encodeURIComponent(itemId)}/activity?limit=${limit}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "活动事件读取失败。");
   const data = (await response.json()) as { events?: ActivityEvent[] };
-  return data.events ?? [];
+  return arrayPayload<ActivityEvent>(data.events);
 }
 
 export async function fetchResearchTheses(id: string): Promise<ResearchThesesResult> {
@@ -378,7 +378,7 @@ export async function searchCompanies(query: string): Promise<CompanyCandidate[]
   const response = await fetch(`/api/company-search?q=${encodeURIComponent(query)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "公司搜索失败。");
   const data = (await response.json()) as { candidates?: CompanyCandidate[] };
-  return data.candidates ?? [];
+  return arrayPayload<CompanyCandidate>(data.candidates);
 }
 
 export async function generateReport(input: GenerateReportInput, onProgress?: (progress: ReportProgress) => void): Promise<ReportGenerationResult> {
@@ -479,8 +479,14 @@ export async function fetchReportLibrary(
   const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include", signal: options.signal });
   if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
   const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number; offset?: number; matchedTickers?: string[] };
-  const entries = data.entries ?? [];
-  return { entries, total: data.total ?? entries.length, limit: data.limit, offset: data.offset, matchedTickers: data.matchedTickers };
+  const entries = arrayPayload<ReportLibraryEntry>(data.entries);
+  return {
+    entries,
+    total: finiteNumber(data.total) ?? entries.length,
+    limit: finiteNumber(data.limit),
+    offset: finiteNumber(data.offset),
+    matchedTickers: arrayPayload<string>(data.matchedTickers),
+  };
 }
 
 export async function fetchReportLibraryRecord(id: string): Promise<ReportLibraryRecord> {
@@ -499,14 +505,14 @@ export async function importReportLibraryReports(reports: InvestmentReport[]): P
   });
   if (!response.ok) throw new Error((await readError(response)) || "报告导入失败。");
   const data = (await response.json()) as { imported?: ReportLibraryEntry[] };
-  return data.imported ?? [];
+  return arrayPayload<ReportLibraryEntry>(data.imported);
 }
 
 export async function fetchWatchlist(): Promise<{ items: WatchlistItem[]; user?: UserSession }> {
   const response = await fetch("/api/watchlist", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "自选股读取失败。");
   const data = (await response.json()) as { items?: WatchlistItem[]; user?: UserSession };
-  return { items: data.items ?? [], user: data.user };
+  return { items: arrayPayload<WatchlistItem>(data.items), user: data.user };
 }
 
 export async function addWatchlistItem(input: { company: CompanyCandidate; reportLibraryId?: string }): Promise<WatchlistAddResult> {
@@ -531,7 +537,7 @@ export async function fetchWatchlistRanking(): Promise<{ entries: WatchlistRanki
   const response = await fetch("/api/watchlist-ranking", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "自选股排行读取失败。");
   const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; watchlist?: WatchlistItem[] };
-  return { entries: data.entries ?? [], watchlist: data.watchlist ?? [] };
+  return { entries: arrayPayload<WatchlistRankingEntry>(data.entries), watchlist: arrayPayload<WatchlistItem>(data.watchlist) };
 }
 
 export async function refreshWatchlistRanking(input: { watchlistId?: string; forceRefresh?: boolean; limit?: number } = {}): Promise<{ entries: WatchlistRankingEntry[]; queued: string[]; reused: string[] }> {
@@ -543,7 +549,7 @@ export async function refreshWatchlistRanking(input: { watchlistId?: string; for
   });
   if (!response.ok && response.status !== 202) throw new Error((await readError(response)) || "自选股排行刷新失败。");
   const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; queued?: string[]; reused?: string[] };
-  return { entries: data.entries ?? [], queued: data.queued ?? [], reused: data.reused ?? [] };
+  return { entries: arrayPayload<WatchlistRankingEntry>(data.entries), queued: arrayPayload<string>(data.queued), reused: arrayPayload<string>(data.reused) };
 }
 
 export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ analyses: TemplateAnalysisResult[]; templates: ResearchTemplate[] }> {
@@ -552,14 +558,14 @@ export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ ana
   const response = await fetch(`/api/template-analysis${params.size ? `?${params.toString()}` : ""}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板分析读取失败。");
   const data = (await response.json()) as { analyses?: TemplateAnalysisResult[]; templates?: ResearchTemplate[] };
-  return { analyses: data.analyses ?? [], templates: data.templates ?? [] };
+  return { analyses: arrayPayload<TemplateAnalysisResult>(data.analyses), templates: arrayPayload<ResearchTemplate>(data.templates) };
 }
 
 export async function fetchResearchTemplates(): Promise<ResearchTemplate[]> {
   const response = await fetch("/api/research-templates", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板读取失败。");
   const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return data.templates ?? [];
+  return arrayPayload<ResearchTemplate>(data.templates);
 }
 
 export async function saveResearchTemplates(templates: ResearchTemplate[]): Promise<ResearchTemplate[]> {
@@ -571,7 +577,7 @@ export async function saveResearchTemplates(templates: ResearchTemplate[]): Prom
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板保存失败。");
   const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return data.templates ?? [];
+  return arrayPayload<ResearchTemplate>(data.templates);
 }
 
 export async function saveResearchTemplatesAsDefault(): Promise<ResearchTemplate[]> {
@@ -583,7 +589,7 @@ export async function saveResearchTemplatesAsDefault(): Promise<ResearchTemplate
   });
   if (!response.ok) throw new Error((await readError(response)) || "默认模板保存失败。");
   const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return data.templates ?? [];
+  return arrayPayload<ResearchTemplate>(data.templates);
 }
 
 export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplate[]> {
@@ -595,7 +601,7 @@ export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplat
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板重置失败。");
   const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return data.templates ?? [];
+  return arrayPayload<ResearchTemplate>(data.templates);
 }
 
 export async function completeResearchTemplateDraft(draft: ResearchTemplateCompletion): Promise<ResearchTemplateCompletion> {
@@ -898,6 +904,14 @@ function isCreatedAssistantThread(value: unknown): value is Pick<AssistantThread
 
 function objectPayload(value: unknown): Record<string, unknown> {
   return isPlainRecord(value) ? value : {};
+}
+
+function arrayPayload<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isCompanyNewsBundle(value: unknown): value is CompanyNewsBundle {
