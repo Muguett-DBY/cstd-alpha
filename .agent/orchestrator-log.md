@@ -817,3 +817,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28364546258`)。
 **风险记录:** 本地 QA 数据中没有可渲染的新闻条目，新闻缓存序列化、key 和异常回退由单元测试覆盖；storage 被禁用时缓存按设计仅在当前页面有效。
 **下一阶段:** 阶段 5/6 CHECK，系统检查剩余 storage 消费者和研究流程状态一致性，发现真实问题后直接修复。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统检查 CI/workflow、依赖、安全扫描、剩余 storage 消费者和研究流程状态一致性，发现真实风险后直接修复并验证。
+**开始状态:** 阶段 4 功能 commit `da31ffb` 与日志 commit `a5dc58d` 均已推送，CI runs `28364546258` / `28364653379` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**系统检查:** 复核 `workflow/pages.yml`、package scripts、Node/npm、lockfile、direct storage scan、secret patterns、`npm ls`、本地 Pages/browser flow。P0 none；发现 P1：preload recovery 在 `sessionStorage` getter 被拦截时可阻止 React 启动；P2：最近模板由子组件本地 state 管理，生成模板后当前页“最近使用模板”不会即时更新；P2：部分本地存储消费者仍分散实现 getter 防护。
+**测试先行:** 扩展 `src/preload-recovery.test.ts` 先复现 `SecurityError: sessionStorage disabled`；扩展 `src/my-research-storage.test.ts` 先复现缺少 `mergeRecentTemplateIds`；实现后再补跑 recent searches / theme / PWA prompt / browser storage 定向回归。
+**完成内容:** `browser-storage` 新增安全 `sessionStorage` 获取；preload recovery 改用统一 helper；`my-research-storage` 新增最近模板合并函数；`MyResearchView` 由父组件持有最近模板 state 和清除动作，生成中即可即时显示/清空；recent searches、theme、PWA install prompt 统一接入 `getBrowserLocalStorage`。
+**真实问题修复:** storage-blocked 浏览器不再因 `sessionStorage` getter 抛错阻止应用启动；最近使用模板在当前页面即时显示和清除，无需刷新或重进；本地存储 getter 防护集中到统一 adapter，降低后续遗漏。
+**本地验证:** TDD 红绿完成；定向 preload/my-research/browser-storage 3 files / 14 tests passed；定向 recent searches/theme/PWA/browser-storage 4 files / 15 tests passed；`npm ci` passed（257 packages，0 vulnerabilities，保留既有 allow-scripts 提示）；全量 `npm test` 87 files / 899 tests passed；`npm run lint` passed；`npm run typecheck:functions` passed；`npm run build` passed 且无 warning，入口 `index-B8KIRPYM.js`；开发/生产依赖 audit 均 0 vulnerabilities；secret scan 无命中；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8796 --local`；内置 Browser 验证本地页面标题、非空 DOM、console health、Research -> MyResearch 导航；Playwright fallback 用于页面加载前 storage getter 注入和 API 拦截，移动端 390px `sessionStorage` getter 抛 `SecurityError` 时登录页正常且无溢出，桌面 1365px 模拟模板生成挂起时最近模板立即显示并写入 storage，点击清除后 UI 与 storage 同步清空，最终无 console/page/request issue、`scrollWidth=clientWidth`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage5-sessionstorage-blocked.png`；`C:\Users\12031\AppData\Local\Temp\cstd-alpha-stage5-recent-template-live.png`
+**Commit / Push:** `d7c5c40 fix: stabilize storage-blocked research flows` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28366164962`)。
+**风险记录:** Playwright 对模板生成 API 使用 mock 以避免真实模型调用；storage 被禁用时跨页面持久化仍按设计不可用；本地 QA 创建的临时 watchlist 行已从本地 D1 清理。
+**下一阶段:** 阶段 6/6 IMPROVE，完成最后一轮产品稳定性增量并做生产收口。

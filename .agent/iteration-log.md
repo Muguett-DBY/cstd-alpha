@@ -559,3 +559,12 @@
 - **CI:** `Deploy Cloudflare Pages` run `28364546258` passed。
 - **Commit:** `da31ffb fix: harden my research cache persistence`
 - **下一阶段:** Stage 5/6 CHECK，系统检查剩余 storage 消费者及研究状态一致性。
+
+### Stage 5/6 CHECK — Storage-Blocked Research Flow Audit
+- **检查:** 复核 workflow、依赖、lockfile、secret patterns、剩余 storage 使用点、preload recovery 和 MyResearch 最近模板状态流；P0 none。
+- **真实问题修复:** `sessionStorage` getter 被拦截时不再阻止应用启动；最近模板由父组件控制，生成后当前页立即显示、清除后 UI 和 storage 同步；recent searches、theme、PWA install prompt 收敛到统一 `browser-storage` helper。
+- **验证:** TDD 红绿；87 files / 899 tests passed；lint、functions typecheck、build、开发/生产 audit、secret scan、diff check 全部通过；`npm ci` 0 vulnerabilities。
+- **浏览器验收:** 内置 Browser 验证本地 Pages 页面身份、非空 DOM、console health 和 Research -> MyResearch；Playwright fallback 验证移动端 storage-blocked 启动无溢出、桌面最近模板生成中即时显示/清除、无 console/page/request issue。
+- **CI:** `Deploy Cloudflare Pages` run `28366164962` passed。
+- **Commit:** `d7c5c40 fix: stabilize storage-blocked research flows`
+- **下一阶段:** Stage 6/6 IMPROVE，做最后一轮产品稳定性增量并完成生产收口。
