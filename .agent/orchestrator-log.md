@@ -931,3 +931,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393555662`；90 files / 911 tests；deployment `c6303f64.cstd-alpha.pages.dev`)。
 **风险记录:** 缺少 `company.name` 的 report 仍按 `validateReportPayload` 契约抛错；这是服务端数据契约错误而非 UI 兼容路径。剩余 API payload 防御和生产级扫描留给 Stage 5 CHECK。
 **下一阶段:** 阶段 5/6 CHECK，系统审计全项目真实问题、依赖/安全/CI/浏览器流，并修复发现的问题。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统审计剩余 API payload、CI/workflow、依赖、安全扫描和真实浏览器流，修复会导致网站崩溃或坏状态进入 UI 的实际问题。
+**开始状态:** 阶段 4 功能 commit `dcc4344` 与日志 commit `085fb2e` 均已推送，CI runs `28393555662` / `28393733576` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**系统检查:** 复核 `package.json`、`.github/workflows/pages.yml`、API client raw JSON casts、研究工作台/估值实验室/图表/新闻消费者、依赖审计、secret patterns 和浏览器回归。P0 none；发现 P1/P2：`/api/research-items`、`/api/valuations`、研究论点、催化项、图表和新闻 payload 缺字段时，客户端仍直接 cast，可能导致研究页、估值页、图表区或新闻阅读页进入 ErrorBoundary 或缓存坏数据。
+**测试先行:** 扩展 `src/api.test.ts`，先红灯复现 `{}` payload 被直接返回：研究队列期望 `{ items: [] }` 却得到 `{}`；估值期望 `{ runs: [] }` 却得到 `{}`；图表期望空 series 安全 bundle 却得到 `{}`；新闻期望受控失败却错误 resolve。
+**完成内容:** `src/api.ts` 新增研究队列、论点、催化项、估值历史、图表和新闻 payload 归一化/校验；图表空 payload 使用请求公司补齐安全空 bundle；新闻 payload 缺少摘要/数组/公司信息时转为受控“新闻读取失败。”错误，避免坏对象进入 UI state 和本地缓存。
+**真实问题修复:** 后端临时返回 `{}` 或旧格式时，研究工作台和估值实验室不再因 `.map/.length` 崩溃；图表区显示“公开历史价格数据不足”而不是渲染坏 bundle；新闻阅读页不会保存畸形 bundle。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 34 tests passed；`npm run typecheck:functions` passed；`npm run lint` passed；`npm run build` passed 且无 warning，入口 `index-DgBtvwO0.js`；全量 `npm test` 90 files / 915 tests passed；开发/生产依赖 audit 均 0 vulnerabilities；secret scan 只命中 `.dev.vars.example` 占位符；`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让机会页、研究队列、估值历史和图表接口返回 `{}`，验证默认机会页、研究队列、估值实验室和图表降级均可渲染；`opportunitiesCrash=0`、`researchCrash=0`、`valuationCrash=0`、`chartCrash=0`、`chartFallbackVisible=true`、`badResponses=[]`、`errors=[]`、`overflow=false`。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-api-normalization.png`
+**Commit / Push:** `28d4432 fix: harden incomplete api payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28406019734`；90 files / 915 tests；lint、typecheck、build、deploy 均通过；deployment `2698d663.cstd-alpha.pages.dev`)。
+**风险记录:** 新闻 payload 缺少必需结构时选择受控错误而非推测补全公司信息，避免显示误导性摘要；secret scan 命中均为 `.dev.vars.example` placeholder，不是实际密钥。
+**下一阶段:** 阶段 6/6 IMPROVE，基于第 5 阶段审计结果做最后一轮可验证的稳定性增量，并完成生产收口。

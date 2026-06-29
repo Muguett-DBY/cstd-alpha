@@ -630,3 +630,13 @@
 - **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28393555662`；90 files / 911 tests；deployment `c6303f64.cstd-alpha.pages.dev`)。
 - **风险记录:** 严重缺失 `company.name` 的报告仍会按 schema 抛错，保留为数据契约错误；其他 API payload 的系统性归一化审计留给 Stage 5 CHECK。
 - **下一阶段:** Stage 5/6 CHECK，做全项目审计、依赖/安全/剩余 payload 防御检查，并修复实际 P0/P1/P2。
+
+### Stage 5/6 CHECK — API Payload Hardening Audit
+- **检查:** 复核 `package.json`、`.github/workflows/pages.yml`、API client raw JSON casts、研究工作台/估值实验室/图表/新闻消费者、依赖审计、secret patterns 和浏览器回归；P0 none。
+- **真实问题修复:** `/api/research-items`、研究论点、催化项、`/api/valuations` 和 `/api/chart-data` 返回 `{}` 或缺字段时不再把坏对象交给 UI；图表空 payload 使用请求公司补齐安全空 bundle；新闻 payload 缺少必需摘要/数组/公司结构时转为受控“新闻读取失败。”，避免写入坏缓存。
+- **验证:** TDD 红绿；`src/api.test.ts` 34 tests passed；`npm run typecheck:functions`、`npm run lint`、`npm run build`、`git diff --check` passed；全量 `npm test` 90 files / 915 tests passed；开发/生产依赖 audit 均 0 vulnerabilities；secret scan 只命中 `.dev.vars.example` placeholder。
+- **浏览器验收:** 本地 Pages 8799 + Playwright API 夹具让机会页、研究队列、估值历史和图表接口返回 `{}`；机会页、研究队列、估值实验室和图表降级均可渲染，`opportunitiesCrash=0`、`researchCrash=0`、`valuationCrash=0`、`chartCrash=0`、`chartFallbackVisible=true`、`badResponses=[]`、`errors=[]`、`overflow=false`。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-api-normalization.png`
+- **生产:** Pages deployment `2698d663.cstd-alpha.pages.dev`；CI run `28406019734` passed。
+- **Commit:** `28d4432 fix: harden incomplete api payloads`
+- **下一阶段:** Stage 6/6 IMPROVE，做最后一轮可验证的稳定性增量并完成生产收口。
