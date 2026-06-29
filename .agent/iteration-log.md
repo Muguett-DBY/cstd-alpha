@@ -669,3 +669,14 @@
 - **生产:** Pages deployment `517a7e37.cstd-alpha.pages.dev`；CI run `28408694655` passed。
 - **Commit:** `f8fd930 fix: stabilize research quick add`
 - **下一阶段:** Stage 2/6 IMPROVE，继续修复研究工作区单条记录/关联数据边界问题，并保持每阶段独立验证、提交、推送与 CI。
+
+### Stage 2/6 IMPROVE — Research Detail Record Guards
+- **承接方向:** 在 Stage 1 收紧研究项本体后，继续处理研究详情面板消费的 activity、thesis 和 catalyst 关联记录。
+- **旗舰:** API client 新增 activity/thesis/catalyst 项级 guard，列表只把有效记录交给 UI；生成论点和催化剂状态更新遇到坏返回会受控失败。
+- **真实问题修复:** `{ id: "broken" }` 这类坏关联对象不再进入详情面板触发 `coreCitations.length`、`evidenceRefs.join` 或状态 label 读取错误；坏 mutation 返回不会污染本地 state。
+- **验证:** TDD 红绿；`src/api.test.ts` 37 tests passed；全量 `npm test` 91 files / 922 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、secret/debug scan、`git diff --check` passed。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 夹具混入坏 activity/thesis/catalyst，研究详情只显示有效论点、有效跟踪项和有效动态；`broken=false`、`undefined=false`、`hasErrorBoundary=false`、`badResponses=[]`、`errors=[]`、桌面/移动无横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage2-research-detail-guards-mobile.png`
+- **生产:** Pages deployment `860b2558.cstd-alpha.pages.dev`；CI run `28409255213` passed。
+- **Commit:** `08eccae fix: guard research detail records`
+- **下一阶段:** Stage 3/6 UIUX，基于研究详情可靠性做可见的研究工作区降级/空态体验改进，并进行桌面与移动验收。

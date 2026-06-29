@@ -1002,7 +1002,7 @@
 
 ### 阶段 2/6: IMPROVE
 
-**状态:** 进行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接 Stage 1 对研究项本体的项级校验，把研究工作区 activity、thesis、catalyst 关联数据也挡在 API client 边界外，避免坏对象进入详情面板后触发 `.length/.join/.slice` 等运行时错误。
 **开始状态:** `main` 与 `origin/main` 同步于 `53b8b66`；Stage 1 功能与日志 CI 均 passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -1014,4 +1014,7 @@
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让 activity/thesis/catalyst 各返回坏对象+有效对象，研究详情正常展示有效论点、有效跟踪项和有效动态；`broken=false`、`undefined=false`、`hasErrorBoundary=false`、`badResponses=[]`、`errors=[]`、桌面/移动均无横向溢出。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage2-research-detail-guards-mobile.png`
 **安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用和测试假 key；无新增真实密钥或调试输出。
-**当前状态:** 功能与本地验证完成，进入 Stage 2 功能提交、push 和 GitHub Actions 跟踪。
+**Commit / Push:** `08eccae fix: guard research detail records` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28409255213`；91 files / 922 tests；lint、typecheck、build、deploy 均通过；deployment `860b2558.cstd-alpha.pages.dev`)。
+**风险记录:** 关联记录现在做必需字段项级过滤；可选字段仍保守接受字符串/undefined，不推测补全缺失内容；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入提交。
+**下一阶段:** 阶段 3/6 UIUX，基于前两阶段的研究详情可靠性，做一次可见的研究工作区恢复/空态/坏数据降级体验改进并验证桌面与移动端。
