@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resolveWatchlistMembership, watchlistActionLabel } from "./watchlist-membership";
+import { resolveWatchlistMembership, watchlistActionLabel, watchlistMembershipPresentation } from "./watchlist-membership";
 import type { CompanyCandidate } from "./shared/report";
 import type { WatchlistItem } from "./shared/user-research";
 
@@ -28,6 +28,30 @@ describe("watchlist membership", () => {
     expect(watchlistActionLabel("present")).toBe("已加入自选");
     expect(watchlistActionLabel("absent")).toBe("加入自选");
     expect(watchlistActionLabel("unavailable")).toBe("加入自选");
+  });
+
+  test("describes the report header membership state for action grouping", () => {
+    expect(watchlistMembershipPresentation("checking")).toMatchObject({
+      statusLabel: "正在核验自选状态",
+      actionDisabled: true,
+      ariaBusy: true,
+      showResearchLink: false,
+    });
+    expect(watchlistMembershipPresentation("present")).toMatchObject({
+      statusLabel: "已在自选研究中",
+      actionDisabled: true,
+      showResearchLink: true,
+    });
+    expect(watchlistMembershipPresentation("absent")).toMatchObject({
+      statusLabel: "尚未加入自选",
+      actionDisabled: false,
+      showResearchLink: false,
+    });
+    expect(watchlistMembershipPresentation("unavailable")).toMatchObject({
+      statusLabel: "自选状态待确认",
+      actionDisabled: false,
+      showResearchLink: false,
+    });
   });
 });
 
