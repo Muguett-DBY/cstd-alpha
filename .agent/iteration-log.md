@@ -596,3 +596,12 @@
 - **生产:** Pages deployment `2cc17496.cstd-alpha.pages.dev`；CI run `28389155914` passed。
 - **Commit:** `f5d6524 fix: clarify watchlist upsert flows`
 - **下一阶段:** Stage 2/6 IMPROVE，补齐从搜索/报告直接进入时的既有自选状态校验，避免重复操作后才发现已存在。
+
+### Stage 2/6 IMPROVE — Proactive Watchlist Membership Sync
+- **旗舰:** 报告公司选择后主动读取自选列表，按钮明确呈现检查中、已加入、未加入和暂不可确认四种状态。
+- **真实问题修复:** 普通搜索或榜单打开报告时不再默认假设“未加入”；切换公司会取消旧结果回写，避免慢请求污染新公司状态；查询失败仍允许幂等加入。
+- **验证:** TDD 红绿；定向 3 files / 41 tests passed；lint、functions typecheck、build、diff check passed；CI 全量 90 files / 907 tests passed。
+- **浏览器验收:** 登录夹具延迟自选响应，确认“检查自选状态…”和“已加入自选”均禁用，随后“查看研究”可见；无溢出、failed response 或 console error。
+- **生产:** Pages deployment `784e4f70.cstd-alpha.pages.dev`；CI run `28390353349` passed。
+- **Commit:** `0969fe9 feat: sync report watchlist membership`
+- **下一阶段:** Stage 3/6 UIUX，重构报告头部的研究状态、主操作和导出工具层级，并验证桌面/移动端。

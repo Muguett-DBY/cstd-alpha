@@ -882,3 +882,18 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28389155914`；89 files / 904 tests；lint、typecheck、build、deploy 均通过；deployment `2cc17496.cstd-alpha.pages.dev`)。
 **风险记录:** 报告从普通搜索进入时仍需在用户操作前主动核对是否已在自选；本阶段浏览器夹具拦截认证/API，数据库兼容逻辑由 handler 单测覆盖。
 **下一阶段:** 阶段 2/6 IMPROVE，加入既有自选状态校验和竞态防护。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 在报告操作前主动核对公司自选状态，并保证快速切换公司时状态不会串线。
+**测试先行:** 新增 `watchlist-membership` 测试，先复现模块缺失；红绿覆盖 API 唯一键匹配、大小写/空白归一化及四态按钮文案。
+**完成内容:** 新增 `WatchlistMembership` 状态机与身份匹配 helper；App 选择公司后异步读取自选列表，使用活动标记和公司身份双重防护旧请求；ReportView 提供检查中、已加入和查询不可用语义。
+**真实问题修复:** 搜索/普通榜单进入报告时不再错误显示可重复加入；慢查询不会覆盖后选择公司的状态；查询失败不锁死用户操作。
+**本地验证:** 定向 3 files / 41 tests、lint、functions typecheck、build、diff check passed。
+**浏览器验证:** 本地 Pages 8799 + Playwright 登录/API 夹具；延迟 watchlist GET 依次验证检查中 disabled、已加入 disabled、查看研究可见，`overflow=false`、`badResponses=[]`、`errors=[]`。
+**Commit / Push:** `0969fe9 feat: sync report watchlist membership` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28390353349`；90 files / 907 tests；deployment `784e4f70.cstd-alpha.pages.dev`)。
+**风险记录:** 本阶段使用 API 拦截稳定复现慢响应；验收夹具曾因错误报告字段触发 ErrorBoundary，已确认是夹具问题，同时记录客户端畸形报告防御作为 CHECK 审计项。
+**下一阶段:** 阶段 3/6 UIUX，优化报告操作区视觉层级、状态反馈和移动端密度。
