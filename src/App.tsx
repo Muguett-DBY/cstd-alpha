@@ -148,6 +148,11 @@ function App() {
         setUser(session);
         setAuthenticated(Boolean(session));
       })
+      .catch((err) => {
+        setUser(null);
+        setAuthenticated(false);
+        setError(errorMessage(err, "登录状态读取失败，请重新登录。"));
+      })
       .finally(() => setChecking(false));
   }, []);
 
