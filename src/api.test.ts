@@ -3,6 +3,7 @@ import {
   addResearchItem,
   addWatchlistItem,
   completeResearchTemplateDraft,
+  createValuationRun,
   fetchActivityEvents,
   fetchChartData,
   fetchCompanyNews,
@@ -36,6 +37,7 @@ import {
   createAssistantThread,
   syncResearchCatalystsFromThesis,
   updateResearchCatalystStatus,
+  updateResearchItemStage,
 } from "./api";
 
 describe("API client", () => {
@@ -911,6 +913,43 @@ describe("API client", () => {
     await expect(fetchValuations()).resolves.toEqual({ runs: [] });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/valuations", expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("filters malformed valuation run records before UI consumers render them", async () => {
+    const run = {
+      id: "valuation-1",
+      researchItemId: "research-1",
+      entityType: "company" as const,
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      status: "queued" as const,
+      method: "dcf_3_statement" as const,
+      archetype: "operating" as const,
+      currency: "CNY",
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ runs: [{ id: "broken" }, run] }))));
+
+    await expect(fetchValuations()).resolves.toEqual({ runs: [run] });
+  });
+
+  test("rejects malformed research stage mutation payloads", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ item: { id: "broken" } }))));
+
+    await expect(updateResearchItemStage("research-1", "deepResearch")).rejects.toThrow("研究阶段更新失败。");
+  });
+
+  test("rejects malformed valuation creation payloads", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ run: { id: "broken" } }), { status: 202 })));
+
+    await expect(createValuationRun({
+      researchItemId: "research-1",
+      entityType: "company",
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      currency: "CNY",
+    })).rejects.toThrow("估值任务创建失败。");
   });
 
   test("normalizes incomplete chart payloads using the requested company", async () => {
