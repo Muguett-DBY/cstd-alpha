@@ -312,8 +312,8 @@ export async function createValuationRun(input: {
 export async function fetchQuantitativeValuationWorkspace(runId: string): Promise<QuantitativeValuationWorkspace> {
   const response = await fetch(`/api/valuation-workspace?runId=${encodeURIComponent(runId)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "估值工作区读取失败。");
-  const data = await response.json() as { workspace?: QuantitativeValuationWorkspace };
-  if (!data.workspace) throw new Error("估值工作区读取失败。");
+  const data = objectPayload(await response.json());
+  if (!isQuantitativeValuationWorkspace(data.workspace)) throw new Error("估值工作区读取失败。");
   return data.workspace;
 }
 
@@ -332,8 +332,8 @@ export async function saveQuantitativeValuationWorkspace(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "估值保存失败。");
-  const data = await response.json() as { workspace?: QuantitativeValuationWorkspace; version?: QuantitativeValuationVersion };
-  if (!data.workspace || !data.version) throw new Error("估值保存失败。");
+  const data = objectPayload(await response.json());
+  if (!isQuantitativeValuationWorkspace(data.workspace) || !isQuantitativeValuationVersion(data.version)) throw new Error("估值保存失败。");
   return { workspace: data.workspace, version: data.version };
 }
 
@@ -1083,6 +1083,197 @@ function isValuationPeerRange(value: unknown): boolean {
     finiteNumber(value.median) !== undefined &&
     finiteNumber(value.high) !== undefined &&
     typeof value.metric === "string"
+  );
+}
+
+function isQuantitativeValuationWorkspace(value: unknown): value is QuantitativeValuationWorkspace {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.run === undefined || isValuationRunSummary(value.run)) &&
+    (value.snapshot === undefined || isQuantitativeValuationSnapshot(value.snapshot)) &&
+    Array.isArray(value.versions) &&
+    value.versions.every(isQuantitativeValuationVersion) &&
+    Array.isArray(value.actualReviews) &&
+    value.actualReviews.every(isActualReview)
+  );
+}
+
+function isQuantitativeValuationVersion(value: unknown): value is QuantitativeValuationVersion {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.runId === "string" && value.runId.trim().length > 0 &&
+    typeof value.sourceSnapshotId === "string" &&
+    finiteNumber(value.version) !== undefined &&
+    typeof value.status === "string" &&
+    (value.parentVersionId === undefined || typeof value.parentVersionId === "string") &&
+    isStringOneOf(value.archetype, COMPANY_ARCHETYPE_VALUES) &&
+    isStringOneOf(value.method, VALUATION_METHOD_VALUES) &&
+    finiteNumber(value.horizonYears) !== undefined &&
+    (value.draft === undefined || isQuantitativeDraft(value.draft)) &&
+    (value.result === undefined || isValuationResult(value.result)) &&
+    (value.decisionNote === undefined || typeof value.decisionNote === "string") &&
+    typeof value.createdBy === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isQuantitativeValuationSnapshot(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.market === "string" &&
+    typeof value.asOf === "string" &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    typeof value.contentHash === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isQuantitativeDraft(value: unknown): value is QuantitativeDraft {
+  if (!isPlainRecord(value)) return false;
+  const hasMethodInput =
+    value.method === "dcf_3_statement"
+      ? isOperatingValuationInput(value.operating)
+      : value.method === "ddm_residual_income"
+        ? isFinancialValuationInput(value.financial)
+        : value.method === "mid_cycle_nav" && isCyclicalValuationInput(value.cyclical);
+  return (
+    isStringOneOf(value.method, VALUATION_METHOD_VALUES) &&
+    isStringOneOf(value.archetype, COMPANY_ARCHETYPE_VALUES) &&
+    typeof value.currency === "string" && value.currency.trim().length > 0 &&
+    typeof value.asOf === "string" &&
+    hasMethodInput &&
+    (value.scenarios === undefined || isQuantitativeScenarios(value.scenarios)) &&
+    (value.assumptions === undefined || (Array.isArray(value.assumptions) && value.assumptions.every(isEditableAssumption))) &&
+    (value.presets === undefined || (Array.isArray(value.presets) && value.presets.every(isQuantitativePreset))) &&
+    (value.restoredPresetLibrary === undefined || isRestoredPresetLibrary(value.restoredPresetLibrary)) &&
+    (value.warnings === undefined || isStringArray(value.warnings))
+  );
+}
+
+function isQuantitativeScenarios(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return Object.entries(value).every(([key, scenario]) => (
+    isStringOneOf(key, VALUATION_SCENARIO_VALUES) &&
+    isPlainRecord(scenario) &&
+    (scenario.discountRate === undefined || finiteNumber(scenario.discountRate) !== undefined) &&
+    (scenario.costOfEquity === undefined || finiteNumber(scenario.costOfEquity) !== undefined) &&
+    (scenario.terminalGrowthRate === undefined || finiteNumber(scenario.terminalGrowthRate) !== undefined)
+  ));
+}
+
+function isOperatingValuationInput(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.currency === "string" &&
+    typeof value.asOf === "string" &&
+    finiteNumber(value.baseRevenue) !== undefined &&
+    finiteNumber(value.sharesOutstanding) !== undefined &&
+    finiteNumber(value.netDebt) !== undefined &&
+    isScenarioTriple(value.revenueGrowth) &&
+    isScenarioTriple(value.ebitMargin) &&
+    finiteNumber(value.taxRate) !== undefined &&
+    finiteNumber(value.depreciationRate) !== undefined &&
+    isScenarioTriple(value.capexRate) &&
+    finiteNumber(value.workingCapitalRate) !== undefined &&
+    isScenarioTriple(value.discountRate) &&
+    isScenarioTriple(value.terminalGrowthRate) &&
+    (value.peerEvEbitda === undefined || isScenarioTriple(value.peerEvEbitda)) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.forecastOverrides === undefined || (Array.isArray(value.forecastOverrides) && value.forecastOverrides.every(isForecastOverride)))
+  );
+}
+
+function isFinancialValuationInput(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.currency === "string" &&
+    typeof value.asOf === "string" &&
+    finiteNumber(value.bookValue) !== undefined &&
+    finiteNumber(value.sharesOutstanding) !== undefined &&
+    isScenarioTriple(value.roe) &&
+    isScenarioTriple(value.payoutRatio) &&
+    isScenarioTriple(value.costOfEquity) &&
+    isScenarioTriple(value.terminalGrowthRate) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string")
+  );
+}
+
+function isCyclicalValuationInput(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.currency === "string" &&
+    typeof value.asOf === "string" &&
+    isScenarioTriple(value.midCycleEbitda) &&
+    finiteNumber(value.normalizedNetCash) !== undefined &&
+    finiteNumber(value.sharesOutstanding) !== undefined &&
+    (value.replacementAssetValue === undefined || isScenarioTriple(value.replacementAssetValue)) &&
+    isScenarioTriple(value.evEbitdaMultiple) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string")
+  );
+}
+
+function isScenarioTriple(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return finiteNumber(value.low) !== undefined && finiteNumber(value.base) !== undefined && finiteNumber(value.high) !== undefined;
+}
+
+function isForecastOverride(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    finiteNumber(value.year) !== undefined &&
+    (value.revenueGrowth === undefined || finiteNumber(value.revenueGrowth) !== undefined) &&
+    (value.ebitMargin === undefined || finiteNumber(value.ebitMargin) !== undefined) &&
+    (value.capexRate === undefined || finiteNumber(value.capexRate) !== undefined) &&
+    (value.workingCapitalRate === undefined || finiteNumber(value.workingCapitalRate) !== undefined)
+  );
+}
+
+function isEditableAssumption(value: unknown): value is EditableAssumption {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.key === "string" &&
+    typeof value.label === "string" &&
+    (value.value === undefined || finiteNumber(value.value) !== undefined) &&
+    (value.bear === undefined || finiteNumber(value.bear) !== undefined) &&
+    (value.base === undefined || finiteNumber(value.base) !== undefined) &&
+    (value.bull === undefined || finiteNumber(value.bull) !== undefined) &&
+    (value.unit === undefined || typeof value.unit === "string") &&
+    (value.origin === "provider" || value.origin === "formula" || value.origin === "ai" || value.origin === "user") &&
+    (value.evidenceRefs === undefined || isStringArray(value.evidenceRefs)) &&
+    (value.confidence === undefined || finiteNumber(value.confidence) !== undefined) &&
+    typeof value.locked === "boolean" &&
+    (value.explanation === undefined || typeof value.explanation === "string") &&
+    (value.forecastYear === undefined || finiteNumber(value.forecastYear) !== undefined)
+  );
+}
+
+function isQuantitativePreset(value: unknown): value is QuantitativePreset {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.name === "string" && value.name.trim().length > 0 &&
+    typeof value.createdAt === "string" &&
+    Array.isArray(value.assumptions) &&
+    value.assumptions.every(isEditableAssumption)
+  );
+}
+
+function isRestoredPresetLibrary(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return finiteNumber(value.version) !== undefined && typeof value.restoredAt === "string";
+}
+
+function isActualReview(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.metricKey === "string" &&
+    finiteNumber(value.forecastYear) !== undefined &&
+    finiteNumber(value.forecastValue) !== undefined &&
+    finiteNumber(value.actualValue) !== undefined &&
+    finiteNumber(value.absoluteError) !== undefined &&
+    (value.percentageError === undefined || finiteNumber(value.percentageError) !== undefined)
   );
 }
 

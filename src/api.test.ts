@@ -8,6 +8,7 @@ import {
   fetchChartData,
   fetchCompanyNews,
   fetchOpportunities,
+  fetchQuantitativeValuationWorkspace,
   fetchRadarScan,
   fetchReportLibrary,
   fetchReportLibraryRecord,
@@ -436,6 +437,52 @@ describe("API client", () => {
         }),
       }),
     );
+  });
+
+  test("rejects malformed quantitative valuation workspace payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ workspace: { versions: { not: "an array" }, actualReviews: [] } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchQuantitativeValuationWorkspace("run-1")).rejects.toThrow("估值工作区读取失败。");
+  });
+
+  test("rejects malformed quantitative valuation save workspace payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      workspace: { versions: [], actualReviews: { not: "an array" } },
+      version: {
+        id: "version-2",
+        runId: "run-1",
+        sourceSnapshotId: "snapshot-1",
+        version: 2,
+        status: "saved",
+        archetype: "operating",
+        method: "dcf_3_statement",
+        horizonYears: 5,
+        createdBy: "user",
+        createdAt: "2026-06-22T00:00:00.000Z",
+      },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveQuantitativeValuationWorkspace({
+      runId: "run-1",
+      parentVersionId: "version-1",
+      assumptions: [],
+    })).rejects.toThrow("估值保存失败。");
+  });
+
+  test("rejects malformed quantitative valuation save version payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      workspace: { versions: [], actualReviews: [] },
+      version: { id: "broken" },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveQuantitativeValuationWorkspace({
+      runId: "run-1",
+      parentVersionId: "version-1",
+      assumptions: [],
+    })).rejects.toThrow("估值保存失败。");
   });
 
   test("rejects login responses that omit the user payload", async () => {
