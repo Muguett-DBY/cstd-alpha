@@ -885,7 +885,7 @@ button:not(:disabled):active,
   color: var(--ink);
   font-size: clamp(28px, 4vw, 48px);
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .workbench-hero.compact h1 {
@@ -1045,6 +1045,42 @@ button:not(:disabled):active,
   background: color-mix(in srgb, var(--teal) 7%, var(--surface));
   color: var(--ink);
   font-weight: 750;
+}
+
+.data-health-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line));
+  border-left: 4px solid var(--amber);
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+}
+
+.data-health-notice strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.data-health-notice p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.data-health-notice button {
+  min-height: 34px;
+  white-space: normal;
+}
+
+@media (max-width: 520px) {
+  .data-health-notice {
+    grid-template-columns: 1fr;
+  }
 }
 
 .workbench-empty {
@@ -12190,6 +12226,21 @@ button:not(:disabled):active,
 
   .workspace {
     overflow-x: hidden;
+  }
+
+  .workbench-hero,
+  .workbench-hero.compact {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .workbench-hero h1,
+  .workbench-hero.compact h1 {
+    max-width: 100%;
+  }
+
+  .workbench-hero .hero-actions {
+    justify-content: flex-start;
   }
 
   .research-layout {

@@ -1100,3 +1100,24 @@
 **最终门禁:** 92 files / 930 tests passed；lint、functions typecheck、build、开发/生产 audit、secret/debug scan、diff check 全部通过。
 **最终生产状态:** 最新功能部署 `33b87a33.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均 HTTP 200；两者 `/api/session` 均返回预期未登录 envelope；生产登录页桌面/移动浏览器验收无错误。
 **遗留风险:** 客户端会过滤服务端坏记录而不是修复源数据；真实登录后的线上写操作未在生产执行，避免污染用户数据，核心写路径已由本地 Pages API 夹具和自动测试覆盖。
+
+## Round 67 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 66 的 API 记录防护，把研究队列中被客户端跳过的异常记录转成用户可见的数据健康提示，并提供重新读取入口，避免静默丢失造成误判。
+**开始状态:** `main` 与 `origin/main` 同步于 `c0f1b96`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 TDD 复现 malformed research item 被静默跳过；再补 API 跳过计数、工作台提示和重读按钮，随后跑定向测试、全量门禁、本地浏览器验收、独立 commit/push、GitHub Actions 和日志闭环。
+**测试先行:** 扩展 `src/api.test.ts` 红灯复现 malformed research queue item 被静默过滤且没有跳过计数；新增 `src/research-data-health.test.ts` 红灯锁定数据健康提示文案。
+**完成内容:** `fetchResearchItems` 现在返回 `skippedItems/totalItems`；`ResearchWorkspace` 新增研究队列数据健康提示、重新读取入口和统一工作区 reload；异常记录被跳过时用户能看到保留记录数和恢复说明。
+**真实问题修复:** 研究队列不再静默吞掉坏记录，用户不会把“2 条异常记录被客户端跳过”误判为真实队列只有 1 条；错误页重试现在同时重读研究队列和估值历史，避免只恢复一半数据。
+**移动可见修复:** 修复工作台 hero 在 390px 下仍使用两列导致标题逐字竖排的问题；工作台标题字距归零，窄屏 hero 改为单列并让操作按钮左对齐。
+**本地验证:** TDD 红灯后绿灯；定向 `src/api.test.ts` + `src/research-data-health.test.ts` 2 files / 47 tests passed；全量 `npm test` 94 files / 936 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；内置 Browser 完成页面身份、非空渲染和 console 检查；由于内置 Browser 当前暴露接口不支持 API route fixture，使用临时 Playwright 脚本拦截 `/api/research-items`，验证 2 条坏记录 + 1 条有效记录时显示数据健康提示，点击“重新读取”后提示消失且有效队列保留；桌面和 390x844 移动端均无横向溢出、ErrorBoundary、console/page error 或 4xx 响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-mobile.png`。
+**Commit / Push:** 使用 `fix: surface research queue data health` 提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 客户端会提示和隐藏 malformed 研究队列记录，但不会修复服务端源数据；测试中发现 admin 在 760px 以下会被强制渲染助手视图，后续 UIUX 阶段优先处理移动端 admin 无法使用研究工作区的问题。
+**下一阶段:** 阶段 2/6 IMPROVE，优先修复 mobile admin workbench access 或继续把异常数据健康提示扩展到其它核心工作台。

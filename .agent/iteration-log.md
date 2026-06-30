@@ -721,3 +721,14 @@
 - **生产验收:** `alpha.custard.top`、其 `/api/session`、`33b87a33.cstd-alpha.pages.dev` 及其 `/api/session` 均 HTTP 200；生产登录页桌面/移动只读 Playwright 验收无 console/page/站内响应错误或横向溢出。
 - **遗留风险:** 客户端过滤坏记录但不修复服务端源数据；生产写操作未执行以避免污染真实用户数据；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入提交。
 - **最终状态:** Round 66 六阶段已按总控完成；阶段 6/最终日志提交将在本条记录后提交并等待 CI。
+
+## Round 67 — 2026-06-30 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Research Queue Data Health Notice
+- **承接方向:** Round 66 已经阻止 malformed API records 进入 UI，本阶段把研究队列坏记录过滤从静默行为变成可见恢复状态。
+- **真实问题修复:** `/api/research-items` 混入坏对象时，客户端返回有效 items 之外还带 `skippedItems/totalItems`；研究工作区显示“研究队列已自动跳过异常记录”并提供“重新读取”，错误页重试也改为同时恢复研究队列和估值历史。
+- **移动修复:** 工作台 hero 在 390px 下改为单列，修复标题被操作按钮挤压成逐字竖排；工作台标题字距归零。
+- **验证:** TDD 红绿；定向 2 files / 47 tests passed；全量 94 files / 936 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check passed；本地 Pages + Browser/Playwright 桌面与 390px 移动端夹具通过。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-mobile.png`
+- **Commit:** `fix: surface research queue data health`
+- **下一阶段:** Stage 2/6 IMPROVE，优先处理本阶段浏览器验收发现的 mobile admin 强制助手视图导致研究工作台不可达问题。
