@@ -698,7 +698,25 @@ describe("API client", () => {
       evidence: [],
       sections: { companyOverview: "概况", industry: "行业旧字段" },
     };
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ entry: { id: "report-1" }, report })));
+    const entry = {
+      id: "report-1",
+      companyName: "微软",
+      ticker: "MSFT",
+      market: "美股",
+      industry: "软件",
+      sector: "信息技术",
+      cqs: 80,
+      ias: 70,
+      conclusion: "观察",
+      qualitativeBand: "良好",
+      positionAdvice: "观察仓",
+      valuationView: "合理",
+      asOf: "2026-05-10T00:00:00.000Z",
+      importedAt: "2026-05-10T00:00:00.000Z",
+      evidenceCount: 0,
+      scoreItemCount: 0,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ entry, report })));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await fetchReportLibraryRecord("report-1");
@@ -847,6 +865,44 @@ describe("API client", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("market=us"), expect.objectContaining({ credentials: "include" }));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("tickers=000333%2C603259"), expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("filters malformed report library entries before ranking consumers render them", async () => {
+    const entry = {
+      id: "report-msft",
+      companyName: "微软",
+      ticker: "MSFT",
+      market: "美股",
+      industry: "软件",
+      sector: "信息技术",
+      cqs: 88,
+      ias: 82,
+      conclusion: "买入" as const,
+      qualitativeBand: "优秀",
+      positionAdvice: "标准仓 8-15%",
+      valuationView: "合理偏低",
+      asOf: "2026-06-30T00:00:00.000Z",
+      importedAt: "2026-07-01T00:00:00.000Z",
+      evidenceCount: 12,
+      scoreItemCount: 20,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: [{ id: "broken" }, entry], total: 2, matchedTickers: [1, "MSFT"] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entry: { id: "broken" }, report: { company: { name: "微软" } } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imported: [{ id: "broken" }] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchReportLibrary()).resolves.toEqual({
+      entries: [entry],
+      total: 2,
+      limit: undefined,
+      offset: undefined,
+      matchedTickers: ["MSFT"],
+      skippedEntries: 1,
+    });
+    await expect(fetchReportLibraryRecord("broken")).rejects.toThrow("报告读取失败。");
+    await expect(importReportLibraryReports([])).rejects.toThrow("报告导入失败。");
   });
 
   test("reads and saves user research templates through the template API", async () => {

@@ -1,7 +1,7 @@
 import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarAnalysisScope, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceFreshness, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
-import type { ReportLibraryEntry } from "./shared/report-library";
+import { isReportLibraryEntry, type ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
@@ -62,6 +62,7 @@ export type ReportLibraryList = {
   limit?: number;
   offset?: number;
   matchedTickers?: string[];
+  skippedEntries?: number;
 };
 
 export type RadarScanResult = {
@@ -592,22 +593,30 @@ export async function fetchReportLibrary(
   if (options.tickers?.length) params.set("tickers", options.tickers.join(","));
   const response = await fetch(`/api/report-library?${params.toString()}`, { credentials: "include", signal: options.signal });
   if (!response.ok) throw new Error((await readError(response)) || "报告库读取失败。");
-  const data = (await response.json()) as { entries?: ReportLibraryEntry[]; total?: number; limit?: number; offset?: number; matchedTickers?: string[] };
-  const entries = arrayPayload<ReportLibraryEntry>(data.entries);
+  const data = objectPayload(await response.json());
+  const rawEntries = arrayPayload<unknown>(data.entries);
+  const entries = rawEntries.filter(isReportLibraryEntry);
+  const skippedEntries = rawEntries.length - entries.length;
   return {
     entries,
     total: finiteNumber(data.total) ?? entries.length,
     limit: finiteNumber(data.limit),
     offset: finiteNumber(data.offset),
-    matchedTickers: arrayPayload<string>(data.matchedTickers),
+    matchedTickers: stringArrayPayload(data.matchedTickers),
+    ...(skippedEntries ? { skippedEntries } : {}),
   };
 }
 
 export async function fetchReportLibraryRecord(id: string): Promise<ReportLibraryRecord> {
   const response = await fetch(`/api/report-library?id=${encodeURIComponent(id)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "报告读取失败。");
-  const data = (await response.json()) as { entry: ReportLibraryEntry; report: unknown };
-  return { entry: data.entry, report: validateReportPayload(data.report) };
+  const data = objectPayload(await response.json());
+  if (!isReportLibraryEntry(data.entry)) throw new Error("报告读取失败。");
+  try {
+    return { entry: data.entry, report: validateReportPayload(data.report) };
+  } catch {
+    throw new Error("报告读取失败。");
+  }
 }
 
 export async function importReportLibraryReports(reports: InvestmentReport[]): Promise<ReportLibraryEntry[]> {
@@ -618,8 +627,11 @@ export async function importReportLibraryReports(reports: InvestmentReport[]): P
     body: JSON.stringify({ reports }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "报告导入失败。");
-  const data = (await response.json()) as { imported?: ReportLibraryEntry[] };
-  return arrayPayload<ReportLibraryEntry>(data.imported);
+  const data = objectPayload(await response.json());
+  const rawImported = arrayPayload<unknown>(data.imported);
+  const imported = rawImported.filter(isReportLibraryEntry);
+  if (rawImported.length !== imported.length) throw new Error("报告导入失败。");
+  return imported;
 }
 
 export async function fetchWatchlist(): Promise<{ items: WatchlistItem[]; user?: UserSession }> {
