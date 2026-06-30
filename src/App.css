@@ -12356,6 +12356,10 @@ button:not(:disabled):active,
     display: none;
   }
 
+  .app-shell:not(.view-assistant) .input-rail .view-tabs {
+    display: none;
+  }
+
   .app-shell:not(.view-assistant) .workbench-nav-rail .rail-copy {
     display: none;
   }

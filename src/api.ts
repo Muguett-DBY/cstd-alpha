@@ -1,6 +1,6 @@
 import { normalizeChartBundle, type ChartBundle, type PriceMode } from "./shared/chart";
 import type { CompanyNewsBundle } from "./shared/news";
-import type { RadarAnalysisJob, RadarDiagnostics, RadarScan } from "./shared/radar";
+import type { RadarAnalysisJob, RadarAnalysisScope, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceFreshness, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
@@ -107,6 +107,19 @@ const VALUATION_RUN_STATUS_VALUES = ["queued", "running", "completed", "failed"]
 const VALUATION_SCENARIO_VALUES = ["bear", "base", "bull"] as const;
 const WATCHLIST_RANKING_STATUS_VALUES = ["pending", "running", "completed", "failed_retryable", "failed"] as const;
 const USER_SESSION_ROLE_VALUES = ["admin", "user"] as const;
+const RADAR_JOB_STATUS_VALUES = ["queued", "running", "completed", "failed"] as const;
+const RADAR_EVIDENCE_TYPE_VALUES = ["hard_data", "official", "announcement", "market", "news", "research"] as const;
+const RADAR_CONCLUSION_STRENGTH_VALUES = ["正式结论", "观察", "证据不足"] as const;
+const RADAR_EVIDENCE_GAP_VALUES = ["缺财报", "缺价格", "缺销量", "缺订单", "缺库存", "缺产能", "缺现金流", "缺政策细则", "缺公司公告", "缺多源验证"] as const;
+const RADAR_DRIVER_TAG_VALUES = ["需求", "价格", "技术", "政策", "市占率", "供给收缩"] as const;
+const RADAR_SUSTAINABILITY_TIER_VALUES = ["短期催化", "中期景气", "长期护城河"] as const;
+const RADAR_DURABILITY_VALUES = ["短期", "中期", "长期", "不确定"] as const;
+const RADAR_RISK_LEVEL_VALUES = ["低", "中", "高"] as const;
+const RADAR_CONFIDENCE_VALUES = ["低", "中", "高"] as const;
+const RADAR_COVERAGE_STATUS_VALUES = ["formal", "watched", "insufficient"] as const;
+const RADAR_INDUSTRY_STAGE_VALUES = ["扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"] as const;
+const RADAR_CHANGE_STATUS_VALUES = ["new", "changed", "unchanged"] as const;
+const RADAR_CONCLUSION_ELIGIBILITY_VALUES = ["eligible", "watch", "insufficient"] as const;
 
 type AssistantThreadSummary = {
   id: string;
@@ -296,6 +309,78 @@ function normalizeValuationsResult(payload: unknown): ValuationsResult {
   return { runs: arrayPayload<unknown>(data.runs).filter(isValuationRunSummary) };
 }
 
+function normalizeRadarScanResult(payload: unknown): RadarScanResult {
+  const data = objectPayload(payload);
+  return {
+    radar: normalizeRadarScan(data.radar),
+    job: isRadarAnalysisJob(data.job) ? data.job : null,
+    warning: typeof data.warning === "string" ? data.warning : undefined,
+    diagnostics: isRadarDiagnostics(data.diagnostics) ? data.diagnostics : null,
+  };
+}
+
+function normalizeRadarScan(value: unknown): RadarScan | null {
+  if (!isPlainRecord(value)) return null;
+  const sourceCount = finiteNumber(value.sourceCount);
+  if (
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.generatedAt !== "string" ||
+    typeof value.asOfDate !== "string" ||
+    typeof value.validUntil !== "string" ||
+    typeof value.model !== "string" ||
+    sourceCount === undefined ||
+    !isStringArray(value.sourceQueries) ||
+    !isStringArray(value.executiveSummary) ||
+    !Array.isArray(value.solidGrowth) ||
+    !Array.isArray(value.sustainability) ||
+    !Array.isArray(value.bubbleRisks) ||
+    !Array.isArray(value.upcomingGrowth) ||
+    !Array.isArray(value.decliningIndustries) ||
+    !Array.isArray(value.representativeCompanies) ||
+    !Array.isArray(value.stageCompanies) ||
+    !isStringArray(value.limitations)
+  ) {
+    return null;
+  }
+
+  const scan: RadarScan = {
+    id: value.id,
+    title: value.title,
+    generatedAt: value.generatedAt,
+    asOfDate: value.asOfDate,
+    validUntil: value.validUntil,
+    model: value.model,
+    sourceCount,
+    sourceQueries: value.sourceQueries,
+    executiveSummary: value.executiveSummary,
+    solidGrowth: value.solidGrowth.filter(isRadarItem),
+    sustainability: value.sustainability.filter(isRadarItem),
+    bubbleRisks: value.bubbleRisks.filter(isRadarItem),
+    upcomingGrowth: value.upcomingGrowth.filter(isRadarItem),
+    decliningIndustries: value.decliningIndustries.filter(isRadarItem),
+    representativeCompanies: value.representativeCompanies.filter(isRadarList),
+    stageCompanies: value.stageCompanies.filter(isRadarList),
+    limitations: value.limitations,
+  };
+
+  const evidenceBreakdown = normalizeRadarEvidenceBreakdown(value.evidenceBreakdown);
+  if (evidenceBreakdown) scan.evidenceBreakdown = evidenceBreakdown;
+  if (isRadarEvidenceFreshness(value.evidenceFreshness)) scan.evidenceFreshness = value.evidenceFreshness;
+  if (isRadarDiagnostics(value.diagnostics)) scan.diagnostics = value.diagnostics;
+  if (Array.isArray(value.evidenceSources)) scan.evidenceSources = value.evidenceSources.filter(isRadarCitation);
+  if (Array.isArray(value.softCoverage)) scan.softCoverage = value.softCoverage.filter(isRadarCoverageItem);
+  if (Array.isArray(value.coverageReview)) scan.coverageReview = value.coverageReview.filter(isRadarCoverageReview);
+  if (Array.isArray(value.industryPackets)) scan.industryPackets = value.industryPackets.filter(isRadarIndustryPacket);
+  if (isRadarAnalysisScope(value.analysisScope)) scan.analysisScope = value.analysisScope;
+  if (typeof value.confidenceSummary === "string") scan.confidenceSummary = value.confidenceSummary;
+  if (isStringArray(value.changeLog)) scan.changeLog = value.changeLog;
+  if (typeof value.fromCache === "boolean") scan.fromCache = value.fromCache;
+  if (typeof value.reuseReason === "string") scan.reuseReason = value.reuseReason;
+  if (typeof value.refreshWarning === "string") scan.refreshWarning = value.refreshWarning;
+  return scan;
+}
+
 export async function createValuationRun(input: {
   researchItemId?: string;
   entityType: "company" | "industry";
@@ -350,8 +435,7 @@ export async function saveQuantitativeValuationWorkspace(input: {
 export async function fetchRadarScan(): Promise<RadarScanResult> {
   const response = await fetch("/api/radar-scan", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "雷达扫描读取失败。");
-  const data = (await response.json()) as { radar?: RadarScan | null; job?: RadarAnalysisJob | null; warning?: string; diagnostics?: RadarDiagnostics | null };
-  return { radar: data.radar ?? null, job: data.job ?? null, warning: data.warning, diagnostics: data.diagnostics ?? null };
+  return normalizeRadarScanResult(await response.json());
 }
 
 export async function refreshRadarScan(): Promise<RadarScanResult> {
@@ -360,9 +444,9 @@ export async function refreshRadarScan(): Promise<RadarScanResult> {
     credentials: "include",
   });
   if (!response.ok) throw new Error((await readError(response)) || "雷达扫描刷新失败。");
-  const data = (await response.json()) as { radar?: RadarScan | null; job?: RadarAnalysisJob | null; warning?: string; diagnostics?: RadarDiagnostics | null };
-  const radar = data.warning && data.radar ? { ...data.radar, refreshWarning: data.warning } : data.radar ?? null;
-  return { radar, job: data.job ?? null, warning: data.warning, diagnostics: data.diagnostics ?? null };
+  const result = normalizeRadarScanResult(await response.json());
+  const radar = result.warning && result.radar ? { ...result.radar, refreshWarning: result.warning } : result.radar;
+  return { ...result, radar };
 }
 
 export async function checkSession(): Promise<UserSession | null> {
@@ -977,6 +1061,200 @@ function isWatchlistRankingEntry(value: unknown): value is WatchlistRankingEntry
   );
 }
 
+function isRadarAnalysisJob(value: unknown): value is RadarAnalysisJob {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    isStringOneOf(value.status, RADAR_JOB_STATUS_VALUES) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.message === undefined || typeof value.message === "string") &&
+    (value.radarGeneratedAt === undefined || typeof value.radarGeneratedAt === "string") &&
+    (value.tokenUsage === undefined || isRadarTokenUsage(value.tokenUsage))
+  );
+}
+
+function isRadarDiagnostics(value: unknown): value is RadarDiagnostics {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.jobStatus === undefined || isStringOneOf(value.jobStatus, RADAR_JOB_STATUS_VALUES)) &&
+    (value.jobMessage === undefined || typeof value.jobMessage === "string") &&
+    (value.evidenceGeneratedAt === undefined || typeof value.evidenceGeneratedAt === "string") &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.evidenceAgeHours === undefined || finiteNumber(value.evidenceAgeHours) !== undefined) &&
+    (value.latestRadarGeneratedAt === undefined || typeof value.latestRadarGeneratedAt === "string") &&
+    (value.sourceCount === undefined || finiteNumber(value.sourceCount) !== undefined) &&
+    (value.cacheVersion === undefined || typeof value.cacheVersion === "string") &&
+    (value.tokenUsage === undefined || isRadarTokenUsage(value.tokenUsage))
+  );
+}
+
+function isRadarTokenUsage(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.model === undefined || typeof value.model === "string") &&
+    (value.calls === undefined || finiteNumber(value.calls) !== undefined) &&
+    finiteNumber(value.promptTokens) !== undefined &&
+    finiteNumber(value.promptCacheHitTokens) !== undefined &&
+    finiteNumber(value.promptCacheMissTokens) !== undefined &&
+    finiteNumber(value.completionTokens) !== undefined &&
+    finiteNumber(value.totalTokens) !== undefined &&
+    (value.cacheHitRate === undefined || finiteNumber(value.cacheHitRate) !== undefined)
+  );
+}
+
+function isRadarItem(value: unknown): value is RadarItem {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.title === "string" &&
+    isStringArray(value.industries) &&
+    isStringArray(value.companies) &&
+    typeof value.thesis === "string" &&
+    isStringArray(value.drivers) &&
+    isStringArray(value.evidence) &&
+    isStringOneOf(value.conclusionStrength, RADAR_CONCLUSION_STRENGTH_VALUES) &&
+    isStringArrayOf(value.evidenceGaps, RADAR_EVIDENCE_GAP_VALUES) &&
+    isStringArrayOf(value.driverTags, RADAR_DRIVER_TAG_VALUES) &&
+    isStringOneOf(value.sustainabilityTier, RADAR_SUSTAINABILITY_TIER_VALUES) &&
+    isStringOneOf(value.durability, RADAR_DURABILITY_VALUES) &&
+    isStringOneOf(value.riskLevel, RADAR_RISK_LEVEL_VALUES) &&
+    (value.confidence === undefined || isStringOneOf(value.confidence, RADAR_CONFIDENCE_VALUES)) &&
+    (value.evidenceTypes === undefined || isStringArrayOf(value.evidenceTypes, RADAR_EVIDENCE_TYPE_VALUES)) &&
+    (value.supportingSourceCount === undefined || finiteNumber(value.supportingSourceCount) !== undefined) &&
+    (value.sourceIds === undefined || isStringArray(value.sourceIds)) &&
+    (value.changeReason === undefined || typeof value.changeReason === "string") &&
+    isStringArray(value.counterEvidenceConditions) &&
+    (value.confirmationConditions === undefined || isStringArray(value.confirmationConditions)) &&
+    isStringArray(value.turningPoints)
+  );
+}
+
+function isRadarList(value: unknown): value is RadarList {
+  if (!isPlainRecord(value)) return false;
+  return typeof value.label === "string" && isStringArray(value.companies) && typeof value.note === "string";
+}
+
+function isRadarCitation(value: unknown): value is RadarCitation {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.source === "string" &&
+    typeof value.query === "string" &&
+    typeof value.title === "string" &&
+    typeof value.url === "string" &&
+    isStringOneOf(value.sourceType, RADAR_EVIDENCE_TYPE_VALUES) &&
+    finiteNumber(value.weight) !== undefined &&
+    (value.publishedAt === undefined || typeof value.publishedAt === "string") &&
+    (value.summary === undefined || typeof value.summary === "string") &&
+    (value.signalType === undefined || typeof value.signalType === "string") &&
+    (value.score === undefined || finiteNumber(value.score) !== undefined)
+  );
+}
+
+function isRadarCoverageItem(value: unknown): value is RadarCoverageItem {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.label === "string" &&
+    finiteNumber(value.sourceCount) !== undefined &&
+    isStringArrayOf(value.evidenceTypes, RADAR_EVIDENCE_TYPE_VALUES) &&
+    typeof value.note === "string" &&
+    (value.topSourceIds === undefined || isStringArray(value.topSourceIds))
+  );
+}
+
+function isRadarCoverageReview(value: unknown): value is RadarCoverageReview {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.label === "string" &&
+    isStringOneOf(value.status, RADAR_COVERAGE_STATUS_VALUES) &&
+    finiteNumber(value.sourceCount) !== undefined &&
+    isStringArrayOf(value.evidenceTypes, RADAR_EVIDENCE_TYPE_VALUES) &&
+    typeof value.note === "string" &&
+    (value.sourceIds === undefined || isStringArray(value.sourceIds))
+  );
+}
+
+function isRadarIndustryPacket(value: unknown): value is RadarIndustryPacket {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.group === "string" &&
+    typeof value.industry === "string" &&
+    value.status === "scanned" &&
+    (value.changeStatus === undefined || isStringOneOf(value.changeStatus, RADAR_CHANGE_STATUS_VALUES)) &&
+    (value.stage === undefined || isStringOneOf(value.stage, RADAR_INDUSTRY_STAGE_VALUES)) &&
+    typeof value.evidenceHash === "string" &&
+    finiteNumber(value.sourceCount) !== undefined &&
+    isStringArrayOf(value.evidenceTypes, RADAR_EVIDENCE_TYPE_VALUES) &&
+    isStringArray(value.signalTypes) &&
+    isStringArrayOf(value.evidenceGaps, RADAR_EVIDENCE_GAP_VALUES) &&
+    (value.themes === undefined || isStringArray(value.themes)) &&
+    (value.sourceIds === undefined || isStringArray(value.sourceIds)) &&
+    (value.dataFreshness === undefined || isRadarEvidenceFreshness(value.dataFreshness)) &&
+    (value.conclusionEligibility === undefined || isStringOneOf(value.conclusionEligibility, RADAR_CONCLUSION_ELIGIBILITY_VALUES)) &&
+    (value.metricRefs === undefined || isStringArray(value.metricRefs)) &&
+    (value.scoreTrend === undefined || (Array.isArray(value.scoreTrend) && value.scoreTrend.every(isRadarScoreTrend))) &&
+    (value.scores === undefined || isRadarScores(value.scores))
+  );
+}
+
+function isRadarEvidenceFreshness(value: unknown): value is RadarEvidenceFreshness {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.generatedAt === undefined || typeof value.generatedAt === "string") &&
+    (value.asOfDate === undefined || typeof value.asOfDate === "string") &&
+    (value.ageHours === undefined || finiteNumber(value.ageHours) !== undefined) &&
+    typeof value.stale === "boolean" &&
+    (value.sourceCount === undefined || finiteNumber(value.sourceCount) !== undefined) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string")
+  );
+}
+
+function isRadarAnalysisScope(value: unknown): value is RadarAnalysisScope {
+  if (!isPlainRecord(value)) return false;
+  return (
+    finiteNumber(value.totalIndustryCount) !== undefined &&
+    finiteNumber(value.changedIndustryCount) !== undefined &&
+    finiteNumber(value.unchangedIndustryCount) !== undefined &&
+    finiteNumber(value.previousIndustryCount) !== undefined
+  );
+}
+
+function isRadarScoreTrend(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.runTime === "string" &&
+    finiteNumber(value.growth) !== undefined &&
+    finiteNumber(value.evidence) !== undefined &&
+    finiteNumber(value.risk) !== undefined &&
+    (value.stage === undefined || isStringOneOf(value.stage, RADAR_INDUSTRY_STAGE_VALUES))
+  );
+}
+
+function isRadarScores(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    finiteNumber(value.growth) !== undefined &&
+    finiteNumber(value.momentum) !== undefined &&
+    finiteNumber(value.evidence) !== undefined &&
+    finiteNumber(value.valuationRisk) !== undefined &&
+    finiteNumber(value.bubbleRisk) !== undefined &&
+    finiteNumber(value.declineRisk) !== undefined &&
+    finiteNumber(value.confidence) !== undefined &&
+    finiteNumber(value.change) !== undefined
+  );
+}
+
+function normalizeRadarEvidenceBreakdown(value: unknown): RadarEvidenceBreakdown | undefined {
+  if (!isPlainRecord(value)) return undefined;
+  const breakdown: RadarEvidenceBreakdown = {};
+  for (const type of RADAR_EVIDENCE_TYPE_VALUES) {
+    const count = finiteNumber(value[type]);
+    if (count !== undefined) breakdown[type] = count;
+  }
+  return Object.keys(breakdown).length ? breakdown : undefined;
+}
+
 function isResearchWorkbenchItem(value: unknown): value is ResearchWorkbenchItem {
   if (!isPlainRecord(value)) return false;
   return (
@@ -1335,6 +1613,10 @@ function isActualReview(value: unknown): boolean {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isStringArrayOf<T extends readonly string[]>(value: unknown, allowed: T): value is T[number][] {
+  return Array.isArray(value) && value.every((entry) => isStringOneOf(entry, allowed));
 }
 
 function isStringOneOf<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
