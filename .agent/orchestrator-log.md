@@ -1196,7 +1196,7 @@
 
 ### 阶段 6/6: IMPROVE
 
-**状态:** ✅ 本地完成，待提交/推送/CI/线上终验
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接 Stage 5 的 raw JSON cast 审计，把管理员投研助手的线程、SSE 事件和深度研究任务载荷纳入运行时校验，避免坏会话/坏任务进入助手状态树后造成白屏、错误进度卡或回调污染。
 **开始状态:** Stage 5 commit `887f949` 已推送至 `main`，CI run `28440526685` passed，Cloudflare deployment `af064182.cstd-alpha.pages.dev`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -1207,7 +1207,18 @@
 **本地验证:** TDD 红绿完成；`src/api.test.ts` 51 tests passed；全量 `npm test` 96 files / 948 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、`git diff --check` passed。
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具模拟管理员会话、坏 `/api/assistant/thread`、有效新线程恢复；桌面和 390x844 移动端均显示受控“助手线程读取失败。”并可通过“新对话”恢复到“开始新的投研对话”，无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-mobile.png`。
-**Commit / Push:** 待提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
-**风险记录:** 客户端现在拒绝不满足完整助手契约的会话、事件和任务；如果后端未来新增助手枚举值、block 类型或合法事件类型，需要同步更新前端白名单。客户端仍只隔离坏数据，不修复服务端源数据。
-**下一阶段:** 本轮 6 个阶段完成后执行最终生产管理员验收并收口。
+**Commit / Push:** `893ff3e fix: guard assistant runtime payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28453570685`；96 files / 948 tests；lint、typecheck、build、deploy 均通过；deployment `aece96aa.cstd-alpha.pages.dev`)。
+**生产验收:** 使用临时 QA 管理员账号完成线上只读验收后已清理该账号、session 和 login_attempts；`https://alpha.custard.top/` 与 `https://aece96aa.cstd-alpha.pages.dev/` 的桌面和 390x844 移动端登录、10 个核心只读 API、今日机会/研究/市场/估值/助手主导航、助手页加载均通过；无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
+**生产截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-production-admin-custom-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-production-admin-custom-mobile.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-production-admin-deployment-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-production-admin-deployment-mobile.png`。
+**风险记录:** 客户端现在拒绝不满足完整助手契约的会话、事件和任务；如果后端未来新增助手枚举值、block 类型或合法事件类型，需要同步更新前端白名单。客户端仍只隔离坏数据，不修复服务端源数据。线上验收未触发 AI 生成、报告生成、写入研究对象等会产生真实业务数据或外部模型成本的写操作。
+**下一阶段:** Round 67 的 6 个阶段已完成；最终日志收口提交后再次检查 GitHub Actions。
+
+### Round 67 最终收口
+
+**状态:** 6/6 completed（IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE）。
+**功能 commits:** `5e1c628`、`6d39fe4`、`000db54`、`205229b`、`887f949`、`893ff3e` 均已推送至 `main`，对应功能 CI 全部通过。
+**最终本地门禁:** 最新阶段达到 96 files / 948 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、diff check 全部通过。
+**最终线上状态:** 最新功能部署 `aece96aa.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均通过管理员只读验收；临时 QA 管理员已清理。
+**遗留风险:** 客户端持续过滤坏数据但不修复服务端源记录；生产验收未执行 AI/报告/写入型业务操作，避免模型成本和生产数据污染，相关边界由本地夹具和自动测试覆盖。
+**最终状态:** Round 67 六阶段已按总控完成；本日志收口提交会再触发一次 GitHub Actions，需确认其通过后结束。

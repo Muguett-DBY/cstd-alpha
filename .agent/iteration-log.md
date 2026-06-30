@@ -780,5 +780,12 @@
 - **验证:** TDD 红绿；`src/api.test.ts` 51 tests、全量 96 files / 948 tests passed；lint、functions typecheck、build、audit、diff check 全部通过。
 - **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证桌面/390px 移动端坏助手线程受控失败且新对话恢复，无横向溢出、ErrorBoundary、失败响应或 console/page error。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-mobile.png`
-- **Commit:** 待提交 `fix: guard assistant runtime payloads`
-- **下一轮建议:** 推送并等待 CI 通过后，使用管理员账号做线上全功能只读验收；如生产发现真实错误，按同一轮修复-验证-推送-复查闭环处理。
+- **生产:** deployment `aece96aa.cstd-alpha.pages.dev`；CI run `28453570685` passed；`alpha.custard.top` 与最新 deployment 均完成临时 QA 管理员桌面/390px 移动端只读验收，10 个核心 API 全部 200，无横向溢出、ErrorBoundary、失败响应或 console/page error；临时 QA 管理员已清理。
+- **Commit:** `893ff3e fix: guard assistant runtime payloads`
+
+### Round 67 Final Closure
+- **状态:** 6/6 completed；功能 commits `5e1c628`、`6d39fe4`、`000db54`、`205229b`、`887f949`、`893ff3e` 均已推送至 `main`，对应功能 CI 全部通过。
+- **最终门禁:** 最新阶段 96 files / 948 tests passed；lint、functions typecheck、build、audit、diff check 全部通过。
+- **生产验收:** `alpha.custard.top` 与 `aece96aa.cstd-alpha.pages.dev` 均通过临时 QA 管理员桌面/移动只读验收；会话、机会、研究队列、估值、自选、排行、报告库、雷达、助手线程等核心读 API 均 200。
+- **遗留风险:** 线上未触发 AI 生成、报告生成或写入研究数据，避免真实业务数据污染和外部模型成本；写入边界由本地夹具/自动化测试覆盖。客户端会隔离坏数据但不修复服务端源记录。
+- **下一轮建议:** 优先把 remaining report/template library raw casts 继续收敛为共享 runtime contract，并为生产写入型流程设计可自动清理的 QA sandbox 数据策略。
