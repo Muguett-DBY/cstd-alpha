@@ -7,7 +7,7 @@ import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessa
 import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
-import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistAddResult, WatchlistAddStatus, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
+import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistAddResult, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -103,6 +103,7 @@ const VALUATION_METHOD_VALUES = ["dcf_3_statement", "ddm_residual_income", "mid_
 const COMPANY_ARCHETYPE_VALUES = ["operating", "bank", "insurance", "cyclical"] as const;
 const VALUATION_RUN_STATUS_VALUES = ["queued", "running", "completed", "failed"] as const;
 const VALUATION_SCENARIO_VALUES = ["bear", "base", "bull"] as const;
+const WATCHLIST_RANKING_STATUS_VALUES = ["pending", "running", "completed", "failed_retryable", "failed"] as const;
 
 type AssistantThreadSummary = {
   id: string;
@@ -517,8 +518,8 @@ export async function importReportLibraryReports(reports: InvestmentReport[]): P
 export async function fetchWatchlist(): Promise<{ items: WatchlistItem[]; user?: UserSession }> {
   const response = await fetch("/api/watchlist", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "自选股读取失败。");
-  const data = (await response.json()) as { items?: WatchlistItem[]; user?: UserSession };
-  return { items: arrayPayload<WatchlistItem>(data.items), user: data.user };
+  const data = objectPayload(await response.json());
+  return { items: arrayPayload<unknown>(data.items).filter(isWatchlistItem), user: isUserSession(data.user) ? data.user : undefined };
 }
 
 export async function addWatchlistItem(input: { company: CompanyCandidate; reportLibraryId?: string }): Promise<WatchlistAddResult> {
@@ -529,8 +530,8 @@ export async function addWatchlistItem(input: { company: CompanyCandidate; repor
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "加入自选失败。");
-  const data = (await response.json()) as { item?: WatchlistItem; status?: WatchlistAddStatus };
-  if (!data.item) throw new Error("加入自选失败。");
+  const data = objectPayload(await response.json());
+  if (!isWatchlistItem(data.item)) throw new Error("加入自选失败。");
   return { item: data.item, status: data.status === "updated" ? "updated" : "created" };
 }
 
@@ -542,8 +543,8 @@ export async function removeWatchlistItem(id: string) {
 export async function fetchWatchlistRanking(): Promise<{ entries: WatchlistRankingEntry[]; watchlist: WatchlistItem[] }> {
   const response = await fetch("/api/watchlist-ranking", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "自选股排行读取失败。");
-  const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; watchlist?: WatchlistItem[] };
-  return { entries: arrayPayload<WatchlistRankingEntry>(data.entries), watchlist: arrayPayload<WatchlistItem>(data.watchlist) };
+  const data = objectPayload(await response.json());
+  return { entries: arrayPayload<unknown>(data.entries).filter(isWatchlistRankingEntry), watchlist: arrayPayload<unknown>(data.watchlist).filter(isWatchlistItem) };
 }
 
 export async function refreshWatchlistRanking(input: { watchlistId?: string; forceRefresh?: boolean; limit?: number } = {}): Promise<{ entries: WatchlistRankingEntry[]; queued: string[]; reused: string[] }> {
@@ -554,8 +555,8 @@ export async function refreshWatchlistRanking(input: { watchlistId?: string; for
     body: JSON.stringify(input),
   });
   if (!response.ok && response.status !== 202) throw new Error((await readError(response)) || "自选股排行刷新失败。");
-  const data = (await response.json()) as { entries?: WatchlistRankingEntry[]; queued?: string[]; reused?: string[] };
-  return { entries: arrayPayload<WatchlistRankingEntry>(data.entries), queued: arrayPayload<string>(data.queued), reused: arrayPayload<string>(data.reused) };
+  const data = objectPayload(await response.json());
+  return { entries: arrayPayload<unknown>(data.entries).filter(isWatchlistRankingEntry), queued: stringArrayPayload(data.queued), reused: stringArrayPayload(data.reused) };
 }
 
 export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ analyses: TemplateAnalysisResult[]; templates: ResearchTemplate[] }> {
@@ -918,6 +919,50 @@ function isCompanyCandidate(value: unknown): value is CompanyCandidate {
     typeof value.listingPlace === "string" && value.listingPlace.trim().length > 0 &&
     typeof value.marketType === "string" && value.marketType.trim().length > 0 &&
     (value.source === "eastmoney" || value.source === "yahoo")
+  );
+}
+
+function isUserSession(value: unknown): value is UserSession {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.userId === "string" && value.userId.trim().length > 0 &&
+    typeof value.username === "string" &&
+    typeof value.displayName === "string" &&
+    typeof value.role === "string"
+  );
+}
+
+function isWatchlistItem(value: unknown): value is WatchlistItem {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    typeof value.userId === "string" && value.userId.trim().length > 0 &&
+    isCompanyCandidate(value.company) &&
+    (value.reportLibraryId === undefined || typeof value.reportLibraryId === "string") &&
+    typeof value.addedAt === "string"
+  );
+}
+
+function isWatchlistRankingEntry(value: unknown): value is WatchlistRankingEntry {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.id === undefined || typeof value.id === "string") &&
+    typeof value.watchlistId === "string" && value.watchlistId.trim().length > 0 &&
+    typeof value.companyName === "string" && value.companyName.trim().length > 0 &&
+    typeof value.ticker === "string" &&
+    typeof value.market === "string" &&
+    (value.listingPlace === undefined || typeof value.listingPlace === "string") &&
+    isStringOneOf(value.status, WATCHLIST_RANKING_STATUS_VALUES) &&
+    (value.companyQualityScore === undefined || finiteNumber(value.companyQualityScore) !== undefined) &&
+    (value.investmentAttractivenessScore === undefined || finiteNumber(value.investmentAttractivenessScore) !== undefined) &&
+    (value.overallScore === undefined || finiteNumber(value.overallScore) !== undefined) &&
+    (value.verdict === undefined || typeof value.verdict === "string") &&
+    (value.summary === undefined || typeof value.summary === "string") &&
+    isStringArray(value.keyPoints) &&
+    isStringArray(value.riskFlags) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string") &&
+    (value.errorMessage === undefined || typeof value.errorMessage === "string")
   );
 }
 
@@ -1291,6 +1336,10 @@ function objectPayload(value: unknown): Record<string, unknown> {
 
 function arrayPayload<T>(value: unknown): T[] {
   return Array.isArray(value) ? value : [];
+}
+
+function stringArrayPayload(value: unknown): string[] {
+  return arrayPayload<unknown>(value).filter((entry): entry is string => typeof entry === "string");
 }
 
 function finiteNumber(value: unknown): number | undefined {
