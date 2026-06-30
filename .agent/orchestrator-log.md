@@ -1036,3 +1036,22 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28410223086`；92 files / 923 tests；lint、typecheck、build、deploy 均通过；deployment `6d857cc6.cstd-alpha.pages.dev`)。
 **风险记录:** 恢复提示会重新加载当前选中研究项的三个详情分区；如果后端持续失败，会继续停留在可恢复提示和本地推断时间线，不推测远端内容。
 **下一阶段:** 阶段 4/6 IMPROVE，继续从研究工作区的真实可靠性风险中选择一个可 TDD、可浏览器闭环的问题修复。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接前 3 阶段的研究工作区边界防护，把估值历史、估值创建和研究阶段更新的返回值也纳入 API client 项级校验，避免 malformed mutation/list payload 进入估值实验室或研究队列状态。
+**开始状态:** `main` 与 `origin/main` 同步于 `68e1f5d`；Stage 3 功能与日志 CI 均 passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现 malformed valuation run 未过滤、坏阶段更新和坏估值创建返回被接受；再实现最小运行时 guard，随后跑定向、全量门禁、本地 Pages + Playwright 桌面/移动验收、独立 commit、push main、GitHub Actions 和日志闭环。
+**测试先行:** 扩展 `src/api.test.ts`，红灯复现 `fetchValuations` 原样返回 `{ id: "broken" }`、`updateResearchItemStage` 错误 resolve malformed item、`createValuationRun` 错误 resolve malformed run。
+**完成内容:** `src/api.ts` 新增估值 run/result/scenario/assumption/sensitivity/forecast runtime guard；`fetchValuations` 过滤 malformed run；`updateResearchItemStage` 和 `createValuationRun` 对坏返回改为受控错误。
+**真实问题修复:** 估值实验室不再渲染缺少 title/status/method/currency/time 的 run；研究阶段更新不会把坏 item 写入研究队列 state；估值创建 202 但返回坏 run 时显示“估值任务创建失败。”而不是插入坏卡片。
+**本地验证:** TDD 红灯 3 tests failed 后绿灯；`src/api.test.ts` 40 tests passed；全量 `npm test` 92 files / 926 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具让 `/api/valuations` 返回坏 run + 有效 run，并让创建估值返回 `{ run: { id: "broken-created" } }`；验证估值实验室仅 1 张有效卡片、坏 run 未出现、坏创建未新增卡片、受控失败消息可见、桌面/移动无横向溢出、无 ErrorBoundary、无 API 4xx、无 console/page error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-valuation-guards.png`
+**安全扫描:** secret/debug scan 仅命中既有 `.dev.vars.example` placeholder、workflow secret 引用、测试假 key 和既有模型常量；无新增真实密钥或调试输出。
+**Commit / Push:** `d8c99c2 fix: guard valuation api payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28418197641`；92 files / 926 tests；lint、typecheck、build、deploy 均通过；deployment `02c3db90.cstd-alpha.pages.dev`)。
+**风险记录:** completed run 的 `result` 现在要求核心数组结构完整；如果服务端返回部分损坏的估值结果，客户端会过滤该 run 而不是尝试半渲染，避免误导性估值展示。
+**下一阶段:** 阶段 5/6 CHECK，做全项目审计，优先查找仍未防护的 API 边界、构建/CI/部署和浏览器可见问题。
