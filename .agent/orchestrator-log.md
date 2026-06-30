@@ -424,7 +424,7 @@
 
 ### 阶段 2/6: IMPROVE
 
-**状态:** 🚧 进行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 基于阶段 1 的预设库差异摘要，新增“只恢复历史版本预设库”的可操作闭环，避免用户为了取回旧预设而覆盖当前估值假设。
 **开始状态:** 阶段 1 功能 commit `74d250e` 和日志 commit `e74c2a2` 均已推送，CI runs `28221019125` / `28221104600` passed；继续保留既有 orchestrator state/history，不纳入本阶段。
@@ -1242,3 +1242,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28457160349`；96 files / 950 tests；lint、typecheck、build、deploy 均通过)。
 **风险记录:** 客户端会提示并隔离 malformed 报告库记录，但不会修复源 KV/API 数据；390px 市场/报告排行首屏仍被输入 rail 和导入表单占用，报告库健康提示位置偏低，留给 Stage 3 UIUX 集中处理。
 **下一阶段:** 阶段 2/6 IMPROVE，继续把 template analysis/report API 的 raw casts 收敛为运行时契约，并提供受控恢复或可见失败路径。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 1 报告库 runtime contract 主线，把模板研究 API 的 analyses/templates/completion/analysis/SSE payload 从直接类型断言收敛为运行时契约，并提供用户可见的异常数据隔离与恢复路径。
+**开始状态:** Stage 1 功能 commit `326fef3` 和日志 commit `b9a1289` 均已推送至 `main`，对应 GitHub Actions run `28457160349`、`28458211929` 均通过；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现 malformed template analysis/list/completion/SSE 进入客户端；再补共享 user-research runtime guards、API 过滤和 skipped count；随后为 MyResearchView 增加模板分析数据健康提示/重读入口，完成定向、全量、本地 Pages 浏览器验证、独立 commit/push/CI/log 闭环。
+**测试先行:** 新增 `src/api.test.ts` 回归测试，红灯确认坏 `analysis/template/completion/single-analysis/JSON final/NDJSON progress` 会被原客户端放行；新增 `src/shared/user-research.test.ts` 健康提示文案测试。
+**完成内容:** `src/shared/user-research.ts` 新增 ResearchTemplate、TemplateAnalysisResult、TemplateCompletion、TemplateAnalysisStatus、section requirement 的运行时 guard，以及 `describeTemplateResearchDataHealth`；`src/api.ts` 的 template analyses/templates/save/default/reset/completion/single-analysis/generate/NDJSON progress 全部改为 `objectPayload` + guard 过滤或受控失败；`MyResearchView` 显示“模板研究已跳过 N 条异常记录”并提供重新读取，同时修正 `failed_retryable` 未计入失败/可重试统计的问题。
+**真实问题修复:** malformed 模板报告、模板定义、AI 补全结果或生成流事件不再进入“我的研究”状态树；坏记录被跳过时用户能看到保留模板报告/模板数量和恢复入口，避免误判为报告库缺失或被坏 payload 触发阅读页/卡片崩溃。
+**本地验证:** TDD 红灯后绿灯；定向 `src/api.test.ts` 53 tests passed；定向 `src/api.test.ts` + `src/shared/user-research.test.ts` 2 files / 60 tests passed；全量 `npm test` 96 files / 952 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、精确 secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8800 --local`；Playwright API 夹具在桌面和 390x844 移动端走真实 UI 路径“研究 → 打开模板研究”，验证 1 条坏模板报告 + 1 个坏模板时显示健康提示，点击“重新读取”后提示消失且有效 `贵州茅台` 模板报告保留；无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage2-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage2-mobile.png`。
+**Commit / Push:** `c6e3a4c feat: guard template research payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28459387787`；96 files / 952 tests；lint、typecheck、build、deploy 均通过)。
+**风险记录:** 客户端会隔离 malformed template 数据但不会修复源 D1/R2/API 数据；移动端“我的研究”首屏仍被顶部报告输入 rail 占用明显空间，这是 Stage 3 UIUX 的优先问题。
+**下一阶段:** 阶段 3/6 UIUX，优先把移动端 `view-mine` 首屏从报告输入 rail 中解放出来，让模板研究工作台在 390px 下直接可用。

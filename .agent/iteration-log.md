@@ -800,3 +800,12 @@
 - **生产:** CI run `28457160349` passed；Cloudflare deploy step passed。
 - **Commit:** `326fef3 feat: surface report library data health`
 - **下一阶段:** Stage 2/6 IMPROVE，继续 template analysis/report API runtime guard 和受控恢复路径。
+
+### Stage 2/6 IMPROVE — Template Research Payload Health
+- **承接方向:** 延续 Stage 1 的 runtime contract 主线，把 template analyses/templates/completion/single-analysis/generation stream 从直接类型断言改为共享 guard。
+- **真实问题修复:** malformed 模板报告、模板定义、AI 补全返回和 NDJSON progress/final 不再进入“我的研究”状态树；`MyResearchView` 显示“模板研究已跳过 N 条异常记录”并提供重新读取；`failed_retryable` 现在正确计入失败/可重试统计。
+- **验证:** TDD 红绿；定向 `src/api.test.ts` 53 tests、定向 2 files / 60 tests、全量 96 files / 952 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check passed；本地 Pages 8800 + Playwright 桌面与 390px 移动端夹具通过。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage2-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage2-mobile.png`
+- **生产:** CI run `28459387787` passed；Cloudflare deploy step passed。
+- **Commit:** `c6e3a4c feat: guard template research payloads`
+- **下一阶段:** Stage 3/6 UIUX，优先修复移动端 `view-mine` 仍被顶部报告输入 rail 抢占首屏的问题。
