@@ -1064,6 +1064,47 @@ describe("API client", () => {
     await expect(resetResearchTemplatesToDefault()).resolves.toEqual([]);
   });
 
+  test("filters malformed watchlist records before research views render them", async () => {
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "A股",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const watchlistItem = {
+      id: "watch-1",
+      userId: "user-admin",
+      company,
+      addedAt: "2026-06-30T00:00:00.000Z",
+    };
+    const rankingEntry = {
+      watchlistId: "watch-1",
+      companyName: "贵州茅台",
+      ticker: "600519",
+      market: "A股",
+      status: "completed" as const,
+      overallScore: 86,
+      keyPoints: ["现金流稳健"],
+      riskFlags: [],
+    };
+    const user = { userId: "user-admin", username: "admin", displayName: "Admin", role: "admin" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "broken" }, watchlistItem], user })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ item: { id: "broken" }, status: "updated" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: [{ watchlistId: "broken" }, rankingEntry], watchlist: [{ id: "broken" }, watchlistItem] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ entries: [{ watchlistId: "broken" }, rankingEntry], queued: [1, "watch-1"], reused: [null, "watch-2"] }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchWatchlist()).resolves.toEqual({ items: [watchlistItem], user });
+    await expect(addWatchlistItem({ company })).rejects.toThrow("加入自选失败。");
+    await expect(fetchWatchlistRanking()).resolves.toEqual({ entries: [rankingEntry], watchlist: [watchlistItem] });
+    await expect(refreshWatchlistRanking()).resolves.toEqual({ entries: [rankingEntry], queued: ["watch-1"], reused: ["watch-2"] });
+  });
+
   test("filters malformed company candidates and returns research upsert status", async () => {
     const company = {
       id: "eastmoney:1.600519",
