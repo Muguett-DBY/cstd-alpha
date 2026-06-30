@@ -789,3 +789,14 @@
 - **生产验收:** `alpha.custard.top` 与 `aece96aa.cstd-alpha.pages.dev` 均通过临时 QA 管理员桌面/移动只读验收；会话、机会、研究队列、估值、自选、排行、报告库、雷达、助手线程等核心读 API 均 200。
 - **遗留风险:** 线上未触发 AI 生成、报告生成或写入研究数据，避免真实业务数据污染和外部模型成本；写入边界由本地夹具/自动化测试覆盖。客户端会隔离坏数据但不修复服务端源记录。
 - **下一轮建议:** 优先把 remaining report/template library raw casts 继续收敛为共享 runtime contract，并为生产写入型流程设计可自动清理的 QA sandbox 数据策略。
+
+## Round 68 — 2026-07-01 (6 Stage Main V2, in progress)
+
+### Stage 1/6 IMPROVE — Report Library Data Health
+- **承接方向:** Round 67 建议继续收敛 remaining report/template library raw casts；本阶段先处理报告库 list/record/import 的运行时契约和用户可见数据健康。
+- **真实问题修复:** malformed report library entry 不再进入排行、报告读取或导入结果；`fetchReportLibrary` 返回 `skippedEntries` 并过滤坏 matched tickers；排行页显示“报告库已跳过 N 条异常记录”并提供重新读取。
+- **验证:** TDD 红绿；定向 2 files / 57 tests passed；全量 96 files / 950 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check passed；本地 Pages + Browser/Playwright 桌面与 390px 移动端夹具通过。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage1-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage1-mobile.png`
+- **生产:** CI run `28457160349` passed；Cloudflare deploy step passed。
+- **Commit:** `326fef3 feat: surface report library data health`
+- **下一阶段:** Stage 2/6 IMPROVE，继续 template analysis/report API runtime guard 和受控恢复路径。

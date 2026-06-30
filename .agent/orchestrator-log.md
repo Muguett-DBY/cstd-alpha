@@ -1222,3 +1222,23 @@
 **最终线上状态:** 最新功能部署 `aece96aa.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均通过管理员只读验收；临时 QA 管理员已清理。
 **遗留风险:** 客户端持续过滤坏数据但不修复服务端源记录；生产验收未执行 AI/报告/写入型业务操作，避免模型成本和生产数据污染，相关边界由本地夹具和自动测试覆盖。
 **最终状态:** Round 67 六阶段已按总控完成；本日志收口提交会再触发一次 GitHub Actions，需确认其通过后结束。
+
+## Round 68 — 2026-07-01 (6 Stage Main V2, in progress)
+
+### 阶段 1/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 67 的 remaining report/template raw casts 方向，先把报告库条目、单条读取和导入返回收敛到共享运行时契约，并把被跳过的异常报告记录变成用户可见的数据健康提示。
+**开始状态:** `main` 与 `origin/main` 同步于 `87b0d77`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 TDD 复现 malformed report library list/record/import 被客户端消费；再补共享 report library entry guard、API 过滤和排行页健康提示；随后跑定向/全量门禁、本地 Pages + 浏览器验收、独立 commit/push、GitHub Actions 和日志闭环。
+**测试先行:** 扩展 `src/api.test.ts` 红灯确认 malformed report entry、非字符串 matched ticker、坏 report record 和坏 import result 未被拒绝；新增 shared helper 测试锁定数据健康提示文案。
+**完成内容:** 新增 `isReportLibraryEntry` 与 `describeReportLibraryDataHealth`；`fetchReportLibrary` 过滤坏 entry 并返回 `skippedEntries`，过滤非字符串 matched tickers；`fetchReportLibraryRecord` 与 `importReportLibraryReports` 对 malformed entry/report 受控失败；Cloudflare `functions/api/report-library.ts` 复用共享 guard；`RankingView` 显示“报告库已跳过 N 条异常记录”并提供重新读取。
+**真实问题修复:** 报告库混入坏 KV/API 记录时不再污染排行、报告读取或导入结果；用户能看到有效报告保留数量和重新读取入口，避免把坏记录被过滤误判为报告库真实缺失。
+**本地验证:** TDD 红绿完成；定向 `src/api.test.ts` + `src/shared/report-library.test.ts` 2 files / 57 tests passed；全量 `npm test` 96 files / 950 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；内置 Browser 验证页面身份、非空渲染和 console 健康；Playwright API 夹具在桌面和 390x844 移动端验证报告库 1 条坏记录 + 1 条有效记录时显示健康提示，点击“重新读取”后提示消失且有效 `微软 MSFT` 行保留；无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage1-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage1-mobile.png`。
+**Commit / Push:** `326fef3 feat: surface report library data health` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28457160349`；96 files / 950 tests；lint、typecheck、build、deploy 均通过)。
+**风险记录:** 客户端会提示并隔离 malformed 报告库记录，但不会修复源 KV/API 数据；390px 市场/报告排行首屏仍被输入 rail 和导入表单占用，报告库健康提示位置偏低，留给 Stage 3 UIUX 集中处理。
+**下一阶段:** 阶段 2/6 IMPROVE，继续把 template analysis/report API 的 raw casts 收敛为运行时契约，并提供受控恢复或可见失败路径。
