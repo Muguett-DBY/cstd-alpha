@@ -875,6 +875,51 @@ describe("API client", () => {
     );
   });
 
+  test("filters malformed radar scan payloads before the radar view renders them", async () => {
+    const radar = {
+      id: "radar-1",
+      title: "行业雷达扫描",
+      generatedAt: "2026-05-17T00:00:00.000Z",
+      asOfDate: "2026-05-17",
+      validUntil: "2026-05-17T12:00:00.000Z",
+      model: "deepseek-v4-flash",
+      sourceCount: 12,
+      sourceQueries: ["A股 行业 景气"],
+      executiveSummary: ["电网设备增长扎实。"],
+      solidGrowth: [],
+      sustainability: [],
+      bubbleRisks: [],
+      upcomingGrowth: [],
+      decliningIndustries: [],
+      representativeCompanies: [],
+      stageCompanies: [],
+      limitations: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        radar: { id: "broken-radar", executiveSummary: "not-array" },
+        job: { id: "broken-job", status: "lost" },
+        diagnostics: { jobStatus: "lost" },
+        warning: 404,
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        radar,
+        job: { id: "job-1", status: "running", createdAt: "2026-05-17T00:00:00.000Z", updatedAt: "2026-05-17T00:01:00.000Z" },
+        diagnostics: { jobStatus: "running", sourceCount: 12 },
+        warning: "模型限流，已保留上次扫描。",
+      })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchRadarScan()).resolves.toEqual({ radar: null, job: null, diagnostics: null, warning: undefined });
+    await expect(refreshRadarScan()).resolves.toMatchObject({
+      radar: { id: "radar-1", refreshWarning: "模型限流，已保留上次扫描。" },
+      job: { id: "job-1", status: "running" },
+      diagnostics: { jobStatus: "running", sourceCount: 12 },
+      warning: "模型限流，已保留上次扫描。",
+    });
+  });
+
   test("normalizes incomplete opportunities payloads to empty dashboard data", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({})));
     vi.stubGlobal("fetch", fetchMock);

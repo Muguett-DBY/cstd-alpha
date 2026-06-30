@@ -758,5 +758,16 @@
 - **验证:** TDD 红绿；`src/api.test.ts` 47 tests、全量 96 files / 943 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
 - **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证 GET/POST `/api/session` 坏 payload 的桌面与 390px 移动端恢复提示，无横向溢出、ErrorBoundary、失败响应或 console/page error。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-mobile.png`
-- **Commit:** `fix: guard auth session payloads`
+- **生产:** deployment `ad5f05a9.cstd-alpha.pages.dev`；CI run `28439067986` passed。
+- **Commit:** `205229b fix: guard auth session payloads`
 - **下一阶段:** Stage 5/6 CHECK，系统扫雷剩余 raw JSON casts、认证边界、生产构建和线上验收缺口。
+
+### Stage 5/6 CHECK — Radar Payload Audit and Mobile Rail Cleanup
+- **检查:** 复核 CI workflow、package scripts、依赖审计、secret/debug patterns、剩余 API raw casts、认证边界和雷达/市场移动流；确认 CI ladder 为 test/lint/typecheck/build/deploy。
+- **真实问题修复:** `/api/radar-scan` 新增 radar/job/diagnostics/evidence/source/coverage/industry packet runtime guard；坏雷达降级为空态，坏 job/diagnostics 不进入 UI，非字符串 warning 不透传。
+- **移动修复:** 720px 以下非助手 `.input-rail .view-tabs` 隐藏，修复雷达页顶部 view tabs 与底部主导航重复的问题。
+- **验证:** TDD 红绿；`src/api.test.ts` 48 tests、`src/mobile-workbench-navigation.test.ts` 3 tests、全量 96 files / 945 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证 malformed radar 受控空态、刷新有效雷达恢复、桌面/390px 移动端无 ErrorBoundary、失败响应、console/page error 或横向溢出；移动端顶部重复 tabs 已不存在。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-mobile.png`
+- **Commit:** `fix: validate radar scan payloads`
+- **下一阶段:** Stage 6/6 IMPROVE，做最后一轮核心边界/线上验收驱动改进，并完成生产管理员全功能收口。

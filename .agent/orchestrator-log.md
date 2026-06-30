@@ -1171,7 +1171,25 @@
 **本地验证:** TDD 红绿完成；定向 2 tests passed；`src/api.test.ts` 47 tests passed；全量 `npm test` 96 files / 943 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让 GET `/api/session` 返回 malformed user、POST `/api/session` 返回非法 role；桌面验证登录坏返回显示“登录失败：服务端未返回账号信息。”，390x844 移动端验证启动坏会话显示“登录状态读取失败，请重新登录。”；均无横向溢出、ErrorBoundary、console/page error 或站内 4xx/5xx 响应。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-mobile.png`。
-**Commit / Push:** 待提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
+**Commit / Push:** `205229b fix: guard auth session payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28439067986`；96 files / 943 tests；lint、typecheck、build、deploy 均通过；deployment `ad5f05a9.cstd-alpha.pages.dev`)。
 **风险记录:** 客户端只接受 `admin/user` 两类角色；如果未来后端引入新合法角色，需要同步更新前端角色白名单和导航能力映射。
 **下一阶段:** 阶段 5/6 CHECK，全项目扫雷仍需重点复核剩余 raw JSON casts、认证边界和生产可验流程。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统扫雷剩余 raw JSON casts、认证/数据边界、CI 与移动端可见问题，优先修复会导致雷达页崩溃或移动重复导航的 P1/P2 问题。
+**开始状态:** Stage 4 commit `205229b` 已推送至 `main`，CI run `28439067986` passed，Cloudflare production deployment `ad5f05a9.cstd-alpha.pages.dev`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**系统检查:** 复核 `package.json`、`.github/workflows/pages.yml`、Node/npm 版本、CI 命令、剩余 `await response.json() as ...`、认证会话、雷达/市场移动流、依赖审计和 secret/debug patterns；发现 P1：`/api/radar-scan` 仍直接 cast `radar/job/diagnostics`，坏嵌套数组或非法 job status 可进入 `RadarView`；发现 P2：390px 雷达页实际使用 `.input-rail .view-tabs`，Stage 3 的 `.workbench-nav-rail` 规则未覆盖，顶部导航和底部导航重复。
+**测试先行:** 扩展 `src/api.test.ts` 红灯复现坏 `radar/job/diagnostics/warning` 被放行；扩展 `src/mobile-workbench-navigation.test.ts` 红灯复现 compact 非助手 `.input-rail .view-tabs` 没有隐藏规则。
+**完成内容:** `src/api.ts` 新增雷达 scan/job/diagnostics/evidence/source/coverage/industry packet runtime guard 和 normalize；坏雷达返回被降级为 `radar:null`，坏 job/diagnostics 被置空，非字符串 warning 被丢弃；有效雷达刷新仍保留 `refreshWarning`。720px 以下非助手 `.input-rail .view-tabs` 现在隐藏，覆盖雷达/我的/报告等非 workbench rail 形态。
+**真实问题修复:** malformed radar 不再进入 `RadarView` 后触发 `.map/.slice/.length` 等深层崩溃；非法 job status 不再驱动错误轮询/状态；移动雷达页不再同时显示顶部 view tabs 和底部主导航。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 48 tests passed；`src/mobile-workbench-navigation.test.ts` 3 tests passed；全量 `npm test` 96 files / 945 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。一次并发定向 Vitest 触发 coverage `.tmp` 争用，已串行重跑并通过。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local` 重启到最新 build；Playwright API 夹具让 GET `/api/radar-scan` 先返回 malformed radar/job/diagnostics，再让刷新返回有效雷达 + warning；桌面验证坏 payload 先显示“雷达暂时不可用”、刷新后显示有效扫描和 warning，390x844 移动端验证坏 payload 受控空态、顶部重复 tabs 不存在、底部“市场” active；均无横向溢出、ErrorBoundary、console/page error 或站内 4xx/5xx 响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-mobile.png`。
+**Commit / Push:** 待提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 雷达 guard 会过滤不满足完整基础契约的雷达对象和嵌套项；如果服务端未来新增雷达枚举值，需要同步更新前端白名单。客户端仍只负责隔离坏数据，不修复服务端源数据。
+**下一阶段:** 阶段 6/6 IMPROVE，围绕剩余核心 raw JSON casts 或线上管理员全功能验收发现的问题做最后一轮可验证改进，并完成最终生产验收。
