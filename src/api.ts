@@ -99,6 +99,11 @@ export type ValuationsResult = {
   runs: ValuationRunSummary[];
 };
 
+const VALUATION_METHOD_VALUES = ["dcf_3_statement", "ddm_residual_income", "mid_cycle_nav"] as const;
+const COMPANY_ARCHETYPE_VALUES = ["operating", "bank", "insurance", "cyclical"] as const;
+const VALUATION_RUN_STATUS_VALUES = ["queued", "running", "completed", "failed"] as const;
+const VALUATION_SCENARIO_VALUES = ["bear", "base", "bull"] as const;
+
 type AssistantThreadSummary = {
   id: string;
   title: string;
@@ -160,8 +165,8 @@ export async function updateResearchItemStage(id: string, stage: ResearchStage, 
     body: JSON.stringify({ stage, sortOrder }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "研究阶段更新失败。");
-  const data = (await response.json()) as { item?: ResearchWorkbenchItem };
-  if (!data.item) throw new Error("研究阶段更新失败。");
+  const data = objectPayload(await response.json());
+  if (!isResearchWorkbenchItem(data.item)) throw new Error("研究阶段更新失败。");
   return data.item;
 }
 
@@ -278,7 +283,7 @@ function normalizeResearchCatalystsResult(payload: unknown): ResearchCatalystsRe
 
 function normalizeValuationsResult(payload: unknown): ValuationsResult {
   const data = objectPayload(payload) as Partial<ValuationsResult>;
-  return { runs: Array.isArray(data.runs) ? data.runs : [] };
+  return { runs: arrayPayload<unknown>(data.runs).filter(isValuationRunSummary) };
 }
 
 export async function createValuationRun(input: {
@@ -299,8 +304,8 @@ export async function createValuationRun(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok && response.status !== 202) throw new Error((await readError(response)) || "估值任务创建失败。");
-  const data = (await response.json()) as { run?: ValuationRunSummary };
-  if (!data.run) throw new Error("估值任务创建失败。");
+  const data = objectPayload(await response.json());
+  if (!isValuationRunSummary(data.run)) throw new Error("估值任务创建失败。");
   return data.run;
 }
 
@@ -976,8 +981,117 @@ function isResearchCatalyst(value: unknown): value is ResearchCatalyst {
   );
 }
 
+function isValuationRunSummary(value: unknown): value is ValuationRunSummary {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    (value.researchItemId === undefined || typeof value.researchItemId === "string") &&
+    (value.entityType === "company" || value.entityType === "industry") &&
+    typeof value.entityId === "string" && value.entityId.trim().length > 0 &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    isStringOneOf(value.status, VALUATION_RUN_STATUS_VALUES) &&
+    isStringOneOf(value.method, VALUATION_METHOD_VALUES) &&
+    isStringOneOf(value.archetype, COMPANY_ARCHETYPE_VALUES) &&
+    typeof value.currency === "string" && value.currency.trim().length > 0 &&
+    (value.result === undefined || isValuationResult(value.result)) &&
+    (value.objectKey === undefined || typeof value.objectKey === "string") &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isValuationResult(value: unknown): value is NonNullable<ValuationRunSummary["result"]> {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.methodologyVersion === undefined || typeof value.methodologyVersion === "number") &&
+    (value.quantitativeVersionId === undefined || typeof value.quantitativeVersionId === "string") &&
+    (value.sourceSnapshotId === undefined || typeof value.sourceSnapshotId === "string") &&
+    (value.warnings === undefined || isStringArray(value.warnings)) &&
+    isStringOneOf(value.method, VALUATION_METHOD_VALUES) &&
+    isStringOneOf(value.archetype, COMPANY_ARCHETYPE_VALUES) &&
+    typeof value.currency === "string" && value.currency.trim().length > 0 &&
+    typeof value.asOf === "string" &&
+    Array.isArray(value.assumptions) &&
+    value.assumptions.every(isValuationAssumption) &&
+    Array.isArray(value.scenarios) &&
+    value.scenarios.every(isValuationScenarioResult) &&
+    (value.forecastRows === undefined || (Array.isArray(value.forecastRows) && value.forecastRows.every(isThreeStatementForecastRow))) &&
+    (value.sensitivity === undefined || (Array.isArray(value.sensitivity) && value.sensitivity.every(isValuationSensitivityPoint))) &&
+    (value.peerRange === undefined || isValuationPeerRange(value.peerRange)) &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.modelResults === undefined || (Array.isArray(value.modelResults) && value.modelResults.every(isPlainRecord))) &&
+    (value.actualReviews === undefined || (Array.isArray(value.actualReviews) && value.actualReviews.every(isPlainRecord)))
+  );
+}
+
+function isValuationAssumption(value: unknown): value is NonNullable<ValuationRunSummary["result"]>["assumptions"][number] {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.key === "string" &&
+    typeof value.label === "string" &&
+    finiteNumber(value.low) !== undefined &&
+    finiteNumber(value.base) !== undefined &&
+    finiteNumber(value.high) !== undefined &&
+    typeof value.unit === "string" &&
+    (value.origin === "provider" || value.origin === "formula" || value.origin === "ai" || value.origin === "user") &&
+    isStringArray(value.evidenceRefs) &&
+    finiteNumber(value.confidence) !== undefined &&
+    typeof value.locked === "boolean"
+  );
+}
+
+function isValuationScenarioResult(value: unknown): value is NonNullable<ValuationRunSummary["result"]>["scenarios"][number] {
+  if (!isPlainRecord(value)) return false;
+  return (
+    isStringOneOf(value.scenario, VALUATION_SCENARIO_VALUES) &&
+    finiteNumber(value.equityValue) !== undefined &&
+    finiteNumber(value.perShareValue) !== undefined &&
+    typeof value.summary === "string"
+  );
+}
+
+function isThreeStatementForecastRow(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    finiteNumber(value.year) !== undefined &&
+    finiteNumber(value.revenue) !== undefined &&
+    finiteNumber(value.ebit) !== undefined &&
+    finiteNumber(value.tax) !== undefined &&
+    finiteNumber(value.nopat) !== undefined &&
+    finiteNumber(value.depreciationAmortization) !== undefined &&
+    finiteNumber(value.capex) !== undefined &&
+    finiteNumber(value.workingCapitalChange) !== undefined &&
+    finiteNumber(value.freeCashFlow) !== undefined
+  );
+}
+
+function isValuationSensitivityPoint(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.row === "string" &&
+    typeof value.column === "string" &&
+    finiteNumber(value.discountRate) !== undefined &&
+    finiteNumber(value.terminalGrowthRate) !== undefined &&
+    finiteNumber(value.perShareValue) !== undefined
+  );
+}
+
+function isValuationPeerRange(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    finiteNumber(value.low) !== undefined &&
+    finiteNumber(value.median) !== undefined &&
+    finiteNumber(value.high) !== undefined &&
+    typeof value.metric === "string"
+  );
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isStringOneOf<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
+  return typeof value === "string" && allowed.includes(value);
 }
 
 function objectPayload(value: unknown): Record<string, unknown> {
