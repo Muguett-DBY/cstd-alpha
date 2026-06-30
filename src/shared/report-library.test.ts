@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildReportLibraryEntry, normalizeEntryConclusion, normalizeEntryPositionAdvice, normalizeEntryValuationView } from "./report-library";
+import { buildReportLibraryEntry, describeReportLibraryDataHealth, normalizeEntryConclusion, normalizeEntryPositionAdvice, normalizeEntryValuationView } from "./report-library";
 import { validateReportPayload } from "./report";
 
 describe("report library entries", () => {
@@ -44,5 +44,13 @@ describe("report library entries", () => {
     expect(entry.conclusion).toBe("回避");
     expect(entry.positionAdvice).toBe("0%");
     expect(entry.industry).toBe("银行");
+  });
+
+  test("describes skipped report records without implying that source data was repaired", () => {
+    expect(describeReportLibraryDataHealth(2, 5)).toEqual({
+      title: "报告库已跳过 2 条异常记录",
+      detail: "本次保留 5 条可用报告；源数据未被修改，可重新读取检查是否已恢复。",
+    });
+    expect(describeReportLibraryDataHealth(0, 5)).toBeNull();
   });
 });

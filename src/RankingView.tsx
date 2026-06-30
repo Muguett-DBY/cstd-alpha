@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { fetchReportLibrary, importReportLibraryReports } from "./api";
 import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
-import type { ReportLibraryEntry } from "./shared/report-library";
+import { describeReportLibraryDataHealth, type ReportLibraryEntry } from "./shared/report-library";
 import { buildRankingEntries, type RankingEntry, type RankingSeed } from "./shared/ranking";
 import { crossMarketAnchorTickersForListings } from "./shared/cross-market";
 
@@ -66,6 +66,8 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const [libraryEntries, setLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [anchorLibraryEntries, setAnchorLibraryEntries] = useState<ReportLibraryEntry[]>([]);
   const [libraryTotal, setLibraryTotal] = useState(0);
+  const [librarySkippedEntries, setLibrarySkippedEntries] = useState(0);
+  const [libraryReloadVersion, setLibraryReloadVersion] = useState(0);
   const [matchedSeedCodes, setMatchedSeedCodes] = useState<Set<string>>(() => new Set());
   const [libraryPhase, setLibraryPhase] = useState<"loading" | "ready" | "error">("loading");
   const [libraryPage, setLibraryPage] = useState(1);
@@ -88,6 +90,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       setLibraryEntries([]);
       setAnchorLibraryEntries([]);
       setLibraryTotal(0);
+      setLibrarySkippedEntries(0);
       setMatchedSeedCodes(new Set());
     });
   }, [market]);
@@ -107,6 +110,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
         setLibraryEntries([]);
         setAnchorLibraryEntries([]);
         setMatchedSeedCodes(new Set());
+        setLibrarySkippedEntries(0);
       }
     });
     const seedCodes = config.seeds.map((seed) => seed.code);
@@ -129,6 +133,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
         setLibraryEntries(library.entries);
         setAnchorLibraryEntries(library.anchorEntries ?? []);
         setLibraryTotal(library.total);
+        setLibrarySkippedEntries(library.skippedEntries ?? 0);
         setMatchedSeedCodes(new Set(library.matchedTickers ?? []));
         setLibraryPhase("ready");
       })
@@ -142,7 +147,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
       cancelled = true;
       controller.abort();
     };
-  }, [config.marketParam, config.seeds, remoteIndustry, remoteLibraryPage, remoteSortDirection, remoteSortMode, usesClientSideLibrary]);
+  }, [config.marketParam, config.seeds, libraryReloadVersion, remoteIndustry, remoteLibraryPage, remoteSortDirection, remoteSortMode, usesClientSideLibrary]);
 
   const entries = useMemo(
     () =>
@@ -183,6 +188,7 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
   const libraryOffset = (libraryPage - 1) * LIBRARY_PAGE_SIZE;
   const pageStart = visibleTotal ? libraryOffset + 1 : 0;
   const pageEnd = Math.min(libraryOffset + visibleRows.length, visibleTotal);
+  const libraryDataHealth = describeReportLibraryDataHealth(librarySkippedEntries, libraryEntries.length);
 
   async function submitImport(event: React.FormEvent) {
     event.preventDefault();
@@ -224,6 +230,18 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
           <MetricTile label="本页第一" value={pageTopEntry ? pageTopEntry.name : "待生成"} />
         </div>
       </header>
+
+      {libraryDataHealth ? (
+        <div className="data-health-notice" role="status" aria-live="polite">
+          <div>
+            <strong>{libraryDataHealth.title}</strong>
+            <p>{libraryDataHealth.detail}</p>
+          </div>
+          <button type="button" onClick={() => setLibraryReloadVersion((version) => version + 1)}>
+            重新读取
+          </button>
+        </div>
+      ) : null}
 
       <form className="ranking-import" onSubmit={submitImport}>
         <label htmlFor="rankingImport">导入报告 JSON</label>
@@ -423,6 +441,7 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[],
   const entries: ReportLibraryEntry[] = [];
   const anchorEntries: ReportLibraryEntry[] = [];
   const matchedTickers = new Set<string>();
+  let skippedEntries = 0;
   let total: number;
   for (let offset = 0; ; offset += CLIENT_FILTERED_LIBRARY_LIMIT) {
     const page = await fetchReportLibrary({
@@ -435,6 +454,7 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[],
       signal,
     });
     entries.push(...page.entries);
+    skippedEntries += page.skippedEntries ?? 0;
     for (const ticker of page.matchedTickers ?? []) matchedTickers.add(ticker);
     total = page.total ?? entries.length;
     if (!page.entries.length || entries.length >= total) break;
@@ -452,8 +472,9 @@ async function fetchAllMarketLibraryEntries(market: string, seedCodes: string[],
       signal,
     });
     anchorEntries.push(...page.entries);
+    skippedEntries += page.skippedEntries ?? 0;
   }
-  return { entries, total, matchedTickers: Array.from(matchedTickers), anchorEntries };
+  return { entries, total, matchedTickers: Array.from(matchedTickers), anchorEntries, skippedEntries };
 }
 
 function isAbortError(error: unknown) {

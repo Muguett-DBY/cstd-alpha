@@ -26,6 +26,38 @@ export type ImportedLibraryReport = {
   importedAt: string;
 };
 
+const REPORT_CONCLUSIONS = ["买入", "加仓", "持有", "观察", "减仓", "卖出", "回避"] as const;
+
+export function isReportLibraryEntry(value: unknown): value is ReportLibraryEntry {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.companyName === "string" &&
+    optionalString(value.ticker) &&
+    optionalString(value.market) &&
+    optionalString(value.industry) &&
+    optionalString(value.sector) &&
+    finiteNumber(value.cqs) &&
+    finiteNumber(value.ias) &&
+    REPORT_CONCLUSIONS.includes(value.conclusion as InvestmentReport["conclusion"]) &&
+    typeof value.qualitativeBand === "string" &&
+    typeof value.positionAdvice === "string" &&
+    typeof value.valuationView === "string" &&
+    typeof value.asOf === "string" &&
+    typeof value.importedAt === "string" &&
+    nonNegativeInteger(value.evidenceCount) &&
+    nonNegativeInteger(value.scoreItemCount)
+  );
+}
+
+export function describeReportLibraryDataHealth(skippedEntries: number, availableEntries: number) {
+  if (!Number.isInteger(skippedEntries) || skippedEntries <= 0) return null;
+  return {
+    title: `报告库已跳过 ${skippedEntries} 条异常记录`,
+    detail: `本次保留 ${Math.max(0, availableEntries)} 条可用报告；源数据未被修改，可重新读取检查是否已恢复。`,
+  };
+}
+
 export function parseReportLibraryReports(value: unknown): InvestmentReport[] {
   const candidates = extractReportCandidates(value);
   const reports = candidates.map((item) => validateLibraryReport(item));
@@ -150,6 +182,18 @@ function stripGeneratedZeroScoreItems(value: unknown): unknown {
 
 function positiveNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function nonNegativeInteger(value: unknown) {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function optionalString(value: unknown) {
+  return value === undefined || typeof value === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

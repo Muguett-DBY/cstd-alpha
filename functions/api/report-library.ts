@@ -2,6 +2,7 @@ import { verifySessionCookie } from "../_shared/auth";
 import {
   buildReportLibraryEntry,
   cleanIndustryLabel,
+  isReportLibraryEntry,
   normalizeEntryConclusion,
   normalizeEntryPositionAdvice,
   normalizeEntryValuationView,
@@ -167,12 +168,12 @@ async function readDurableReportRecord(env: Env, id: string): Promise<ReportLibr
 
 async function readKvReportRecord(cache: KVNamespace, id: string): Promise<ReportLibraryRecord | null> {
   const record = await cache.get<ReportLibraryRecord>(`${REPORT_PREFIX}${id}`, "json");
-  if (!isRecord(record) || !isRecord(record.entry) || !isRecord(record.report)) return null;
-  const report = validateLibraryReport(record.report);
-  return {
-    entry: record.entry as ReportLibraryEntry,
-    report,
-  };
+  if (!isRecord(record) || !isReportLibraryEntry(record.entry) || !isRecord(record.report)) return null;
+  try {
+    return { entry: record.entry, report: validateLibraryReport(record.report) };
+  } catch {
+    return null;
+  }
 }
 
 async function listDurableReportEntries(db: D1Database, limit: number, offset: number, order: string, industry?: string, market?: MarketFilter, tickers: string[] = []) {
@@ -223,7 +224,7 @@ async function listKvReportEntries(cache: KVNamespace, limit: number, offset: nu
     const pageEntries = await Promise.all(
       page.keys.map(async (key) => {
         const value = await cache.get<ReportLibraryRecord>(key.name, "json");
-        return isRecord(value) && isValidEntry(value.entry) ? value.entry : null;
+        return isRecord(value) && isReportLibraryEntry(value.entry) ? value.entry : null;
       }),
     );
     entries.push(
@@ -269,17 +270,6 @@ async function sha256(value: string) {
   return Array.from(new Uint8Array(bytes))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-}
-
-function isValidEntry(value: unknown): value is ReportLibraryEntry {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.companyName === "string" &&
-    typeof value.cqs === "number" &&
-    typeof value.ias === "number" &&
-    typeof value.importedAt === "string"
-  );
 }
 
 type ReportLibraryRow = {
