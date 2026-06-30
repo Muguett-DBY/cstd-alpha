@@ -1055,3 +1055,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28418197641`；92 files / 926 tests；lint、typecheck、build、deploy 均通过；deployment `02c3db90.cstd-alpha.pages.dev`)。
 **风险记录:** completed run 的 `result` 现在要求核心数组结构完整；如果服务端返回部分损坏的估值结果，客户端会过滤该 run 而不是尝试半渲染，避免误导性估值展示。
 **下一阶段:** 阶段 5/6 CHECK，做全项目审计，优先查找仍未防护的 API 边界、构建/CI/部署和浏览器可见问题。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统审计剩余 API payload、CI/workflow、依赖、安全扫描和真实浏览器流，修复会导致网站崩溃或坏状态进入 UI 的实际问题。
+**开始状态:** Stage 4 功能 commit `d8c99c2` 与日志 commit `19526a7` 均已推送，CI runs `28418197641` / `28418277552` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**系统检查:** 复核 `package.json`、`.github/workflows/pages.yml`、API client raw JSON casts、估值实验室/研究工作区消费者、依赖审计、secret/debug patterns 和历史风险记录；开发/生产依赖 audit 均 0 vulnerabilities；发现 P1：`/api/valuation-workspace` 读写仍直接 cast，`versions` / `actualReviews` 或保存返回 `version` 畸形时会进入量化估值工作区并触发 `.length/.map/.draft` 等运行时错误。
+**测试先行:** 扩展 `src/api.test.ts`，红灯复现读取工作区会 resolve `{ versions: { not: "an array" } }`，保存会 resolve malformed `workspace.actualReviews` 和 malformed `version`。
+**完成内容:** `src/api.ts` 为量化估值工作区新增 workspace/version/snapshot/draft/assumption/preset/actualReview runtime guard；读取和保存接口遇到坏 payload 改为受控“估值工作区读取失败。”或“估值保存失败。”。
+**真实问题修复:** 畸形量化工作区不再进入 `QuantitativeValuationWorkspace` 后触发 `workspace.versions.length`、`workspace.actualReviews.map`、`version.draft` 或保存回调中的坏状态；保存返回坏 version 不再污染本地版本历史。
+**本地验证:** TDD 红灯 3 tests failed 后绿灯；`src/api.test.ts` 43 tests passed；全量 `npm test` 92 files / 929 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、开发/生产 `npm audit`、secret/debug scan、`git diff --check` passed。一次并发运行 `npm test` 与定向 Vitest 导致 coverage `.tmp` 争用失败，已单独重跑全量并通过。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具让已完成估值 run 打开量化工作区，同时 `/api/valuation-workspace` 返回 malformed workspace；验证只显示受控“估值工作区读取失败。”，未进入量化编辑 UI，无 ErrorBoundary、API 4xx、console/page error，桌面/移动均无横向溢出。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-quant-workspace-guard.png`
+**Commit / Push:** `69122a4 fix: validate quantitative workspace payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28418689909`；92 files / 929 tests；lint、typecheck、build、deploy 均通过；deployment `899cb688.cstd-alpha.pages.dev`)。
+**风险记录:** 量化 draft 现在要求 method 对应的 operating/financial/cyclical 输入完整；如果服务端返回半残缺草稿，客户端会拒绝进入编辑态，避免用户基于不完整假设保存新版本。
+**下一阶段:** 阶段 6/6 IMPROVE，基于 CHECK 审计剩余 raw JSON casts 做最后一轮可验证稳定性增量，并完成最终生产收口。
