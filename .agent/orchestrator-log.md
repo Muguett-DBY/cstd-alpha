@@ -1073,3 +1073,30 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28418689909`；92 files / 929 tests；lint、typecheck、build、deploy 均通过；deployment `899cb688.cstd-alpha.pages.dev`)。
 **风险记录:** 量化 draft 现在要求 method 对应的 operating/financial/cyclical 输入完整；如果服务端返回半残缺草稿，客户端会拒绝进入编辑态，避免用户基于不完整假设保存新版本。
 **下一阶段:** 阶段 6/6 IMPROVE，基于 CHECK 审计剩余 raw JSON casts 做最后一轮可验证稳定性增量，并完成最终生产收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 5 的 raw JSON cast 审计结果，收紧自选股和自选股排行 API 边界，避免坏 watchlist item 或 ranking entry 进入“我的研究”、市场工作区和自选股排行后触发深层字段崩溃。
+**开始状态:** Stage 5 功能 commit `69122a4` 与日志 commit `ef09400` 均已推送，CI runs `28418689909` / `28418773998` passed；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现坏 watchlist item、坏 add mutation、坏 ranking entry 和非字符串 queued/reused 进入 API client；再实现项级 guard，跑完整门禁和本地 Pages + Playwright 验收，最后 commit/push/CI/生产收口。
+**测试先行:** 扩展 `src/api.test.ts`，红灯复现 `fetchWatchlist` 原样返回 `{ id: "broken" }`；同一测试覆盖坏 add mutation、坏 ranking entry/watchlist item，以及 `queued/reused` 中的非字符串值。
+**完成内容:** `src/api.ts` 新增 user session、watchlist item、watchlist ranking entry runtime guard；自选列表和排行列表改为项级过滤；加入自选遇到 malformed item 改为受控“加入自选失败。”；刷新队列只保留字符串 ID。
+**真实问题修复:** 坏公司对象不再进入“我的研究”触发 `company.name/code` 读取错误；坏排行对象不再进入市场工作区和 `localeCompare` 排序；坏 add mutation 不再污染自选列表。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 44 tests passed；全量 `npm test` 92 files / 930 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、开发/生产 `npm audit`、secret/debug scan、`git diff --check` passed。构建曾精确报出改造后未使用的 `WatchlistAddStatus` import，移除失效 import 后重新验证通过。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具在自选列表、加入 mutation 和排行列表中混入坏对象，验证“我的研究”只显示 1/1 有效公司、坏加入显示受控错误、自选排行只显示 1 条有效记录；桌面和 390x844 移动端无文档横向溢出、ErrorBoundary、API 4xx、console/page error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-watchlist-guards.png`
+**Commit / Push:** `e1a9e7d fix: guard watchlist api records` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28419483595`；92 files / 930 tests；lint、typecheck、build、deploy 均通过；deployment `33b87a33.cstd-alpha.pages.dev`)。
+**生产验收:** `https://alpha.custard.top/`、自定义域 `/api/session`、直连 deployment 及其 `/api/session` 均 HTTP 200；生产桌面/移动登录页标题、账号/密码控件、console、站内响应和横向布局通过只读 Playwright 验收。
+**风险记录:** API client 现在拒绝不满足完整基础契约的自选/排行记录，避免半残缺数据进入 UI；服务端持续返回坏记录时这些记录会被隐藏并等待服务端修复，不在客户端推测补全。既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入提交。
+**下一阶段:** 无；Round 66 的 6 个阶段已全部闭环。
+
+### Round 66 最终收口
+
+**状态:** 6/6 completed（IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE）。
+**功能 commits:** `f8fd930`、`08eccae`、`becaf15`、`d8c99c2`、`69122a4`、`e1a9e7d` 均已推送至 `main`，对应功能 CI 全部通过。
+**最终门禁:** 92 files / 930 tests passed；lint、functions typecheck、build、开发/生产 audit、secret/debug scan、diff check 全部通过。
+**最终生产状态:** 最新功能部署 `33b87a33.cstd-alpha.pages.dev` 与 `alpha.custard.top` 均 HTTP 200；两者 `/api/session` 均返回预期未登录 envelope；生产登录页桌面/移动浏览器验收无错误。
+**遗留风险:** 客户端会过滤服务端坏记录而不是修复源数据；真实登录后的线上写操作未在生产执行，避免污染用户数据，核心写路径已由本地 Pages API 夹具和自动测试覆盖。

@@ -657,7 +657,7 @@
 - **遗留风险:** API list payload 现在防御非数组/缺字段，但单条对象内部字段仍依赖各页面和服务端契约；新闻 payload 缺必需结构时按受控错误处理；`.dev.vars.example` 仍保留 API key 占位符；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 未纳入本轮提交。
 - **最终状态:** Round 65 六阶段已按总控完成；阶段 6 日志提交将在本条记录后提交并等待 CI。
 
-## Round 66 — 2026-06-30 (6 Stage Main V2, in progress)
+## Round 66 — 2026-06-30 (6 Stage Main V2, completed)
 
 ### Stage 1/6 IMPROVE — Research Quick Add Reliability
 - **承接方向:** 继续修复上一轮记录的“单条 API 记录内部字段仍依赖契约”风险，先收紧研究队列 quick-add 的服务端 upsert、候选数据和前端选中状态。
@@ -691,3 +691,33 @@
 - **生产:** Pages deployment `6d857cc6.cstd-alpha.pages.dev`；CI run `28410223086` passed。
 - **Commit:** `becaf15 feat: add research detail recovery UI`
 - **下一阶段:** Stage 4/6 IMPROVE，继续修复研究工作区可靠性问题，并维持每阶段独立 CI/部署闭环。
+
+### Stage 4/6 IMPROVE — Valuation API Record Guards
+- **承接方向:** 把研究工作区的项级校验扩展到估值历史、估值创建和研究阶段更新。
+- **真实问题修复:** malformed valuation run 不再进入估值实验室；坏阶段更新和坏估值创建返回改为受控错误，不污染本地 state。
+- **验证:** TDD 红绿；`src/api.test.ts` 40 tests、全量 92 files / 926 tests passed；lint、functions typecheck、build、secret/debug scan、diff check 和桌面/移动浏览器验收通过。
+- **生产:** deployment `02c3db90.cstd-alpha.pages.dev`；CI run `28418197641` passed。
+- **Commit:** `d8c99c2 fix: guard valuation api payloads`
+
+### Stage 5/6 CHECK — Quantitative Workspace Payload Audit
+- **检查:** 系统复核 API raw casts、CI/workflow、依赖、安全和量化估值消费者；开发/生产 audit 均 0 vulnerabilities。
+- **真实问题修复:** `/api/valuation-workspace` 读写新增 workspace/version/draft/assumption/preset/actual-review runtime guard，畸形工作区或保存返回不再进入量化编辑状态。
+- **验证:** TDD 红绿；`src/api.test.ts` 43 tests、全量 92 files / 929 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 和桌面/移动浏览器受控降级验收通过。
+- **生产:** deployment `899cb688.cstd-alpha.pages.dev`；CI run `28418689909` passed。
+- **Commit:** `69122a4 fix: validate quantitative workspace payloads`
+
+### Stage 6/6 IMPROVE — Watchlist API Record Guards
+- **承接方向:** 收紧自选股和自选股排行的单条记录契约，完成本轮 raw JSON boundary 收口。
+- **真实问题修复:** 自选列表、排行列表和刷新队列按项过滤；坏加入返回显示受控错误，不再让坏公司/排行对象进入“我的研究”、市场工作区或排序逻辑。
+- **验证:** TDD 红绿；`src/api.test.ts` 44 tests、全量 92 files / 930 tests passed；lint、functions typecheck、build、开发/生产 audit、secret/debug scan、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 夹具验证自选仅 1/1 有效公司、坏加入受控失败、排行仅 1 条有效记录；桌面/390px 移动端无 ErrorBoundary、站内失败响应、console/page error 或文档横向溢出。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-watchlist-guards.png`
+- **生产:** deployment `33b87a33.cstd-alpha.pages.dev`；CI run `28419483595` passed。
+- **Commit:** `e1a9e7d fix: guard watchlist api records`
+
+### Round 66 Final Closure
+- **状态:** 6/6 completed；功能 commits `f8fd930`、`08eccae`、`becaf15`、`d8c99c2`、`69122a4`、`e1a9e7d` 均已推送至 `main`，对应功能 CI 全部通过。
+- **最终门禁:** 92 files / 930 tests passed；lint、functions typecheck、build、开发/生产 audit、secret/debug scan、diff check 全部通过。
+- **生产验收:** `alpha.custard.top`、其 `/api/session`、`33b87a33.cstd-alpha.pages.dev` 及其 `/api/session` 均 HTTP 200；生产登录页桌面/移动只读 Playwright 验收无 console/page/站内响应错误或横向溢出。
+- **遗留风险:** 客户端过滤坏记录但不修复服务端源数据；生产写操作未执行以避免污染真实用户数据；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入提交。
+- **最终状态:** Round 66 六阶段已按总控完成；阶段 6/最终日志提交将在本条记录后提交并等待 CI。
