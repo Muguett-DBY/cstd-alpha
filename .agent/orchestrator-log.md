@@ -1189,7 +1189,25 @@
 **本地验证:** TDD 红绿完成；`src/api.test.ts` 48 tests passed；`src/mobile-workbench-navigation.test.ts` 3 tests passed；全量 `npm test` 96 files / 945 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。一次并发定向 Vitest 触发 coverage `.tmp` 争用，已串行重跑并通过。
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local` 重启到最新 build；Playwright API 夹具让 GET `/api/radar-scan` 先返回 malformed radar/job/diagnostics，再让刷新返回有效雷达 + warning；桌面验证坏 payload 先显示“雷达暂时不可用”、刷新后显示有效扫描和 warning，390x844 移动端验证坏 payload 受控空态、顶部重复 tabs 不存在、底部“市场” active；均无横向溢出、ErrorBoundary、console/page error 或站内 4xx/5xx 响应。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-mobile.png`。
-**Commit / Push:** 待提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
+**Commit / Push:** `887f949 fix: validate radar scan payloads` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28440526685`；96 files / 945 tests；lint、typecheck、build、deploy 均通过；deployment `af064182.cstd-alpha.pages.dev`)。
 **风险记录:** 雷达 guard 会过滤不满足完整基础契约的雷达对象和嵌套项；如果服务端未来新增雷达枚举值，需要同步更新前端白名单。客户端仍只负责隔离坏数据，不修复服务端源数据。
 **下一阶段:** 阶段 6/6 IMPROVE，围绕剩余核心 raw JSON casts 或线上管理员全功能验收发现的问题做最后一轮可验证改进，并完成最终生产验收。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 本地完成，待提交/推送/CI/线上终验
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 5 的 raw JSON cast 审计，把管理员投研助手的线程、SSE 事件和深度研究任务载荷纳入运行时校验，避免坏会话/坏任务进入助手状态树后造成白屏、错误进度卡或回调污染。
+**开始状态:** Stage 5 commit `887f949` 已推送至 `main`，CI run `28440526685` passed，Cloudflare deployment `af064182.cstd-alpha.pages.dev`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现坏 assistant thread、坏 deep research job 和坏 SSE semantic event 被客户端放行；再实现 Assistant runtime guards，跑目标/全量门禁、本地 Pages 桌面/移动浏览器验收，最后独立 commit、push main、检查 GitHub Actions 和线上管理员全功能验收。
+**测试先行:** `src/api.test.ts` 新增 3 条回归测试；红灯确认坏线程对象、非法 deep research status/progressTotal、SSE 中非法 deep research job 会被原客户端当作合法事件/数据消费。
+**完成内容:** `src/api.ts` 新增助手会话、消息、metadata、evidence、usage、tool run、block、memory、memory candidate、clarification、deep research job 和 SSE 事件运行时 guard；`fetchAssistantThread`、`fetchAssistantDeepResearchJob`、`stopAssistantDeepResearchJob` 改为从 `objectPayload` 读取并拒绝 malformed payload；`sendAssistantMessage` 在调用外部 callback 前校验 SSE 事件语义载荷。
+**真实问题修复:** 坏助手线程不再进入 `AssistantView` 的 `thread/messages/memories` state；坏 deep research job 不再驱动进度卡、轮询或停止流程；坏 SSE 事件不再在 `onEvent` 回调里污染 draft blocks、memory candidate 或 deep research state，而是统一显示“助手响应不完整，请重试。”。
+**本地验证:** TDD 红绿完成；`src/api.test.ts` 51 tests passed；全量 `npm test` 96 files / 948 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright 夹具模拟管理员会话、坏 `/api/assistant/thread`、有效新线程恢复；桌面和 390x844 移动端均显示受控“助手线程读取失败。”并可通过“新对话”恢复到“开始新的投研对话”，无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-mobile.png`。
+**Commit / Push:** 待提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 客户端现在拒绝不满足完整助手契约的会话、事件和任务；如果后端未来新增助手枚举值、block 类型或合法事件类型，需要同步更新前端白名单。客户端仍只隔离坏数据，不修复服务端源数据。
+**下一阶段:** 本轮 6 个阶段完成后执行最终生产管理员验收并收口。

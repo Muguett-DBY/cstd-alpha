@@ -769,5 +769,16 @@
 - **验证:** TDD 红绿；`src/api.test.ts` 48 tests、`src/mobile-workbench-navigation.test.ts` 3 tests、全量 96 files / 945 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
 - **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证 malformed radar 受控空态、刷新有效雷达恢复、桌面/390px 移动端无 ErrorBoundary、失败响应、console/page error 或横向溢出；移动端顶部重复 tabs 已不存在。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage5-radar-guards-mobile.png`
-- **Commit:** `fix: validate radar scan payloads`
+- **生产:** deployment `af064182.cstd-alpha.pages.dev`；CI run `28440526685` passed。
+- **Commit:** `887f949 fix: validate radar scan payloads`
 - **下一阶段:** Stage 6/6 IMPROVE，做最后一轮核心边界/线上验收驱动改进，并完成生产管理员全功能收口。
+
+### Stage 6/6 IMPROVE — Assistant Runtime Payload Guards
+- **承接方向:** 继续收紧 Stage 5 暴露的剩余核心 raw JSON casts，把管理员助手线程、深度研究任务和 SSE 事件从“类型断言”改为运行时契约校验。
+- **真实问题修复:** malformed assistant thread 不再进入 `AssistantView` 状态树；非法 deep research job 不再驱动进度卡、轮询或停止流程；坏 SSE semantic event 不再在 callback 前污染 draft blocks、memory candidate 或 deep research state。
+- **新增用户可见增量:** 助手页遇到坏线程时显示可控“助手线程读取失败。”，并可通过新对话恢复到“开始新的投研对话”，而不是白屏或深层运行时错误。
+- **验证:** TDD 红绿；`src/api.test.ts` 51 tests、全量 96 files / 948 tests passed；lint、functions typecheck、build、audit、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证桌面/390px 移动端坏助手线程受控失败且新对话恢复，无横向溢出、ErrorBoundary、失败响应或 console/page error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage6-assistant-guards-mobile.png`
+- **Commit:** 待提交 `fix: guard assistant runtime payloads`
+- **下一轮建议:** 推送并等待 CI 通过后，使用管理员账号做线上全功能只读验收；如生产发现真实错误，按同一轮修复-验证-推送-复查闭环处理。

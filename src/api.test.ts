@@ -33,6 +33,7 @@ import {
   refreshRadarScan,
   refreshWatchlistRanking,
   sendAssistantMessage,
+  fetchAssistantThread,
   fetchAssistantDeepResearchJob,
   stopAssistantDeepResearchJob,
   listAssistantThreads,
@@ -238,6 +239,39 @@ describe("API client", () => {
     await expect(sendAssistantMessage("宁德时代怎么看？")).rejects.toThrow("助手响应不完整，请重试。");
   });
 
+  test("rejects malformed assistant SSE event payloads before callbacks consume them", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start", threadId: "t1", messageId: "m1" })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          type: "deep_research_job",
+          job: {
+            id: "deep-1",
+            threadId: "t1",
+            query: "茅台明年利润预测",
+            mode: "target",
+            researchKind: "forecast",
+            status: "paused",
+            progressTitle: "处理中",
+            progressStage: "collect",
+            progressCurrent: 1,
+            progressTotal: 4,
+            stopRequested: false,
+            createdAt: "2026-06-30T00:00:00.000Z",
+            updatedAt: "2026-06-30T00:00:00.000Z",
+          },
+        })}\n\n`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream)));
+    const events: string[] = [];
+
+    await expect(sendAssistantMessage("宁德时代怎么看？", (event) => events.push(event.type))).rejects.toThrow("助手响应不完整，请重试。");
+    expect(events).toEqual(["start"]);
+  });
+
 
   test("returns null when assistant stream asks for a clarification choice", async () => {
     const request = {
@@ -294,6 +328,64 @@ describe("API client", () => {
     await expect(stopAssistantDeepResearchJob("deep-1")).resolves.toMatchObject({ id: "deep-1", status: "stopping", stopRequested: true });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/assistant/deep-research/deep-1", { credentials: "include", cache: "no-store" });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/assistant/deep-research/deep-1/stop", { method: "POST", credentials: "include" });
+  });
+
+  test("rejects malformed assistant thread responses before UI state consumes them", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      thread: {
+        id: "thread-1",
+        title: "坏会话",
+        summary: "missing arrays",
+        updatedAt: "2026-06-30T00:00:00.000Z",
+        messages: [{ id: "m1", threadId: "thread-1", role: "robot", content: "bad", createdAt: "2026-06-30T00:00:00.000Z" }],
+        memories: "broken",
+        memoryCandidates: [],
+      },
+    })));
+
+    await expect(fetchAssistantThread("thread-1")).rejects.toThrow("助手线程读取失败。");
+  });
+
+  test("rejects malformed assistant deep research jobs before progress cards render them", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        job: {
+          id: "deep-1",
+          threadId: "thread-1",
+          query: "茅台预测",
+          mode: "target",
+          researchKind: "forecast",
+          status: "running",
+          progressTitle: "处理中",
+          progressStage: "collect",
+          progressCurrent: 2,
+          progressTotal: "4",
+          stopRequested: false,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z",
+        },
+      }))
+      .mockResolvedValueOnce(Response.json({
+        job: {
+          id: "deep-1",
+          threadId: "thread-1",
+          query: "茅台预测",
+          mode: "target",
+          researchKind: "forecast",
+          status: "paused",
+          progressTitle: "处理中",
+          progressStage: "collect",
+          progressCurrent: 2,
+          progressTotal: 4,
+          stopRequested: true,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z",
+        },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchAssistantDeepResearchJob("deep-1")).rejects.toThrow("深度研究状态读取失败。");
+    await expect(stopAssistantDeepResearchJob("deep-1")).rejects.toThrow("深度研究停止失败。");
   });
 
   test("rejects malformed assistant thread list responses", async () => {

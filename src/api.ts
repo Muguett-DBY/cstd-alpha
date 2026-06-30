@@ -3,7 +3,7 @@ import type { CompanyNewsBundle } from "./shared/news";
 import type { RadarAnalysisJob, RadarAnalysisScope, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceFreshness, RadarIndustryPacket, RadarItem, RadarList, RadarScan } from "./shared/radar";
 import type { ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
-import type { AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
+import type { AssistantBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
 import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
@@ -120,6 +120,18 @@ const RADAR_COVERAGE_STATUS_VALUES = ["formal", "watched", "insufficient"] as co
 const RADAR_INDUSTRY_STAGE_VALUES = ["扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"] as const;
 const RADAR_CHANGE_STATUS_VALUES = ["new", "changed", "unchanged"] as const;
 const RADAR_CONCLUSION_ELIGIBILITY_VALUES = ["eligible", "watch", "insufficient"] as const;
+const ASSISTANT_ROLE_VALUES = ["user", "assistant", "system"] as const;
+const ASSISTANT_MODE_VALUES = ["chat", "target", "industry"] as const;
+const ASSISTANT_REASONING_EFFORT_VALUES = ["high", "max"] as const;
+const ASSISTANT_TOOL_RUN_STATUS_VALUES = ["completed", "failed", "skipped"] as const;
+const ASSISTANT_BLOCK_TYPE_VALUES = ["text", "table", "chart"] as const;
+const ASSISTANT_CHART_TYPE_VALUES = ["bar", "line", "scatter", "pie", "area"] as const;
+const ASSISTANT_MEMORY_STATUS_VALUES = ["active", "disabled"] as const;
+const ASSISTANT_MEMORY_CANDIDATE_STATUS_VALUES = ["pending", "confirmed", "rejected"] as const;
+const ASSISTANT_DEEP_RESEARCH_KIND_VALUES = ["forecast", "selection", "comparison", "industry", "contrarian", "risk"] as const;
+const ASSISTANT_DEEP_RESEARCH_STATUS_VALUES = ["queued", "running", "stopping", "completed", "failed"] as const;
+const ASSISTANT_STREAM_TOOL_STATUS_VALUES = ["running", "completed", "failed"] as const;
+const ASSISTANT_STREAM_TOOL_RESULT_STATUS_VALUES = ["completed", "failed"] as const;
 
 type AssistantThreadSummary = {
   id: string;
@@ -723,8 +735,8 @@ export async function fetchAssistantThread(threadId?: string): Promise<Assistant
   const url = threadId ? `/api/assistant/thread?threadId=${encodeURIComponent(threadId)}` : "/api/assistant/thread";
   const response = await fetch(url, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "助手线程读取失败。");
-  const data = (await response.json()) as { thread?: AssistantThread };
-  if (!data.thread) throw new Error("助手线程读取失败。");
+  const data = objectPayload(await response.json());
+  if (!isAssistantThread(data.thread)) throw new Error("助手线程读取失败。");
   return data.thread;
 }
 
@@ -784,7 +796,7 @@ export async function sendAssistantMessage(
   let finalMessage: AssistantMessage | undefined;
   let requestedClarification = false;
   for await (const event of readSse(response)) {
-    const typed = event as AssistantChatStreamEvent;
+    const typed = parseAssistantChatStreamEvent(event);
     onEvent?.(typed);
     if (typed.type === "error") throw new Error(typed.error);
     if (typed.type === "choice_request") requestedClarification = true;
@@ -798,16 +810,16 @@ export async function sendAssistantMessage(
 export async function fetchAssistantDeepResearchJob(id: string): Promise<AssistantDeepResearchJob> {
   const response = await fetch(`/api/assistant/deep-research/${encodeURIComponent(id)}`, { credentials: "include", cache: "no-store" });
   if (!response.ok) throw new Error((await readError(response)) || "深度研究状态读取失败。");
-  const data = (await response.json()) as { job?: AssistantDeepResearchJob };
-  if (!data.job) throw new Error("深度研究状态读取失败。");
+  const data = objectPayload(await response.json());
+  if (!isAssistantDeepResearchJob(data.job)) throw new Error("深度研究状态读取失败。");
   return data.job;
 }
 
 export async function stopAssistantDeepResearchJob(id: string): Promise<AssistantDeepResearchJob> {
   const response = await fetch(`/api/assistant/deep-research/${encodeURIComponent(id)}/stop`, { method: "POST", credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "深度研究停止失败。");
-  const data = (await response.json()) as { job?: AssistantDeepResearchJob };
-  if (!data.job) throw new Error("深度研究停止失败。");
+  const data = objectPayload(await response.json());
+  if (!isAssistantDeepResearchJob(data.job)) throw new Error("深度研究停止失败。");
   return data.job;
 }
 
@@ -1002,6 +1014,220 @@ function isAssistantThreadSummary(value: unknown): value is AssistantThreadSumma
 function isCreatedAssistantThread(value: unknown): value is Pick<AssistantThreadSummary, "id" | "title"> {
   if (!isPlainRecord(value)) return false;
   return typeof value.id === "string" && typeof value.title === "string";
+}
+
+function parseAssistantChatStreamEvent(value: Record<string, unknown>): AssistantChatStreamEvent {
+  if (!isAssistantChatStreamEvent(value)) throw assistantIncompleteResponseError();
+  return value;
+}
+
+function isAssistantChatStreamEvent(value: unknown): value is AssistantChatStreamEvent {
+  if (!isPlainRecord(value) || typeof value.type !== "string") return false;
+  switch (value.type) {
+    case "start":
+      return typeof value.threadId === "string" && typeof value.messageId === "string";
+    case "agent_step":
+      return typeof value.step === "string" && typeof value.title === "string" && (value.round === undefined || finiteNumber(value.round) !== undefined);
+    case "tool_status":
+      return typeof value.id === "string" && typeof value.label === "string" && isStringOneOf(value.status, ASSISTANT_STREAM_TOOL_STATUS_VALUES);
+    case "tool_result":
+      return (
+        typeof value.id === "string" &&
+        isStringOneOf(value.status, ASSISTANT_STREAM_TOOL_RESULT_STATUS_VALUES) &&
+        typeof value.summary === "string" &&
+        finiteNumber(value.evidenceCount) !== undefined
+      );
+    case "delta":
+    case "replace":
+      return typeof value.text === "string";
+    case "block":
+      return isAssistantBlock(value.block);
+    case "choice_request":
+      return isAssistantChoiceRequest(value.request);
+    case "memory_candidate":
+      return isAssistantMemoryCandidate(value.candidate);
+    case "deep_research_job":
+      return isAssistantDeepResearchJob(value.job);
+    case "usage":
+      return isAssistantUsage(value.usage);
+    case "code_exec":
+      return typeof value.id === "string" && typeof value.code === "string";
+    case "code_result":
+      return typeof value.id === "string" && typeof value.output === "string" && (value.error === undefined || typeof value.error === "string");
+    case "done":
+      return isAssistantMessage(value.message);
+    case "error":
+      return typeof value.error === "string";
+    default:
+      return false;
+  }
+}
+
+function isAssistantThread(value: unknown): value is AssistantThread {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.summary === "string" &&
+    typeof value.updatedAt === "string" &&
+    Array.isArray(value.messages) &&
+    value.messages.every(isAssistantMessage) &&
+    Array.isArray(value.memories) &&
+    value.memories.every(isAssistantMemory) &&
+    Array.isArray(value.memoryCandidates) &&
+    value.memoryCandidates.every(isAssistantMemoryCandidate) &&
+    (value.latestUsage === undefined || isAssistantUsage(value.latestUsage))
+  );
+}
+
+function isAssistantMessage(value: unknown): value is AssistantMessage {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.threadId === "string" &&
+    isStringOneOf(value.role, ASSISTANT_ROLE_VALUES) &&
+    typeof value.content === "string" &&
+    typeof value.createdAt === "string" &&
+    (value.metadata === undefined || isAssistantMessageMetadata(value.metadata))
+  );
+}
+
+function isAssistantMessageMetadata(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    (value.evidenceRefs === undefined || (Array.isArray(value.evidenceRefs) && value.evidenceRefs.every(isAssistantEvidenceRef))) &&
+    (value.usage === undefined || isAssistantUsage(value.usage)) &&
+    (value.toolRuns === undefined || (Array.isArray(value.toolRuns) && value.toolRuns.every(isAssistantToolRun))) &&
+    (value.blocks === undefined || (Array.isArray(value.blocks) && value.blocks.every(isAssistantBlock))) &&
+    (value.deepResearchJob === undefined || isAssistantDeepResearchJob(value.deepResearchJob))
+  );
+}
+
+function isAssistantEvidenceRef(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.sourceType === "string" &&
+    (value.url === undefined || typeof value.url === "string") &&
+    (value.excerpt === undefined || typeof value.excerpt === "string")
+  );
+}
+
+function isAssistantUsage(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.model === "string" &&
+    isStringOneOf(value.reasoningEffort, ASSISTANT_REASONING_EFFORT_VALUES) &&
+    optionalFiniteNumber(value.promptTokens) &&
+    optionalFiniteNumber(value.completionTokens) &&
+    optionalFiniteNumber(value.totalTokens) &&
+    optionalFiniteNumber(value.promptCacheHitTokens) &&
+    optionalFiniteNumber(value.promptCacheMissTokens) &&
+    optionalFiniteNumber(value.elapsedMs)
+  );
+}
+
+function isAssistantToolRun(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.toolName === "string" &&
+    isStringOneOf(value.status, ASSISTANT_TOOL_RUN_STATUS_VALUES) &&
+    typeof value.summary === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isAssistantBlock(value: unknown): value is AssistantBlock {
+  if (!isPlainRecord(value) || !isStringOneOf(value.type, ASSISTANT_BLOCK_TYPE_VALUES)) return false;
+  if (typeof value.id !== "string" || (value.title !== undefined && typeof value.title !== "string")) return false;
+  if (value.type === "text") return typeof value.text === "string";
+  if (value.type === "table") {
+    return isStringArray(value.columns) && Array.isArray(value.rows) && value.rows.every(isStringArray);
+  }
+  return (
+    isStringOneOf(value.chartType, ASSISTANT_CHART_TYPE_VALUES) &&
+    isStringArray(value.labels) &&
+    Array.isArray(value.series) &&
+    value.series.every(isAssistantChartSeries)
+  );
+}
+
+function isAssistantChartSeries(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return typeof value.name === "string" && Array.isArray(value.data) && value.data.every((entry) => finiteNumber(entry) !== undefined);
+}
+
+function isAssistantMemory(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.content === "string" &&
+    typeof value.category === "string" &&
+    isStringOneOf(value.status, ASSISTANT_MEMORY_STATUS_VALUES) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isAssistantMemoryCandidate(value: unknown): value is AssistantMemoryCandidate {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.content === "string" &&
+    typeof value.category === "string" &&
+    typeof value.reason === "string" &&
+    isStringOneOf(value.status, ASSISTANT_MEMORY_CANDIDATE_STATUS_VALUES) &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isAssistantChoiceRequest(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.question === "string" &&
+    typeof value.reason === "string" &&
+    typeof value.customPlaceholder === "string" &&
+    Array.isArray(value.options) &&
+    value.options.every(isAssistantChoiceOption)
+  );
+}
+
+function isAssistantChoiceOption(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    typeof value.description === "string" &&
+    (value.recommended === undefined || typeof value.recommended === "boolean") &&
+    (value.requiresCustom === undefined || typeof value.requiresCustom === "boolean")
+  );
+}
+
+function isAssistantDeepResearchJob(value: unknown): value is AssistantDeepResearchJob {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.threadId === "string" &&
+    typeof value.query === "string" &&
+    isStringOneOf(value.mode, ASSISTANT_MODE_VALUES) &&
+    isStringOneOf(value.researchKind, ASSISTANT_DEEP_RESEARCH_KIND_VALUES) &&
+    isStringOneOf(value.status, ASSISTANT_DEEP_RESEARCH_STATUS_VALUES) &&
+    typeof value.progressTitle === "string" &&
+    typeof value.progressStage === "string" &&
+    finiteNumber(value.progressCurrent) !== undefined &&
+    finiteNumber(value.progressTotal) !== undefined &&
+    typeof value.stopRequested === "boolean" &&
+    (value.resultMessageId === undefined || typeof value.resultMessageId === "string") &&
+    (value.errorMessage === undefined || typeof value.errorMessage === "string") &&
+    typeof value.createdAt === "string" &&
+    (value.startedAt === undefined || typeof value.startedAt === "string") &&
+    typeof value.updatedAt === "string" &&
+    (value.completedAt === undefined || typeof value.completedAt === "string")
+  );
 }
 
 function isCompanyCandidate(value: unknown): value is CompanyCandidate {
@@ -1637,6 +1863,10 @@ function stringArrayPayload(value: unknown): string[] {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalFiniteNumber(value: unknown): boolean {
+  return value === undefined || finiteNumber(value) !== undefined;
 }
 
 function isCompanyNewsBundle(value: unknown): value is CompanyNewsBundle {
