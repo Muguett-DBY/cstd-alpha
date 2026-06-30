@@ -1135,7 +1135,25 @@
 **本地验证:** TDD 红绿完成；全量 `npm test` 95 files / 939 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
 **浏览器验证:** 内置 Browser 确认本地 Pages URL/title、非空渲染和 console 健康；切换移动视口时浏览器连接超时，重启失去响应的既有 `wrangler/workerd` 预览后，使用临时 Playwright API 夹具在 390x844 管理员会话逐项验证“助手 → 研究 → 市场 → 估值 → 机会”；每个 `view-*` 和 active 按钮正确，只有助手为 `mobile-assistant-only`，无横向溢出、ErrorBoundary、console/page error 或 4xx/5xx 响应。
 **截图证据:** `C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-assistant.png`、`C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-research.png`。
-**Commit / Push:** 待提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
+**Commit / Push:** `6d39fe4 fix: restore mobile admin navigation` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28437571794`；95 files / 939 tests；lint、typecheck、build、deploy 均通过；deployment `8bc90746.cstd-alpha.pages.dev`)。
 **风险记录:** 本阶段验证覆盖 Chromium 390x844 和桌面基础加载；其它移动浏览器引擎将在最终生产验收中保留为兼容性残余风险，不影响视图状态逻辑。
 **下一阶段:** 阶段 3/6 UIUX，对移动管理员导航和工作台首屏做进一步可见性与可用性审计，并完成独立闭环。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 消除 720px 以下工作台同时出现顶部按钮网格和底部导航的重复主导航，缩短移动端从账号工具区到实际研究内容的首屏距离。
+**根因:** `.mobile-bottom-nav` 在 720px 以下显示，但 `.workbench-nav-rail .view-tabs` 仍按桌面/平板布局渲染；两个控件执行相同视图切换，顶部网格额外占用约一屏三分之一。
+**计划:** 用 CSS 源回归测试锁定移动端隐藏重复工作区 tab 和非必要说明文案；最小调整 720px 样式，再以 390x844 管理员研究页验证唯一主导航、内容上移、触控目标、溢出和控制台状态。
+**测试先行:** 新增 `src/mobile-workbench-navigation.test.ts`，红灯复现移动工作台 CSS 未隐藏重复 `.view-tabs` 和 `.rail-copy`，绿灯 2 tests passed。
+**完成内容:** 720px 以下非助手工作台隐藏顶部重复视图按钮和说明文案，并压缩工作台 rail 标题、辅助文案与工具区间距。
+**真实问题修复:** 手机管理员进入研究/市场/估值等工作台时不再同时看到顶部按钮网格和底部导航；底部导航成为唯一主导航，研究内容首屏从约 179px 开始展示。
+**本地验证:** TDD 红绿完成；`src/mobile-workbench-navigation.test.ts` 2 tests passed；全量 `npm test` 96 files / 941 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具验证桌面工作台顶部 tabs 仍可见，390x844 管理员市场→研究切换后底部“研究”处于 active，顶部重复 tabs 和 rail copy 不可见；`researchTop=178.90625`、`railHeight=162.90625`、`railCopyVisible=false`、无横向溢出、ErrorBoundary、console/page error 或 4xx/5xx 响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-mobile.png`。
+**Commit / Push:** 待提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 本阶段只调整 720px 以下非助手工作台的重复导航；桌面/平板顶部工作台 tabs 保持可见，助手专用移动布局不受影响。
+**下一阶段:** 阶段 4/6 IMPROVE，继续修复一个可 TDD、可浏览器验证的真实产品可靠性问题。

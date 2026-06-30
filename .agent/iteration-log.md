@@ -741,3 +741,12 @@
 - **截图证据:** `C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-assistant.png`、`C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-research.png`
 - **Commit:** `fix: restore mobile admin navigation`
 - **下一阶段:** Stage 3/6 UIUX，继续审计移动工作台的首屏导航可见性、选中反馈和交互效率。
+
+### Stage 3/6 UIUX — Mobile Workbench Navigation Density
+- **承接方向:** Stage 2 恢复了移动管理员工作台切换，本阶段消除工作台顶部重复导航，提升 390px 首屏内容可见性。
+- **真实问题修复:** 720px 以下非助手工作台隐藏重复 `.view-tabs` 和 rail 说明文案，底部导航成为唯一主导航；桌面工作台顶部 tabs 继续保留。
+- **验证:** TDD 红绿；新增 CSS 回归测试 2 条；全量 96 files / 941 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 8799 + Playwright API 夹具验证桌面 tabs 可见、390x844 管理员研究页底部“研究” active、顶部重复 tabs/rail copy 隐藏，且无横向溢出、ErrorBoundary、失败响应或 console/page error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-mobile.png`
+- **Commit:** `feat: streamline mobile workbench navigation`
+- **下一阶段:** Stage 4/6 IMPROVE，继续选择一个可测试、可浏览器闭环的真实可靠性问题修复。
