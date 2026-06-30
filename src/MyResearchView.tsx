@@ -19,6 +19,7 @@ import type { CompanyCandidate } from "./shared/report";
 import { normalizeMarkdownForReading } from "./markdown-report";
 import { watchlistAddToastMessage } from "./watchlist-add-status";
 import {
+  describeTemplateResearchDataHealth,
   FULL_ANALYSIS_TEMPLATE_ID,
   isRetryableTemplateStatus,
   type ResearchTemplate,
@@ -66,6 +67,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
   const [error, setError] = useState("");
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
+  const [templateDataHealth, setTemplateDataHealth] = useState<ReturnType<typeof describeTemplateResearchDataHealth>>(null);
   const [recentTemplateIds, setRecentTemplateIds] = useState<string[]>(loadRecentTemplateIds);
   const [savingTemplates, setSavingTemplates] = useState(false);
   const selectedWatchlistIdRef = useRef(selectedWatchlistId);
@@ -78,9 +80,11 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     Promise.all([fetchWatchlist(), fetchTemplateAnalyses(), fetchResearchTemplates()])
       .then(([watchlist, analysisData, templateData]) => {
         if (cancelled) return;
+        const nextTemplates = templateData.length ? templateData : analysisData.templates;
         setItems(watchlist.items);
         setAnalyses(analysisData.analyses);
-        setTemplates(templateData.length ? templateData : analysisData.templates);
+        setTemplates(nextTemplates);
+        setTemplateDataHealth(describeTemplateResearchDataHealth(analysisData.skippedAnalyses, analysisData.skippedTemplates, analysisData.analyses.length, nextTemplates.length));
         setSelectedWatchlistId((current) => current || findWatchlistItemForCompany(watchlist.items, selectedCompany)?.id || watchlist.items[0]?.id || "");
         setPhase("ready");
       })
@@ -131,7 +135,7 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     for (const analysis of analyses) {
       if (analysis.status === "completed") stats.completed += 1;
       else if (analysis.status === "running") stats.running += 1;
-      else if (analysis.status === "failed") {
+      else if (analysis.status === "failed" || isRetryableTemplateStatus(analysis.status)) {
         stats.failed += 1;
         if (isRetryableTemplateStatus(analysis.status)) stats.retryable += 1;
       } else {
@@ -253,6 +257,24 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
     setRecentTemplateIds([]);
   }, []);
 
+  async function reloadTemplateResearchData() {
+    setError("");
+    setSavingTemplates(true);
+    try {
+      const [analysisData, templateData] = await Promise.all([fetchTemplateAnalyses(), fetchResearchTemplates()]);
+      const nextTemplates = templateData.length ? templateData : analysisData.templates;
+      setAnalyses(analysisData.analyses);
+      setTemplates(nextTemplates);
+      setTemplateDataHealth(describeTemplateResearchDataHealth(analysisData.skippedAnalyses, analysisData.skippedTemplates, analysisData.analyses.length, nextTemplates.length));
+      setNotice("模板研究数据已重新读取。");
+      if (phase === "error") setPhase("ready");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "模板研究数据读取失败。");
+    } finally {
+      setSavingTemplates(false);
+    }
+  }
+
   async function generate(templateId: string, forceRefresh = false) {
     const target = selectedItem;
     if (!target) return;
@@ -298,6 +320,8 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       await wait(5000);
       const data = await fetchTemplateAnalyses(target.id);
       setAnalyses((current) => mergeAnalyses(current, data.analyses));
+      const health = describeTemplateResearchDataHealth(data.skippedAnalyses, data.skippedTemplates, data.analyses.length, templates.length);
+      if (health) setTemplateDataHealth(health);
       const analysis = data.analyses.find((item) => item.templateId === templateId);
       if (!analysis || analysis.status === "pending" || analysis.status === "running") {
         if (selectedWatchlistIdRef.current === target.id) setNotice(`${target.company.name} 模板报告仍在后台生成，页面会自动刷新。`);
@@ -457,6 +481,17 @@ export function MyResearchView({ user, selectedCompany, onOpenCompany }: MyResea
       ) : null}
       {notice ? <p className="cache-notice">{notice}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
+      {templateDataHealth ? (
+        <div className="data-health-notice" role="status" aria-live="polite">
+          <div>
+            <strong>{templateDataHealth.title}</strong>
+            <p>{templateDataHealth.detail}</p>
+          </div>
+          <button type="button" className="secondary-button" onClick={() => void reloadTemplateResearchData()} disabled={savingTemplates || phase === "generating"}>
+            {templateDataHealth.actionLabel}
+          </button>
+        </div>
+      ) : null}
 
       <section className="mine-search-card" aria-label="搜索并加入自选股">
         <div>

@@ -59,6 +59,8 @@ export type ResearchTemplate = {
   updatedAt?: string;
 };
 
+export type ResearchTemplateCompletion = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
+
 export type TemplateSectionRequirement = {
   id: string;
   title: string;
@@ -67,6 +69,7 @@ export type TemplateSectionRequirement = {
 };
 
 export type TemplateAnalysisStatus = "pending" | "running" | "completed" | "failed_retryable" | "failed";
+export const TEMPLATE_ANALYSIS_STATUSES = ["pending", "running", "completed", "failed_retryable", "failed"] as const;
 
 export type TemplateAnalysisSection = {
   heading: string;
@@ -295,6 +298,112 @@ export function isRetryableTemplateStatus(status: TemplateAnalysisStatus) {
   return status === "failed_retryable";
 }
 
+export function isTemplateAnalysisStatus(value: unknown): value is TemplateAnalysisStatus {
+  return typeof value === "string" && TEMPLATE_ANALYSIS_STATUSES.includes(value as TemplateAnalysisStatus);
+}
+
+export function isTemplateSectionRequirement(value: unknown): value is TemplateSectionRequirement {
+  if (!isRecord(value)) return false;
+  return (
+    nonEmptyString(value.id) &&
+    nonEmptyString(value.title) &&
+    finiteNumber(value.minChars) !== undefined &&
+    isStringArray(value.requiredPoints)
+  );
+}
+
+export function isResearchTemplateCompletion(value: unknown): value is ResearchTemplateCompletion {
+  if (!isRecord(value)) return false;
+  return (
+    nonEmptyString(value.title) &&
+    nonEmptyString(value.shortTitle) &&
+    typeof value.focus === "string" &&
+    nonEmptyString(value.prompt) &&
+    nonEmptyString(value.fullPrompt) &&
+    (value.sectionRequirements === undefined || (Array.isArray(value.sectionRequirements) && value.sectionRequirements.every(isTemplateSectionRequirement)))
+  );
+}
+
+export function isResearchTemplate(value: unknown): value is ResearchTemplate {
+  if (!isRecord(value)) return false;
+  if (!nonEmptyString(value.id) || !isResearchTemplateCompletion(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.enabled === undefined || typeof record.enabled === "boolean") &&
+    (record.sortOrder === undefined || finiteNumber(record.sortOrder) !== undefined) &&
+    (record.isSystem === undefined || typeof record.isSystem === "boolean") &&
+    (record.updatedAt === undefined || typeof record.updatedAt === "string")
+  );
+}
+
+export function isTemplateAnalysisSection(value: unknown): value is TemplateAnalysisSection {
+  if (!isRecord(value)) return false;
+  return typeof value.heading === "string" && typeof value.body === "string";
+}
+
+export function isTemplateAnalysisResult(value: unknown): value is TemplateAnalysisResult {
+  if (!isRecord(value)) return false;
+  return (
+    nonEmptyString(value.id) &&
+    nonEmptyString(value.userId) &&
+    nonEmptyString(value.watchlistId) &&
+    nonEmptyString(value.templateId) &&
+    nonEmptyString(value.templateTitle) &&
+    nonEmptyString(value.companyName) &&
+    typeof value.ticker === "string" &&
+    typeof value.market === "string" &&
+    typeof value.model === "string" &&
+    isTemplateAnalysisStatus(value.status) &&
+    typeof value.title === "string" &&
+    (value.score === undefined || finiteNumber(value.score) !== undefined) &&
+    typeof value.verdict === "string" &&
+    typeof value.summary === "string" &&
+    (value.markdown === undefined || typeof value.markdown === "string") &&
+    (value.objectKey === undefined || typeof value.objectKey === "string") &&
+    (value.errorMessage === undefined || typeof value.errorMessage === "string") &&
+    isStringArray(value.keyPoints) &&
+    isStringArray(value.riskFlags) &&
+    isStringArray(value.followUps) &&
+    Array.isArray(value.sections) &&
+    value.sections.every(isTemplateAnalysisSection) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    (value.startedAt === undefined || typeof value.startedAt === "string") &&
+    (value.completedAt === undefined || typeof value.completedAt === "string") &&
+    (value.fromCache === undefined || typeof value.fromCache === "boolean") &&
+    (value.templateHash === undefined || typeof value.templateHash === "string") &&
+    (value.evidenceHash === undefined || typeof value.evidenceHash === "string") &&
+    (value.templateSnapshot === undefined || isResearchTemplate(value.templateSnapshot))
+  );
+}
+
+export type TemplateResearchDataHealthNotice = {
+  title: string;
+  detail: string;
+  actionLabel: string;
+};
+
+export function describeTemplateResearchDataHealth(
+  skippedAnalyses: number | undefined,
+  skippedTemplates: number | undefined,
+  availableAnalyses: number,
+  availableTemplates: number,
+): TemplateResearchDataHealthNotice | null {
+  const skippedAnalysisCount = safeCount(skippedAnalyses);
+  const skippedTemplateCount = safeCount(skippedTemplates);
+  const skippedTotal = skippedAnalysisCount + skippedTemplateCount;
+  if (!skippedTotal) return null;
+  const parts = [
+    skippedAnalysisCount ? `${skippedAnalysisCount} 条模板报告` : "",
+    skippedTemplateCount ? `${skippedTemplateCount} 个模板` : "",
+  ].filter(Boolean).join("、");
+  return {
+    title: `模板研究已跳过 ${skippedTotal} 条异常记录`,
+    detail: `异常范围：${parts}。本次保留 ${availableAnalyses} 条可用模板报告、${availableTemplates} 个可用模板；源数据未被修改，可重新读取检查是否已恢复。`,
+    actionLabel: "重新读取",
+  };
+}
+
 export function minimumResearchMarkdownChars(templateId: string) {
   return templateId === FULL_ANALYSIS_TEMPLATE_ID ? FULL_ANALYSIS_MARKDOWN_MIN_CHARS : TEMPLATE_MARKDOWN_MIN_CHARS;
 }
@@ -354,6 +463,26 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function nonEmptyString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function safeCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
 export function activeResearchTemplates(templates: ResearchTemplate[]) {
