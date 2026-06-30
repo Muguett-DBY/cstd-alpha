@@ -1153,7 +1153,25 @@
 **本地验证:** TDD 红绿完成；`src/mobile-workbench-navigation.test.ts` 2 tests passed；全量 `npm test` 96 files / 941 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具验证桌面工作台顶部 tabs 仍可见，390x844 管理员市场→研究切换后底部“研究”处于 active，顶部重复 tabs 和 rail copy 不可见；`researchTop=178.90625`、`railHeight=162.90625`、`railCopyVisible=false`、无横向溢出、ErrorBoundary、console/page error 或 4xx/5xx 响应。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-mobile.png`。
-**Commit / Push:** 待提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
+**Commit / Push:** `000db54 feat: streamline mobile workbench navigation` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28438415816`；96 files / 941 tests；lint、typecheck、build、deploy 均通过；deployment `46bb1962.cstd-alpha.pages.dev`)。
 **风险记录:** 本阶段只调整 720px 以下非助手工作台的重复导航；桌面/平板顶部工作台 tabs 保持可见，助手专用移动布局不受影响。
 **下一阶段:** 阶段 4/6 IMPROVE，继续修复一个可 TDD、可浏览器验证的真实产品可靠性问题。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Stage 3 移动管理员工作台可靠性主线，收紧登录/会话 API 边界，避免畸形 `user` 进入全局认证状态后造成权限导航、显示名和工作台布局错乱。
+**开始状态:** Stage 3 commit `000db54` 已推送至 `main`，CI run `28438415816` passed，Cloudflare production deployment `46bb1962.cstd-alpha.pages.dev`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现 `checkSession` 接受 malformed user、`login` 接受非法 role；再最小复用 `isUserSession` guard，随后跑定向/全量门禁、本地 Pages + Playwright 登录会话边界验收、独立 commit、push main 和 GitHub Actions。
+**测试先行:** `src/api.test.ts` 红灯确认 `checkSession` 会把 `{ userId, role }` 坏对象当成会话返回，`login` 会接受 `role: "superadmin"`；改为受控失败后绿灯，完整 `src/api.test.ts` 47 tests passed。
+**完成内容:** `checkSession` 和 `login` 改用 `objectPayload` + `isUserSession`；`isUserSession` 只接受应用识别的 `admin/user` 角色；启动会话畸形时抛出“登录状态读取失败，请重新登录。”；App 启动检查捕获错误，清空认证状态并在登录页显示恢复提示。
+**真实问题修复:** 200 OK 但返回坏 `user` 时不再污染全局 `user/authenticated` state；非法角色不会拿到不一致的导航/工作台状态；用户能看到需要重新登录的明确提示，而不是静默停留或进入坏权限状态。
+**本地验证:** TDD 红绿完成；定向 2 tests passed；`src/api.test.ts` 47 tests passed；全量 `npm test` 96 files / 943 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；Playwright API 夹具让 GET `/api/session` 返回 malformed user、POST `/api/session` 返回非法 role；桌面验证登录坏返回显示“登录失败：服务端未返回账号信息。”，390x844 移动端验证启动坏会话显示“登录状态读取失败，请重新登录。”；均无横向溢出、ErrorBoundary、console/page error 或站内 4xx/5xx 响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-mobile.png`。
+**Commit / Push:** 待提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 客户端只接受 `admin/user` 两类角色；如果未来后端引入新合法角色，需要同步更新前端角色白名单和导航能力映射。
+**下一阶段:** 阶段 5/6 CHECK，全项目扫雷仍需重点复核剩余 raw JSON casts、认证边界和生产可验流程。

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addResearchItem,
   addWatchlistItem,
+  checkSession,
   completeResearchTemplateDraft,
   createValuationRun,
   fetchActivityEvents,
@@ -487,6 +488,25 @@ describe("API client", () => {
 
   test("rejects login responses that omit the user payload", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: true }))));
+
+    await expect(login("pw", "admin")).rejects.toThrow("服务端未返回账号信息");
+  });
+
+  test("rejects malformed session users during startup checks", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: { userId: "user-admin", role: "admin" } }))));
+
+    await expect(checkSession()).rejects.toThrow("登录状态读取失败");
+  });
+
+  test("rejects login responses with invalid user roles", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      user: {
+        userId: "user-admin",
+        username: "admin",
+        displayName: "Admin",
+        role: "superadmin",
+      },
+    }))));
 
     await expect(login("pw", "admin")).rejects.toThrow("服务端未返回账号信息");
   });

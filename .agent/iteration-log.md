@@ -748,5 +748,15 @@
 - **验证:** TDD 红绿；新增 CSS 回归测试 2 条；全量 96 files / 941 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
 - **浏览器验收:** 本地 Pages 8799 + Playwright API 夹具验证桌面 tabs 可见、390x844 管理员研究页底部“研究” active、顶部重复 tabs/rail copy 隐藏，且无横向溢出、ErrorBoundary、失败响应或 console/page error。
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage3-workbench-nav-mobile.png`
-- **Commit:** `feat: streamline mobile workbench navigation`
+- **生产:** deployment `46bb1962.cstd-alpha.pages.dev`；CI run `28438415816` passed。
+- **Commit:** `000db54 feat: streamline mobile workbench navigation`
 - **下一阶段:** Stage 4/6 IMPROVE，继续选择一个可测试、可浏览器闭环的真实可靠性问题修复。
+
+### Stage 4/6 IMPROVE — Auth Session Payload Guards
+- **承接方向:** 在移动管理员工作台可达后，继续收紧影响权限导航和工作台布局的登录/会话边界。
+- **真实问题修复:** `checkSession` / `login` 不再接受 malformed `user` 或非法 role；启动会话坏数据会清空认证状态并在登录页显示“登录状态读取失败，请重新登录。”，登录坏返回显示受控失败。
+- **验证:** TDD 红绿；`src/api.test.ts` 47 tests、全量 96 files / 943 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
+- **浏览器验收:** 本地 Pages 8799 + Playwright 夹具验证 GET/POST `/api/session` 坏 payload 的桌面与 390px 移动端恢复提示，无横向溢出、ErrorBoundary、失败响应或 console/page error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage4-auth-session-guard-mobile.png`
+- **Commit:** `fix: guard auth session payloads`
+- **下一阶段:** Stage 5/6 CHECK，系统扫雷剩余 raw JSON casts、认证边界、生产构建和线上验收缺口。

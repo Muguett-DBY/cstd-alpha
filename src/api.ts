@@ -106,6 +106,7 @@ const COMPANY_ARCHETYPE_VALUES = ["operating", "bank", "insurance", "cyclical"] 
 const VALUATION_RUN_STATUS_VALUES = ["queued", "running", "completed", "failed"] as const;
 const VALUATION_SCENARIO_VALUES = ["bear", "base", "bull"] as const;
 const WATCHLIST_RANKING_STATUS_VALUES = ["pending", "running", "completed", "failed_retryable", "failed"] as const;
+const USER_SESSION_ROLE_VALUES = ["admin", "user"] as const;
 
 type AssistantThreadSummary = {
   id: string;
@@ -367,8 +368,10 @@ export async function refreshRadarScan(): Promise<RadarScanResult> {
 export async function checkSession(): Promise<UserSession | null> {
   const response = await fetch("/api/session", { credentials: "include" });
   if (!response.ok) return null;
-  const data = (await response.json()) as { user?: UserSession | null };
-  return data.user ?? null;
+  const data = objectPayload(await response.json());
+  if (data.user === undefined || data.user === null) return null;
+  if (!isUserSession(data.user)) throw new Error("登录状态读取失败，请重新登录。");
+  return data.user;
 }
 
 export async function login(password: string, username?: string): Promise<UserSession | null> {
@@ -380,9 +383,9 @@ export async function login(password: string, username?: string): Promise<UserSe
   });
 
   if (!response.ok) throw new Error((await readError(response)) || "登录失败。");
-  const data = (await response.json()) as { user?: UserSession | null };
-  if (!data.user) throw new Error("登录失败：服务端未返回账号信息。");
-  return data.user ?? null;
+  const data = objectPayload(await response.json());
+  if (!isUserSession(data.user)) throw new Error("登录失败：服务端未返回账号信息。");
+  return data.user;
 }
 
 export async function logout(): Promise<void> {
@@ -936,7 +939,7 @@ function isUserSession(value: unknown): value is UserSession {
     typeof value.userId === "string" && value.userId.trim().length > 0 &&
     typeof value.username === "string" &&
     typeof value.displayName === "string" &&
-    typeof value.role === "string"
+    USER_SESSION_ROLE_VALUES.includes(value.role as (typeof USER_SESSION_ROLE_VALUES)[number])
   );
 }
 
