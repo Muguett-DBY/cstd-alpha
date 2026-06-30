@@ -84,6 +84,8 @@ export type OpportunitiesResult = {
 
 export type ResearchItemsResult = {
   items: ResearchWorkbenchItem[];
+  skippedItems?: number;
+  totalItems?: number;
 };
 
 export type ResearchThesesResult = {
@@ -262,7 +264,13 @@ export async function fetchValuations(): Promise<ValuationsResult> {
 
 function normalizeResearchItemsResult(payload: unknown): ResearchItemsResult {
   const data = objectPayload(payload) as Partial<ResearchItemsResult>;
-  return { items: arrayPayload<unknown>(data.items).filter(isResearchWorkbenchItem) };
+  const rawItems = arrayPayload<unknown>(data.items);
+  const items = rawItems.filter(isResearchWorkbenchItem);
+  const skippedItems = rawItems.length - items.length;
+  return {
+    items,
+    ...(skippedItems > 0 ? { skippedItems, totalItems: rawItems.length } : {}),
+  };
 }
 
 function normalizeResearchThesesResult(payload: unknown): ResearchThesesResult {

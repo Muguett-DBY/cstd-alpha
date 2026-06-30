@@ -893,6 +893,28 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/research-items/research-1/catalysts", expect.objectContaining({ method: "POST", credentials: "include" }));
   });
 
+  test("reports malformed research queue records that were skipped", async () => {
+    const item = {
+      id: "research-1",
+      userKey: "user-1",
+      entityType: "company" as const,
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      stage: "deepResearch" as const,
+      status: "active",
+      source: "eastmoney",
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{ id: "broken" }, null, item] }))));
+
+    await expect(fetchResearchItems()).resolves.toEqual({
+      items: [item],
+      skippedItems: 2,
+      totalItems: 3,
+    });
+  });
+
   test("guards malformed research detail records before workspace consumers render them", async () => {
     const activity = {
       id: "activity-1",

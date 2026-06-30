@@ -9,6 +9,7 @@ import { moveResearchItemBeforeTarget, moveResearchItemToStageEnd } from "./rese
 import { describeResearchWorkspacePreferenceSummary, hasActiveResearchWorkspaceFilters, loadResearchWorkspacePreferences, saveResearchWorkspacePreference } from "./research-workspace-preferences";
 import { decorateResearchQuickAddCandidates, upsertResearchWorkspaceItem, type ResearchQuickAddCandidate } from "./research-quick-add";
 import { describeResearchDetailRecovery, type ResearchDetailRecoverySection } from "./research-detail-recovery";
+import { describeResearchQueueRecovery, type ResearchQueueRecoveryNotice } from "./research-data-health";
 import type { CompanyCandidate } from "./shared/report";
 
 type Props = {
@@ -60,6 +61,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
   const [activityPhase, setActivityPhase] = useState<"idle" | "error">("idle");
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [viewMode, setViewMode] = useState(initialPreferences.viewMode);
+  const [queueRecoveryNotice, setQueueRecoveryNotice] = useState<ResearchQueueRecoveryNotice | null>(null);
 
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
@@ -334,15 +336,34 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         setItems(researchData.items);
         setSelectedId((current) => current || researchData.items[0]?.id || "");
         setValuationRuns(valuationData.runs);
+        setQueueRecoveryNotice(describeResearchQueueRecovery(researchData));
         setPhase("ready");
       })
       .catch((error) => {
         if (cancelled) return;
         setMessage(error instanceof Error ? error.message : "研究队列读取失败。");
+        setQueueRecoveryNotice(null);
         setPhase("error");
       });
     return () => { cancelled = true; };
   }, []);
+
+  async function reloadWorkspaceData() {
+    setPhase("loading");
+    setMessage("");
+    try {
+      const [researchData, valuationData] = await Promise.all([fetchResearchItems(), fetchValuations()]);
+      setItems(researchData.items);
+      setSelectedId((current) => current || researchData.items[0]?.id || "");
+      setValuationRuns(valuationData.runs);
+      setQueueRecoveryNotice(describeResearchQueueRecovery(researchData));
+      setPhase("ready");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "研究队列读取失败。");
+      setQueueRecoveryNotice(null);
+      setPhase("error");
+    }
+  }
 
   useEffect(() => {
     saveResearchWorkspacePreference("queueQuery", queueQuery);
@@ -848,6 +869,15 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
         </div>
       </div>
       {message ? <div className="workbench-notice">{message}</div> : null}
+      {queueRecoveryNotice ? (
+        <div className="data-health-notice" role="status" aria-live="polite">
+          <div>
+            <strong>{queueRecoveryNotice.title}</strong>
+            <p>{queueRecoveryNotice.body}</p>
+          </div>
+          <button type="button" className="secondary-button" onClick={() => void reloadWorkspaceData()} disabled={phase === "loading"}>{queueRecoveryNotice.actionLabel}</button>
+        </div>
+      ) : null}
       {phase === "ready" && items.length > 0 ? (() => {
         const total = items.length;
         const withThesis = items.filter((i) => i.currentThesisVersionId).length;
@@ -983,7 +1013,7 @@ export function ResearchWorkspace({ onOpenLegacyMine, onOpenAssistant, onOpenRep
       {phase === "error" ? (
         <div className="workbench-empty error">
           <p>{message}</p>
-          <button type="button" className="secondary-button" onClick={() => { setPhase("loading"); setMessage(""); void fetchResearchItems().then((data) => { setItems(data.items); setSelectedId((current) => current || data.items[0]?.id || ""); setPhase("ready"); }).catch((error) => { setMessage(error instanceof Error ? error.message : "研究队列读取失败。"); setPhase("error"); }); }}>重试</button>
+          <button type="button" className="secondary-button" onClick={() => void reloadWorkspaceData()}>重试</button>
         </div>
       ) : null}
       {phase === "ready" ? (
