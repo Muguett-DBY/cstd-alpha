@@ -20,6 +20,15 @@ param(
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force $OutputDir | Out-Null
 
+function Write-BatchWarning {
+  param(
+    [string]$Context,
+    [object]$ErrorRecord
+  )
+  $message = if ($ErrorRecord -and $ErrorRecord.Exception) { $ErrorRecord.Exception.Message } else { [string]$ErrorRecord }
+  Write-Warning "$Context $message"
+}
+
 $accessPath = $env:CSTD_ALPHA_ACCESS_FILE
 $accessLines = if ($accessPath -and (Test-Path $accessPath)) { @(Get-Content $accessPath) } else { @() }
 if (-not $PSBoundParameters.ContainsKey("BaseUrl")) {
@@ -691,7 +700,9 @@ foreach ($company in $companies) {
       if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
         Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
       }
-    } catch {}
+    } catch {
+      Write-BatchWarning -Context "Could not remove stale lock for $($company.code):" -ErrorRecord $_
+    }
   }
   try {
     $lockStream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
@@ -794,11 +805,17 @@ $modelInput
       throw "opencode failed with exit code $opencodeExitCode. $stderr"
     }
 
+    $malformedEventCount = 0
     $textParts = Get-Content -LiteralPath $eventsPath -Encoding UTF8 | ForEach-Object {
       try {
         $event = $_ | ConvertFrom-Json
         if ($event.type -eq "text" -and $event.part.text) { [string]$event.part.text }
-      } catch {}
+      } catch {
+        $malformedEventCount += 1
+      }
+    }
+    if ($malformedEventCount -gt 0) {
+      Write-Warning "Skipped $malformedEventCount malformed opencode event line(s) for $($company.code)."
     }
     $raw = ($textParts -join "").Trim()
   }
@@ -857,7 +874,9 @@ $modelInput
         if ($lockPath -and (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
           Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
         }
-      } catch {}
+      } catch {
+        Write-BatchWarning -Context "Could not remove lock for $($company.code):" -ErrorRecord $_
+      }
     }
   }
 }

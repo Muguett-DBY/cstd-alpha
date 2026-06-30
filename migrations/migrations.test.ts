@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 
@@ -27,6 +27,19 @@ function addRuntimeResearchColumns(db: DatabaseSync) {
 }
 
 describe("D1 migrations", () => {
+  test("all migrations apply from an empty database in filename order", () => {
+    const db = new DatabaseSync(":memory:");
+    const migrationNames = readdirSync(new URL(".", import.meta.url))
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+
+    for (const name of migrationNames) {
+      expect(() => db.exec(readMigration(name)), name).not.toThrow();
+    }
+    expect(tableColumns(db, "research_items")).toContain("sort_order");
+    expect(tableColumns(db, "valuation_forecast_versions")).toContain("decision_note");
+  });
+
   test("fixed account migration is safe after runtime schema backfill", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(readMigration("0002_user_research.sql"));
