@@ -19,6 +19,7 @@ import { canPersistRecentSearches, loadRecentSearches, rememberRecentSearch } fr
 import { canPersistImportedRankingReports, clearImportedRankingReports } from "./ranking-storage";
 import { radarRefreshFallbackMessage } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
+import { resolveAppViewPresentation } from "./app-view-presentation";
 import { hasRecentPreloadRecovery, PRELOAD_RECOVERY_NOTICE } from "./preload-recovery";
 import { watchlistAddToastMessage } from "./watchlist-add-status";
 import { resolveWatchlistMembership, type WatchlistMembership } from "./watchlist-membership";
@@ -88,7 +89,7 @@ function App() {
   const [radarDiagnostics, setRadarDiagnostics] = useState<RadarDiagnostics | null>(null);
   const [radarPhase, setRadarPhase] = useState<RadarPhase>("idle");
   const [radarError, setRadarError] = useState("");
-  const [mobileAssistantOnly, setMobileAssistantOnly] = useState(() => (typeof window !== "undefined" ? window.matchMedia("(max-width: 760px)").matches : false));
+  const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window !== "undefined" ? window.matchMedia("(max-width: 760px)").matches : false));
   const installPrompt = usePwaInstallPrompt();
   const selectedCompanyRef = useRef<CompanyCandidate | null>(selectedCompany);
 
@@ -182,7 +183,7 @@ function App() {
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 760px)");
-    const update = () => setMobileAssistantOnly(media.matches);
+    const update = () => setIsMobileViewport(media.matches);
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
@@ -589,7 +590,10 @@ function App() {
     );
   }
 
-  const renderedView: AppView = mobileAssistantOnly && user?.role === "admin" ? "assistant" : activeView;
+  const { renderedView, mobileAssistantLayout } = resolveAppViewPresentation(activeView, {
+    isMobileViewport,
+    role: user?.role,
+  });
   const isWorkbenchView = renderedView === "opportunities" || renderedView === "research" || renderedView === "market" || renderedView === "valuation" || renderedView === "assistant";
   const openMarketRanking = (market: "A股" | "美股" | "港股") => {
     setRankingMarket(market === "A股" ? "a-share" : market === "美股" ? "us" : "hk");
@@ -601,7 +605,7 @@ function App() {
   };
 
   return (
-    <main className={`app-shell view-${renderedView} ${mobileAssistantOnly ? "mobile-assistant-only" : ""}`}>
+    <main className={`app-shell view-${renderedView} ${mobileAssistantLayout ? "mobile-assistant-only" : ""}`}>
       <a href="#workspace" className="skip-link">跳转到工作区</a>
       <aside className={`input-rail ${isWorkbenchView ? "workbench-nav-rail" : ""}`}>
         <div>

@@ -407,7 +407,7 @@
 
 ### 阶段 1/6: IMPROVE
 
-**状态:** 🚧 进行中
+**状态:** ✅ 完成
 **使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
 **阶段目标:** 承接 Round 60 的量化估值预设版本追溯主线，在版本对比区补齐当前草稿与历史版本之间的预设库差异摘要。
 **开始状态:** `main` 与 `origin/main` 同步在 `cc872d4`；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入本阶段。
@@ -1118,6 +1118,24 @@
 **浏览器验证:** 本地 `wrangler pages dev dist --port 8799 --local`；内置 Browser 完成页面身份、非空渲染和 console 检查；由于内置 Browser 当前暴露接口不支持 API route fixture，使用临时 Playwright 脚本拦截 `/api/research-items`，验证 2 条坏记录 + 1 条有效记录时显示数据健康提示，点击“重新读取”后提示消失且有效队列保留；桌面和 390x844 移动端均无横向溢出、ErrorBoundary、console/page error 或 4xx 响应。
 **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-mobile.png`。
 **Commit / Push:** 使用 `fix: surface research queue data health` 提交并推送至 `origin/main`。
-**CI:** 待 push 后检查 GitHub Actions。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28436286587`；94 files / 936 tests；lint、typecheck、build、deploy 均通过)。
 **风险记录:** 客户端会提示和隐藏 malformed 研究队列记录，但不会修复服务端源数据；测试中发现 admin 在 760px 以下会被强制渲染助手视图，后续 UIUX 阶段优先处理移动端 admin 无法使用研究工作区的问题。
 **下一阶段:** 阶段 2/6 IMPROVE，优先修复 mobile admin workbench access 或继续把异常数据健康提示扩展到其它核心工作台。
+
+### 阶段 2/6: IMPROVE
+
+**状态:** 🚧 进行中
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 修复 760px 以下管理员被强制锁定在助手视图、底部导航无法打开研究/市场/估值工作台的真实移动端功能问题。
+**根因:** `App.tsx` 用移动端媒体查询直接覆盖 `renderedView` 为 `assistant`；导航点击只更新 `activeView`，渲染层随后再次把它覆盖，造成按钮状态和页面内容无法切换。
+**计划:** 先用纯状态回归测试锁定“移动管理员保留所选工作台、仅助手页启用移动助手布局”；再最小修复视图解析，跑定向/全量门禁和真实移动导航浏览器验收，最后独立 commit、push main、检查 GitHub Actions。
+**测试先行:** 新增 `src/app-view-presentation.test.ts`；红灯确认视图解析模块缺失，绿灯 3 tests passed，覆盖移动管理员保留研究视图、仅主动选择助手时启用移动助手布局、桌面与普通用户视图不变。
+**完成内容:** 新增 `resolveAppViewPresentation`，让 `renderedView` 始终遵循 `activeView`；`mobile-assistant-only` 只在 760px 以下管理员主动选择助手时生效；状态名改为 `isMobileViewport`，不再表达错误的“仅助手”约束。
+**真实问题修复:** 手机管理员现在可以用底部导航打开机会、研究、市场、估值和助手，离开助手后不会被渲染层强制切回；默认移动端入口恢复为今日机会。
+**本地验证:** TDD 红绿完成；全量 `npm test` 95 files / 939 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 内置 Browser 确认本地 Pages URL/title、非空渲染和 console 健康；切换移动视口时浏览器连接超时，重启失去响应的既有 `wrangler/workerd` 预览后，使用临时 Playwright API 夹具在 390x844 管理员会话逐项验证“助手 → 研究 → 市场 → 估值 → 机会”；每个 `view-*` 和 active 按钮正确，只有助手为 `mobile-assistant-only`，无横向溢出、ErrorBoundary、console/page error 或 4xx/5xx 响应。
+**截图证据:** `C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-assistant.png`、`C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-research.png`。
+**Commit / Push:** 待提交并推送至 `origin/main`。
+**CI:** 待 push 后检查 GitHub Actions。
+**风险记录:** 本阶段验证覆盖 Chromium 390x844 和桌面基础加载；其它移动浏览器引擎将在最终生产验收中保留为兼容性残余风险，不影响视图状态逻辑。
+**下一阶段:** 阶段 3/6 UIUX，对移动管理员导航和工作台首屏做进一步可见性与可用性审计，并完成独立闭环。

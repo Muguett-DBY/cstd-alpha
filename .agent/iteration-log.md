@@ -732,3 +732,12 @@
 - **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-stage1-queue-health-mobile.png`
 - **Commit:** `fix: surface research queue data health`
 - **下一阶段:** Stage 2/6 IMPROVE，优先处理本阶段浏览器验收发现的 mobile admin 强制助手视图导致研究工作台不可达问题。
+
+### Stage 2/6 IMPROVE — Mobile Admin Workbench Navigation
+- **承接方向:** 修复 Stage 1 移动验收发现的管理员在 760px 以下被强制渲染助手、底部导航无法进入其它工作台的问题。
+- **真实问题修复:** `renderedView` 不再被移动媒体查询覆盖；管理员可在手机上切换机会、研究、市场、估值和助手，专用助手布局只在主动选择助手时启用。
+- **验证:** TDD 红绿；新增 3 条状态回归测试；全量 95 files / 939 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
+- **浏览器验收:** 内置 Browser 完成页面身份/非空/console 检查；连接在切换移动视口时超时后，重启失去响应的本地 Pages 预览，并以 Playwright 夹具在 390x844 管理员会话验证“助手 → 研究 → 市场 → 估值 → 机会”，无横向溢出、ErrorBoundary、失败响应或 console/page error。
+- **截图证据:** `C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-assistant.png`、`C:\\Users\\12031\\AppData\\Local\\Temp\\cstd-stage2-mobile-admin-research.png`
+- **Commit:** `fix: restore mobile admin navigation`
+- **下一阶段:** Stage 3/6 UIUX，继续审计移动工作台的首屏导航可见性、选中反馈和交互效率。
