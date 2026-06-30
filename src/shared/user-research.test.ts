@@ -4,6 +4,7 @@ import {
   FULL_ANALYSIS_TEMPLATE_ID,
   RESEARCH_TEMPLATES,
   completedTemplateAnalysesForFull,
+  describeTemplateResearchDataHealth,
   isFullAnalysisReady,
   isRetryableTemplateStatus,
   missingTemplateIdsForFull,
@@ -29,6 +30,15 @@ describe("user research templates", () => {
     expect(isRetryableTemplateStatus("failed_retryable")).toBe(true);
     expect(isRetryableTemplateStatus("failed")).toBe(false);
     expect(FULL_ANALYSIS_TEMPLATE_ID).toBe("full");
+  });
+
+  test("describes skipped template research data with a reload action", () => {
+    expect(describeTemplateResearchDataHealth(1, 2, 8, 11)).toEqual({
+      title: "模板研究已跳过 3 条异常记录",
+      detail: "异常范围：1 条模板报告、2 个模板。本次保留 8 条可用模板报告、11 个可用模板；源数据未被修改，可重新读取检查是否已恢复。",
+      actionLabel: "重新读取",
+    });
+    expect(describeTemplateResearchDataHealth(0, 0, 8, 11)).toBeNull();
   });
 
   test("requires every exact template to complete before a full ten-template analysis is ready", () => {

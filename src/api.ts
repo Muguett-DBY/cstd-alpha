@@ -7,7 +7,18 @@ import type { AssistantBlock, AssistantChatStreamEvent, AssistantDeepResearchJob
 import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
-import type { ResearchTemplate, TemplateAnalysisResult, UserSession, WatchlistAddResult, WatchlistItem, WatchlistRankingEntry } from "./shared/user-research";
+import {
+  isResearchTemplate,
+  isResearchTemplateCompletion,
+  isTemplateAnalysisResult,
+  type ResearchTemplate,
+  type ResearchTemplateCompletion,
+  type TemplateAnalysisResult,
+  type UserSession,
+  type WatchlistAddResult,
+  type WatchlistItem,
+  type WatchlistRankingEntry,
+} from "./shared/user-research";
 
 export type GenerateReportInput = {
   company: CompanyCandidate;
@@ -48,7 +59,14 @@ export type TemplateAnalysisProgress = {
   at?: string;
 };
 
-export type ResearchTemplateCompletion = Pick<ResearchTemplate, "title" | "shortTitle" | "focus" | "prompt" | "fullPrompt" | "sectionRequirements">;
+export type { ResearchTemplateCompletion } from "./shared/user-research";
+
+export type TemplateAnalysesResult = {
+  analyses: TemplateAnalysisResult[];
+  templates: ResearchTemplate[];
+  skippedAnalyses?: number;
+  skippedTemplates?: number;
+};
 
 export type ReportLibraryRecord = {
   entry: ReportLibraryEntry;
@@ -678,20 +696,19 @@ export async function refreshWatchlistRanking(input: { watchlistId?: string; for
   return { entries: arrayPayload<unknown>(data.entries).filter(isWatchlistRankingEntry), queued: stringArrayPayload(data.queued), reused: stringArrayPayload(data.reused) };
 }
 
-export async function fetchTemplateAnalyses(watchlistId?: string): Promise<{ analyses: TemplateAnalysisResult[]; templates: ResearchTemplate[] }> {
+export async function fetchTemplateAnalyses(watchlistId?: string): Promise<TemplateAnalysesResult> {
   const params = new URLSearchParams();
   if (watchlistId) params.set("watchlistId", watchlistId);
   const response = await fetch(`/api/template-analysis${params.size ? `?${params.toString()}` : ""}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板分析读取失败。");
-  const data = (await response.json()) as { analyses?: TemplateAnalysisResult[]; templates?: ResearchTemplate[] };
-  return { analyses: arrayPayload<TemplateAnalysisResult>(data.analyses), templates: arrayPayload<ResearchTemplate>(data.templates) };
+  return normalizeTemplateAnalysesResult(objectPayload(await response.json()));
 }
 
 export async function fetchResearchTemplates(): Promise<ResearchTemplate[]> {
   const response = await fetch("/api/research-templates", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板读取失败。");
-  const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return arrayPayload<ResearchTemplate>(data.templates);
+  const data = objectPayload(await response.json());
+  return filterResearchTemplates(data.templates);
 }
 
 export async function saveResearchTemplates(templates: ResearchTemplate[]): Promise<ResearchTemplate[]> {
@@ -702,8 +719,8 @@ export async function saveResearchTemplates(templates: ResearchTemplate[]): Prom
     body: JSON.stringify({ templates }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板保存失败。");
-  const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return arrayPayload<ResearchTemplate>(data.templates);
+  const data = objectPayload(await response.json());
+  return filterResearchTemplates(data.templates);
 }
 
 export async function saveResearchTemplatesAsDefault(): Promise<ResearchTemplate[]> {
@@ -714,8 +731,8 @@ export async function saveResearchTemplatesAsDefault(): Promise<ResearchTemplate
     body: JSON.stringify({ action: "save-defaults" }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "默认模板保存失败。");
-  const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return arrayPayload<ResearchTemplate>(data.templates);
+  const data = objectPayload(await response.json());
+  return filterResearchTemplates(data.templates);
 }
 
 export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplate[]> {
@@ -726,8 +743,8 @@ export async function resetResearchTemplatesToDefault(): Promise<ResearchTemplat
     body: JSON.stringify({ action: "reset-defaults" }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板重置失败。");
-  const data = (await response.json()) as { templates?: ResearchTemplate[] };
-  return arrayPayload<ResearchTemplate>(data.templates);
+  const data = objectPayload(await response.json());
+  return filterResearchTemplates(data.templates);
 }
 
 export async function completeResearchTemplateDraft(draft: ResearchTemplateCompletion): Promise<ResearchTemplateCompletion> {
@@ -738,8 +755,8 @@ export async function completeResearchTemplateDraft(draft: ResearchTemplateCompl
     body: JSON.stringify({ draft }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "模板 AI 补全失败。");
-  const data = (await response.json()) as { completion?: ResearchTemplateCompletion };
-  if (!data.completion) throw new Error("模板 AI 补全失败。");
+  const data = objectPayload(await response.json());
+  if (!isResearchTemplateCompletion(data.completion)) throw new Error("模板 AI 补全失败。");
   return data.completion;
 }
 
@@ -868,8 +885,8 @@ export async function sendCodeResult(id: string, output: string, error?: string)
 export async function fetchTemplateAnalysis(analysisId: string): Promise<TemplateAnalysisResult> {
   const response = await fetch(`/api/template-analysis?analysisId=${encodeURIComponent(analysisId)}`, { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "模板报告读取失败。");
-  const data = (await response.json()) as { analysis?: TemplateAnalysisResult };
-  if (!data.analysis) throw new Error("模板报告读取失败。");
+  const data = objectPayload(await response.json());
+  if (!isTemplateAnalysisResult(data.analysis)) throw new Error("模板报告读取失败。");
   return data.analysis;
 }
 
@@ -895,21 +912,66 @@ export async function generateTemplateAnalysis(
   if (response.headers.get("content-type")?.includes("application/x-ndjson")) {
     let finalResult: { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] } | undefined;
     for await (const event of readNdjson(response)) {
-      if (event.type === "progress") onProgress?.(event as TemplateAnalysisProgress);
-      if (event.type === "error") throw new Error(String(event.error || "模板分析生成失败。"));
+      if (event.type === "progress" && isTemplateAnalysisProgress(event)) onProgress?.(event);
+      if (event.type === "error") {
+        const eventRecord = event as Record<string, unknown>;
+        throw new Error(String(eventRecord.error || "模板分析生成失败。"));
+      }
       if (event.type === "final") {
-        finalResult = {
-          analysis: event.analysis as TemplateAnalysisResult | undefined,
-          analyses: event.analyses as TemplateAnalysisResult[] | undefined,
-        };
+        finalResult = normalizeTemplateAnalysisGenerationResult(event);
       }
     }
     if (!finalResult?.analysis && !finalResult?.analyses) throw new Error("模板分析连接提前结束，请稍后重试。");
     return finalResult;
   }
-  const data = (await response.json()) as { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] };
+  const data = normalizeTemplateAnalysisGenerationResult(objectPayload(await response.json()));
   if (!data.analysis && !data.analyses) throw new Error("模板分析生成失败。");
   return data;
+}
+
+function normalizeTemplateAnalysesResult(data: Record<string, unknown>): TemplateAnalysesResult {
+  const analyses = filterTemplateAnalyses(data.analyses);
+  const templates = filterResearchTemplates(data.templates);
+  const skippedAnalyses = skippedArrayEntries(data.analyses, analyses.length);
+  const skippedTemplates = skippedArrayEntries(data.templates, templates.length);
+  return {
+    analyses,
+    templates,
+    ...(skippedAnalyses ? { skippedAnalyses } : {}),
+    ...(skippedTemplates ? { skippedTemplates } : {}),
+  };
+}
+
+function normalizeTemplateAnalysisGenerationResult(data: Record<string, unknown>): { analysis?: TemplateAnalysisResult; analyses?: TemplateAnalysisResult[] } {
+  const analysis = isTemplateAnalysisResult(data.analysis) ? data.analysis : undefined;
+  const analyses = filterTemplateAnalyses(data.analyses);
+  return {
+    ...(analysis ? { analysis } : {}),
+    ...(analyses.length ? { analyses } : {}),
+  };
+}
+
+function filterTemplateAnalyses(value: unknown): TemplateAnalysisResult[] {
+  return arrayPayload<unknown>(value).filter(isTemplateAnalysisResult);
+}
+
+function filterResearchTemplates(value: unknown): ResearchTemplate[] {
+  return arrayPayload<unknown>(value).filter(isResearchTemplate);
+}
+
+function skippedArrayEntries(value: unknown, keptCount: number) {
+  return Array.isArray(value) ? Math.max(0, value.length - keptCount) : 0;
+}
+
+function isTemplateAnalysisProgress(value: unknown): value is TemplateAnalysisProgress {
+  if (!isPlainRecord(value)) return false;
+  return (
+    value.type === "progress" &&
+    typeof value.stage === "string" &&
+    typeof value.label === "string" &&
+    typeof value.detail === "string" &&
+    (value.at === undefined || typeof value.at === "string")
+  );
 }
 
 async function* readNdjson(response: Response): AsyncGenerator<Record<string, unknown>> {

@@ -13,6 +13,7 @@ import {
   fetchRadarScan,
   fetchReportLibrary,
   fetchReportLibraryRecord,
+  fetchTemplateAnalysis,
   fetchTemplateAnalyses,
   fetchWatchlist,
   fetchWatchlistRanking,
@@ -22,6 +23,7 @@ import {
   fetchResearchTemplates,
   fetchResearchTheses,
   fetchValuations,
+  generateTemplateAnalysis,
   generateReport,
   login,
   refreshResearchThesis,
@@ -981,6 +983,80 @@ describe("API client", () => {
         }),
       }),
     );
+  });
+
+  test("filters malformed template research payloads before UI consumers render them", async () => {
+    const template = {
+      id: "template-11-capital-allocation",
+      title: "模板11：资金配置原则与公司配置分析",
+      shortTitle: "资金配置",
+      focus: "配置分析",
+      prompt: "短提示",
+      fullPrompt: "完整提示",
+      enabled: true,
+      sortOrder: 11,
+      sectionRequirements: [{ id: "conclusion", title: "结论", minChars: 180, requiredPoints: ["结论"] }],
+    };
+    const analysis = {
+      id: "analysis-1",
+      userId: "user-admin",
+      watchlistId: "watch-1",
+      templateId: "template-11-capital-allocation",
+      templateTitle: "模板11：资金配置原则与公司配置分析",
+      companyName: "贵州茅台",
+      ticker: "600519",
+      market: "A股",
+      model: "deepseek-v4-flash",
+      status: "completed" as const,
+      title: "贵州茅台资金配置分析",
+      score: 82,
+      verdict: "适度配置",
+      summary: "现金流稳定，估值需跟踪。",
+      keyPoints: ["现金流稳健"],
+      riskFlags: ["估值波动"],
+      followUps: ["批价"],
+      sections: [{ heading: "结论", body: "适度配置。" }],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      completedAt: "2026-07-01T00:01:00.000Z",
+      templateSnapshot: template,
+    };
+    const malformed = { id: "broken" };
+    const validProgress = { type: "progress", stage: "scoring", label: "模板评分", detail: "处理中", at: "2026-07-01T00:00:00.000Z" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ analyses: [malformed, analysis], templates: [malformed, template] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: [malformed, template] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: [malformed, template] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: [malformed, template] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ templates: [malformed, template] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ completion: { title: "缺少字段" } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ analysis: malformed })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ analysis: malformed, analyses: [malformed, analysis] })))
+      .mockResolvedValueOnce(new Response(
+        `${JSON.stringify({ type: "progress", stage: "scoring", label: 42, detail: "bad" })}\n${JSON.stringify(validProgress)}\n${JSON.stringify({ type: "final", analysis })}\n`,
+        { headers: { "content-type": "application/x-ndjson" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchTemplateAnalyses()).resolves.toEqual({
+      analyses: [analysis],
+      templates: [template],
+      skippedAnalyses: 1,
+      skippedTemplates: 1,
+    });
+    await expect(fetchResearchTemplates()).resolves.toEqual([template]);
+    await expect(saveResearchTemplates([template])).resolves.toEqual([template]);
+    await expect(saveResearchTemplatesAsDefault()).resolves.toEqual([template]);
+    await expect(resetResearchTemplatesToDefault()).resolves.toEqual([template]);
+    await expect(completeResearchTemplateDraft(template)).rejects.toThrow("模板 AI 补全失败。");
+    await expect(fetchTemplateAnalysis("analysis-1")).rejects.toThrow("模板报告读取失败。");
+    await expect(generateTemplateAnalysis({ watchlistId: "watch-1", templateId: template.id })).resolves.toEqual({ analyses: [analysis] });
+
+    const onProgress = vi.fn();
+    await expect(generateTemplateAnalysis({ watchlistId: "watch-1", templateId: template.id }, onProgress)).resolves.toEqual({ analysis });
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith(validProgress);
   });
 
   test("reads and refreshes the industry radar scan", async () => {
