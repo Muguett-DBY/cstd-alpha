@@ -12352,6 +12352,24 @@ button:not(:disabled):active,
     padding: 16px;
   }
 
+  .app-shell:not(.view-assistant) .workbench-nav-rail .view-tabs {
+    display: none;
+  }
+
+  .app-shell:not(.view-assistant) .workbench-nav-rail .rail-copy {
+    display: none;
+  }
+
+  .app-shell:not(.view-assistant) .workbench-nav-rail h1 {
+    margin-top: 6px;
+    font-size: 24px;
+  }
+
+  .app-shell:not(.view-assistant) .workbench-nav-rail .muted,
+  .app-shell:not(.view-assistant) .workbench-nav-rail .rail-utilities {
+    margin-top: 8px;
+  }
+
   .research-metrics-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
