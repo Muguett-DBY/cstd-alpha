@@ -1,7 +1,8 @@
 param(
   [string]$AccessFile = $(if ($env:CSTD_ALPHA_ACCESS_FILE) { $env:CSTD_ALPHA_ACCESS_FILE } else { "" }),
   [string]$OutputDir = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".tmp\cstd-alpha-online-regression"),
-  [int]$ReportTimeoutSeconds = 2400
+  [int]$ReportTimeoutSeconds = 2400,
+  [switch]$SkipRefresh
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,10 +71,49 @@ function Parse-StreamEvents {
     ForEach-Object { $_ | ConvertFrom-Json }
 }
 
+function Convert-WebResponseContentToText {
+  param([object]$Content)
+  if ($Content -is [byte[]]) {
+    return [System.Text.Encoding]::UTF8.GetString($Content)
+  }
+  return [string]$Content
+}
+
 function Count-Pattern {
   param([string]$Text, [string]$Pattern)
   ([regex]::Matches($Text, [regex]::Escape($Pattern))).Count
 }
+
+function New-UnicodeString {
+  param([int[]]$CodePoints)
+  -join ($CodePoints | ForEach-Object { [char]$_ })
+}
+
+function Test-ContainsAny {
+  param(
+    [string]$Text,
+    [string[]]$Patterns
+  )
+  foreach ($pattern in $Patterns) {
+    if ($Text -like "*$pattern*") { return $true }
+  }
+  return $false
+}
+
+$TextAvoid = New-UnicodeString @(0x56DE, 0x907F)
+$TextPending = New-UnicodeString @(0x5F85, 0x9A8C, 0x8BC1)
+$TextDataInsufficient = New-UnicodeString @(0x6570, 0x636E, 0x4E0D, 0x8DB3)
+$TextUnavailable = New-UnicodeString @(0x4E0D, 0x53EF, 0x7528)
+$TextMissing = New-UnicodeString @(0x7F3A, 0x5931)
+$TextUnable = New-UnicodeString @(0x65E0, 0x6CD5)
+$TextUnretrieved = New-UnicodeString @(0x672A, 0x83B7, 0x53D6)
+$TextNotProvided = New-UnicodeString @(0x672A, 0x63D0, 0x4F9B)
+$TextNotProvidedRecent = New-UnicodeString @(0x672A, 0x63D0, 0x4F9B, 0x6700, 0x8FD1)
+$TextFollowUpReview = New-UnicodeString @(0x9700, 0x5728, 0x540E, 0x7EED, 0x590D, 0x6838)
+$UnavailableValuePatterns = @($TextPending, $TextDataInsufficient, $TextUnavailable, $TextMissing, $TextUnable, $TextUnretrieved)
+$PlaceholderPatterns = @($TextPending, $TextDataInsufficient, $TextUnavailable, $TextMissing, $TextUnable)
+$ScorePlaceholderPatterns = @($TextNotProvidedRecent, $TextFollowUpReview, $TextPending, $TextDataInsufficient)
+$RiskPlaceholderPatterns = @($TextPending, $TextDataInsufficient, $TextNotProvided)
 
 function Test-ReportQuality {
   param([object]$Report)
@@ -90,41 +130,41 @@ function Test-ReportQuality {
   $conclusion = [string]$Report.conclusion
 
   $issues = New-Object System.Collections.Generic.List[string]
-  if ($conclusion -eq '回避' -and ($position -ne '0%' -or $maxPosition -ne '0%')) {
-    $issues.Add("回避结论没有严格对应 0% 仓位")
+  if ($conclusion -eq $TextAvoid -and ($position -ne '0%' -or $maxPosition -ne '0%')) {
+    $issues.Add("Avoid conclusion did not strictly map to 0% position")
   }
-  if ($currentPrice -match '待验证|数据不足|不可用|缺失|无法|未获取') {
-    $issues.Add("当前价格仍是占位或不可用")
+  if (Test-ContainsAny -Text $currentPrice -Patterns $UnavailableValuePatterns) {
+    $issues.Add("Current price is still a placeholder or unavailable")
   }
-  if (($fairValueRange + $buyRange + $sellRange) -match '待验证|数据不足|不可用|缺失|无法') {
-    $issues.Add("估值区间仍有占位或不可用")
+  if (Test-ContainsAny -Text ($fairValueRange + $buyRange + $sellRange) -Patterns $PlaceholderPatterns) {
+    $issues.Add("Valuation ranges still contain placeholders or unavailable values")
   }
   if (@($scoreItems | Where-Object {
-    (($_.evidence -join ' ') + ($_.deductions -join ' ') + [string]$_.recentChange) -match '未提供最近|需在后续复核|待验证|数据不足'
+    Test-ContainsAny -Text (($_.evidence -join ' ') + ($_.deductions -join ' ') + [string]$_.recentChange) -Patterns $ScorePlaceholderPatterns
   }).Count -gt 0) {
-    $issues.Add("20 项评分仍有占位证据或占位最近变化")
+    $issues.Add("Score items still contain placeholder evidence or recent-change text")
   }
   if (@($riskItems | Where-Object {
-    ([string]$_.risk + [string]$_.warningMetric + [string]$_.response) -match '待验证|数据不足|未提供'
+    Test-ContainsAny -Text ([string]$_.risk + [string]$_.warningMetric + [string]$_.response) -Patterns $RiskPlaceholderPatterns
   }).Count -gt 0) {
-    $issues.Add("风险矩阵仍有占位字段")
+    $issues.Add("Risk matrix still contains placeholder fields")
   }
   if (@($Report.financialTenYear.rows).Count -lt 6) {
-    $issues.Add("十年财务表有效行数少于 6")
+    $issues.Add("Financial table has fewer than 6 valid rows")
   }
   if (@($evidenceItems | Where-Object { $_.freshness -eq 'latest-public' }).Count -lt 2) {
-    $issues.Add("latest-public 证据少于 2 条")
+    $issues.Add("latest-public evidence count is fewer than 2")
   }
 
   [pscustomobject]@{
     Passed = $issues.Count -eq 0
     Issues = @($issues)
     PlaceholderCounts = [pscustomobject]@{
-      Pending = Count-Pattern $json '待验证'
-      DataInsufficient = Count-Pattern $json '数据不足'
-      Unable = Count-Pattern $json '无法'
-      Missing = Count-Pattern $json '缺失'
-      NotProvided = Count-Pattern $json '未提供'
+      Pending = Count-Pattern $json $TextPending
+      DataInsufficient = Count-Pattern $json $TextDataInsufficient
+      Unable = Count-Pattern $json $TextUnable
+      Missing = Count-Pattern $json $TextMissing
+      NotProvided = Count-Pattern $json $TextNotProvided
     }
     FinancialRows = @($Report.financialTenYear.rows).Count
     RiskRows = @($Report.riskMatrix).Count
@@ -153,8 +193,9 @@ function Invoke-ReportRun {
     forceRefresh = $ForceRefresh
     cacheMode = $mode
   }
-  $response.Content | Set-Content -LiteralPath $ndjsonPath -Encoding UTF8
-  $events = @(Parse-StreamEvents $response.Content)
+  $responseText = Convert-WebResponseContentToText $response.Content
+  Set-Content -LiteralPath $ndjsonPath -Encoding UTF8 -Value $responseText
+  $events = @(Parse-StreamEvents $responseText)
   $errorEvent = $events | Where-Object { $_.type -eq 'error' } | Select-Object -Last 1
   $final = $events | Where-Object { $_.type -eq 'final' } | Select-Object -Last 1
   if ($errorEvent) {
@@ -179,6 +220,7 @@ function Invoke-ReportRun {
   }
 
   $quality = Test-ReportQuality $final.report
+  $cacheExpectationPassed = $ForceRefresh -or ($final.metrics.cacheHit -eq $true -and [int]$final.metrics.modelCalls -eq 0)
   [pscustomobject]@{
     CaseId = $Case.id
     Query = $Case.query
@@ -197,18 +239,25 @@ function Invoke-ReportRun {
     CurrentPrice = $final.report.valuationAnalysis.currentPrice
     FairValueRange = $final.report.valuationAnalysis.fairValueRange
     Quality = $quality
+    CacheExpectationPassed = $cacheExpectationPassed
     Metrics = $final.metrics
     NdjsonPath = $ndjsonPath
   }
 }
 
+$MarketA = 'A' + (New-UnicodeString @(0x80A1))
+$MarketHK = New-UnicodeString @(0x6E2F, 0x80A1)
+$MarketUS = New-UnicodeString @(0x7F8E, 0x80A1)
+$OldListing = New-UnicodeString @(0x8001, 0x4E0A, 0x5E02, 0x516C, 0x53F8)
+$NewListing = New-UnicodeString @(0x65B0, 0x4E0A, 0x5E02, 0x516C, 0x53F8)
+
 $cases = @(
-  [pscustomobject]@{ id='a-old-maotai'; query='贵州茅台'; expectedCode='600519'; marketBucket='A股'; listingAge='老上市公司' },
-  [pscustomobject]@{ id='a-new-decai'; query='德才股份'; expectedCode='605287'; marketBucket='A股'; listingAge='新上市公司' },
-  [pscustomobject]@{ id='hk-old-tencent'; query='腾讯控股'; expectedCode='00700'; marketBucket='港股'; listingAge='老上市公司' },
-  [pscustomobject]@{ id='hk-new-kuaishou'; query='快手'; expectedCode='01024'; marketBucket='港股'; listingAge='新上市公司' },
-  [pscustomobject]@{ id='us-old-amazon'; query='AMZN'; expectedCode='AMZN'; marketBucket='美股'; listingAge='老上市公司' },
-  [pscustomobject]@{ id='us-new-snowflake'; query='SNOW'; expectedCode='SNOW'; marketBucket='美股'; listingAge='新上市公司' }
+  [pscustomobject]@{ id='a-old-maotai'; query=(New-UnicodeString @(0x8D35, 0x5DDE, 0x8305, 0x53F0)); expectedCode='600519'; marketBucket=$MarketA; listingAge=$OldListing },
+  [pscustomobject]@{ id='a-new-decai'; query=(New-UnicodeString @(0x5FB7, 0x624D, 0x80A1, 0x4EFD)); expectedCode='605287'; marketBucket=$MarketA; listingAge=$NewListing },
+  [pscustomobject]@{ id='hk-old-tencent'; query=(New-UnicodeString @(0x817E, 0x8BAF, 0x63A7, 0x80A1)); expectedCode='00700'; marketBucket=$MarketHK; listingAge=$OldListing },
+  [pscustomobject]@{ id='hk-new-kuaishou'; query=(New-UnicodeString @(0x5FEB, 0x624B)); expectedCode='01024'; marketBucket=$MarketHK; listingAge=$NewListing },
+  [pscustomobject]@{ id='us-old-amazon'; query='AMZN'; expectedCode='AMZN'; marketBucket=$MarketUS; listingAge=$OldListing },
+  [pscustomobject]@{ id='us-new-snowflake'; query='SNOW'; expectedCode='SNOW'; marketBucket=$MarketUS; listingAge=$NewListing }
 )
 
 $access = Read-AccessConfig $AccessFile
@@ -231,9 +280,11 @@ foreach ($case in $cases) {
   $companies[$case.id] = $company
   $company | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $runDir "$($case.id)-candidate.json") -Encoding UTF8
 
-  $refreshResult = Invoke-ReportRun -BaseUrl $access.Url -Session $session -Case $case -Company $company -ForceRefresh $true -RunDir $runDir -TimeoutSec $ReportTimeoutSeconds
-  $summary.Add($refreshResult)
-  $summary | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $runDir 'summary.partial.json') -Encoding UTF8
+  if (-not $SkipRefresh) {
+    $refreshResult = Invoke-ReportRun -BaseUrl $access.Url -Session $session -Case $case -Company $company -ForceRefresh $true -RunDir $runDir -TimeoutSec $ReportTimeoutSeconds
+    $summary.Add($refreshResult)
+    $summary | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $runDir 'summary.partial.json') -Encoding UTF8
+  }
 }
 
 foreach ($case in $cases) {
@@ -242,6 +293,9 @@ foreach ($case in $cases) {
   $summary | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath (Join-Path $runDir 'summary.partial.json') -Encoding UTF8
 }
 
+$failedResults = @($summary.ToArray() | Where-Object {
+  $_.Status -ne 'ok' -or -not $_.Quality.Passed -or -not $_.CacheExpectationPassed
+})
 $result = [pscustomobject][ordered]@{
   RunId = $runId
   BaseUrl = $access.Url
@@ -249,7 +303,13 @@ $result = [pscustomobject][ordered]@{
   StartedAt = $startedAt.ToString('o')
   CompletedAt = (Get-Date).ToString('o')
   CaseCount = $cases.Count
+  RefreshSkipped = [bool]$SkipRefresh
+  Passed = $failedResults.Count -eq 0
+  FailureCount = $failedResults.Count
   Results = @($summary.ToArray())
 }
 $result | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath (Join-Path $runDir 'summary.json') -Encoding UTF8
 $result | ConvertTo-Json -Depth 50
+if ($failedResults.Count -gt 0) {
+  throw "Online regression failed for $($failedResults.Count) run(s). See $runDir\summary.json."
+}

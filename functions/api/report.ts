@@ -65,7 +65,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         emit({
           type: "final",
           report: cached.report,
-          evidence: cached.evidence,
+          evidence: evidenceBundleFromReport(cached.report),
           metrics: buildCacheHitMetrics(startedAtMs, startedAt, cached.metrics, cached.cachedAt),
         });
         return;
@@ -88,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
           emit({
             type: "final",
             report: cached.report,
-            evidence: cached.evidence,
+            evidence: evidenceBundleFromReport(cached.report),
             metrics: buildCacheHitMetrics(startedAtMs, startedAt, cached.metrics, cached.cachedAt),
           });
           return;
@@ -114,7 +114,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         emit({
           type: "final",
           report: cached.report,
-          evidence: cached.evidence,
+          evidence: evidenceBundleFromReport(cached.report),
           metrics: buildCacheHitMetrics(startedAtMs, startedAt, cached.metrics, cached.cachedAt),
         });
         return;
@@ -202,7 +202,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     emit({
       type: "final",
       report,
-      evidence,
+      evidence: evidenceBundleFromReport(report),
       metrics,
     });
     } finally {
@@ -539,15 +539,14 @@ function reportLibraryMarketAliases(normalizedMarket: string, ticker: unknown) {
 
 async function readReportCache(env: Env, cacheKeys: ReportCacheKeys | string | string[]): Promise<ReportCachePayload | null> {
   const lookup = normalizeReportCacheLookup(cacheKeys);
-  const libraryCached = await readReportLibraryCache(env, lookup.libraryIds);
-  if (libraryCached) return libraryCached;
-
   for (const cacheKey of lookup.readKeys) {
     const kvCached = await readKvReportCache(env, cacheKey);
     if (kvCached) return kvCached;
     const edgeCached = await readEdgeReportCache(cacheKey);
     if (edgeCached) return edgeCached;
   }
+  const libraryCached = await readReportLibraryCache(env, lookup.libraryIds);
+  if (libraryCached) return libraryCached;
   return null;
 }
 
