@@ -819,3 +819,13 @@
 - **生产:** CI run `28494671130` passed；Cloudflare deploy step passed。
 - **Commit:** `6dc16a5 feat: improve mobile mine workspace layout`
 - **下一阶段:** Stage 4/6 IMPROVE，选择剩余高价值 API/UI 风险继续做可见产品改进。
+
+### Stage 4/6 IMPROVE — Opportunities Data Health
+- **承接方向:** 延续 runtime contract 主线，把默认首页“今日机会”的 payload 边界纳入校验，避免坏机会数据污染首屏。
+- **真实问题修复:** `/api/opportunities` 的 opportunity/topResearch/risk/catalyst/funnel/inbox/researchItems 现在按运行时契约过滤；坏记录返回 skipped counts，不再进入矩阵、榜单、研究漏斗或收件箱。
+- **新增用户可见增量:** `OpportunityDashboard` 首屏显示“今日机会数据健康”提示，说明跳过的异常记录，并提供“重新读取”；有效机会继续保留。
+- **验证:** TDD 红绿；`src/api.test.ts` 54 tests、全量 96 files / 956 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check passed；本地 Pages 8800 + Playwright 桌面/390px 夹具验证健康提示和重新读取通过。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage4-opportunities-desktop-fresh.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage4-opportunities-mobile-fresh.png`
+- **生产:** CI run `28496956940` passed；Cloudflare deploy step passed。
+- **Commit:** `f58ed48 feat: surface opportunities data health`
+- **下一阶段:** Stage 5/6 CHECK，系统扫雷剩余 API raw casts、CI/workflow、依赖、安全和线上验收缺口。

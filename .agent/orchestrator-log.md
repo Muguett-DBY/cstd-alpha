@@ -1278,3 +1278,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28494671130`；test、lint、typecheck functions、build、deploy 均通过)。
 **风险记录:** 本阶段只处理 `view-mine`/`view-radar` 紧凑 rail 和 `view-mine` mobile 首屏；其它深层页面仍可能有局部密度问题，留给后续 IMPROVE/CHECK 阶段继续扫雷。线上写入型流程未在本阶段执行，避免污染生产数据。
 **下一阶段:** 阶段 4/6 IMPROVE，承接数据契约和移动核心体验主线，选择一个剩余高价值 API/UI 风险做产品级可见改进。
+
+### 阶段 4/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 承接 Round 68 runtime contract 主线，把默认首页“今日机会”的机会信号、研究漏斗、收件箱和研究项 payload 从原样消费改为运行时过滤，并把被跳过的异常记录变成首屏可见的数据健康提示。
+**开始状态:** Stage 3 功能 commit `6dc16a5` 与日志 commit `cc4e960` 均已推送至 `main`，GitHub Actions run `28494671130`、`28494796022` 均通过；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现 malformed opportunities dashboard records 被首页消费；再补机会信号/漏斗/收件箱运行时 guard、skipped counts 和健康文案；随后在 `OpportunityDashboard` 展示“今日机会数据健康”与重新读取入口，并完成全量门禁、本地 Pages 浏览器验证、独立 commit/push/CI/log 闭环。
+**测试先行:** 新增 `src/api.test.ts` 回归测试；红灯确认坏 opportunity/topResearch/catalyst/funnel/inbox/researchItems 会被原客户端放行且没有 skipped health 文案。
+**完成内容:** `src/api.ts` 新增 `isResearchOpportunitySignal`、`isOpportunityFunnelItem`、`isOpportunityInboxItem` 和 `describeOpportunitiesDataHealth`；`fetchOpportunities` 过滤四组机会信号、研究漏斗、收件箱和研究项，并返回 `skippedSignals/skippedFunnelItems/skippedInboxItems/skippedResearchItems`；`OpportunityDashboard` 在首屏显示“今日机会数据健康”并提供“重新读取”。
+**真实问题修复:** 坏 `/api/opportunities` 记录不再污染默认首页矩阵、排行榜、研究漏斗、收件箱和“加入研究队列”入口；用户能看到“今日机会已跳过 N 条异常记录”，有效机会继续保留，重新读取后可恢复提示。
+**本地验证:** TDD 红绿完成；定向 `src/api.test.ts` 54 tests passed；全量 `npm test` 96 files / 956 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、精确 secret/debug scan、`git diff --check` passed。期间 lint 发现 `react-hooks/set-state-in-effect`，已按根因改为 mount effect 只发起异步读取、刷新按钮单独切 loading，并重新通过 lint/测试/build。
+**浏览器验证:** 本地 Pages `http://127.0.0.1:8800/`；Playwright 夹具模拟已登录管理员和 malformed `/api/opportunities`，桌面与 390x844 移动端均显示健康提示；点击“重新读取”后提示消失且有效 `贵州茅台` 机会保留；无横向溢出、ErrorBoundary、console/page error 或站内失败响应。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage4-opportunities-desktop-fresh.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage4-opportunities-mobile-fresh.png`。
+**Commit / Push:** `f58ed48 feat: surface opportunities data health` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28496956940`；test、lint、typecheck functions、build、deploy 均通过)。
+**风险记录:** 客户端会隔离 malformed opportunities 数据但不会修复源 D1/KV/API 数据；线上写入型流程未在本阶段执行，避免污染生产数据。
+**下一阶段:** 阶段 5/6 CHECK，系统扫雷剩余 API raw casts、CI/workflow、依赖、安全、线上验收缺口与默认首页/研究工作台风险。
