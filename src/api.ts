@@ -4,7 +4,7 @@ import type { RadarAnalysisJob, RadarAnalysisScope, RadarCitation, RadarCoverage
 import { isReportLibraryEntry, type ReportLibraryEntry } from "./shared/report-library";
 import { validateReportPayload, type CompanyCandidate, type InvestmentReport, type ReportGenerationMetrics, type ReportTokenUsage } from "./shared/report";
 import type { AssistantBlock, AssistantChatStreamEvent, AssistantDeepResearchJob, AssistantMemoryCandidate, AssistantMessage, AssistantMode, AssistantThread } from "./shared/assistant";
-import { RESEARCH_CATALYST_STATUSES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
+import { RESEARCH_CATALYST_STATUSES, RESEARCH_STAGES, type ResearchCatalyst, type ResearchCatalystStatus, type ResearchItemUpsertResult, type ResearchItemUpsertStatus, type ResearchOpportunitySignal, type ResearchStage, type ResearchThesisVersion, type ResearchWorkbenchItem } from "./shared/research-workbench";
 import type { ValuationRunSummary } from "./shared/valuation";
 import type { EditableAssumption, QuantitativeDraft, QuantitativePreset, QuantitativeValuationVersion, QuantitativeValuationWorkspace } from "./shared/quantitative-valuation";
 import {
@@ -99,6 +99,10 @@ export type OpportunitiesResult = {
   funnel: Array<{ stage: ResearchStage; count: number }>;
   inbox: Array<{ id: string; itemId?: string; type: string; title: string; body: string; severity: string; status: string; createdAt: string }>;
   researchItems: ResearchWorkbenchItem[];
+  skippedSignals?: number;
+  skippedFunnelItems?: number;
+  skippedInboxItems?: number;
+  skippedResearchItems?: number;
 };
 
 export type ResearchItemsResult = {
@@ -151,6 +155,7 @@ const ASSISTANT_DEEP_RESEARCH_KIND_VALUES = ["forecast", "selection", "compariso
 const ASSISTANT_DEEP_RESEARCH_STATUS_VALUES = ["queued", "running", "stopping", "completed", "failed"] as const;
 const ASSISTANT_STREAM_TOOL_STATUS_VALUES = ["running", "completed", "failed"] as const;
 const ASSISTANT_STREAM_TOOL_RESULT_STATUS_VALUES = ["completed", "failed"] as const;
+const OPPORTUNITY_SOURCE_VALUES = ["radar", "watchlist", "hybrid"] as const;
 
 type AssistantThreadSummary = {
   id: string;
@@ -165,17 +170,58 @@ export async function fetchOpportunities(): Promise<OpportunitiesResult> {
 }
 
 function normalizeOpportunitiesResult(payload: unknown): OpportunitiesResult {
-  const data = (payload && typeof payload === "object" ? payload : {}) as Partial<OpportunitiesResult>;
+  const data = objectPayload(payload);
+  const rawOpportunities = arrayPayload<unknown>(data.opportunities);
+  const rawTopResearch = arrayPayload<unknown>(data.topResearch);
+  const rawRiskWorsening = arrayPayload<unknown>(data.riskWorsening);
+  const rawCatalysts = arrayPayload<unknown>(data.catalysts);
+  const rawFunnel = arrayPayload<unknown>(data.funnel);
+  const rawInbox = arrayPayload<unknown>(data.inbox);
+  const rawResearchItems = arrayPayload<unknown>(data.researchItems);
+  const opportunities = rawOpportunities.filter(isResearchOpportunitySignal);
+  const topResearch = rawTopResearch.filter(isResearchOpportunitySignal);
+  const riskWorsening = rawRiskWorsening.filter(isResearchOpportunitySignal);
+  const catalysts = rawCatalysts.filter(isResearchOpportunitySignal);
+  const funnel = rawFunnel.filter(isOpportunityFunnelItem);
+  const inbox = rawInbox.filter(isOpportunityInboxItem);
+  const researchItems = rawResearchItems.filter(isResearchWorkbenchItem);
+  const skippedSignals = rawOpportunities.length - opportunities.length
+    + rawTopResearch.length - topResearch.length
+    + rawRiskWorsening.length - riskWorsening.length
+    + rawCatalysts.length - catalysts.length;
+  const skippedFunnelItems = rawFunnel.length - funnel.length;
+  const skippedInboxItems = rawInbox.length - inbox.length;
+  const skippedResearchItems = rawResearchItems.length - researchItems.length;
   return {
     generatedAt: typeof data.generatedAt === "string" ? data.generatedAt : "",
-    opportunities: Array.isArray(data.opportunities) ? data.opportunities : [],
-    topResearch: Array.isArray(data.topResearch) ? data.topResearch : [],
-    riskWorsening: Array.isArray(data.riskWorsening) ? data.riskWorsening : [],
-    catalysts: Array.isArray(data.catalysts) ? data.catalysts : [],
-    funnel: Array.isArray(data.funnel) ? data.funnel : [],
-    inbox: Array.isArray(data.inbox) ? data.inbox : [],
-    researchItems: Array.isArray(data.researchItems) ? data.researchItems : [],
+    opportunities,
+    topResearch,
+    riskWorsening,
+    catalysts,
+    funnel,
+    inbox,
+    researchItems,
+    ...(skippedSignals > 0 ? { skippedSignals } : {}),
+    ...(skippedFunnelItems > 0 ? { skippedFunnelItems } : {}),
+    ...(skippedInboxItems > 0 ? { skippedInboxItems } : {}),
+    ...(skippedResearchItems > 0 ? { skippedResearchItems } : {}),
   };
+}
+
+export function describeOpportunitiesDataHealth(result: Pick<OpportunitiesResult, "skippedSignals" | "skippedFunnelItems" | "skippedInboxItems" | "skippedResearchItems">) {
+  const skippedSignals = result.skippedSignals ?? 0;
+  const skippedFunnelItems = result.skippedFunnelItems ?? 0;
+  const skippedInboxItems = result.skippedInboxItems ?? 0;
+  const skippedResearchItems = result.skippedResearchItems ?? 0;
+  const total = skippedSignals + skippedFunnelItems + skippedInboxItems + skippedResearchItems;
+  if (total <= 0) return "";
+  const parts = [
+    skippedSignals > 0 ? `机会信号 ${skippedSignals}` : "",
+    skippedFunnelItems > 0 ? `研究漏斗 ${skippedFunnelItems}` : "",
+    skippedInboxItems > 0 ? `收件箱 ${skippedInboxItems}` : "",
+    skippedResearchItems > 0 ? `研究项 ${skippedResearchItems}` : "",
+  ].filter(Boolean);
+  return `今日机会已跳过 ${total} 条异常记录：${parts.join("、")}。有效机会和研究数据已保留，可以重新读取。`;
 }
 
 export async function fetchResearchItems(): Promise<ResearchItemsResult> {
@@ -1315,6 +1361,52 @@ function isCompanyCandidate(value: unknown): value is CompanyCandidate {
     typeof value.marketType === "string" && value.marketType.trim().length > 0 &&
     (value.source === "eastmoney" || value.source === "yahoo")
   );
+}
+
+function isResearchOpportunitySignal(value: unknown): value is ResearchOpportunitySignal {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    (value.entityType === "company" || value.entityType === "industry") &&
+    typeof value.entityId === "string" && value.entityId.trim().length > 0 &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    typeof value.subtitle === "string" &&
+    isStringOneOf(value.stage, RESEARCH_STAGES) &&
+    isOpportunityScore(value.opportunityScore) &&
+    isOpportunityScore(value.riskScore) &&
+    isOpportunityScore(value.evidenceScore) &&
+    isOpportunityScore(value.catalystScore) &&
+    isOpportunityScore(value.valuationMismatchScore) &&
+    isOpportunityScore(value.upsideScore) &&
+    finiteNumber(value.sourceCount) !== undefined &&
+    isStringArray(value.reasons) &&
+    isStringOneOf(value.source, OPPORTUNITY_SOURCE_VALUES)
+  );
+}
+
+function isOpportunityFunnelItem(value: unknown): value is { stage: ResearchStage; count: number } {
+  if (!isPlainRecord(value)) return false;
+  const count = finiteNumber(value.count);
+  return isStringOneOf(value.stage, RESEARCH_STAGES) && count !== undefined && count >= 0;
+}
+
+function isOpportunityInboxItem(value: unknown): value is OpportunitiesResult["inbox"][number] {
+  if (!isPlainRecord(value)) return false;
+  return (
+    typeof value.id === "string" && value.id.trim().length > 0 &&
+    (value.itemId === undefined || typeof value.itemId === "string") &&
+    typeof value.type === "string" &&
+    typeof value.title === "string" && value.title.trim().length > 0 &&
+    typeof value.body === "string" &&
+    typeof value.severity === "string" &&
+    typeof value.status === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isOpportunityScore(value: unknown) {
+  const score = finiteNumber(value);
+  return score !== undefined && score >= 0 && score <= 100;
 }
 
 function isUserSession(value: unknown): value is UserSession {

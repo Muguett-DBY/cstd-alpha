@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { addResearchItem, fetchOpportunities, type OpportunitiesResult } from "./api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addResearchItem, describeOpportunitiesDataHealth, fetchOpportunities, type OpportunitiesResult } from "./api";
 import { RESEARCH_STAGE_LABELS, RESEARCH_STAGES, type ResearchOpportunitySignal } from "./shared/research-workbench";
 import { loadRecentReportHistory } from "./storage";
 import { showToast } from "./toast-state";
@@ -14,6 +14,20 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
   const [message, setMessage] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | "radar" | "watchlist" | "hybrid">("all");
   const [minScore, setMinScore] = useState(0);
+
+  const loadDashboard = useCallback(() => {
+    setPhase("loading");
+    setMessage("");
+    fetchOpportunities()
+      .then((next) => {
+        setData(next);
+        setPhase("ready");
+      })
+      .catch((error) => {
+        setMessage(error instanceof Error ? error.message : "今日机会读取失败。");
+        setPhase("error");
+      });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +46,7 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
   }, []);
 
   const allOpportunities = useMemo(() => data?.opportunities ?? [], [data]);
+  const dataHealthMessage = useMemo(() => data ? describeOpportunitiesDataHealth(data) : "", [data]);
   const sourceBreakdown = useMemo(() => {
     const counts = { radar: 0, watchlist: 0, hybrid: 0 };
     for (const item of allOpportunities) counts[item.source] += 1;
@@ -92,11 +107,21 @@ export function OpportunityDashboard({ onOpenResearch }: Props) {
       {phase === "error" ? (
         <div className="workbench-empty error">
           <p>{message}</p>
-          <button type="button" className="secondary-button" onClick={() => { setPhase("loading"); setMessage(""); void fetchOpportunities().then((next) => { setData(next); setPhase("ready"); }).catch((error) => { setMessage(error instanceof Error ? error.message : "今日机会读取失败。"); setPhase("error"); }); }}>重试</button>
+          <button type="button" className="secondary-button" onClick={() => loadDashboard()}>重试</button>
         </div>
       ) : null}
       {phase === "ready" && data ? (
         <>
+          {dataHealthMessage ? (
+            <div className="data-health-notice" role="status">
+              <div>
+                <strong>今日机会数据健康</strong>
+                <p>{dataHealthMessage}</p>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => loadDashboard()}>重新读取</button>
+            </div>
+          ) : null}
+
           {portfolioHealth && portfolioHealth.total > 0 ? (
             <div className="terminal-panel portfolio-health">
               <PanelHeader title="研究概况" subtitle="你的研究组合健康度概览。" />

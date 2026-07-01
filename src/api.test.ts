@@ -40,6 +40,7 @@ import {
   stopAssistantDeepResearchJob,
   listAssistantThreads,
   createAssistantThread,
+  describeOpportunitiesDataHealth,
   syncResearchCatalystsFromThesis,
   updateResearchCatalystStatus,
   updateResearchItemStage,
@@ -1160,6 +1161,75 @@ describe("API client", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/opportunities", expect.objectContaining({ credentials: "include" }));
+  });
+
+  test("filters malformed opportunities dashboard records and describes skipped data", async () => {
+    const signal = {
+      id: "opportunity-1",
+      entityType: "company" as const,
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      subtitle: "600519 / A股",
+      stage: "deepResearch" as const,
+      opportunityScore: 82,
+      riskScore: 34,
+      evidenceScore: 76,
+      catalystScore: 61,
+      valuationMismatchScore: 70,
+      upsideScore: 80,
+      sourceCount: 5,
+      reasons: ["证据增强"],
+      source: "watchlist" as const,
+    };
+    const researchItem = {
+      id: "research-1",
+      userKey: "user-1",
+      entityType: "company" as const,
+      entityId: "eastmoney:1.600519",
+      title: "贵州茅台",
+      stage: "deepResearch" as const,
+      status: "active",
+      source: "watchlist",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T01:00:00.000Z",
+    };
+    const inbox = {
+      id: "inbox-1",
+      type: "risk",
+      title: "毛利率波动",
+      body: "需要复核最新公告。",
+      severity: "high",
+      status: "open",
+      createdAt: "2026-07-01T01:00:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      generatedAt: "2026-07-01T01:00:00.000Z",
+      opportunities: [{ id: "broken" }, signal],
+      topResearch: [signal, { ...signal, id: "broken-top", source: "newsletter" }],
+      riskWorsening: [{ ...signal, id: "risk-1", riskScore: 77 }],
+      catalysts: [{ ...signal, id: "bad-catalyst", reasons: "not-array" }, signal],
+      funnel: [{ stage: "deepResearch", count: 2 }, { stage: "lost", count: "many" }],
+      inbox: [inbox, { id: "bad-inbox", severity: 3 }],
+      researchItems: [{ id: "bad-research" }, researchItem],
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchOpportunities();
+
+    expect(result.opportunities).toEqual([signal]);
+    expect(result.topResearch).toEqual([signal]);
+    expect(result.riskWorsening).toEqual([{ ...signal, id: "risk-1", riskScore: 77 }]);
+    expect(result.catalysts).toEqual([signal]);
+    expect(result.funnel).toEqual([{ stage: "deepResearch", count: 2 }]);
+    expect(result.inbox).toEqual([inbox]);
+    expect(result.researchItems).toEqual([researchItem]);
+    expect(result).toMatchObject({
+      skippedSignals: 3,
+      skippedFunnelItems: 1,
+      skippedInboxItems: 1,
+      skippedResearchItems: 1,
+    });
+    expect(describeOpportunitiesDataHealth(result)).toContain("今日机会已跳过 6 条异常记录");
   });
 
   test("normalizes incomplete research workspace payloads to empty collections", async () => {
