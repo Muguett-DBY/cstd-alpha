@@ -809,3 +809,13 @@
 - **生产:** CI run `28459387787` passed；Cloudflare deploy step passed。
 - **Commit:** `c6e3a4c feat: guard template research payloads`
 - **下一阶段:** Stage 3/6 UIUX，优先修复移动端 `view-mine` 仍被顶部报告输入 rail 抢占首屏的问题。
+
+### Stage 3/6 UIUX — Mobile Mine Workspace First Screen
+- **承接方向:** 延续 Stage 2 暴露的 390px “我的研究”首屏问题，把模板研究入口从报告生成 rail 中解放出来。
+- **真实问题修复:** 720px 以下 `view-mine` 隐藏报告输入 rail；1100px 以下 `view-mine`/`view-radar` 使用紧凑 rail，只保留品牌与视图 tabs；桌面和移动主导航 grouped 子视图补齐 `aria-current`。
+- **体验收益:** 手机进入“研究 -> 打开模板研究”后直接看到自选股/模板工作台内容，平板不再展示无关 report form，底部导航当前状态对辅助技术可见。
+- **验证:** TDD 红绿；`src/mobile-workbench-navigation.test.ts` 6 tests、全量 96 files / 955 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check passed；本地 Pages 8800 + Playwright 真实登录路径桌面/900px/390px 验收通过。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-desktop-real.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-tablet-real.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-mobile-real.png`
+- **生产:** CI run `28494671130` passed；Cloudflare deploy step passed。
+- **Commit:** `6dc16a5 feat: improve mobile mine workspace layout`
+- **下一阶段:** Stage 4/6 IMPROVE，选择剩余高价值 API/UI 风险继续做可见产品改进。

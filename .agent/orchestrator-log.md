@@ -1260,3 +1260,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28459387787`；96 files / 952 tests；lint、typecheck、build、deploy 均通过)。
 **风险记录:** 客户端会隔离 malformed template 数据但不会修复源 D1/R2/API 数据；移动端“我的研究”首屏仍被顶部报告输入 rail 占用明显空间，这是 Stage 3 UIUX 的优先问题。
 **下一阶段:** 阶段 3/6 UIUX，优先把移动端 `view-mine` 首屏从报告输入 rail 中解放出来，让模板研究工作台在 390px 下直接可用。
+
+### 阶段 3/6: UIUX
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_UIUX_MAIN.txt`
+**阶段目标:** 修复 390px 下“我的研究”仍先展示报告生成输入 rail 的真实体验问题，把移动端模板研究首屏变成直接可用的自选股/模板工作台，并补齐底部导航可访问性状态和紧凑布局回归。
+**开始状态:** Stage 2 功能 commit `c6e3a4c` 与日志 commit `ba4e9ed` 均已推送至 `main`，GitHub Actions run `28459387787`、`28459596762` 均通过；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入本阶段。
+**计划:** 先用 CSS/ARIA 回归测试锁定 `view-mine` 移动端隐藏报告 rail、tablet compact rail、底部导航 `aria-current`；再最小调整 `App.css` 和 mobile nav，随后用本地 Pages + Playwright 截图验证桌面/移动首屏、无溢出/控制台错误，最后独立 commit/push/CI/log 闭环。
+**测试先行:** 扩展 `src/mobile-workbench-navigation.test.ts`，红灯确认 mobile `view-mine` 未隐藏报告 rail、tablet mine 未隐藏 report form、移动底部导航缺少当前页 `aria-current`。
+**完成内容:** `App.css` 在 1100px 以下为 `view-mine`/`view-radar` 提供只保留品牌与视图 tabs 的紧凑 rail，并在 720px 以下彻底隐藏 `view-mine` 的报告输入 rail；`App.tsx` 为桌面 tabs 和移动底部导航的 grouped research/market 子视图补齐 `aria-current`。
+**真实问题修复:** 390px 下从“研究 -> 打开模板研究”进入我的研究时，首屏不再先看到报告生成输入栏；平板宽度不会展示无关 report form；移动端辅助技术能识别当前底部主导航。
+**本地验证:** TDD 红绿完成；定向 `src/mobile-workbench-navigation.test.ts` 1 file / 6 tests passed；全量 `npm test` 96 files / 955 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、精确 secret/debug scan、`git diff --check` passed。
+**浏览器验证:** 本地 Pages `http://127.0.0.1:8800/`；先用无认证脚本确认 auth gate 后，创建/更新本地 D1 `admin` 测试账号（`--remote=false`，不触碰生产），再用 Playwright 真实登录并执行“研究 -> 打开模板研究”；桌面、900px tablet、390x844 mobile 均进入 `view-mine`，mobile rail `display:none`、tablet report form `display:none`、无横向溢出、ErrorBoundary、console/page error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-desktop-real.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-tablet-real.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage3-mobile-real.png`。
+**Commit / Push:** `6dc16a5 feat: improve mobile mine workspace layout` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28494671130`；test、lint、typecheck functions、build、deploy 均通过)。
+**风险记录:** 本阶段只处理 `view-mine`/`view-radar` 紧凑 rail 和 `view-mine` mobile 首屏；其它深层页面仍可能有局部密度问题，留给后续 IMPROVE/CHECK 阶段继续扫雷。线上写入型流程未在本阶段执行，避免污染生产数据。
+**下一阶段:** 阶段 4/6 IMPROVE，承接数据契约和移动核心体验主线，选择一个剩余高价值 API/UI 风险做产品级可见改进。
