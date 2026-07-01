@@ -3,6 +3,7 @@ import { onRequestPost } from "./report";
 import { verifySessionCookie } from "../_shared/auth";
 import { callDeepSeekReport, MODEL_OUTPUT_LENGTH_MESSAGE } from "../_shared/deepseek";
 import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../_shared/providers";
+import { SCORE_ITEMS_20 } from "../../src/shared/report";
 
 vi.mock("../_shared/auth", () => ({
   verifySessionCookie: vi.fn(),
@@ -152,6 +153,36 @@ describe("report API stream", () => {
       report: cachedReport,
       metrics: { cacheHit: true },
     });
+  });
+
+  test("prefers fresh server cache over stale durable report-library cache", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    const staleLibraryReport = makeDeepReport("旧报告库缓存", { name: "????", ticker: "600519", market: "?A" });
+    const freshServerReport = makeDeepReport("新 KV 缓存", evidence.company);
+    const cache = mockKvCache({
+      report: freshServerReport,
+      evidence,
+      cachedAt: "2026-07-01T07:12:00.000Z",
+      expiresAt: "2099-07-01T07:12:00.000Z",
+    });
+    const first = vi.fn().mockResolvedValue({
+      object_key: "report-library/v1/reports/stale.json",
+      imported_at: "2026-07-01T06:56:00.000Z",
+    });
+    const bind = vi.fn().mockReturnValue({ first });
+    const db = { prepare: vi.fn().mockReturnValue({ bind }) };
+    const bucket = { get: vi.fn().mockResolvedValue({ json: vi.fn().mockResolvedValue(staleLibraryReport) }) };
+
+    const events = await postReportEvents({ env: { REPORT_CACHE: cache, REPORT_LIBRARY_DB: db, REPORT_LIBRARY_BUCKET: bucket } });
+
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      report: { oneSentence: "新 KV 缓存" },
+      metrics: { cacheHit: true },
+    });
+    expect(bucket.get).not.toHaveBeenCalled();
   });
 
   test("refresh mode bypasses reads but stores the generated report in KV for later shared cache hits", async () => {
@@ -471,6 +502,32 @@ describe("report API stream", () => {
       evidenceCount: 2,
     });
   });
+
+  test("omits raw provider facts from the final stream event", async () => {
+    const rawEvidence: EvidenceBundle = {
+      ...evidence,
+      facts: { oversizedPayload: "x".repeat(100_000) },
+    };
+    const report = {
+      company: rawEvidence.company,
+      asOf: rawEvidence.retrievedAt,
+      evidence: rawEvidence.evidence,
+    };
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(rawEvidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue(report);
+
+    const events = await postReportEvents();
+
+    const final = events.at(-1);
+    expect(final).toMatchObject({ type: "final" });
+    expect(final?.evidence).toEqual({
+      company: report.company,
+      retrievedAt: report.asOf,
+      evidence: report.evidence,
+      facts: {},
+    });
+  });
 });
 
 type TestKvCache = {
@@ -506,6 +563,25 @@ function mockKvCacheByKey(
 }
 function reportGetKeys(cache: TestKvCache) {
   return cache.get.mock.calls.map(([key]) => key).filter((key): key is string => typeof key === "string" && key.startsWith("report:"));
+}
+
+function makeDeepReport(oneSentence: string, company: { name: string; ticker?: string; market?: string }) {
+  return {
+    company,
+    asOf: "2026-07-01T07:12:00.000Z",
+    conclusion: "持有",
+    oneSentence,
+    scoreItems20: SCORE_ITEMS_20.map((item) => ({
+      ...item,
+      score: 80,
+      label: "良",
+      evidence: ["公开证据"],
+      deductions: [],
+      recentChange: "稳定；对分数影响：中性",
+      reason: "稳定",
+    })),
+    evidence: evidence.evidence,
+  };
 }
 
 function firstReportGetKey(cache: TestKvCache) {
