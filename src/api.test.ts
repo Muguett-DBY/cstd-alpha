@@ -397,6 +397,23 @@ describe("API client", () => {
     await expect(listAssistantThreads()).rejects.toThrow("线程列表读取失败。");
   });
 
+  test("filters malformed assistant thread summaries while preserving valid history", async () => {
+    const validThread = {
+      id: "thread-1",
+      title: "贵州茅台复盘",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      threads: [
+        { id: "broken", title: 42, updatedAt: "2026-07-01T00:00:00.000Z" },
+        validThread,
+        null,
+      ],
+    })));
+
+    await expect(listAssistantThreads()).resolves.toEqual([validThread]);
+  });
+
   test("rejects malformed assistant thread creation responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ threads: [] })));
 
