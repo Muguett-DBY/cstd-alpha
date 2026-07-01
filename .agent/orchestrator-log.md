@@ -1296,3 +1296,21 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28496956940`；test、lint、typecheck functions、build、deploy 均通过)。
 **风险记录:** 客户端会隔离 malformed opportunities 数据但不会修复源 D1/KV/API 数据；线上写入型流程未在本阶段执行，避免污染生产数据。
 **下一阶段:** 阶段 5/6 CHECK，系统扫雷剩余 API raw casts、CI/workflow、依赖、安全、线上验收缺口与默认首页/研究工作台风险。
+
+### 阶段 5/6: CHECK
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_CHECK_MAIN.txt`
+**阶段目标:** 系统扫雷剩余 API raw casts、CI/workflow、依赖、安全和默认报告生成主链路风险；优先修复会污染 UI 进度状态或导致用户误判生成状态的真实问题。
+**开始状态:** Stage 4 功能 commit `f58ed48` 与日志 commit `19a17ec` 均已推送至 `main`，GitHub Actions run `28496956940`、`28497066196` 均通过；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入本阶段。
+**系统检查:** 复核 `.github/workflows/pages.yml` 的 test/lint/typecheck/build/deploy ladder、`package.json` scripts、依赖审计、secret/debug patterns、`src/api.ts` 剩余流式 payload 处理和报告生成 UI 路径；发现 P2：`generateReport` 对 `/api/report` NDJSON progress 事件直接 `as ReportProgress`，malformed progress 会进入 `ProgressPanel` 回调并污染用户看到的生成状态。
+**测试先行:** 新增 `src/api.test.ts` 回归测试，红灯确认坏 progress（非字符串 label、字符串 percent、null at）会触发 `onProgress`；绿灯后确认坏 progress 被忽略，合法 progress 仍触发一次且 final report 正常返回。
+**完成内容:** `src/api.ts` 新增 `isReportProgress` 运行时守卫，要求 progress 事件具备合法 `stage/label/detail/at` 字符串、`percent` 为 0-100 有限数值，并校验可选 `startedAt/elapsedMs/evidenceCount`；`generateReport` 现在单独处理 progress 分支并在无效 progress 时跳过，不影响 error/final 事件处理。
+**真实问题修复:** 报告生成流中混入 malformed progress 时，坏进度不再进入 UI 进度列表、meter 或最新进度文案；合法进度、错误事件、最终报告和 metrics 继续按原路径处理。
+**本地验证:** TDD 红灯复现后绿灯；定向 `npx vitest run src/api.test.ts -t "ignores malformed report progress"` passed；`src/api.test.ts` 55 tests passed；全量 `npm test` 96 files / 957 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、`git diff --check`、secret/debug scan passed。一次并发 Vitest 定向运行触发 coverage `.tmp` 争用，已串行重跑并通过；一次 build 暴露 TypeScript 收窄问题，已通过 progress 分支 `continue` 修复并重跑通过。
+**浏览器验证:** 本地 Vite preview `http://127.0.0.1:8810/`；Playwright 夹具模拟管理员会话、研究入口、公司搜索、watchlist 和 `/api/report` NDJSON（坏 progress + 合法 progress + final report）；真实 UI 路径“研究 -> 生成评分报告 -> 搜索贵州茅台 -> 选择候选 -> 生成完整评分报告”通过。页面只显示合法 `Valid progress marker`，未显示 `bad progress should not render`，最终报告“报告完成”渲染成功，无 console/page error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage5-report-stream.png`。
+**Commit / Push:** `0d5cf55 fix: guard report progress stream events` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28497626974`；test、lint、typecheck functions、build、deploy 均通过)。
+**风险记录:** 客户端会静默跳过 malformed report progress，避免污染 UI，但不会修复服务端生成源头；如果后端未来扩展 progress 事件字段或 percent 合法范围，需要同步更新前端 guard。线上写入型/模型生成未在本阶段触发，避免生产数据污染和模型成本。
+**下一阶段:** 阶段 6/6 IMPROVE，选择剩余高价值运行时契约或生产验收缺口做最后一轮可验证改进，并完成 Round 68 最终收口。

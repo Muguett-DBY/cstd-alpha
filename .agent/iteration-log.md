@@ -829,3 +829,14 @@
 - **生产:** CI run `28496956940` passed；Cloudflare deploy step passed。
 - **Commit:** `f58ed48 feat: surface opportunities data health`
 - **下一阶段:** Stage 5/6 CHECK，系统扫雷剩余 API raw casts、CI/workflow、依赖、安全和线上验收缺口。
+
+### Stage 5/6 CHECK — Report Progress Stream Guard
+- **检查:** 复核 CI workflow、package scripts、依赖审计、secret/debug patterns、剩余 API stream/raw payload 边界和报告生成主链路；确认 CI ladder 为 test/lint/typecheck/build/deploy。
+- **真实问题修复:** `generateReport` 不再把 `/api/report` NDJSON progress 事件直接 cast 给 UI；新增 `isReportProgress` guard，只允许完整字符串字段、0-100 数值 percent 和合法可选 metrics 的进度事件进入 `ProgressPanel`。
+- **用户影响:** malformed progress 不再污染进度 meter、最新进度文案和进度列表；合法 progress、error、final report 与 metrics 保持原行为。
+- **验证:** TDD 红绿；新增 report progress 回归测试；`src/api.test.ts` 55 tests、全量 96 files / 957 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。并发定向 Vitest 曾触发 coverage `.tmp` 争用，已串行重跑通过。
+- **浏览器验收:** 本地 Vite preview 8810 + Playwright 夹具验证真实 UI 路径“研究 -> 生成评分报告 -> 搜索贵州茅台 -> 选择候选 -> 生成完整评分报告”；坏 progress 未渲染，合法 `Valid progress marker` 与最终“报告完成”渲染，无 console/page error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage5-report-stream.png`
+- **生产:** CI run `28497626974` passed；Cloudflare deploy step passed。
+- **Commit:** `0d5cf55 fix: guard report progress stream events`
+- **下一阶段:** Stage 6/6 IMPROVE，完成最后一轮高价值改进、验证、推送和最终收口。
