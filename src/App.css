@@ -12148,6 +12148,79 @@ button:not(:disabled):active,
     border-bottom: 1px solid var(--line);
   }
 
+  .app-shell.view-mine,
+  .app-shell.view-radar {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .app-shell.view-mine .input-rail,
+  .app-shell.view-radar .input-rail {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .app-shell.view-mine .input-rail > div:first-child,
+  .app-shell.view-radar .input-rail > div:first-child {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .app-shell.view-mine .input-rail h1,
+  .app-shell.view-mine .rail-copy,
+  .app-shell.view-mine .input-rail .muted,
+  .app-shell.view-mine .report-form,
+  .app-shell.view-mine .selected-company,
+  .app-shell.view-mine .input-rail > .generate-button,
+  .app-shell.view-mine .input-rail > .refresh-button,
+  .app-shell.view-mine .input-rail > .cancel-button,
+  .app-shell.view-mine .chart-controls,
+  .app-shell.view-mine .progress-panel,
+  .app-shell.view-mine .input-rail > .cache-notice,
+  .app-shell.view-mine .input-rail > .error-text,
+  .app-shell.view-radar .input-rail h1,
+  .app-shell.view-radar .rail-copy,
+  .app-shell.view-radar .input-rail .muted,
+  .app-shell.view-radar .report-form,
+  .app-shell.view-radar .selected-company,
+  .app-shell.view-radar .input-rail > .generate-button,
+  .app-shell.view-radar .input-rail > .refresh-button,
+  .app-shell.view-radar .input-rail > .cancel-button,
+  .app-shell.view-radar .chart-controls,
+  .app-shell.view-radar .progress-panel,
+  .app-shell.view-radar .input-rail > .cache-notice,
+  .app-shell.view-radar .input-rail > .error-text {
+    display: none;
+  }
+
+  .app-shell.view-mine .view-tabs,
+  .app-shell.view-radar .view-tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    min-width: 0;
+    margin-top: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .app-shell.view-mine .view-tabs button,
+  .app-shell.view-radar .view-tabs button {
+    flex: 0 0 auto;
+    min-width: 88px;
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+
   .app-shell.view-assistant .input-rail {
     position: relative;
     z-index: 8;
@@ -12350,6 +12423,18 @@ button:not(:disabled):active,
   .input-rail,
   .workspace {
     padding: 16px;
+  }
+
+  .app-shell.view-mine .input-rail {
+    display: none;
+  }
+
+  .app-shell.view-mine .workspace {
+    padding-top: 10px;
+  }
+
+  .app-shell.view-mine .my-workspace {
+    gap: 12px;
   }
 
   .app-shell:not(.view-assistant) .workbench-nav-rail .view-tabs {

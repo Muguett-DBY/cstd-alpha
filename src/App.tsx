@@ -631,10 +631,10 @@ function App() {
           <button type="button" className={renderedView === "opportunities" ? "active" : ""} aria-current={renderedView === "opportunities" ? "page" : undefined} onClick={() => setActiveView("opportunities")}>
             今日机会<kbd>1</kbd>
           </button>
-          <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} aria-current={renderedView === "research" ? "page" : undefined} onClick={() => setActiveView("research")}>
+          <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} aria-current={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "page" : undefined} onClick={() => setActiveView("research")}>
             研究<kbd>2</kbd>
           </button>
-          <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} aria-current={renderedView === "market" ? "page" : undefined} onClick={() => setActiveView("market")}>
+          <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} aria-current={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "page" : undefined} onClick={() => setActiveView("market")}>
             市场<kbd>3</kbd>
           </button>
           <button type="button" className={renderedView === "valuation" ? "active" : ""} aria-current={renderedView === "valuation" ? "page" : undefined} onClick={() => setActiveView("valuation")}>
@@ -825,24 +825,24 @@ function App() {
       ) : null}
       <BackToTop />
       <nav className="mobile-bottom-nav" aria-label="移动端导航">
-        <button type="button" className={renderedView === "opportunities" ? "active" : ""} onClick={() => setActiveView("opportunities")}>
+        <button type="button" className={renderedView === "opportunities" ? "active" : ""} aria-current={renderedView === "opportunities" ? "page" : undefined} onClick={() => setActiveView("opportunities")}>
           <span className="nav-icon">📊</span>
           <span className="nav-label">机会</span>
         </button>
-        <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} onClick={() => setActiveView("research")}>
+        <button type="button" className={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "active" : ""} aria-current={renderedView === "research" || renderedView === "mine" || renderedView === "report" ? "page" : undefined} onClick={() => setActiveView("research")}>
           <span className="nav-icon">🔬</span>
           <span className="nav-label">研究</span>
         </button>
-        <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} onClick={() => setActiveView("market")}>
+        <button type="button" className={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "active" : ""} aria-current={renderedView === "market" || renderedView === "ranking" || renderedView === "watchlist-ranking" || renderedView === "radar" ? "page" : undefined} onClick={() => setActiveView("market")}>
           <span className="nav-icon">📈</span>
           <span className="nav-label">市场</span>
         </button>
-        <button type="button" className={renderedView === "valuation" ? "active" : ""} onClick={() => setActiveView("valuation")}>
+        <button type="button" className={renderedView === "valuation" ? "active" : ""} aria-current={renderedView === "valuation" ? "page" : undefined} onClick={() => setActiveView("valuation")}>
           <span className="nav-icon">💰</span>
           <span className="nav-label">估值</span>
         </button>
         {user?.role === "admin" ? (
-          <button type="button" className={renderedView === "assistant" ? "active" : ""} onClick={() => setActiveView("assistant")}>
+          <button type="button" className={renderedView === "assistant" ? "active" : ""} aria-current={renderedView === "assistant" ? "page" : undefined} onClick={() => setActiveView("assistant")}>
             <span className="nav-icon">🤖</span>
             <span className="nav-label">助手</span>
           </button>
