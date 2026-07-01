@@ -582,7 +582,10 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
   let finalMetrics: ReportGenerationMetrics | undefined;
   try {
     for await (const event of readNdjson(response)) {
-      if (event.type === "progress") onProgress?.(event as ReportProgress);
+      if (event.type === "progress") {
+        if (isReportProgress(event)) onProgress?.(event);
+        continue;
+      }
       if (event.type === "error") throw new Error(String(event.error || "报告生成失败。"));
       if (event.type === "final") {
         finalReport = validateReportPayload(event.report);
@@ -597,6 +600,23 @@ export async function generateReport(input: GenerateReportInput, onProgress?: (p
 
   if (!finalReport) throw new Error("报告连接提前结束，后台会继续生成；稍后再次点击生成会自动复用共享缓存。");
   return { report: finalReport, metrics: finalMetrics };
+}
+
+function isReportProgress(value: unknown): value is ReportProgress {
+  if (!isPlainRecord(value) || value.type !== "progress") return false;
+  const percent = finiteNumber(value.percent);
+  return (
+    typeof value.stage === "string" &&
+    typeof value.label === "string" &&
+    typeof value.detail === "string" &&
+    percent !== undefined &&
+    percent >= 0 &&
+    percent <= 100 &&
+    typeof value.at === "string" &&
+    (value.startedAt === undefined || typeof value.startedAt === "string") &&
+    optionalFiniteNumber(value.elapsedMs) &&
+    optionalFiniteNumber(value.evidenceCount)
+  );
 }
 
 export async function fetchChartData(input: FetchChartDataInput): Promise<ChartBundle> {
