@@ -838,9 +838,9 @@ export async function fetchAssistantThread(threadId?: string): Promise<Assistant
 export async function listAssistantThreads(): Promise<Array<{ id: string; title: string; updatedAt: string }>> {
   const response = await fetch("/api/assistant/threads", { credentials: "include" });
   if (!response.ok) throw new Error((await readError(response)) || "线程列表读取失败。");
-  const data = (await response.json()) as { threads?: unknown };
-  if (!Array.isArray(data.threads) || !data.threads.every(isAssistantThreadSummary)) throw new Error("线程列表读取失败。");
-  return data.threads;
+  const data = objectPayload(await response.json());
+  if (!Array.isArray(data.threads)) throw new Error("线程列表读取失败。");
+  return data.threads.filter(isAssistantThreadSummary);
 }
 
 export async function createAssistantThread(title?: string): Promise<{ id: string; title: string }> {
@@ -851,7 +851,7 @@ export async function createAssistantThread(title?: string): Promise<{ id: strin
     body: JSON.stringify({ title }),
   });
   if (!response.ok) throw new Error((await readError(response)) || "线程创建失败。");
-  const data = (await response.json()) as { thread?: unknown };
+  const data = objectPayload(await response.json());
   if (!isCreatedAssistantThread(data.thread)) throw new Error("线程创建失败。");
   return data.thread;
 }
