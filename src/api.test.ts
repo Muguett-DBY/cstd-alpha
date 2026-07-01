@@ -823,6 +823,53 @@ describe("API client", () => {
     });
   });
 
+  test("ignores malformed report progress stream events before updating the UI", async () => {
+    const report = {
+      company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
+      asOf: "2026-05-10T00:00:00.000Z",
+      conclusion: "观察",
+      oneSentence: "报告完成",
+      scoreItems20: [],
+      evidence: [],
+      sections: { companyOverview: "概况" },
+    };
+    const validProgress = {
+      type: "progress",
+      stage: "deepseek_scoring",
+      label: "DeepSeek 评分生成",
+      detail: "处理中",
+      percent: 62,
+      at: "2026-05-10T00:00:00.000Z",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          `${JSON.stringify({ type: "progress", stage: "deepseek_scoring", label: 42, detail: "bad", percent: "62", at: null })}\n${JSON.stringify(validProgress)}\n${JSON.stringify({ type: "final", report })}\n`,
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const onProgress = vi.fn();
+    const result = await generateReport({
+      company: {
+        id: "eastmoney:1.600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "上海证券交易所",
+        listingPlace: "沪A",
+        marketType: "AStock",
+        quoteId: "1.600519",
+        source: "eastmoney",
+      },
+    }, onProgress);
+
+    expect(result.report.company.name).toBe("贵州茅台");
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith(validProgress);
+  });
+
   test("requests chart data with selected company and price mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
