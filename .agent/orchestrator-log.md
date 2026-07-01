@@ -1314,3 +1314,33 @@
 **CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28497626974`；test、lint、typecheck functions、build、deploy 均通过)。
 **风险记录:** 客户端会静默跳过 malformed report progress，避免污染 UI，但不会修复服务端生成源头；如果后端未来扩展 progress 事件字段或 percent 合法范围，需要同步更新前端 guard。线上写入型/模型生成未在本阶段触发，避免生产数据污染和模型成本。
 **下一阶段:** 阶段 6/6 IMPROVE，选择剩余高价值运行时契约或生产验收缺口做最后一轮可验证改进，并完成 Round 68 最终收口。
+
+### 阶段 6/6: IMPROVE
+
+**状态:** ✅ 完成
+**使用的 Prompt:** `AGENT_IMPROVE_MAIN.txt`
+**阶段目标:** 完成 Round 68 最后一轮高价值运行时契约改进，修复管理员助手线程列表在混入坏摘要时整批失败的问题，并做本地、CI 和线上只读收口验收。
+**开始状态:** Stage 5 功能 commit `0d5cf55` 与日志 commit `5780497` 均已推送至 `main`，GitHub Actions run `28497626974`、`28497777192` 均通过；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入本阶段。
+**计划:** 先用 `src/api.test.ts` 红灯复现 assistant thread list 混入 malformed summary 时整批失败；再把列表根对象和条目处理改成“根字段错误才失败、坏条目过滤、有效历史保留”；随后跑全量门禁、本地浏览器验收、commit/push/CI、线上只读 smoke 和最终日志收口。
+**测试先行:** 新增 `src/api.test.ts` 回归测试，红灯确认一个坏线程摘要会让 `listAssistantThreads` reject 并导致有效历史无法展示；绿灯后确认坏摘要被过滤，合法 `贵州茅台复盘` 线程保留。
+**完成内容:** `listAssistantThreads` 改为 `objectPayload(await response.json())` 读取根对象，根 `threads` 非数组时仍受控失败，数组内部使用 `isAssistantThreadSummary` 过滤 malformed summary；`createAssistantThread` 同步移除直接响应类型断言，改用 `objectPayload` + existing guard。
+**真实问题修复:** 管理员助手线程历史列表混入坏记录时，不再隐藏所有有效会话；坏摘要不进入 `AssistantView` 的会话列表、切换、重命名或删除交互。
+**本地验证:** TDD 红灯后绿灯；定向 `npx vitest run src/api.test.ts -t "filters malformed assistant thread summaries"` passed；`src/api.test.ts` 56 tests passed；全量 `npm test` 96 files / 958 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、`git diff --check`、secret/debug scan passed。并发定向 Vitest 曾触发 coverage `.tmp` 争用，已串行重跑并通过。
+**浏览器验证:** 本地 Vite preview `http://127.0.0.1:8811/`；Playwright 夹具模拟管理员会话、有效 assistant thread、混合坏/好 `/api/assistant/threads`；桌面和 390x844 移动端均显示有效 `贵州茅台复盘` 会话，未显示 `Broken thread should not render`，无横向溢出、console/page error。
+**截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-assistant-threads-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-assistant-threads-mobile.png`。
+**Commit / Push:** `8a2f634 fix: preserve valid assistant thread history` pushed to `origin/main`。
+**CI:** ✅ passed (`Deploy Cloudflare Pages`, run `28498146681`；test、lint、typecheck functions、build、deploy 均通过；deployment `54c9c010.cstd-alpha.pages.dev`)。
+**线上只读验收:** `https://alpha.custard.top/` HTTP 200；`https://alpha.custard.top/api/session` GET JSON 200；`https://54c9c010.cstd-alpha.pages.dev/` HTTP 200；`https://54c9c010.cstd-alpha.pages.dev/api/session` GET JSON 200。Playwright 在自定义域和最新 deployment 的桌面/390x844 移动端均确认登录页 `#password` 渲染、无横向溢出、无 console/page error。
+**线上截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-custom-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-custom-mobile.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-deployment-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-deployment-mobile.png`。
+**风险记录:** 客户端会静默过滤 malformed assistant thread summary，目前没有专门的数据健康提示；如果后端未来新增合法 thread summary 字段，不需要前端同步，但如果调整必填 `id/title/updatedAt` 契约需要同步 guard。线上验收为只读 smoke，未执行登录、AI 生成、报告生成或写入操作，避免生产数据污染和模型成本。
+**下一阶段:** Round 68 的 6 个阶段已完成；最终日志收口提交后再次检查 GitHub Actions，通过后结束。
+
+### Round 68 最终收口
+
+**状态:** 6/6 completed（IMPROVE → IMPROVE → UIUX → IMPROVE → CHECK → IMPROVE）。
+**功能 commits:** `326fef3`、`c6e3a4c`、`6dc16a5`、`f58ed48`、`0d5cf55`、`8a2f634` 均已推送至 `main`，对应功能 CI 全部通过。
+**日志 commits:** `b9a1289`、`ba4e9ed`、`cc4e960`、`19a17ec`、`5780497` 均已推送并通过 CI；本最终日志提交会再触发一次 GitHub Actions。
+**最终本地门禁:** 最新阶段达到 96 files / 958 tests passed；`npm run lint`、`npm run typecheck:functions`、`npm run build`、`npm audit --audit-level=moderate`、secret/debug scan、diff check 全部通过。
+**最终线上状态:** 最新功能部署 `54c9c010.cstd-alpha.pages.dev` 与自定义域 `alpha.custard.top` 的首页和 `/api/session` GET 均 HTTP 200；桌面/移动只读登录页 smoke 通过。
+**遗留风险:** 客户端持续过滤坏数据但不修复服务端源记录；生产验收未执行登录、AI/报告生成或写入型业务操作，避免真实业务数据污染和外部模型成本；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 保持未纳入提交。
+**最终状态:** Round 68 六阶段已按总控完成；等待本最终日志提交的 GitHub Actions 通过后即可收口。

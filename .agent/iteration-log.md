@@ -840,3 +840,21 @@
 - **生产:** CI run `28497626974` passed；Cloudflare deploy step passed。
 - **Commit:** `0d5cf55 fix: guard report progress stream events`
 - **下一阶段:** Stage 6/6 IMPROVE，完成最后一轮高价值改进、验证、推送和最终收口。
+
+### Stage 6/6 IMPROVE — Assistant Thread History Resilience
+- **承接方向:** 完成 Round 68 最后一轮 runtime contract 改进，把管理员助手线程列表从“任一坏摘要整批失败”改为“根字段错误失败、坏条目过滤、有效历史保留”。
+- **真实问题修复:** `/api/assistant/threads` 混入 malformed summary 时，`listAssistantThreads` 现在保留合法线程，坏摘要不进入 `AssistantView` 的会话列表、切换、重命名或删除交互；`createAssistantThread` 同步移除直接响应类型断言。
+- **用户影响:** 一个坏历史线程不再导致管理员看不到其它有效助手会话，历史列表恢复能力更强。
+- **验证:** TDD 红绿；新增 assistant thread summaries 回归测试；`src/api.test.ts` 56 tests、全量 96 files / 958 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。并发定向 Vitest 曾触发 coverage `.tmp` 争用，已串行重跑通过。
+- **浏览器验收:** 本地 Vite preview 8811 + Playwright 夹具验证桌面/390px 移动端助手页混合坏/好 thread list；有效 `贵州茅台复盘` 显示，`Broken thread should not render` 未显示，无横向溢出、console/page error。
+- **截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-assistant-threads-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-assistant-threads-mobile.png`
+- **生产:** CI run `28498146681` passed；Cloudflare deploy step passed；deployment `54c9c010.cstd-alpha.pages.dev`。`alpha.custard.top` 与最新 deployment 的首页和 `/api/session` GET 均 200；桌面/390px 移动端线上登录页只读 smoke 通过。
+- **线上截图证据:** `C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-custom-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-custom-mobile.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-deployment-desktop.png`、`C:\Users\12031\AppData\Local\Temp\cstd-round68-stage6-live-deployment-mobile.png`
+- **Commit:** `8a2f634 fix: preserve valid assistant thread history`
+
+### Round 68 Final Closure
+- **状态:** 6/6 completed；功能 commits `326fef3`、`c6e3a4c`、`6dc16a5`、`f58ed48`、`0d5cf55`、`8a2f634` 均已推送至 `main`，对应功能 CI 全部通过。
+- **最终门禁:** 最新阶段 96 files / 958 tests passed；lint、functions typecheck、build、audit、secret/debug scan、diff check 全部通过。
+- **生产验收:** `alpha.custard.top` 与 `54c9c010.cstd-alpha.pages.dev` 首页和 `/api/session` GET 均 HTTP 200；桌面/移动登录页只读 smoke 无 console/page error 或横向溢出。
+- **遗留风险:** 客户端过滤坏记录但不修复服务端源数据；生产未执行登录、AI/报告生成或写入型业务操作，避免真实用户数据污染和模型成本；既有 `.agent/orchestrator-state.json` 与 `.agent/orchestrator-history/campaign-004/` 继续保持未纳入提交。
+- **最终状态:** Round 68 六阶段已按总控完成；最终日志提交将在本条记录后提交并等待 CI。
