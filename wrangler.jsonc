@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
   "name": "cstd-alpha",
-  "compatibility_date": "2026-05-10",
+  "compatibility_date": "2026-07-01",
   "pages_build_output_dir": "dist",
   "observability": {
     "enabled": true
