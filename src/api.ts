@@ -143,6 +143,7 @@ const RADAR_COVERAGE_STATUS_VALUES = ["formal", "watched", "insufficient"] as co
 const RADAR_INDUSTRY_STAGE_VALUES = ["扎实增长", "即将增长", "泡沫风险", "衰退", "平稳现金流", "继续观察", "证据不足"] as const;
 const RADAR_CHANGE_STATUS_VALUES = ["new", "changed", "unchanged"] as const;
 const RADAR_CONCLUSION_ELIGIBILITY_VALUES = ["eligible", "watch", "insufficient"] as const;
+const UPSERT_STATUS_VALUES = ["created", "updated"] as const;
 const ASSISTANT_ROLE_VALUES = ["user", "assistant", "system"] as const;
 const ASSISTANT_MODE_VALUES = ["chat", "target", "industry"] as const;
 const ASSISTANT_REASONING_EFFORT_VALUES = ["high", "max"] as const;
@@ -246,9 +247,10 @@ export async function addResearchItem(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error((await readError(response)) || "加入研究队列失败。");
-  const data = (await response.json()) as { item?: unknown; status?: ResearchItemUpsertStatus };
-  if (!isResearchWorkbenchItem(data.item)) throw new Error("加入研究队列失败。");
-  return { item: data.item, status: data.status === "updated" ? "updated" : "created" };
+  const data = objectPayload(await response.json());
+  const status = parseUpsertStatus(data.status);
+  if (!isResearchWorkbenchItem(data.item) || status === undefined) throw new Error("加入研究队列失败。");
+  return { item: data.item, status };
 }
 
 export async function updateResearchItemStage(id: string, stage: ResearchStage, sortOrder?: number): Promise<ResearchWorkbenchItem> {
@@ -734,8 +736,9 @@ export async function addWatchlistItem(input: { company: CompanyCandidate; repor
   });
   if (!response.ok) throw new Error((await readError(response)) || "加入自选失败。");
   const data = objectPayload(await response.json());
-  if (!isWatchlistItem(data.item)) throw new Error("加入自选失败。");
-  return { item: data.item, status: data.status === "updated" ? "updated" : "created" };
+  const status = parseUpsertStatus(data.status);
+  if (!isWatchlistItem(data.item) || status === undefined) throw new Error("加入自选失败。");
+  return { item: data.item, status };
 }
 
 export async function removeWatchlistItem(id: string) {
@@ -2033,6 +2036,10 @@ function isStringArrayOf<T extends readonly string[]>(value: unknown, allowed: T
 
 function isStringOneOf<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
   return typeof value === "string" && allowed.includes(value);
+}
+
+function parseUpsertStatus(value: unknown): ResearchItemUpsertStatus | undefined {
+  return isStringOneOf(value, UPSERT_STATUS_VALUES) ? value : undefined;
 }
 
 function objectPayload(value: unknown): Record<string, unknown> {

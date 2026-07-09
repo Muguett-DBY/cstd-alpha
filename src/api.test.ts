@@ -646,6 +646,26 @@ describe("API client", () => {
     expect(result).toEqual({ item, status: "updated" });
   });
 
+  test("rejects watchlist add responses that omit the upsert status", async () => {
+    const item = {
+      id: "watch-1",
+      userId: "user-1",
+      company: {
+        id: "eastmoney:1.600519",
+        name: "贵州茅台",
+        code: "600519",
+        exchange: "上海证券交易所",
+        listingPlace: "A股",
+        marketType: "AStock",
+        source: "eastmoney",
+      },
+      addedAt: "2026-06-30T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ item }))));
+
+    await expect(addWatchlistItem({ company: item.company })).rejects.toThrow("加入自选失败。");
+  });
+
   test("sends cache mode and force refresh flags when generating reports", async () => {
     const report = {
       company: { name: "贵州茅台", ticker: "600519", market: "沪A" },
@@ -1585,6 +1605,38 @@ describe("API client", () => {
       title: company.name,
       source: company.source,
     })).resolves.toEqual({ item, status: "updated" });
+  });
+
+  test("rejects research item add responses with invalid upsert status", async () => {
+    const company = {
+      id: "eastmoney:1.600519",
+      name: "贵州茅台",
+      code: "600519",
+      exchange: "上海证券交易所",
+      listingPlace: "A股",
+      marketType: "AStock",
+      source: "eastmoney" as const,
+    };
+    const item = {
+      id: "research-row-1",
+      userKey: "user-1",
+      entityType: "company" as const,
+      entityId: company.id,
+      title: company.name,
+      stage: "screening" as const,
+      status: "active",
+      source: company.source,
+      createdAt: "2026-06-30T00:00:00.000Z",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ item, status: "queued" }))));
+
+    await expect(addResearchItem({
+      entityType: "company",
+      entityId: company.id,
+      title: company.name,
+      source: company.source,
+    })).rejects.toThrow("加入研究队列失败。");
   });
 
   test("preserves radar refresh warnings returned with cached fallback data", async () => {
