@@ -76,7 +76,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     .run();
 
   const row = await readWatchlistRowBySymbol(env.REPORT_LIBRARY_DB, session.userId, company.code, company.listingPlace);
-  if (row && env.REPORT_LIBRARY_BUCKET) {
+  if (!row) return json({ error: "自选股保存失败。" }, 500);
+  if (env.REPORT_LIBRARY_BUCKET) {
     context.waitUntil(
       fetchAndStoreCompanyEvidence({
         env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
@@ -94,7 +95,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         }),
     );
   }
-  return json({ item: row ? watchlistRowToItem(row) : null, status });
+  return json({ item: watchlistRowToItem(row), status });
 };
 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {

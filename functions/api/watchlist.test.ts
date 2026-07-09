@@ -48,6 +48,16 @@ describe("/api/watchlist", () => {
     expect(body.status).toBe("updated");
     expect(body.item?.id).toBe("legacy-row-id");
   });
+
+  test("returns a server error when the saved watchlist row cannot be read back", async () => {
+    const db = watchlistDb(null, { persistWrites: false });
+
+    const response = await onRequestPost(context(db, companyPayload()));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("自选股保存失败。");
+  });
 });
 
 function context(db: D1Database, body: unknown) {
@@ -79,7 +89,7 @@ function companyPayload() {
   };
 }
 
-function watchlistDb(initialRow: WatchlistRow | null = null) {
+function watchlistDb(initialRow: WatchlistRow | null = null, options: { persistWrites?: boolean } = {}) {
   let storedRow: WatchlistRow | null = initialRow ? { ...initialRow } : null;
   const prepare = vi.fn((sql: string) => {
     let args: unknown[] = [];
@@ -89,7 +99,7 @@ function watchlistDb(initialRow: WatchlistRow | null = null) {
         return statement;
       },
       async run() {
-        if (/INSERT INTO user_watchlist/i.test(sql)) {
+        if (/INSERT INTO user_watchlist/i.test(sql) && options.persistWrites !== false) {
           const [
             id,
             userId,
