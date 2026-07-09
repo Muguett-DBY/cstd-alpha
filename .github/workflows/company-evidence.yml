@@ -12,6 +12,10 @@ on:
         description: "Optional watchlist id"
         required: false
 
+concurrency:
+  group: company-evidence-${{ github.ref }}-${{ inputs.user_id || 'all-users' }}-${{ inputs.watchlist_id || 'all-watchlists' }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 

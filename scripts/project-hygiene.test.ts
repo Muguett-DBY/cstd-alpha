@@ -9,6 +9,8 @@ const parseJsoncFile = <T>(path: string): T => {
   return JSON.parse(jsonc) as T;
 };
 
+const readWorkflow = (name: string) => readFileSync(`.github/workflows/${name}`, "utf8");
+
 describe("project hygiene", () => {
   test("keeps required install scripts explicitly approved", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
@@ -51,5 +53,30 @@ describe("project hygiene", () => {
     const baselineTimestamp = Date.parse("2026-07-01T00:00:00.000Z");
 
     expect(compatibilityTimestamp).toBeGreaterThanOrEqual(baselineTimestamp);
+  });
+
+  test("serializes long-running evidence and AI job workflows", () => {
+    const longRunningWorkflows = [
+      "company-evidence.yml",
+      "radar-evidence.yml",
+      "radar-analysis.yml",
+      "template-analysis.yml",
+      "watchlist-ranking.yml",
+    ];
+
+    for (const workflow of longRunningWorkflows) {
+      const content = readWorkflow(workflow);
+
+      expect(content).toMatch(/\nconcurrency:\n/);
+      expect(content).toMatch(/cancel-in-progress:\s*false/);
+    }
+
+    for (const workflow of [
+      "radar-analysis.yml",
+      "template-analysis.yml",
+      "watchlist-ranking.yml",
+    ]) {
+      expect(readWorkflow(workflow)).toMatch(/\$\{\{\s*inputs\.job_id\s*\}\}/);
+    }
   });
 });
