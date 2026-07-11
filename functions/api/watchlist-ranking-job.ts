@@ -58,18 +58,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
   const body = (await request.json().catch(() => null)) as CompleteBody | null;
-  const jobId = body?.jobId?.trim();
+  const jobId = stringValue(body?.jobId);
   if (!jobId) return json({ error: "缺少自选排行任务 ID。" }, 400);
   const row = await readRankingRowById(env.REPORT_LIBRARY_DB, jobId);
   if (!row) return json({ error: "自选排行任务不存在。" }, 404);
   const watchlist = await readWatchlistRow(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
-  if (body?.error) {
-    await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id, body.error, body.evidenceHash || row.evidence_hash || undefined);
+  const evidenceHash = stringValue(body?.evidenceHash) || row.evidence_hash || undefined;
+  const error = stringValue(body?.error);
+  if (error) {
+    await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id, error, evidenceHash);
     return json({ ok: true });
   }
   if (!body?.generated) return json({ error: "缺少自选排行评分结果。" }, 400);
-  await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGenerated(body.generated), body.evidenceHash || row.evidence_hash || undefined);
+  await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGenerated(body.generated), evidenceHash);
   return json({ ok: true });
 };
 
@@ -113,4 +115,8 @@ function requireWorkerAuth(request: Request, env: Env) {
   if (!expected) return json({ error: "WATCHLIST_RANKING_WORKER_TOKEN is not configured." }, 500);
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   return actual && actual === expected ? null : json({ error: "Unauthorized." }, 401);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }

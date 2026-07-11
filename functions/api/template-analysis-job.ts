@@ -94,7 +94,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
   const body = (await request.json().catch(() => null)) as CompleteBody | null;
-  const jobId = body?.jobId?.trim();
+  const jobId = stringValue(body?.jobId);
   if (!jobId) return json({ error: "缺少模板任务 ID。" }, 400);
   const row = await readAnalysisRowById(env.REPORT_LIBRARY_DB, jobId);
   if (!row) return json({ error: "模板任务不存在。" }, 404);
@@ -106,17 +106,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!resolved.template) return json({ error: "模板不存在或未启用。" }, 404);
   const template = resolved.template;
 
-  const evidenceHash = body?.evidenceHash || row.evidence_hash || undefined;
+  const evidenceHash = stringValue(body?.evidenceHash) || row.evidence_hash || undefined;
   const startedAt = row.started_at || row.updated_at || new Date().toISOString();
   const childResults = Array.isArray(body?.childResults) ? body.childResults : [];
   for (const child of childResults) {
-    const childTemplate = activeTemplates.find((item) => item.id === child.templateId);
+    const childTemplateId = stringValue(child.templateId);
+    const childTemplate = activeTemplates.find((item) => item.id === childTemplateId);
     if (!childTemplate || !child.generated) continue;
-    await persistGenerated(storageEnv, row.user_key, watchlist, childTemplate, child.generated, child.markdown || child.generated.markdown, startedAt, child.evidenceHash || evidenceHash);
+    await persistGenerated(storageEnv, row.user_key, watchlist, childTemplate, child.generated, stringValue(child.markdown) || child.generated.markdown, startedAt, stringValue(child.evidenceHash) || evidenceHash);
   }
 
-  if (body?.error) {
-    const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, body.error, "failed_retryable", startedAt, evidenceHash);
+  const error = stringValue(body?.error);
+  if (error) {
+    const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, error, "failed_retryable", startedAt, evidenceHash);
     return json({ analysis: failed });
   }
   if (resolved.stale) {
@@ -124,7 +126,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ cancelled: true, analysis: failed });
   }
   if (!body?.generated) return json({ error: "缺少模板生成结果。" }, 400);
-  const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, body.generated, body.markdown || body.generated.markdown, startedAt, evidenceHash);
+  const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, body.generated, stringValue(body.markdown) || body.generated.markdown, startedAt, evidenceHash);
   return json({ analysis });
 };
 
@@ -221,4 +223,8 @@ function requireWorkerAuth(request: Request, env: Env) {
   if (!expected) return json({ error: "TEMPLATE_ANALYSIS_WORKER_TOKEN is not configured." }, 500);
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   return actual && actual === expected ? null : json({ error: "Unauthorized." }, 401);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
