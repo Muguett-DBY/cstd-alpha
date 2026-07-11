@@ -19,8 +19,9 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  const body = await request.json().catch(() => null) as { title?: string } | null;
-  const thread = await createAssistantThread(env.REPORT_LIBRARY_DB, session.userId, body?.title || "新对话");
+  const body = await request.json().catch(() => null) as { title?: unknown } | null;
+  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const thread = await createAssistantThread(env.REPORT_LIBRARY_DB, session.userId, title || "新对话");
   return json({ thread: { id: thread.id, title: thread.title, summary: thread.summary, updatedAt: thread.updated_at } });
 };
 
