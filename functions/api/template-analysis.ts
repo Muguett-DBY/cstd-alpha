@@ -52,12 +52,6 @@ type TemplateCacheEnv = {
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
-type GenerateBody = {
-  watchlistId?: string;
-  templateId?: string;
-  forceRefresh?: boolean;
-};
-
 type GeneratedTemplateAnalysis = ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
 type TemplateReasoningEffort = "high" | "max";
 type TemplateCacheMode = "free" | "paid";
@@ -128,13 +122,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
-  const body = (await request.json().catch(() => null)) as GenerateBody | null;
-  const watchlistId = body?.watchlistId?.trim();
-  const templateId = body?.templateId?.trim() || FULL_ANALYSIS_TEMPLATE_ID;
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const watchlistId = stringValue(body?.watchlistId);
+  const templateId = stringValue(body?.templateId) || FULL_ANALYSIS_TEMPLATE_ID;
   if (!watchlistId) return json({ error: "缺少自选股 ID。" }, 400);
   const watchlist = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, watchlistId);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
-  const forceRefresh = Boolean(body?.forceRefresh);
+  const forceRefresh = body?.forceRefresh === true;
   const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
   const enabledTemplates = activeResearchTemplates(userTemplates);
 
