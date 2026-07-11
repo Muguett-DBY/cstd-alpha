@@ -14,9 +14,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   await ensureAuthSchema(env.REPORT_LIBRARY_DB);
-  const body = (await request.json().catch(() => null)) as { username?: string; password?: string } | null;
-  const username = body?.username?.trim();
-  const password = body?.password ?? "";
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const username = normalizeRequiredText(body?.username);
+  const password = typeof body?.password === "string" ? body.password : "";
   if (!username || !password) return json({ error: "请输入账号和密码。" }, 400);
   if (username.length > 80 || password.length > 256) return json({ error: "账号或密码格式不正确。" }, 400);
 
@@ -59,6 +59,10 @@ function json(data: unknown, status = 200, headers: HeadersInit = {}) {
       ...headers,
     },
   });
+}
+
+function normalizeRequiredText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isSecureRequest(request: Request) {
