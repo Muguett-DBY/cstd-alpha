@@ -16,14 +16,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!expected || actual !== expected) return json({ error: "Unauthorized." }, 401);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
-  const body = (await request.json().catch(() => null)) as { userId?: string; watchlistId?: string; limit?: number; offset?: number } | null;
-  const limit = Math.min(Math.max(body?.limit ?? 50, 1), 200);
-  const offset = Math.min(Math.max(body?.offset ?? 0, 0), 10_000);
-  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, body?.userId, body?.watchlistId, limit, offset);
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const userId = stringValue(body?.userId);
+  const watchlistId = stringValue(body?.watchlistId);
+  const limit = boundedNumber(body?.limit, 50, 1, 200);
+  const offset = boundedNumber(body?.offset, 0, 0, 10_000);
+  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, userId, watchlistId, limit, offset);
   const refreshed: Array<{ watchlistId: string; ticker: string; evidenceHash: string }> = [];
   const failed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
   const reviewFailed: Array<{ watchlistId: string; ticker: string; error: string }> = [];
-  const useTushareForThisRefresh = Boolean(body?.watchlistId) || rows.length <= 1;
+  const useTushareForThisRefresh = Boolean(watchlistId) || rows.length <= 1;
 
   for (const row of rows) {
     const userId = row.user_id || row.user_key;
@@ -75,4 +77,13 @@ async function readWatchlistRows(db: D1Database, userId?: string, watchlistId?: 
     .bind(...params)
     .all<WatchlistRow>();
   return result.results ?? [];
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const number = typeof value === "number" ? value : NaN;
+  return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : fallback;
 }
