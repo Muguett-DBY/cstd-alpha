@@ -30,40 +30,42 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (response) return response;
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
-  const body = await request.json().catch(() => null) as {
-    runId?: string;
-    parentVersionId?: string;
-    assumptions?: UserAssumptionEdit[];
-    decisionNote?: string;
-    presets?: QuantitativePreset[];
-    restoredPresetLibrary?: QuantitativeDraft["restoredPresetLibrary"];
-  } | null;
-  if (!body?.runId?.trim() || !body.parentVersionId?.trim() || !Array.isArray(body.assumptions)) {
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const runId = normalizeRequiredText(body?.runId);
+  const parentVersionId = normalizeRequiredText(body?.parentVersionId);
+  const assumptions = Array.isArray(body?.assumptions) ? body.assumptions as UserAssumptionEdit[] : null;
+  const decisionNote = normalizeOptionalText(body?.decisionNote);
+  const presets = normalizeOptionalArray<QuantitativePreset>(body?.presets);
+  const restoredPresetLibrary = normalizeRestoredPresetLibraryInput(body?.restoredPresetLibrary);
+  if (!runId || !parentVersionId || !assumptions) {
     return json({ error: "估值保存参数不完整。" }, 400);
   }
-  const workspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, body.runId.trim());
+  if (decisionNote === null || presets === null || restoredPresetLibrary === null) {
+    return json({ error: "估值保存参数无效。" }, 400);
+  }
+  const workspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, runId);
   if (!workspace) return json({ error: "估值任务不存在。" }, 404);
   const latest = workspace.versions[0];
   if (!latest?.draft || !workspace.snapshot) return json({ error: "估值草稿尚未准备完成。" }, 409);
-  if (body.parentVersionId !== latest.id) return json({ error: "估值版本已更新，请刷新后再保存。" }, 409);
+  if (parentVersionId !== latest.id) return json({ error: "估值版本已更新，请刷新后再保存。" }, 409);
   try {
-    const draft = mergeUserAssumptions(latest.draft, body.assumptions, {
-      presets: body.presets,
-      restoredPresetLibrary: body.restoredPresetLibrary,
+    const draft = mergeUserAssumptions(latest.draft, assumptions, {
+      presets,
+      restoredPresetLibrary,
     });
     validateQuantitativeDraft(draft);
     const result = calculateQuantitativeDraft(draft);
     const version = await createQuantitativeVersion(env.REPORT_LIBRARY_DB, {
       userKey: session.userId,
-      runId: body.runId.trim(),
+      runId,
       snapshotId: workspace.snapshot.id,
       draft,
       result,
       parentVersionId: latest.id,
       createdBy: "user",
-      decisionNote: body.decisionNote,
+      decisionNote,
     });
-    const nextWorkspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, body.runId.trim());
+    const nextWorkspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, runId);
     return json({ workspace: nextWorkspace, version }, 201);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "估值保存失败。" }, 400);
@@ -168,6 +170,27 @@ function mergeForecastOverrides(existing: NonNullable<NonNullable<QuantitativeDr
 function forecastOverrideField(key: string) {
   if (key === "revenueGrowth" || key === "ebitMargin" || key === "capexRate" || key === "workingCapitalRate") return key;
   return undefined;
+}
+
+function normalizeRequiredText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalText(value: unknown) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") return null;
+  return value.trim() || undefined;
+}
+
+function normalizeOptionalArray<T>(value: unknown): T[] | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  return Array.isArray(value) ? value as T[] : null;
+}
+
+function normalizeRestoredPresetLibraryInput(value: unknown): QuantitativeDraft["restoredPresetLibrary"] | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") return null;
+  return value as QuantitativeDraft["restoredPresetLibrary"];
 }
 
 function editableFields(edit: UserAssumptionEdit) {
