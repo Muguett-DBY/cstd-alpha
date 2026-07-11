@@ -94,6 +94,34 @@ describe("assistant chat endpoint", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("rejects malformed assistant messages before model calls", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await productionOnRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { cookie: "cstd_alpha_session=session-1.token" },
+        body: JSON.stringify({ message: 123, threadId: { id: "thread-1" } }),
+      }),
+      env: {
+        AUTH_SECRET: "secret",
+        OPENCODE_GO_API_KEY: "key",
+        REPORT_LIBRARY_DB: mockDb({ role: "admin" }),
+      },
+      params: {},
+      waitUntil: vi.fn(),
+      next: vi.fn(),
+      data: {},
+    } as never);
+
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("请输入助手问题。");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("queues high-value research without blocking on DeepSeek", async () => {
     const fetchMock = vi.fn();
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
