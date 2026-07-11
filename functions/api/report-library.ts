@@ -337,8 +337,8 @@ function parseTickerCodes(value: string | null) {
     new Set(
       value
         .split(",")
-        .map((item) => item.trim())
-        .filter((item) => /^[A-Za-z0-9.]{1,16}$/.test(item)),
+        .map((item) => item.trim().toUpperCase())
+        .filter((item) => /^[A-Z0-9.]{1,16}$/.test(item)),
     ),
   ).slice(0, 200);
 }
