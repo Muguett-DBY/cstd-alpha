@@ -9,12 +9,20 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env,
   const id = String(params.id || "").trim();
   if (!id) return json({ error: "缺少执行 ID。" }, 400);
 
-  const body = (await request.json().catch(() => null)) as { output?: string; error?: string } | null;
+  const body = (await request.json().catch(() => null)) as { output?: unknown; error?: unknown } | null;
   if (!body) return json({ error: "请求体为空。" }, 400);
+  if (
+    (body.output !== undefined && typeof body.output !== "string") ||
+    (body.error !== undefined && typeof body.error !== "string")
+  ) {
+    return json({ error: "代码结果格式无效。" }, 400);
+  }
+  const output = body.output ?? "";
+  const error = body.error ?? "";
 
   await env.REPORT_CACHE.put(
     `py-exec-${id}`,
-    JSON.stringify({ output: body.output ?? "", error: body.error ?? "", status: body.error ? "error" : "completed" }),
+    JSON.stringify({ output, error, status: error ? "error" : "completed" }),
     { expirationTtl: 300 },
   );
 
