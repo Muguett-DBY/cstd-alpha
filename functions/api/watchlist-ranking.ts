@@ -49,13 +49,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
-  const body = (await request.json().catch(() => null)) as { watchlistId?: string; forceRefresh?: boolean; limit?: number } | null;
-  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, session.userId, body?.watchlistId, Math.min(Math.max(body?.limit ?? 20, 1), 80));
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const watchlistId = stringValue(body?.watchlistId);
+  const forceRefresh = body?.forceRefresh === true;
+  const limit = boundedNumber(body?.limit, 20, 1, 80);
+  const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, session.userId, watchlistId, limit);
   const queued: string[] = [];
   const reused: string[] = [];
   const failed: Array<{ watchlistId: string; error: string }> = [];
 
-  const canRefreshEvidenceInline = body?.forceRefresh === true && rows.length === 1;
+  const canRefreshEvidenceInline = forceRefresh && rows.length === 1;
   for (const row of rows) {
     try {
       const evidenceEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
@@ -64,7 +67,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           ? await fetchAndStoreCompanyEvidence({ env: evidenceEnv, userId: session.userId, watchlist: row, signal: request.signal })
           : await getOrCreateCompanyEvidencePackage(evidenceEnv, session.userId, row, request.signal);
       const existing = await readRankingRow(env.REPORT_LIBRARY_DB, session.userId, row.id);
-      if (rankingCacheReusable(existing, evidencePackage.materialHash || evidencePackage.evidenceHash, body?.forceRefresh === true)) {
+      if (rankingCacheReusable(existing, evidencePackage.materialHash || evidencePackage.evidenceHash, forceRefresh)) {
         reused.push(row.id);
         continue;
       }
@@ -173,4 +176,13 @@ function pendingRow(row: WatchlistRow, userId: string): WatchlistRankingRow {
     completed_at: null,
     error_message: null,
   };
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const number = typeof value === "number" ? value : NaN;
+  return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : fallback;
 }
