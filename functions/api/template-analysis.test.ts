@@ -5,6 +5,7 @@ import {
   isTemplateAnalysisCacheReusable,
   isUsableTemplateAnalysisCache,
   normalizeGeneratedAnalysis,
+  onRequestPost,
   requestTemplateReport,
   runFullTemplateChildrenCacheAware,
   shouldStartFullAnalysis,
@@ -13,8 +14,50 @@ import {
   templateReasoningEffort,
 } from "./template-analysis";
 
+vi.mock("../_shared/auth", () => ({
+  readSessionCookie: vi.fn(async () => ({
+    userId: "user-1",
+    username: "analyst",
+    displayName: "Analyst",
+    role: "admin",
+    sessionId: "session-1",
+    expiresAt: "2026-07-01T00:00:00.000Z",
+  })),
+}));
+
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("/api/template-analysis POST", () => {
+  test("rejects malformed generation identifiers before reading watchlist rows", async () => {
+    const db = templateAnalysisDb();
+
+    const response = await onRequestPost(context(db.db, {
+      watchlistId: { id: "watch-1" },
+      templateId: 123,
+      forceRefresh: "yes",
+    }));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("缺少自选股 ID。");
+    expect(db.sqls.some((sql) => /FROM user_watchlist/i.test(sql))).toBe(false);
+  });
+
+  test("ignores malformed optional template ids before looking up the watchlist row", async () => {
+    const db = templateAnalysisDb();
+
+    const response = await onRequestPost(context(db.db, {
+      watchlistId: "watch-1",
+      templateId: { id: RESEARCH_TEMPLATES[0].id },
+    }));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("自选股不存在。");
+    expect(db.sqls.some((sql) => /FROM user_watchlist/i.test(sql))).toBe(true);
+  });
 });
 
 describe("runFullTemplateChildrenCacheAware", () => {
@@ -615,5 +658,50 @@ function evidenceBundle() {
     retrievedAt: "2026-05-15T00:00:00.000Z",
     evidence: [],
     facts: { quote: { regularMarketPrice: 100 } },
+  };
+}
+
+function context(db: D1Database, body: unknown) {
+  return {
+    request: new Request("https://alpha.custard.top/api/template-analysis", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: "cstd_alpha_session=session-1.token" },
+      body: JSON.stringify(body),
+    }),
+    env: {
+      AUTH_SECRET: "test-secret",
+      REPORT_LIBRARY_DB: db,
+      REPORT_LIBRARY_BUCKET: {} as R2Bucket,
+    },
+    waitUntil: vi.fn(),
+  } as unknown as Parameters<typeof onRequestPost>[0];
+}
+
+function templateAnalysisDb() {
+  const sqls: string[] = [];
+  const prepare = vi.fn((sql: string) => {
+    sqls.push(sql);
+    const statement = {
+      bind() {
+        return statement;
+      },
+      async run() {
+        return { success: true };
+      },
+      async first<T>() {
+        return null as T;
+      },
+      async all<T>() {
+        return { results: [] } as T;
+      },
+    };
+    return statement;
+  });
+  return {
+    db: {
+      prepare,
+      batch: vi.fn(async () => []),
+    } as unknown as D1Database,
+    sqls,
   };
 }
