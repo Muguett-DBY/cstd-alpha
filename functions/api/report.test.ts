@@ -57,6 +57,43 @@ describe("report API stream", () => {
     expect(response.headers.get("content-type")).toContain("application/x-ndjson");
   });
 
+  test("rejects malformed company identity before starting report generation", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+
+    const response = await postReportResponse({
+      company: { name: 123 },
+      body: { companyName: 456 },
+    });
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("请先搜索并选择一个候选公司。");
+    expect(fetchPublicCompanyEvidence).not.toHaveBeenCalled();
+    expect(callDeepSeekReport).not.toHaveBeenCalled();
+  });
+
+  test("drops malformed optional ticker and market values before fetching report evidence", async () => {
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(fetchPublicCompanyEvidence).mockResolvedValue(evidence);
+    vi.mocked(callDeepSeekReport).mockResolvedValue({ company: evidence.company, evidence: evidence.evidence });
+
+    await postReportEvents({
+      company: null,
+      body: {
+        companyName: "贵州茅台",
+        ticker: 600519,
+        market: { value: "沪A" },
+      },
+    });
+
+    expect(fetchPublicCompanyEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      companyName: "贵州茅台",
+      ticker: undefined,
+      market: undefined,
+      company: undefined,
+    }));
+  });
+
   test("returns a shared server cached report without fetching providers or calling DeepSeek", async () => {
     vi.mocked(verifySessionCookie).mockResolvedValue(true);
     const cachedReport = { company: evidence.company, evidence: evidence.evidence, oneSentence: "缓存报告" };
@@ -588,7 +625,7 @@ function firstReportGetKey(cache: TestKvCache) {
   return reportGetKeys(cache)[0];
 }
 
-async function postReportEvents(options: { forceRefresh?: boolean; company?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
+async function postReportEvents(options: { forceRefresh?: boolean; company?: Record<string, unknown> | null; body?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
   const response = await postReportResponse(options);
 
   return (await response.text())
@@ -598,8 +635,8 @@ async function postReportEvents(options: { forceRefresh?: boolean; company?: Rec
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-async function postReportResponse(options: { forceRefresh?: boolean; company?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
-  const company = options.company ?? {
+async function postReportResponse(options: { forceRefresh?: boolean; company?: Record<string, unknown> | null; body?: Record<string, unknown>; env?: Record<string, unknown>; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void } = {}) {
+  const company = options.company === undefined ? {
     id: "eastmoney:1.600519",
     name: "贵州茅台",
     code: "600519",
@@ -608,16 +645,18 @@ async function postReportResponse(options: { forceRefresh?: boolean; company?: R
     marketType: "AStock",
     quoteId: "1.600519",
     source: "eastmoney",
+  } : options.company;
+  const body = {
+    forceRefresh: options.forceRefresh,
+    ...options.body,
+    ...(company === null ? {} : { company }),
   };
   return onRequestPost({
     request: new Request("https://alpha.custard.top/api/report", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: "session=ok" },
       signal: options.signal,
-      body: JSON.stringify({
-        forceRefresh: options.forceRefresh,
-        company,
-      }),
+      body: JSON.stringify(body),
     }),
     env: { AUTH_SECRET: "secret", OPENCODE_GO_API_KEY: "key", ...options.env },
     waitUntil: options.waitUntil ?? vi.fn(),

@@ -14,16 +14,6 @@ type Env = {
   TUSHARE_TOKEN?: string;
 };
 
-type ReportRequest = {
-  company?: CompanyCandidate;
-  companyName?: string;
-  ticker?: string;
-  market?: string;
-  language?: "zh-CN" | "en";
-  forceRefresh?: boolean;
-  cacheMode?: "prefer-cache" | "refresh";
-};
-
 const SERVER_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SERVER_REPORT_CACHE_VERSION = "v7-score-placeholder-cleanup";
 const REPORT_GENERATION_LOCK_TTL_SECONDS = 30 * 60;
@@ -37,14 +27,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
   if (!authenticated) return json({ error: "Unauthorized." }, 401);
 
-  const body = (await request.json().catch(() => null)) as ReportRequest | null;
-  const company = body?.company;
-  const companyName = company?.name?.trim() || body?.companyName?.trim();
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const rawCompany = isRecord(body?.company) ? body.company : undefined;
+  const company = normalizeCompanyCandidate(rawCompany);
+  const companyName = normalizeRequiredText(rawCompany?.name) || normalizeRequiredText(body?.companyName);
   if (!companyName) return json({ error: "请先搜索并选择一个候选公司。" }, 400);
-  const cacheMode = body?.forceRefresh || body?.cacheMode === "refresh" ? "refresh" : "prefer-cache";
+  const ticker = normalizeOptionalText(rawCompany?.code) || normalizeOptionalText(body?.ticker);
+  const market = normalizeOptionalText(rawCompany?.listingPlace) || normalizeOptionalText(body?.market);
+  const cacheMode = body?.forceRefresh === true || body?.cacheMode === "refresh" ? "refresh" : "prefer-cache";
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  const cacheKeys = await buildReportCacheKeys({ company, companyName, ticker: body?.ticker, market: body?.market });
+  const cacheKeys = await buildReportCacheKeys({ company, companyName, ticker, market });
   const cacheKey = cacheKeys.primary;
   const priorCached = await readReportCache(env, cacheKeys);
 
@@ -148,8 +141,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
 
     const evidence = await fetchPublicCompanyEvidence({
       companyName,
-      ticker: company?.code || body?.ticker?.trim() || undefined,
-      market: company?.listingPlace || body?.market?.trim() || undefined,
+      ticker: company?.code || ticker,
+      market: company?.listingPlace || market,
       company,
       tushareToken: env.TUSHARE_TOKEN,
       signal,
@@ -876,6 +869,41 @@ async function sha256(value: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeCompanyCandidate(value: Record<string, unknown> | undefined): CompanyCandidate | undefined {
+  if (!value) return undefined;
+  const id = normalizeRequiredText(value.id);
+  const name = normalizeRequiredText(value.name);
+  const code = normalizeRequiredText(value.code);
+  const exchange = normalizeRequiredText(value.exchange);
+  const listingPlace = normalizeRequiredText(value.listingPlace);
+  const marketType = normalizeRequiredText(value.marketType);
+  const source = value.source === "eastmoney" || value.source === "yahoo" ? value.source : undefined;
+  if (!id || !name || !code || !exchange || !listingPlace || !marketType || !source) return undefined;
+  return {
+    id,
+    name,
+    code,
+    exchange,
+    listingPlace,
+    marketType,
+    source,
+    industry: normalizeOptionalText(value.industry),
+    sector: normalizeOptionalText(value.sector),
+    quoteId: normalizeOptionalText(value.quoteId),
+    secid: normalizeOptionalText(value.secid),
+    yahooSymbol: normalizeOptionalText(value.yahooSymbol),
+  };
+}
+
+function normalizeRequiredText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalText(value: unknown) {
+  const text = normalizeRequiredText(value);
+  return text || undefined;
 }
 
 function errorEvent(error: unknown): ErrorEvent {
