@@ -44,7 +44,7 @@ import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../../_
 import { fetchPublicCompanyEvidence, type EvidenceBundle } from "../../_shared/providers";
 import type { CompanyCandidate } from "../../../src/shared/report";
 import type { WatchlistRow } from "../../_shared/user-research-db";
-import type { AssistantChatRequest, AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
+import type { AssistantChatStreamEvent, AssistantChoiceOption, AssistantChoiceRequest, AssistantMode, AssistantUsage } from "../../../src/shared/assistant";
 import {
   ASSISTANT_AGENT_MAX_ROUNDS,
   ASSISTANT_AGENT_MAX_TOOLS_PER_ROUND,
@@ -74,16 +74,17 @@ async function handleAssistantChatPost({ request, env }: AssistantChatPostContex
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   if (!buildDeepSeekFallbackRoutes(env).length) return json({ error: "No DeepSeek-compatible route is configured." }, 500);
 
-  const body = (await request.json().catch(() => null)) as AssistantChatRequest | null;
-  const userMessage = body?.message?.trim();
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const userMessage = normalizeRequiredText(body?.message);
   if (!userMessage) return json({ error: "请输入助手问题。" }, 400);
   if (userMessage.length > MAX_ASSISTANT_MESSAGE_CHARS) {
     return json({ error: `单次问题过长，请控制在 ${MAX_ASSISTANT_MESSAGE_CHARS} 个字符以内，或拆成多轮提问。` }, 413);
   }
   const mode = normalizeAssistantMode(body?.mode);
+  const threadId = normalizeOptionalText(body?.threadId);
 
   const now = new Date().toISOString();
-  const thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, body?.threadId, now);
+  const thread = await getOrCreateDefaultThread(env.REPORT_LIBRARY_DB, session.userId, threadId, now);
   const userStoredMessage = await writeAssistantMessage(env.REPORT_LIBRARY_DB, {
     userKey: session.userId,
     threadId: thread.id,
@@ -3727,6 +3728,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeAssistantMode(value: unknown): AssistantMode {
   return value === "target" || value === "industry" || value === "chat" ? value : "chat";
+}
+
+function normalizeRequiredText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalText(value: unknown) {
+  const text = normalizeRequiredText(value);
+  return text || undefined;
 }
 
 export const __test__ = {
