@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { onRequestPost } from "./threads";
+import { onRequestPatch, onRequestPost } from "./threads";
 
 const mocks = vi.hoisted(() => ({
   createAssistantThread: vi.fn(),
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     response: null,
     session: { userId: "user-1" },
   })),
+  updateAssistantThreadTitle: vi.fn(),
 }));
 
 vi.mock("../../_shared/assistant-db", () => ({
@@ -16,7 +17,7 @@ vi.mock("../../_shared/assistant-db", () => ({
   getOrCreateDefaultThread: vi.fn(),
   listAssistantThreads: vi.fn(),
   requireAdminSession: mocks.requireAdminSession,
-  updateAssistantThreadTitle: vi.fn(),
+  updateAssistantThreadTitle: mocks.updateAssistantThreadTitle,
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -28,6 +29,7 @@ describe("/api/assistant/threads", () => {
   beforeEach(() => {
     mocks.createAssistantThread.mockReset();
     mocks.requireAdminSession.mockClear();
+    mocks.updateAssistantThreadTitle.mockReset();
   });
 
   test("trims a new assistant thread title before saving", async () => {
@@ -43,12 +45,21 @@ describe("/api/assistant/threads", () => {
     expect(response.status).toBe(200);
     expect(mocks.createAssistantThread).toHaveBeenCalledWith({}, "user-1", "投研计划");
   });
+
+  test("rejects malformed assistant thread rename titles before updating", async () => {
+    const response = await onRequestPatch(context({ title: 123 }, "PATCH", "?threadId=thread-1"));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Missing title.");
+    expect(mocks.updateAssistantThreadTitle).not.toHaveBeenCalled();
+  });
 });
 
-function context(body: unknown) {
+function context(body: unknown, method = "POST", search = "") {
   return {
-    request: new Request("https://alpha.custard.top/api/assistant/threads", {
-      method: "POST",
+    request: new Request(`https://alpha.custard.top/api/assistant/threads${search}`, {
+      method,
       headers: { "content-type": "application/json", cookie: "cstd_alpha_session=session-1.token" },
       body: JSON.stringify(body),
     }),
@@ -56,5 +67,5 @@ function context(body: unknown) {
       AUTH_SECRET: "test-secret",
       REPORT_LIBRARY_DB: {},
     },
-  } as unknown as Parameters<typeof onRequestPost>[0];
+  } as unknown as Parameters<typeof onRequestPost>[0] & Parameters<typeof onRequestPatch>[0];
 }

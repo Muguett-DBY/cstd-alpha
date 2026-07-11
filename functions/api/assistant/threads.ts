@@ -45,8 +45,8 @@ export const onRequestPatch: PagesFunction<AssistantEnv> = async ({ request, env
   const url = new URL(request.url);
   const threadId = url.searchParams.get("threadId");
   if (!threadId) return json({ error: "Missing threadId parameter." }, 400);
-  const body = await request.json().catch(() => null) as { title?: string } | null;
-  const title = body?.title?.trim();
+  const body = await request.json().catch(() => null) as { title?: unknown } | null;
+  const title = typeof body?.title === "string" ? body.title.trim() : "";
   if (!title) return json({ error: "Missing title." }, 400);
   await updateAssistantThreadTitle(env.REPORT_LIBRARY_DB, threadId, session.userId, title);
   return json({ ok: true });
