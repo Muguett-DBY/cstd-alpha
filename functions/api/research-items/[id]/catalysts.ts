@@ -7,7 +7,7 @@ import {
   updateResearchCatalystStatus,
   upsertResearchCatalystDrafts,
 } from "../../../_shared/research-workbench-db";
-import { extractCatalystDraftsFromThesis } from "../../../../src/shared/research-workbench";
+import { extractCatalystDraftsFromThesis, RESEARCH_CATALYST_STATUSES, type ResearchCatalystStatus } from "../../../../src/shared/research-workbench";
 
 type Env = AssistantEnv;
 
@@ -51,14 +51,16 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const itemId = String(params.id || "");
   const item = await readResearchItemById(env.REPORT_LIBRARY_DB, session.userId, itemId);
   if (!item) return json({ error: "Research item not found." }, 404);
-  const body = await request.json().catch(() => ({})) as { catalystId?: string; status?: string };
-  if (!body.catalystId || !body.status) return json({ error: "catalystId and status are required." }, 400);
+  const body = await request.json().catch(() => null) as { catalystId?: unknown; status?: unknown } | null;
+  const catalystId = typeof body?.catalystId === "string" ? body.catalystId.trim() : "";
+  const status = normalizeCatalystStatus(body?.status);
+  if (!catalystId || !status) return json({ error: "跟踪项状态数据无效。" }, 400);
   try {
     const catalyst = await updateResearchCatalystStatus(env.REPORT_LIBRARY_DB, {
       userKey: session.userId,
       itemId,
-      catalystId: body.catalystId,
-      status: body.status,
+      catalystId,
+      status,
     });
     if (!catalyst) return json({ error: "Research catalyst not found." }, 404);
     return json({ catalyst });
@@ -67,3 +69,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return json({ error: message === "invalid research catalyst status" ? "不支持的跟踪项状态。" : message }, 400);
   }
 };
+
+function normalizeCatalystStatus(value: unknown): ResearchCatalystStatus | null {
+  return RESEARCH_CATALYST_STATUSES.includes(value as ResearchCatalystStatus) ? value as ResearchCatalystStatus : null;
+}
