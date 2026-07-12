@@ -7,7 +7,7 @@ import {
   saveCurrentTemplatesAsDefault,
   saveUserResearchTemplates,
 } from "../_shared/user-research-db";
-import type { ResearchTemplate } from "../../src/shared/user-research";
+import { isResearchTemplate } from "../../src/shared/user-research";
 
 type Env = {
   AUTH_SECRET: string;
@@ -27,8 +27,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
-  const body = (await request.json().catch(() => null)) as { templates?: ResearchTemplate[] } | null;
+  const body = (await request.json().catch(() => null)) as { templates?: unknown } | null;
   if (!Array.isArray(body?.templates)) return json({ error: "缺少模板列表。" }, 400);
+  if (!body.templates.every(isResearchTemplate)) return json({ error: "模板列表包含无效模板。" }, 400);
   return json({ templates: await saveUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId, body.templates) });
 };
 
