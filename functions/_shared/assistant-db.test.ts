@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   ASSISTANT_CONTEXT_COMPACT_TOKEN_LIMIT,
+  ASSISTANT_DEFAULT_THREAD_ID,
   buildAssistantDeepSeekBody,
   buildAssistantPromptMessages,
   buildSiteEvidenceSummary,
   detectMemoryCandidate,
   estimateAssistantContextTokens,
+  getOrCreateDefaultThread,
   parseDeepSeekUsage,
   shouldCompactAssistantContext,
 } from "./assistant-db";
@@ -38,6 +40,35 @@ describe("assistant prompt and memory helpers", () => {
       status: "pending",
     });
     expect(detectMemoryCandidate("贵州茅台现在贵不贵？")).toBeNull();
+  });
+
+  test("does not create arbitrary missing thread ids from chat input", async () => {
+    const insertedBinds: unknown[][] = [];
+    const db = {
+      prepare(sql: string) {
+        const statement = {
+          bind(...args: unknown[]) {
+            return {
+              async first() {
+                return null;
+              },
+              async run() {
+                if (/INSERT INTO assistant_threads/i.test(sql)) insertedBinds.push(args);
+                return { success: true };
+              },
+            };
+          },
+        };
+        return statement;
+      },
+      batch: async () => [],
+    } as unknown as D1Database;
+
+    const thread = await getOrCreateDefaultThread(db, "user-1", "user-1:missing-thread", "2026-07-13T00:00:00.000Z");
+
+    expect(thread.id).toBe(`user-1:${ASSISTANT_DEFAULT_THREAD_ID}`);
+    expect(insertedBinds[0]?.[0]).toBe(`user-1:${ASSISTANT_DEFAULT_THREAD_ID}`);
+    expect(insertedBinds[0]).not.toContain("user-1:missing-thread");
   });
 
   test("normalizes DeepSeek cache usage metrics", () => {
