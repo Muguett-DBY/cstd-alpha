@@ -1,6 +1,6 @@
 import { getOrCreateCompanyEvidencePackage } from "../_shared/company-evidence";
 import { ensureUserResearchSchema, json, type WatchlistRankingRow, type WatchlistRow } from "../_shared/user-research-db";
-import { writeCompletedWatchlistRanking, writeWatchlistRankingFailure } from "../_shared/watchlist-ranking";
+import { normalizeGeneratedRanking, writeCompletedWatchlistRanking, writeWatchlistRankingFailure } from "../_shared/watchlist-ranking";
 
 type Env = {
   WATCHLIST_RANKING_WORKER_TOKEN?: string;
@@ -11,16 +11,7 @@ type Env = {
 
 type CompleteBody = {
   jobId?: string;
-  generated?: {
-    companyQualityScore?: number;
-    investmentAttractivenessScore?: number;
-    overallScore?: number;
-    verdict?: string;
-    summary?: string;
-    keyPoints?: string[];
-    riskFlags?: string[];
-    modelUsed?: string;
-  };
+  generated?: unknown;
   evidenceHash?: string;
   error?: string;
 };
@@ -70,23 +61,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id, error, evidenceHash);
     return json({ ok: true });
   }
-  if (!body?.generated) return json({ error: "缺少自选排行评分结果。" }, 400);
-  await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGenerated(body.generated), evidenceHash);
+  if (!isRecord(body?.generated)) return json({ error: "缺少自选排行评分结果。" }, 400);
+  await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGeneratedRanking(body.generated), evidenceHash);
   return json({ ok: true });
 };
-
-function normalizeGenerated(input: NonNullable<CompleteBody["generated"]>) {
-  return {
-    companyQualityScore: Number(input.companyQualityScore),
-    investmentAttractivenessScore: Number(input.investmentAttractivenessScore),
-    overallScore: Number(input.overallScore),
-    verdict: String(input.verdict || "观察"),
-    summary: String(input.summary || "已完成自选股排行评分。"),
-    keyPoints: Array.isArray(input.keyPoints) ? input.keyPoints.map(String) : [],
-    riskFlags: Array.isArray(input.riskFlags) ? input.riskFlags.map(String) : [],
-    modelUsed: input.modelUsed || "deepseek-v4-flash",
-  };
-}
 
 async function readRankingRowById(db: D1Database, id: string) {
   return db
@@ -119,4 +97,8 @@ function requireWorkerAuth(request: Request, env: Env) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
