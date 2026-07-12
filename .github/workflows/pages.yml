@@ -50,7 +50,32 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           timeout 180s npx wrangler d1 migrations apply cstd-alpha-report-library --remote
-          timeout 120s npx wrangler queues info cstd-alpha-assistant-deep-research || timeout 120s npm run queue:create:assistant
+          ensure_assistant_queue() {
+            for attempt in 1 2 3; do
+              echo "Cloudflare queue info attempt ${attempt}/3"
+              if timeout 120s npx wrangler queues info cstd-alpha-assistant-deep-research; then
+                return 0
+              fi
+              sleep $((attempt * 10))
+            done
+
+            echo "Cloudflare queue info failed after retries; trying idempotent create"
+            queue_create_log="$(mktemp)"
+            if timeout 120s npm run queue:create:assistant > "$queue_create_log" 2>&1; then
+              cat "$queue_create_log"
+              rm -f "$queue_create_log"
+              return 0
+            fi
+            cat "$queue_create_log"
+            if grep -qi "already taken" "$queue_create_log"; then
+              echo "Assistant queue already exists; continuing"
+              rm -f "$queue_create_log"
+              return 0
+            fi
+            rm -f "$queue_create_log"
+            return 1
+          }
+          ensure_assistant_queue
           for attempt in 1 2 3; do
             echo "Cloudflare Worker deploy attempt ${attempt}/3"
             if timeout 240s npm run worker:deploy:assistant; then
