@@ -172,7 +172,14 @@ function stringValue(value: unknown) {
 }
 
 function draftTextLength(draft: TemplateCompletionDraft) {
-  return draft.title.length + draft.shortTitle.length + draft.focus.length + draft.prompt.length + draft.fullPrompt.length;
+  return draft.title.length + draft.shortTitle.length + draft.focus.length + draft.prompt.length + draft.fullPrompt.length + sectionRequirementsTextLength(draft.sectionRequirements);
+}
+
+function sectionRequirementsTextLength(sectionRequirements: TemplateCompletionDraft["sectionRequirements"]) {
+  return (sectionRequirements ?? []).reduce(
+    (sum, item) => sum + item.id.length + item.title.length + item.requiredPoints.reduce((pointSum, point) => pointSum + point.length, 0),
+    0,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

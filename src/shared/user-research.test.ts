@@ -101,6 +101,28 @@ describe("user research templates", () => {
       { id: "section-2", title: "第 2 项", minChars: 800, requiredPoints: ["结论", "证据依据", "反证条件", "跟踪指标"] },
     ]);
   });
+
+  test("bounds custom template section requirement text before model prompts use it", () => {
+    const requirements = normalizeTemplateSectionRequirements({
+      id: "custom-operator",
+      title: "模板12：经营者视角",
+      shortTitle: "经营者",
+      focus: "按经营者视角分析。",
+      prompt: "分析公司。",
+      fullPrompt: "1. 商业模式\n请按照以上模板分析（      ）公司。",
+      sectionRequirements: [
+        {
+          id: "business",
+          title: "商业模式",
+          minChars: 180,
+          requiredPoints: ["x".repeat(240), "结论", "证据依据", "反证条件", "跟踪指标", "额外观察"],
+        },
+      ],
+    });
+
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0].requiredPoints).toEqual(["结论", "证据依据", "反证条件", "跟踪指标", "x".repeat(120), "额外观察"]);
+  });
 });
 
 function analysisFor(templateId: string, index: number): TemplateAnalysisResult {
