@@ -14,7 +14,7 @@ vi.mock("../_shared/auth", () => ({
 }));
 
 describe("numeric body parameter validation", () => {
-  test("company evidence refresh ignores malformed filters and falls back to bounded paging", async () => {
+  test("company evidence refresh rejects malformed filters instead of widening the refresh scope", async () => {
     const db = bodyParamDb();
 
     const response = await onCompanyEvidenceRefreshPost(companyEvidenceRefreshContext(db.db, {
@@ -23,14 +23,13 @@ describe("numeric body parameter validation", () => {
       limit: "many",
       offset: { value: 20 },
     }));
-    const body = await response.json() as { count?: number; limit?: number; offset?: number };
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({ count: 0, limit: 50, offset: 0 });
-    expect(db.binds.some((args) => args.some((arg) => Number.isNaN(arg)))).toBe(false);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("参数格式") });
+    expect(db.binds).toEqual([]);
   });
 
-  test("watchlist ranking ignores malformed filters and falls back to the default limit", async () => {
+  test("watchlist ranking rejects malformed filters instead of queueing the default batch", async () => {
     const db = bodyParamDb();
 
     const response = await onWatchlistRankingPost(watchlistRankingContext(db.db, {
@@ -38,12 +37,10 @@ describe("numeric body parameter validation", () => {
       limit: "all",
       forceRefresh: "true",
     }));
-    const body = await response.json() as { entries?: unknown[]; queued?: string[] };
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({ entries: [], queued: [] });
-    expect(db.binds.some((args) => args.some((arg) => Number.isNaN(arg)))).toBe(false);
-    expect(db.binds.some((args) => args.includes(20))).toBe(true);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("参数格式") });
+    expect(db.binds).toEqual([]);
   });
 });
 
