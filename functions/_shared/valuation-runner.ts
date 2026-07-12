@@ -75,7 +75,7 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
   const run = await readValuationRunForWorker(env.REPORT_LIBRARY_DB, valuationRunId);
   if (!run || run.status === "completed") return;
   try {
-    if (!await claimValuationRun(env.REPORT_LIBRARY_DB, valuationRunId)) return;
+    if (!await claimValuationRun(env.REPORT_LIBRARY_DB, valuationRunId, run.user_key)) return;
     const evidencePackage = await readValuationEvidencePackage(env, run);
     const quantitative: BuiltQuantitativeVersion | undefined = tryBuildQuantitativeVersionFromEvidence(run, evidencePackage);
     const evidence = prepareValuationEvidenceContext(evidencePackage);
@@ -151,9 +151,9 @@ export async function processValuationRun(env: ValuationRunnerEnv, valuationRunI
         httpMetadata: { contentType: "application/json; charset=utf-8" },
       });
     }
-    await completeValuationRun(env.REPORT_LIBRARY_DB, { id: valuationRunId, result, objectKey });
+    await completeValuationRun(env.REPORT_LIBRARY_DB, { id: valuationRunId, userKey: run.user_key, result, objectKey });
   } catch (error) {
-    await failValuationRun(env.REPORT_LIBRARY_DB, valuationRunId, error);
+    await failValuationRun(env.REPORT_LIBRARY_DB, valuationRunId, run.user_key, error);
     throw error;
   }
 }
