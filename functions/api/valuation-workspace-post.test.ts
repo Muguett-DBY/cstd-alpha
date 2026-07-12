@@ -39,6 +39,23 @@ describe("/api/valuation-workspace POST", () => {
     expect(mocks.readQuantitativeWorkspace).not.toHaveBeenCalled();
     expect(mocks.createQuantitativeVersion).not.toHaveBeenCalled();
   });
+
+  test("rejects malformed assumption edits before reading a workspace", async () => {
+    const response = await onRequestPost(context({
+      runId: "run-1",
+      parentVersionId: "version-1",
+      assumptions: [
+        { key: "revenueGrowth", base: "12" },
+        "not-an-edit",
+      ],
+    }));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("估值保存参数无效。");
+    expect(mocks.readQuantitativeWorkspace).not.toHaveBeenCalled();
+    expect(mocks.createQuantitativeVersion).not.toHaveBeenCalled();
+  });
 });
 
 function context(body: unknown) {
