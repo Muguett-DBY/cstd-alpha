@@ -41,11 +41,11 @@ describe("/api/template-analysis POST", () => {
     const body = await response.json() as { error?: string };
 
     expect(response.status).toBe(400);
-    expect(body.error).toBe("缺少自选股 ID。");
+    expect(body.error).toContain("参数格式");
     expect(db.sqls.some((sql) => /FROM user_watchlist/i.test(sql))).toBe(false);
   });
 
-  test("ignores malformed optional template ids before looking up the watchlist row", async () => {
+  test("rejects malformed optional template ids before looking up the watchlist row", async () => {
     const db = templateAnalysisDb();
 
     const response = await onRequestPost(context(db.db, {
@@ -54,9 +54,9 @@ describe("/api/template-analysis POST", () => {
     }));
     const body = await response.json() as { error?: string };
 
-    expect(response.status).toBe(404);
-    expect(body.error).toBe("自选股不存在。");
-    expect(db.sqls.some((sql) => /FROM user_watchlist/i.test(sql))).toBe(true);
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("参数格式");
+    expect(db.sqls.some((sql) => /FROM user_watchlist/i.test(sql))).toBe(false);
   });
 });
 
