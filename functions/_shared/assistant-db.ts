@@ -152,19 +152,27 @@ export async function ensureAssistantSchema(db: D1Database) {
 
 export async function getOrCreateDefaultThread(db: D1Database, userKey: string, threadId?: string, now = new Date().toISOString()) {
   await ensureAssistantSchema(db);
-  const id = threadId || `${userKey}:${ASSISTANT_DEFAULT_THREAD_ID}`;
-  const existing = await db.prepare(`SELECT id, title, summary, updated_at FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(id, userKey).first<{
-    id: string;
-    title: string;
-    summary: string;
-    updated_at: string;
-  }>();
+  if (threadId) {
+    const existingThread = await readAssistantThread(db, userKey, threadId);
+    if (existingThread) return existingThread;
+  }
+  const id = `${userKey}:${ASSISTANT_DEFAULT_THREAD_ID}`;
+  const existing = await readAssistantThread(db, userKey, id);
   if (existing) return existing;
   await db
     .prepare(`INSERT INTO assistant_threads (id, user_key, title, summary, created_at, updated_at) VALUES (?1, ?2, ?3, '', ?4, ?4)`)
     .bind(id, userKey, "长期投研助手", now)
     .run();
   return { id, title: "长期投研助手", summary: "", updated_at: now };
+}
+
+async function readAssistantThread(db: D1Database, userKey: string, threadId: string) {
+  return db.prepare(`SELECT id, title, summary, updated_at FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(threadId, userKey).first<{
+    id: string;
+    title: string;
+    summary: string;
+    updated_at: string;
+  }>();
 }
 
 export async function listAssistantThreads(db: D1Database, userKey: string) {
