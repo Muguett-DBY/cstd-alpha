@@ -14,6 +14,7 @@ type TemplateCompletionDraft = Pick<ResearchTemplate, "title" | "shortTitle" | "
 type TemplateCompletionRoute = DeepSeekFallbackRoute;
 
 const TEMPLATE_COMPLETION_TIMEOUT_MS = 240_000;
+const TEMPLATE_COMPLETION_FULL_PROMPT_MAX_CHARS = 12_000;
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
@@ -21,6 +22,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as { draft?: Partial<TemplateCompletionDraft> } | null;
   const draft = normalizeDraftInput(body?.draft);
   if (!draft.fullPrompt.trim()) return json({ error: "请先填写完整模板正文，再进行 AI 补全。" }, 400);
+  if (draft.fullPrompt.length > TEMPLATE_COMPLETION_FULL_PROMPT_MAX_CHARS) {
+    return json({ error: `模板正文过长，请控制在 ${TEMPLATE_COMPLETION_FULL_PROMPT_MAX_CHARS} 字以内后再补全。` }, 400);
+  }
   const completion = await requestTemplateCompletion(env, draft, request.signal);
   return json({ completion });
 };
