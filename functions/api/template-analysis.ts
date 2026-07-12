@@ -52,6 +52,14 @@ type TemplateCacheEnv = {
   REPORT_LIBRARY_BUCKET?: R2Bucket;
 };
 
+type TemplateAnalysisPostParams = {
+  watchlistId: string;
+  templateId: string;
+  forceRefresh: boolean;
+};
+
+type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
 type GeneratedTemplateAnalysis = ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
 type TemplateReasoningEffort = "high" | "max";
 type TemplateCacheMode = "free" | "paid";
@@ -120,15 +128,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
-  await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const watchlistId = stringValue(body?.watchlistId);
-  const templateId = stringValue(body?.templateId) || FULL_ANALYSIS_TEMPLATE_ID;
+  const parsed = parseTemplateAnalysisPostParams(body);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+  const { watchlistId, templateId, forceRefresh } = parsed.value;
+  await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
+
   if (!watchlistId) return json({ error: "缺少自选股 ID。" }, 400);
   const watchlist = await readWatchlistRow(env.REPORT_LIBRARY_DB, session.userId, watchlistId);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
-  const forceRefresh = body?.forceRefresh === true;
   const userTemplates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, session.userId);
   const enabledTemplates = activeResearchTemplates(userTemplates);
 
@@ -1066,6 +1075,41 @@ function markdownToSections(markdown: string) {
       return { heading, body: chunk.trim() };
     })
     .filter((section) => section.body);
+}
+
+function parseTemplateAnalysisPostParams(body: Record<string, unknown> | null): ParseResult<TemplateAnalysisPostParams> {
+  if (body !== null && !isPlainRecord(body)) return { ok: false, error: "请求参数格式不正确。" };
+  const watchlistId = optionalStringParam(body, "watchlistId", "watchlistId");
+  if (!watchlistId.ok) return watchlistId;
+  const templateId = optionalStringParam(body, "templateId", "templateId", FULL_ANALYSIS_TEMPLATE_ID);
+  if (!templateId.ok) return templateId;
+  const forceRefresh = optionalBooleanParam(body, "forceRefresh", "forceRefresh", false);
+  if (!forceRefresh.ok) return forceRefresh;
+  return { ok: true, value: { watchlistId: watchlistId.value, templateId: templateId.value || FULL_ANALYSIS_TEMPLATE_ID, forceRefresh: forceRefresh.value } };
+}
+
+function optionalStringParam(body: Record<string, unknown> | null, key: string, label: string, fallback = ""): ParseResult<string> {
+  if (!hasParam(body, key)) return { ok: true, value: fallback };
+  const value = body?.[key];
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  if (typeof value !== "string") return { ok: false, error: `${label} 参数格式不正确。` };
+  return { ok: true, value: value.trim() };
+}
+
+function optionalBooleanParam(body: Record<string, unknown> | null, key: string, label: string, fallback: boolean): ParseResult<boolean> {
+  if (!hasParam(body, key)) return { ok: true, value: fallback };
+  const value = body?.[key];
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  if (typeof value !== "boolean") return { ok: false, error: `${label} 参数格式不正确。` };
+  return { ok: true, value };
+}
+
+function hasParam(body: Record<string, unknown> | null, key: string) {
+  return isPlainRecord(body) && Object.prototype.hasOwnProperty.call(body, key);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && !Array.isArray(value);
 }
 
 function stringArray(value: unknown) {
