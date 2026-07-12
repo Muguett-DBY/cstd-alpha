@@ -28,6 +28,14 @@ type Env = {
 const DEFAULT_REPOSITORY = "Muguett-DBY/cstd-alpha";
 const DEFAULT_WORKFLOW = "watchlist-ranking.yml";
 
+type RankingRefreshParams = {
+  watchlistId: string;
+  forceRefresh: boolean;
+  limit: number;
+};
+
+type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
@@ -47,12 +55,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const session = await requireUserSession(request, env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB || !env.REPORT_LIBRARY_BUCKET) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
-  await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const watchlistId = stringValue(body?.watchlistId);
-  const forceRefresh = body?.forceRefresh === true;
-  const limit = boundedNumber(body?.limit, 20, 1, 80);
+  const parsed = parseRankingRefreshParams(body);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+  const { watchlistId, forceRefresh, limit } = parsed.value;
+  await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
+
   const rows = await readWatchlistRows(env.REPORT_LIBRARY_DB, session.userId, watchlistId, limit);
   const queued: string[] = [];
   const reused: string[] = [];
@@ -178,11 +187,45 @@ function pendingRow(row: WatchlistRow, userId: string): WatchlistRankingRow {
   };
 }
 
-function stringValue(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+function parseRankingRefreshParams(body: Record<string, unknown> | null): ParseResult<RankingRefreshParams> {
+  if (body !== null && !isPlainRecord(body)) return { ok: false, error: "请求参数格式不正确。" };
+  const watchlistId = optionalStringParam(body, "watchlistId", "watchlistId");
+  if (!watchlistId.ok) return watchlistId;
+  const forceRefresh = optionalBooleanParam(body, "forceRefresh", "forceRefresh", false);
+  if (!forceRefresh.ok) return forceRefresh;
+  const limit = optionalBoundedNumberParam(body, "limit", "limit", 20, 1, 80);
+  if (!limit.ok) return limit;
+  return { ok: true, value: { watchlistId: watchlistId.value, forceRefresh: forceRefresh.value, limit: limit.value } };
 }
 
-function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
-  const number = typeof value === "number" ? value : NaN;
-  return Number.isFinite(number) ? Math.min(Math.max(number, min), max) : fallback;
+function optionalStringParam(body: Record<string, unknown> | null, key: string, label: string): ParseResult<string> {
+  if (!hasParam(body, key)) return { ok: true, value: "" };
+  const value = body?.[key];
+  if (value === undefined || value === null || value === "") return { ok: true, value: "" };
+  if (typeof value !== "string") return { ok: false, error: `${label} 参数格式不正确。` };
+  return { ok: true, value: value.trim() };
+}
+
+function optionalBooleanParam(body: Record<string, unknown> | null, key: string, label: string, fallback: boolean): ParseResult<boolean> {
+  if (!hasParam(body, key)) return { ok: true, value: fallback };
+  const value = body?.[key];
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  if (typeof value !== "boolean") return { ok: false, error: `${label} 参数格式不正确。` };
+  return { ok: true, value };
+}
+
+function optionalBoundedNumberParam(body: Record<string, unknown> | null, key: string, label: string, fallback: number, min: number, max: number): ParseResult<number> {
+  if (!hasParam(body, key)) return { ok: true, value: fallback };
+  const value = body?.[key];
+  if (value === undefined || value === null || value === "") return { ok: true, value: fallback };
+  if (typeof value !== "number" || !Number.isFinite(value)) return { ok: false, error: `${label} 参数格式不正确。` };
+  return { ok: true, value: Math.min(Math.max(value, min), max) };
+}
+
+function hasParam(body: Record<string, unknown> | null, key: string) {
+  return isPlainRecord(body) && Object.prototype.hasOwnProperty.call(body, key);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
