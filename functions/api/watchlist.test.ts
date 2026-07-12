@@ -58,6 +58,20 @@ describe("/api/watchlist", () => {
     expect(response.status).toBe(500);
     expect(body.error).toBe("自选股保存失败。");
   });
+
+  test("ignores malformed report library ids before persisting a watchlist row", async () => {
+    const db = watchlistDb();
+
+    const response = await onRequestPost(context(db, {
+      ...companyPayload(),
+      reportLibraryId: { id: "report-1" },
+    }));
+    const body = await response.json() as { item?: { reportLibraryId?: unknown }; status?: string };
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("created");
+    expect(body.item?.reportLibraryId).toBeUndefined();
+  });
 });
 
 function context(db: D1Database, body: unknown) {

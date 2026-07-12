@@ -51,9 +51,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   await ensureUserResearchSchema(env.REPORT_LIBRARY_DB);
 
-  const body = (await request.json().catch(() => null)) as { company?: unknown; reportLibraryId?: string } | null;
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const company = normalizeCompany(body?.company);
   if (!company) return json({ error: "公司信息不完整，无法加入自选。" }, 400);
+  const reportLibraryId = stringValue(body?.reportLibraryId);
 
   const now = new Date().toISOString();
   const id = await sha256(`${session.userId}:${company.listingPlace}:${company.code}`);
@@ -72,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       source = excluded.source,
       report_library_id = COALESCE(excluded.report_library_id, user_watchlist.report_library_id)`,
   )
-    .bind(id, session.userId, session.userId, company.name, company.code, company.listingPlace, company.exchange, company.listingPlace, company.marketType, company.source, body?.reportLibraryId || null, now)
+    .bind(id, session.userId, session.userId, company.name, company.code, company.listingPlace, company.exchange, company.listingPlace, company.marketType, company.source, reportLibraryId || null, now)
     .run();
 
   const row = await readWatchlistRowBySymbol(env.REPORT_LIBRARY_DB, session.userId, company.code, company.listingPlace);
@@ -137,4 +138,8 @@ async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
     body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
   });
   if (!response.ok) throw new Error(`GitHub watchlist ranking dispatch failed: ${response.status}`);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
