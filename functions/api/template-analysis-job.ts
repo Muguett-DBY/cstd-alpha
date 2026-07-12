@@ -25,11 +25,11 @@ type Env = {
 
 type CompleteBody = {
   jobId?: string;
-  generated?: ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string };
-  markdown?: string;
-  error?: string;
-  evidenceHash?: string;
-  childResults?: Array<{ templateId?: string; generated?: ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string }; markdown?: string; evidenceHash?: string }>;
+  generated?: unknown;
+  markdown?: unknown;
+  error?: unknown;
+  evidenceHash?: unknown;
+  childResults?: Array<{ templateId?: unknown; generated?: unknown; markdown?: unknown; evidenceHash?: unknown }>;
 };
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -112,8 +112,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   for (const child of childResults) {
     const childTemplateId = stringValue(child.templateId);
     const childTemplate = activeTemplates.find((item) => item.id === childTemplateId);
-    if (!childTemplate || !child.generated) continue;
-    await persistGenerated(storageEnv, row.user_key, watchlist, childTemplate, child.generated, stringValue(child.markdown) || child.generated.markdown, startedAt, stringValue(child.evidenceHash) || evidenceHash);
+    if (!childTemplate || !isRecord(child.generated)) continue;
+    const generated = normalizeCallbackGenerated(child.generated, childTemplate);
+    await persistGenerated(storageEnv, row.user_key, watchlist, childTemplate, generated, stringValue(child.markdown) || stringValue(child.generated.markdown) || generated.markdown, startedAt, stringValue(child.evidenceHash) || evidenceHash);
   }
 
   const error = stringValue(body?.error);
@@ -125,10 +126,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, "模板已删除或未启用，后台任务已取消。", "failed", startedAt, evidenceHash);
     return json({ cancelled: true, analysis: failed });
   }
-  if (!body?.generated) return json({ error: "缺少模板生成结果。" }, 400);
-  const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, body.generated, stringValue(body.markdown) || body.generated.markdown, startedAt, evidenceHash);
+  if (!isRecord(body?.generated)) return json({ error: "缺少模板生成结果。" }, 400);
+  const generated = normalizeCallbackGenerated(body.generated, template);
+  const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, generated, stringValue(body.markdown) || stringValue(body.generated.markdown) || generated.markdown, startedAt, evidenceHash);
   return json({ analysis });
 };
+
+function normalizeCallbackGenerated(value: Record<string, unknown>, template: ResearchTemplate): ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string } {
+  const generated = normalizeGeneratedAnalysis(value, template);
+  const modelUsed = stringValue(value.modelUsed);
+  return modelUsed ? { ...generated, modelUsed } : generated;
+}
 
 async function persistGenerated(
   env: Required<Pick<Env, "REPORT_LIBRARY_DB" | "REPORT_LIBRARY_BUCKET">>,
@@ -227,4 +235,8 @@ function requireWorkerAuth(request: Request, env: Env) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
