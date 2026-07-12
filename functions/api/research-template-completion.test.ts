@@ -102,4 +102,41 @@ describe("research template completion", () => {
     expect(await response.json()).toMatchObject({ error: expect.stringContaining("模板正文过长") });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test("rejects oversized auxiliary draft text before calling the model", async () => {
+    vi.mocked(requireUserSession).mockResolvedValue({
+      userId: "user-1",
+      username: "admin",
+      displayName: "Admin",
+      role: "admin",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        title: "模板",
+        shortTitle: "模板",
+        focus: "说明",
+        prompt: "提示",
+        fullPrompt: "完整模板",
+        sectionRequirements: [{ id: "summary", title: "结论", minChars: 180, requiredPoints: ["结论"] }],
+      }) } }],
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.test/api/research-template-completion", {
+        method: "POST",
+        body: JSON.stringify({
+          draft: {
+            prompt: "x".repeat(16_001),
+            fullPrompt: "正常模板正文",
+          },
+        }),
+      }),
+      env: { AUTH_SECRET: "secret", OPENCODE_GO_API_KEY: "paid-key" },
+    } as Parameters<typeof onRequestPost>[0]);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("模板草稿过长") });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
