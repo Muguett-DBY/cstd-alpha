@@ -713,26 +713,26 @@ export async function writeActualReviewsForWatchlist(db: D1Database, userKey: st
   return reviewCount;
 }
 
-export async function claimValuationRun(db: D1Database, id: string) {
+export async function claimValuationRun(db: D1Database, id: string, userKey: string) {
   const now = new Date().toISOString();
   const result = await db.prepare(
     `UPDATE valuation_runs
-     SET status = 'running', started_at = COALESCE(started_at, ?2), updated_at = ?2
-     WHERE id = ?1 AND status IN ('queued', 'failed')`,
-  ).bind(id, now).run();
+     SET status = 'running', started_at = COALESCE(started_at, ?3), updated_at = ?3
+     WHERE id = ?1 AND user_key = ?2 AND status IN ('queued', 'failed')`,
+  ).bind(id, userKey, now).run();
   return (result.meta?.changes ?? 0) > 0;
 }
 
-export async function completeValuationRun(db: D1Database, input: { id: string; result: ValuationResult; objectKey?: string }) {
+export async function completeValuationRun(db: D1Database, input: { id: string; userKey: string; result: ValuationResult; objectKey?: string }) {
   const now = new Date().toISOString();
   await db.prepare(
-    `UPDATE valuation_runs SET status = 'completed', result_json = ?2, assumptions_json = ?3, object_key = ?4, updated_at = ?5, completed_at = ?5 WHERE id = ?1`,
-  ).bind(input.id, JSON.stringify(input.result), JSON.stringify(input.result.assumptions), input.objectKey ?? null, now).run();
+    `UPDATE valuation_runs SET status = 'completed', result_json = ?3, assumptions_json = ?4, object_key = ?5, updated_at = ?6, completed_at = ?6 WHERE id = ?1 AND user_key = ?2`,
+  ).bind(input.id, input.userKey, JSON.stringify(input.result), JSON.stringify(input.result.assumptions), input.objectKey ?? null, now).run();
 }
 
-export async function failValuationRun(db: D1Database, id: string, error: unknown) {
+export async function failValuationRun(db: D1Database, id: string, userKey: string, error: unknown) {
   const now = new Date().toISOString();
-  await db.prepare(`UPDATE valuation_runs SET status = 'failed', error_message = ?2, updated_at = ?3, completed_at = ?3 WHERE id = ?1`).bind(id, safeError(error), now).run();
+  await db.prepare(`UPDATE valuation_runs SET status = 'failed', error_message = ?3, updated_at = ?4, completed_at = ?4 WHERE id = ?1 AND user_key = ?2`).bind(id, userKey, safeError(error), now).run();
 }
 
 export function valuationRunToSummary(row: ValuationRunRow) {

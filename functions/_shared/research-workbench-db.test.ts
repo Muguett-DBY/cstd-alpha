@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { claimValuationRun, createResearchThesisVersion, deleteResearchItems, updateResearchCatalystStatus, upsertResearchCatalystDrafts, upsertResearchItem } from "./research-workbench-db";
+import { claimValuationRun, completeValuationRun, createResearchThesisVersion, deleteResearchItems, failValuationRun, updateResearchCatalystStatus, upsertResearchCatalystDrafts, upsertResearchItem } from "./research-workbench-db";
+import type { ValuationResult } from "../../src/shared/valuation";
 
 type ResearchItemTestRow = {
   id: string;
@@ -84,7 +85,7 @@ describe("claimValuationRun", () => {
       },
     } as unknown as D1Database;
 
-    await expect(claimValuationRun(db, "run-1")).resolves.toBe(true);
+    await expect(claimValuationRun(db, "run-1", "user-1")).resolves.toBe(true);
     expect(executed).toHaveLength(1);
     expect(executed[0]).toContain("status IN ('queued', 'failed')");
   });
@@ -104,7 +105,47 @@ describe("claimValuationRun", () => {
       },
     } as unknown as D1Database;
 
-    await expect(claimValuationRun(db, "run-1")).resolves.toBe(false);
+    await expect(claimValuationRun(db, "run-1", "user-1")).resolves.toBe(false);
+  });
+
+  test("scopes valuation run lifecycle updates by user", async () => {
+    const executions: Array<{ sql: string; bindings: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...bindings: unknown[]) {
+            return {
+              async run() {
+                executions.push({ sql, bindings });
+                return { meta: { changes: sql.includes("status IN ('queued', 'failed')") ? 1 : 0 } };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const result: ValuationResult = {
+      method: "dcf_3_statement",
+      archetype: "operating",
+      currency: "CNY",
+      asOf: "2026-07-13",
+      assumptions: [],
+      scenarios: [],
+    };
+
+    await expect(claimValuationRun(db, "run-1", "user-1")).resolves.toBe(true);
+    await completeValuationRun(db, { id: "run-1", userKey: "user-1", result, objectKey: "valuation/v1/user-1/run-1.json" });
+    await failValuationRun(db, "run-1", "user-1", new Error("boom"));
+
+    const claim = executions.find(({ sql }) => sql.includes("status = 'running'"));
+    const complete = executions.find(({ sql }) => sql.includes("status = 'completed'"));
+    const fail = executions.find(({ sql }) => sql.includes("status = 'failed'"));
+    expect(claim?.sql).toMatch(/WHERE id = \?1 AND user_key = \?2/i);
+    expect(claim?.bindings.slice(0, 2)).toEqual(["run-1", "user-1"]);
+    expect(complete?.sql).toMatch(/WHERE id = \?1 AND user_key = \?2/i);
+    expect(complete?.bindings.slice(0, 2)).toEqual(["run-1", "user-1"]);
+    expect(fail?.sql).toMatch(/WHERE id = \?1 AND user_key = \?2/i);
+    expect(fail?.bindings.slice(0, 2)).toEqual(["run-1", "user-1"]);
   });
 });
 
