@@ -139,4 +139,46 @@ describe("research template completion", () => {
     expect(await response.json()).toMatchObject({ error: expect.stringContaining("模板草稿过长") });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test("rejects oversized section requirement draft text before calling the model", async () => {
+    vi.mocked(requireUserSession).mockResolvedValue({
+      userId: "user-1",
+      username: "admin",
+      displayName: "Admin",
+      role: "admin",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        title: "模板",
+        shortTitle: "模板",
+        focus: "说明",
+        prompt: "提示",
+        fullPrompt: "完整模板",
+        sectionRequirements: [{ id: "summary", title: "结论", minChars: 180, requiredPoints: ["结论"] }],
+      }) } }],
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost({
+      request: new Request("https://example.test/api/research-template-completion", {
+        method: "POST",
+        body: JSON.stringify({
+          draft: {
+            fullPrompt: `正常模板正文${"x".repeat(5_000)}`,
+            sectionRequirements: Array.from({ length: 24 }, (_, index) => ({
+              id: `section-${index + 1}`,
+              title: `第 ${index + 1} 项`,
+              minChars: 180,
+              requiredPoints: Array.from({ length: 8 }, (__, pointIndex) => `检查点-${index + 1}-${pointIndex + 1}-${"x".repeat(120)}`),
+            })),
+          },
+        }),
+      }),
+      env: { AUTH_SECRET: "secret", OPENCODE_GO_API_KEY: "paid-key" },
+    } as Parameters<typeof onRequestPost>[0]);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("模板草稿过长") });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -114,6 +114,10 @@ export const FULL_ANALYSIS_MARKDOWN_MIN_CHARS = 5000;
 export const DEFAULT_TEMPLATE_SECTION_MIN_CHARS = 180;
 export const TEMPLATE_SECTION_MIN_CHARS_FLOOR = 80;
 export const TEMPLATE_SECTION_MIN_CHARS_CEILING = 800;
+export const TEMPLATE_SECTION_REQUIREMENTS_LIMIT = 24;
+export const TEMPLATE_SECTION_REQUIRED_POINTS_LIMIT = 8;
+export const TEMPLATE_SECTION_REQUIRED_POINTS_INPUT_LIMIT = 32;
+export const TEMPLATE_SECTION_REQUIRED_POINT_MAX_CHARS = 120;
 export const DEFAULT_TEMPLATE_REQUIRED_POINTS = ["结论", "证据依据", "反证条件", "跟踪指标"] as const;
 
 export const RESEARCH_TEMPLATES: ResearchTemplate[] = [
@@ -410,9 +414,12 @@ export function minimumResearchMarkdownChars(templateId: string) {
 
 export function normalizeTemplateSectionRequirements(template: Pick<ResearchTemplate, "title" | "fullPrompt" | "sectionRequirements">): TemplateSectionRequirement[] {
   const explicit = Array.isArray(template.sectionRequirements)
-    ? template.sectionRequirements.map((item, index) => normalizeTemplateSectionRequirement(item, index)).filter((item): item is TemplateSectionRequirement => Boolean(item))
+    ? template.sectionRequirements
+        .slice(0, TEMPLATE_SECTION_REQUIREMENTS_LIMIT)
+        .map((item, index) => normalizeTemplateSectionRequirement(item, index))
+        .filter((item): item is TemplateSectionRequirement => Boolean(item))
     : [];
-  if (explicit.length) return explicit.slice(0, 24);
+  if (explicit.length) return explicit;
   return deriveTemplateSectionRequirements(template.fullPrompt || template.title || "模板分析");
 }
 
@@ -447,8 +454,13 @@ function deriveTemplateSectionRequirements(fullPrompt: string) {
 }
 
 function normalizeRequiredPoints(value: unknown) {
-  const points = Array.isArray(value) ? value.map((item) => stringValue(item)).filter(Boolean) : [];
-  return Array.from(new Set([...DEFAULT_TEMPLATE_REQUIRED_POINTS, ...points])).slice(0, 8);
+  const points = Array.isArray(value)
+    ? value
+        .slice(0, TEMPLATE_SECTION_REQUIRED_POINTS_INPUT_LIMIT)
+        .map((item) => stringValue(item).slice(0, TEMPLATE_SECTION_REQUIRED_POINT_MAX_CHARS))
+        .filter(Boolean)
+    : [];
+  return Array.from(new Set([...DEFAULT_TEMPLATE_REQUIRED_POINTS, ...points])).slice(0, TEMPLATE_SECTION_REQUIRED_POINTS_LIMIT);
 }
 
 function normalizeTemplateRequirementId(value: unknown) {
