@@ -33,14 +33,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const runId = normalizeRequiredText(body?.runId);
   const parentVersionId = normalizeRequiredText(body?.parentVersionId);
-  const assumptions = Array.isArray(body?.assumptions) ? body.assumptions as UserAssumptionEdit[] : null;
+  const rawAssumptions = body?.assumptions;
+  const assumptions = normalizeAssumptionEdits(rawAssumptions);
   const decisionNote = normalizeOptionalText(body?.decisionNote);
   const presets = normalizeOptionalArray<QuantitativePreset>(body?.presets);
   const restoredPresetLibrary = normalizeRestoredPresetLibraryInput(body?.restoredPresetLibrary);
-  if (!runId || !parentVersionId || !assumptions) {
+  if (!runId || !parentVersionId || !Array.isArray(rawAssumptions)) {
     return json({ error: "估值保存参数不完整。" }, 400);
   }
-  if (decisionNote === null || presets === null || restoredPresetLibrary === null) {
+  if (assumptions === null || decisionNote === null || presets === null || restoredPresetLibrary === null) {
     return json({ error: "估值保存参数无效。" }, 400);
   }
   const workspace = await readQuantitativeWorkspace(env.REPORT_LIBRARY_DB, session.userId, runId);
@@ -187,6 +188,32 @@ function normalizeOptionalArray<T>(value: unknown): T[] | null | undefined {
   return Array.isArray(value) ? value as T[] : null;
 }
 
+function normalizeAssumptionEdits(value: unknown): UserAssumptionEdit[] | null {
+  if (!Array.isArray(value)) return null;
+  const edits: UserAssumptionEdit[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return null;
+    const key = normalizeRequiredText(item.key);
+    if (!key) return null;
+    const edit: UserAssumptionEdit = { key };
+    const forecastYear = optionalFiniteNumber(item.forecastYear);
+    if (forecastYear === null) return null;
+    if (forecastYear !== undefined) edit.forecastYear = forecastYear;
+    let hasNumericEdit = false;
+    for (const field of ["value", "bear", "base", "bull"] as const) {
+      const number = optionalFiniteNumber(item[field]);
+      if (number === null) return null;
+      if (number !== undefined) {
+        edit[field] = number;
+        hasNumericEdit = true;
+      }
+    }
+    if (!hasNumericEdit) return null;
+    edits.push(edit);
+  }
+  return edits;
+}
+
 function normalizeRestoredPresetLibraryInput(value: unknown): QuantitativeDraft["restoredPresetLibrary"] | null | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "object") return null;
@@ -197,6 +224,15 @@ function editableFields(edit: UserAssumptionEdit) {
   return Object.fromEntries(Object.entries(edit).filter(([key, value]) =>
     ["value", "bear", "base", "bull", "forecastYear"].includes(key) && typeof value === "number" && Number.isFinite(value),
   ));
+}
+
+function optionalFiniteNumber(value: unknown) {
+  if (value === undefined) return undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function normalizeValuationPresets(presets: QuantitativePreset[] | undefined): QuantitativePreset[] | undefined {
