@@ -5,6 +5,7 @@ import {
   buildAssistantDeepSeekBody,
   buildAssistantPromptMessages,
   buildSiteEvidenceSummary,
+  deleteAssistantThread,
   detectMemoryCandidate,
   estimateAssistantContextTokens,
   getOrCreateDefaultThread,
@@ -69,6 +70,36 @@ describe("assistant prompt and memory helpers", () => {
     expect(thread.id).toBe(`user-1:${ASSISTANT_DEFAULT_THREAD_ID}`);
     expect(insertedBinds[0]?.[0]).toBe(`user-1:${ASSISTANT_DEFAULT_THREAD_ID}`);
     expect(insertedBinds[0]).not.toContain("user-1:missing-thread");
+  });
+
+  test("scopes assistant thread cleanup tables by user", async () => {
+    const deletions: Array<{ sql: string; args: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...args: unknown[]) {
+            return {
+              async run() {
+                if (/DELETE FROM assistant_/i.test(sql)) deletions.push({ sql, args });
+                return { success: true };
+              },
+            };
+          },
+        };
+      },
+      batch: async () => [],
+    } as unknown as D1Database;
+
+    await deleteAssistantThread(db, "thread-1", "user-1");
+
+    expect(deletions.find((item) => /assistant_tool_runs/i.test(item.sql))).toMatchObject({
+      args: ["thread-1", "user-1"],
+    });
+    expect(deletions.find((item) => /assistant_tool_runs/i.test(item.sql))?.sql).toMatch(/user_key = \?2/i);
+    expect(deletions.find((item) => /assistant_usage_events/i.test(item.sql))).toMatchObject({
+      args: ["thread-1", "user-1"],
+    });
+    expect(deletions.find((item) => /assistant_usage_events/i.test(item.sql))?.sql).toMatch(/user_key = \?2/i);
   });
 
   test("normalizes DeepSeek cache usage metrics", () => {

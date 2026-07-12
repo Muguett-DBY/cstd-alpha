@@ -197,8 +197,8 @@ export async function createAssistantThread(db: D1Database, userKey: string, tit
 export async function deleteAssistantThread(db: D1Database, threadId: string, userKey: string) {
   await ensureAssistantSchema(db);
   await db.prepare(`DELETE FROM assistant_messages WHERE thread_id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
-  await db.prepare(`DELETE FROM assistant_tool_runs WHERE thread_id = ?1`).bind(threadId).run();
-  await db.prepare(`DELETE FROM assistant_usage_events WHERE thread_id = ?1`).bind(threadId).run();
+  await db.prepare(`DELETE FROM assistant_tool_runs WHERE thread_id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
+  await db.prepare(`DELETE FROM assistant_usage_events WHERE thread_id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
   await db.prepare(`DELETE FROM assistant_threads WHERE id = ?1 AND user_key = ?2`).bind(threadId, userKey).run();
 }
 
