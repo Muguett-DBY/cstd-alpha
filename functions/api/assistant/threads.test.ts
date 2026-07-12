@@ -46,6 +46,20 @@ describe("/api/assistant/threads", () => {
     expect(mocks.createAssistantThread).toHaveBeenCalledWith({}, "user-1", "投研计划");
   });
 
+  test("bounds new assistant thread titles before saving", async () => {
+    mocks.createAssistantThread.mockResolvedValue({
+      id: "thread-1",
+      title: "投研".repeat(40),
+      summary: "",
+      updated_at: "2026-07-11T00:00:00.000Z",
+    });
+
+    const response = await onRequestPost(context({ title: `  ${"投研".repeat(80)}  ` }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.createAssistantThread.mock.calls[0]?.[2]).toBe("投研".repeat(40));
+  });
+
   test("rejects malformed assistant thread rename titles before updating", async () => {
     const response = await onRequestPatch(context({ title: 123 }, "PATCH", "?threadId=thread-1"));
     const body = await response.json() as { error?: string };
@@ -53,6 +67,13 @@ describe("/api/assistant/threads", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Missing title.");
     expect(mocks.updateAssistantThreadTitle).not.toHaveBeenCalled();
+  });
+
+  test("bounds renamed assistant thread titles before updating", async () => {
+    const response = await onRequestPatch(context({ title: "复盘".repeat(90) }, "PATCH", "?threadId=thread-1"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateAssistantThreadTitle).toHaveBeenCalledWith({}, "thread-1", "user-1", "复盘".repeat(40));
   });
 });
 

@@ -1,5 +1,7 @@
 import { deleteAssistantThread, ensureAssistantSchema, getOrCreateDefaultThread, json, listAssistantThreads, createAssistantThread, requireAdminSession, updateAssistantThreadTitle, type AssistantEnv } from "../../_shared/assistant-db";
 
+const ASSISTANT_THREAD_TITLE_MAX_LENGTH = 80;
+
 export const onRequestGet: PagesFunction<AssistantEnv> = async ({ request, env }) => {
   const { response, session } = await requireAdminSession(request, env);
   if (response) return response;
@@ -20,7 +22,7 @@ export const onRequestPost: PagesFunction<AssistantEnv> = async ({ request, env 
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (!env.REPORT_LIBRARY_DB) return json({ error: "REPORT_LIBRARY_DB is not configured." }, 500);
   const body = await request.json().catch(() => null) as { title?: unknown } | null;
-  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const title = normalizeThreadTitle(body?.title);
   const thread = await createAssistantThread(env.REPORT_LIBRARY_DB, session.userId, title || "新对话");
   return json({ thread: { id: thread.id, title: thread.title, summary: thread.summary, updatedAt: thread.updated_at } });
 };
@@ -46,8 +48,13 @@ export const onRequestPatch: PagesFunction<AssistantEnv> = async ({ request, env
   const threadId = url.searchParams.get("threadId");
   if (!threadId) return json({ error: "Missing threadId parameter." }, 400);
   const body = await request.json().catch(() => null) as { title?: unknown } | null;
-  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const title = normalizeThreadTitle(body?.title);
   if (!title) return json({ error: "Missing title." }, 400);
   await updateAssistantThreadTitle(env.REPORT_LIBRARY_DB, threadId, session.userId, title);
   return json({ ok: true });
 };
+
+function normalizeThreadTitle(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ").slice(0, ASSISTANT_THREAD_TITLE_MAX_LENGTH);
+}
