@@ -166,22 +166,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (cachedAnalysis) return json({ analysis: cachedAnalysis, watchlistItem: watchlistRowToItem(watchlist) });
   const existing = await readAnalysisByWatchlistTemplate(env.REPORT_LIBRARY_DB, session.userId, watchlist.id, template.id);
   const existingResult = existing ? analysisRowToResult(existing) : null;
-  if (!forceRefresh && existingResult?.status === "running") return json({ analysis: existingResult, watchlistItem: watchlistRowToItem(watchlist) }, 202);
+  if (existingResult?.status === "running") return json({ analysis: existingResult, watchlistItem: watchlistRowToItem(watchlist) }, 202);
   const running = await queueTemplateAnalysis(env, session.userId, watchlist, template, cacheEvidenceHash, context);
   return json({ analysis: running, watchlistItem: watchlistRowToItem(watchlist) }, 202);
 };
 
 async function queueTemplateAnalysis(env: Env, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, evidenceHash: string | undefined, context: EventContext<Env, string, unknown>) {
   if (!env.REPORT_LIBRARY_DB) throw new Error("REPORT_LIBRARY_DB is not configured.");
-  const running = await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running", evidenceHash);
-  const dispatchTask = dispatchTemplateAnalysisWorkflow(env, running.id).catch(async (error) => {
-    await writeAnalysisFailure(env.REPORT_LIBRARY_DB!, userId, watchlist, template, normalizeTemplateAnalysisError(error), "failed_retryable", running.startedAt, evidenceHash);
+  const { analysis: running, runToken } = await writeAnalysisStatus(env.REPORT_LIBRARY_DB, userId, watchlist, template, "running", evidenceHash);
+  const dispatchTask = dispatchTemplateAnalysisWorkflow(env, running.id, runToken).catch(async (error) => {
+    try {
+      await writeAnalysisFailure(env.REPORT_LIBRARY_DB!, userId, watchlist, template, normalizeTemplateAnalysisError(error), "failed_retryable", running.startedAt, evidenceHash, runToken);
+    } catch (writeError) {
+      if (!(writeError instanceof StaleAnalysisRunError)) throw writeError;
+    }
   });
   context.waitUntil(dispatchTask);
   return running;
 }
 
-async function dispatchTemplateAnalysisWorkflow(env: Env, jobId: string) {
+async function dispatchTemplateAnalysisWorkflow(env: Env, jobId: string, runToken: string) {
   const token = env.GITHUB_TEMPLATE_DISPATCH_TOKEN?.trim() || env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
   if (!token) throw new Error("missing GitHub template dispatch token");
   const repository = env.GITHUB_TEMPLATE_REPOSITORY?.trim() || GITHUB_TEMPLATE_REPOSITORY;
@@ -197,7 +201,7 @@ async function dispatchTemplateAnalysisWorkflow(env: Env, jobId: string) {
         "user-agent": "CSTDAlphaTemplate/1.0",
         "x-github-api-version": "2022-11-28",
       },
-      body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
+      body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, run_token: runToken } }),
     },
     GITHUB_DISPATCH_TIMEOUT_MS,
   );
@@ -286,8 +290,9 @@ export async function runFullTemplateChildrenCacheAware<T>({
 }
 
 export function shouldStartFullAnalysis(existing: TemplateAnalysisResult | null, forceRefresh: boolean) {
-  if (forceRefresh) return true;
-  return existing?.status !== "running";
+  void forceRefresh;
+  if (existing?.status === "running") return false;
+  return true;
 }
 
 export async function requestTemplateReport(env: DurableTemplateEnv, watchlist: WatchlistRow, evidence: EvidenceBundle, template: ResearchTemplate, childAnalyses: TemplateAnalysisResult[]) {
@@ -612,6 +617,7 @@ export async function writeCompletedAnalysis(
   startedAt: string,
   completedAt: string,
   evidenceHash?: string,
+  options: { expectedRunToken?: string; skipIfRunning?: boolean } = {},
 ) {
   const id = await analysisId(userId, watchlist.id, template.id);
   const result: TemplateAnalysisResult = {
@@ -642,12 +648,20 @@ export async function writeCompletedAnalysis(
     evidenceHash,
     templateSnapshot: snapshotTemplate(template),
   };
-  await upsertAnalysis(db, result, JSON.stringify({ keyPoints: result.keyPoints, riskFlags: result.riskFlags, followUps: result.followUps, sections: result.sections }), null);
+  const applied = await upsertAnalysis(
+    db,
+    result,
+    JSON.stringify({ keyPoints: result.keyPoints, riskFlags: result.riskFlags, followUps: result.followUps, sections: result.sections }),
+    null,
+    options,
+  );
+  if (options.expectedRunToken && !applied) throw new StaleAnalysisRunError();
   return result;
 }
 
 export async function writeAnalysisStatus(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, status: TemplateAnalysisStatus, evidenceHash?: string) {
   const now = new Date().toISOString();
+  const runToken = crypto.randomUUID();
   const result = {
     ...baseAnalysis(userId, watchlist, template, status, now),
     id: await analysisId(userId, watchlist.id, template.id),
@@ -656,11 +670,11 @@ export async function writeAnalysisStatus(db: D1Database, userId: string, watchl
     evidenceHash,
     templateSnapshot: snapshotTemplate(template),
   };
-  await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [], followUps: [], sections: [] }), null);
-  return result;
+  await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [], followUps: [], sections: [] }), null, { runToken });
+  return { analysis: result, runToken };
 }
 
-export async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string, evidenceHash?: string) {
+export async function writeAnalysisFailure(db: D1Database, userId: string, watchlist: WatchlistRow, template: ResearchTemplate, errorMessage: string, status: TemplateAnalysisStatus, startedAt?: string, evidenceHash?: string, expectedRunToken?: string) {
   const now = new Date().toISOString();
   const result = {
     ...baseAnalysis(userId, watchlist, template, status, now),
@@ -673,8 +687,22 @@ export async function writeAnalysisFailure(db: D1Database, userId: string, watch
     evidenceHash,
     templateSnapshot: snapshotTemplate(template),
   };
-  await upsertAnalysis(db, result, JSON.stringify({ keyPoints: [], riskFlags: [errorMessage], followUps: ["稍后重试或切换可用模型通道。"], sections: [] }), errorMessage);
+  const applied = await upsertAnalysis(
+    db,
+    result,
+    JSON.stringify({ keyPoints: [], riskFlags: [errorMessage], followUps: ["稍后重试或切换可用模型通道。"], sections: [] }),
+    errorMessage,
+    { expectedRunToken },
+  );
+  if (expectedRunToken && !applied) throw new StaleAnalysisRunError();
   return result;
+}
+
+export class StaleAnalysisRunError extends Error {
+  constructor() {
+    super("Template analysis run is no longer current.");
+    this.name = "StaleAnalysisRunError";
+  }
 }
 
 function baseAnalysis(userId: string, watchlist: WatchlistRow, template: ResearchTemplate, status: TemplateAnalysisStatus, now: string): TemplateAnalysisResult {
@@ -702,13 +730,58 @@ function baseAnalysis(userId: string, watchlist: WatchlistRow, template: Researc
   };
 }
 
-async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, contentJson: string, errorMessage: string | null) {
+async function upsertAnalysis(
+  db: D1Database,
+  result: TemplateAnalysisResult,
+  contentJson: string,
+  errorMessage: string | null,
+  options: { runToken?: string | null; expectedRunToken?: string; skipIfRunning?: boolean } = {},
+) {
   const id = result.id || (await analysisId(result.userId, result.watchlistId, result.templateId));
-  await db
+  const snapshotJson = result.templateSnapshot ? JSON.stringify(result.templateSnapshot) : null;
+  if (options.expectedRunToken) {
+    const updateResult = await db
+      .prepare(
+        `UPDATE template_analysis
+         SET model = ?1, status = ?2, title = ?3, score = ?4, verdict = ?5,
+             summary = ?6, content_json = ?7, object_key = COALESCE(?8, object_key),
+             updated_at = ?9, started_at = COALESCE(?10, started_at), completed_at = ?11,
+             error_message = ?12, template_hash = ?13, evidence_hash = ?14,
+             template_snapshot_json = ?15, run_token = NULL
+         WHERE id = ?16 AND user_key = ?17 AND watchlist_id = ?18 AND template_id = ?19
+           AND status = 'running' AND run_token = ?20`,
+      )
+      .bind(
+        result.model,
+        result.status,
+        result.title,
+        result.score ?? null,
+        result.verdict,
+        result.summary,
+        contentJson,
+        result.objectKey ?? null,
+        result.updatedAt,
+        result.startedAt ?? null,
+        result.completedAt ?? null,
+        errorMessage,
+        result.templateHash ?? null,
+        result.evidenceHash ?? null,
+        snapshotJson,
+        id,
+        result.userId,
+        result.watchlistId,
+        result.templateId,
+        options.expectedRunToken,
+      )
+      .run();
+    return (updateResult.meta?.changes ?? 1) > 0;
+  }
+
+  const insertResult = await db
     .prepare(
       `INSERT INTO template_analysis (
-        id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+        id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json, run_token
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
       ON CONFLICT(user_key, watchlist_id, template_id) DO UPDATE SET
         user_id = excluded.user_id,
         template_title = excluded.template_title,
@@ -729,7 +802,9 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
         error_message = excluded.error_message,
         template_hash = excluded.template_hash,
         evidence_hash = excluded.evidence_hash,
-        template_snapshot_json = excluded.template_snapshot_json`,
+        template_snapshot_json = excluded.template_snapshot_json,
+        run_token = excluded.run_token
+        ${options.skipIfRunning ? "WHERE template_analysis.status <> 'running'" : ""}`,
     )
     .bind(
       id,
@@ -756,9 +831,11 @@ async function upsertAnalysis(db: D1Database, result: TemplateAnalysisResult, co
       errorMessage,
       result.templateHash ?? null,
       result.evidenceHash ?? null,
-      result.templateSnapshot ? JSON.stringify(result.templateSnapshot) : null,
+      snapshotJson,
+      options.runToken ?? null,
     )
     .run();
+  return (insertResult.meta?.changes ?? 1) > 0;
 }
 
 async function hydrateMarkdown(env: Pick<Env, "REPORT_LIBRARY_BUCKET">, analysis: TemplateAnalysisResult) {

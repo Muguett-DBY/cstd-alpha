@@ -99,10 +99,10 @@ describe("runFullTemplateChildrenCacheAware", () => {
 });
 
 describe("shouldStartFullAnalysis", () => {
-  test("does not duplicate a running full analysis unless forced", () => {
+  test("does not duplicate a running full analysis even when force refresh is requested", () => {
     expect(shouldStartFullAnalysis(null, false)).toBe(true);
     expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(false);
-    expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], true)).toBe(true);
+    expect(shouldStartFullAnalysis({ status: "running" } as Parameters<typeof shouldStartFullAnalysis>[0], true)).toBe(false);
     expect(shouldStartFullAnalysis({ status: "failed_retryable" } as Parameters<typeof shouldStartFullAnalysis>[0], false)).toBe(true);
   });
 });

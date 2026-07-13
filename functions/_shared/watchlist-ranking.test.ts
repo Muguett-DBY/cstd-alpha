@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { applyEvidenceCoverageCaps, evidenceCoverageSummary, normalizeGeneratedRanking, rankingCacheReusable, requestWatchlistRankingScore, sanitizeRankingNarrative } from "./watchlist-ranking";
+import { applyEvidenceCoverageCaps, evidenceCoverageSummary, hasRequiredRankingScores, normalizeGeneratedRanking, rankingCacheReusable, rankingRefreshAlreadyRunning, requestWatchlistRankingScore, sanitizeRankingNarrative } from "./watchlist-ranking";
 import type { EvidenceBundle } from "./providers";
 import type { WatchlistRow } from "./user-research-db";
 
@@ -25,6 +25,20 @@ describe("watchlist ranking score helpers", () => {
     expect(rankingCacheReusable({ status: "completed", evidence_hash: "hash-a" }, "hash-b", false)).toBe(false);
     expect(rankingCacheReusable({ status: "running", evidence_hash: "hash-a" }, "hash-a", false)).toBe(false);
     expect(rankingCacheReusable({ status: "completed", evidence_hash: "hash-a" }, "hash-a", true)).toBe(false);
+  });
+
+  test("recognizes active ranking runs independently from cache reuse", () => {
+    expect(rankingRefreshAlreadyRunning({ status: "running" })).toBe(true);
+    expect(rankingRefreshAlreadyRunning({ status: "running", updated_at: "2026-01-01T00:00:00.000Z" }, Date.parse("2026-01-01T00:21:00.000Z"))).toBe(false);
+    expect(rankingRefreshAlreadyRunning({ status: "completed" })).toBe(false);
+    expect(rankingRefreshAlreadyRunning(null)).toBe(false);
+  });
+
+  test("requires both ranking component scores before accepting a worker callback", () => {
+    expect(hasRequiredRankingScores({ companyQualityScore: 80, investmentAttractivenessScore: 65 })).toBe(true);
+    expect(hasRequiredRankingScores({ scores: { 质量: "80", 吸引力: 65 } })).toBe(true);
+    expect(hasRequiredRankingScores({ companyQualityScore: 80 })).toBe(false);
+    expect(hasRequiredRankingScores({ verdict: "观察", summary: "缺少核心分数。" })).toBe(false);
   });
 
   test("normalizes Chinese model field names instead of writing zero scores", () => {
@@ -308,6 +322,59 @@ describe("watchlist ranking score helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(ranking.companyQualityScore).toBeGreaterThan(0);
       expect(ranking.modelUsed).toBe("deepseek-v4-flash-free");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("falls through instead of fabricating scores when a model omits required components", async () => {
+    const response = (content: Record<string, unknown>) => new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ verdict: "观察", summary: "模型没有返回核心分数。" }))
+      .mockResolvedValueOnce(response({
+        companyQualityScore: 78,
+        investmentAttractivenessScore: 62,
+        verdict: "观察",
+        summary: "财务质量尚可，估值需要复核。",
+        keyPoints: ["E1 财报可用"],
+        riskFlags: ["估值需复核"],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const watchlist: WatchlistRow = {
+        id: "watch-1",
+        user_key: "admin",
+        company_name: "样本公司",
+        ticker: "000001",
+        market: "深A",
+        exchange_name: "深圳证券交易所",
+        listing_place: "深A",
+        market_type: "AStock",
+        source: "eastmoney",
+        report_library_id: null,
+        added_at: "2026-05-25T00:00:00.000Z",
+      };
+      const evidence: EvidenceBundle = {
+        retrievedAt: "2026-05-25T00:00:00.000Z",
+        company: { name: "样本公司", ticker: "000001", market: "深A" },
+        facts: {},
+        evidence: [{
+          title: "000001 Eastmoney financial statements",
+          source: "Eastmoney public financial statement endpoints",
+          freshness: "latest-public",
+          notes: "Normalized named financial metrics from Eastmoney statements.",
+        }],
+      };
+
+      const ranking = await requestWatchlistRankingScore({ OPENCODE_GO_API_KEY: "go-key" }, watchlist, evidence);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(ranking.companyQualityScore).not.toBe(50);
+      expect(ranking.investmentAttractivenessScore).not.toBe(40);
     } finally {
       vi.unstubAllGlobals();
     }

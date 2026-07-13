@@ -10,6 +10,7 @@ import {
 } from "../_shared/user-research-db";
 import {
   rankingCacheReusable,
+  rankingRefreshAlreadyRunning,
   writeWatchlistRankingFailure,
   writeWatchlistRankingRunning,
 } from "../_shared/watchlist-ranking";
@@ -70,21 +71,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const canRefreshEvidenceInline = forceRefresh && rows.length === 1;
   for (const row of rows) {
     try {
+      const existing = await readRankingRow(env.REPORT_LIBRARY_DB, session.userId, row.id);
+      if (rankingRefreshAlreadyRunning(existing)) {
+        reused.push(row.id);
+        continue;
+      }
       const evidenceEnv = { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET };
       const evidencePackage =
         canRefreshEvidenceInline
           ? await fetchAndStoreCompanyEvidence({ env: evidenceEnv, userId: session.userId, watchlist: row, signal: request.signal })
           : await getOrCreateCompanyEvidencePackage(evidenceEnv, session.userId, row, request.signal);
-      const existing = await readRankingRow(env.REPORT_LIBRARY_DB, session.userId, row.id);
       if (rankingCacheReusable(existing, evidencePackage.materialHash || evidencePackage.evidenceHash, forceRefresh)) {
         reused.push(row.id);
         continue;
       }
-      const jobId = await writeWatchlistRankingRunning(env.REPORT_LIBRARY_DB, session.userId, row, evidencePackage.materialHash || evidencePackage.evidenceHash);
+      const { jobId, runToken } = await writeWatchlistRankingRunning(env.REPORT_LIBRARY_DB, session.userId, row, evidencePackage.materialHash || evidencePackage.evidenceHash);
       queued.push(jobId);
       context.waitUntil(
-        dispatchWatchlistRankingWorkflow(env, jobId).catch(async (error) => {
-          await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB!, session.userId, row.id, error, evidencePackage.materialHash || evidencePackage.evidenceHash);
+        dispatchWatchlistRankingWorkflow(env, jobId, runToken).catch(async (error) => {
+          await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB!, session.userId, row.id, error, evidencePackage.materialHash || evidencePackage.evidenceHash, runToken);
         }),
       );
     } catch (error) {
@@ -98,7 +103,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   return json({ entries, queued, reused, failed }, queued.length ? 202 : 200);
 };
 
-async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
+async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string, runToken: string) {
   const token = env.GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN?.trim() || env.GITHUB_TEMPLATE_DISPATCH_TOKEN?.trim() || env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
   if (!token) throw new Error("missing GitHub watchlist ranking dispatch token");
   const repository = env.GITHUB_WATCHLIST_RANKING_REPOSITORY?.trim() || DEFAULT_REPOSITORY;
@@ -112,7 +117,7 @@ async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
       "user-agent": "CSTDAlphaWatchlistRanking/1.0",
       "x-github-api-version": "2022-11-28",
     },
-    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
+    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, run_token: runToken } }),
   });
   if (!response.ok) throw new Error(`GitHub watchlist ranking dispatch failed: ${response.status}`);
 }
@@ -141,7 +146,7 @@ async function readWatchlistRows(db: D1Database, userId: string, watchlistId?: s
 async function readRankingRows(db: D1Database, userId: string) {
   const result = await db
     .prepare(
-      `SELECT id, user_key, watchlist_id, company_name, ticker, market, status, model, company_quality_score, investment_attractiveness_score, overall_score, verdict, summary, content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message
+      `SELECT id, user_key, watchlist_id, company_name, ticker, market, status, model, company_quality_score, investment_attractiveness_score, overall_score, verdict, summary, content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message, run_token
        FROM watchlist_ranking_score
        WHERE user_key = ?1`,
     )
@@ -153,7 +158,7 @@ async function readRankingRows(db: D1Database, userId: string) {
 async function readRankingRow(db: D1Database, userId: string, watchlistId: string) {
   return db
     .prepare(
-      `SELECT id, user_key, watchlist_id, company_name, ticker, market, status, model, company_quality_score, investment_attractiveness_score, overall_score, verdict, summary, content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message
+      `SELECT id, user_key, watchlist_id, company_name, ticker, market, status, model, company_quality_score, investment_attractiveness_score, overall_score, verdict, summary, content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message, run_token
        FROM watchlist_ranking_score
        WHERE user_key = ?1 AND watchlist_id = ?2`,
     )

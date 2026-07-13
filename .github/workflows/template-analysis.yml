@@ -7,6 +7,10 @@ on:
         description: Template analysis job id created by the website
         required: true
         type: string
+      run_token:
+        description: Unique token for this template analysis attempt
+        required: true
+        type: string
 
 concurrency:
   group: template-analysis-${{ inputs.job_id }}
@@ -28,6 +32,7 @@ jobs:
       TEMPLATE_ANALYSIS_WORKER_URL: ${{ secrets.TEMPLATE_ANALYSIS_WORKER_URL }}
       TEMPLATE_ANALYSIS_WORKER_TOKEN: ${{ secrets.TEMPLATE_ANALYSIS_WORKER_TOKEN }}
       TEMPLATE_ANALYSIS_JOB_ID: ${{ inputs.job_id }}
+      TEMPLATE_ANALYSIS_RUN_TOKEN: ${{ inputs.run_token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -46,6 +51,7 @@ jobs:
       - name: Validate job id
         run: |
           node -e "const id=process.env.TEMPLATE_ANALYSIS_JOB_ID||''; if(!/^[a-f0-9]{64}$/i.test(id)){throw new Error('Invalid template analysis job id')}"
+          node -e "const token=process.env.TEMPLATE_ANALYSIS_RUN_TOKEN||''; if(!/^[a-f0-9-]{36}$/i.test(token)){throw new Error('Invalid template analysis run token')}"
 
       - name: Run DeepSeek template analysis
         run: npx tsx scripts/run_template_analysis_job.ts
