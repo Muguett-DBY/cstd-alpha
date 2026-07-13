@@ -9,9 +9,10 @@ import {
   requireUserSession,
   sha256,
   watchlistRowToItem,
+  type WatchlistRankingRow,
   type WatchlistRow,
 } from "../_shared/user-research-db";
-import { writeWatchlistRankingFailure, writeWatchlistRankingRunning } from "../_shared/watchlist-ranking";
+import { rankingRefreshAlreadyRunning, writeWatchlistRankingFailure, writeWatchlistRankingRunning } from "../_shared/watchlist-ranking";
 
 type Env = {
   AUTH_SECRET: string;
@@ -80,20 +81,29 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!row) return json({ error: "自选股保存失败。" }, 500);
   if (env.REPORT_LIBRARY_BUCKET) {
     context.waitUntil(
-      fetchAndStoreCompanyEvidence({
-        env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET },
-        userId: session.userId,
-        watchlist: row,
-        signal: request.signal,
-      })
-        .then(async (pkg) => {
-          const jobId = await writeWatchlistRankingRunning(env.REPORT_LIBRARY_DB!, session.userId, row, pkg.materialHash || pkg.evidenceHash);
-          await dispatchWatchlistRankingWorkflow(env, jobId);
-        })
-        .catch(async (error) => {
+      (async () => {
+        const existingRanking = await readWatchlistRankingRow(env.REPORT_LIBRARY_DB!, session.userId, row.id);
+        if (rankingRefreshAlreadyRunning(existingRanking)) return;
+        let pkg;
+        try {
+          pkg = await fetchAndStoreCompanyEvidence({
+            env: { REPORT_LIBRARY_DB: env.REPORT_LIBRARY_DB!, REPORT_LIBRARY_BUCKET: env.REPORT_LIBRARY_BUCKET! },
+            userId: session.userId,
+            watchlist: row,
+            signal: request.signal,
+          });
+        } catch (error) {
           await writeCompanyEvidenceFailure(env.REPORT_LIBRARY_DB!, session.userId, row, error);
-          await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB!, session.userId, row.id, error);
-        }),
+          return;
+        }
+        const evidenceHash = pkg.materialHash || pkg.evidenceHash;
+        const { jobId, runToken } = await writeWatchlistRankingRunning(env.REPORT_LIBRARY_DB!, session.userId, row, evidenceHash);
+        try {
+          await dispatchWatchlistRankingWorkflow(env, jobId, runToken);
+        } catch (error) {
+          await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB!, session.userId, row.id, error, evidenceHash, runToken);
+        }
+      })(),
     );
   }
   return json({ item: watchlistRowToItem(row), status });
@@ -121,7 +131,21 @@ async function readWatchlistRowBySymbol(db: D1Database, userKey: string, ticker:
     .first<WatchlistRow>();
 }
 
-async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
+async function readWatchlistRankingRow(db: D1Database, userKey: string, watchlistId: string) {
+  return db
+    .prepare(
+      `SELECT id, user_key, watchlist_id, company_name, ticker, market, status, model,
+              company_quality_score, investment_attractiveness_score, overall_score, verdict,
+              summary, content_json, evidence_hash, created_at, updated_at, started_at,
+              completed_at, error_message, run_token
+       FROM watchlist_ranking_score
+       WHERE user_key = ?1 AND watchlist_id = ?2`,
+    )
+    .bind(userKey, watchlistId)
+    .first<WatchlistRankingRow>();
+}
+
+async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string, runToken: string) {
   const token = env.GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN?.trim() || env.GITHUB_TEMPLATE_DISPATCH_TOKEN?.trim() || env.GITHUB_RADAR_DISPATCH_TOKEN?.trim();
   if (!token) throw new Error("missing GitHub watchlist ranking dispatch token");
   const repository = env.GITHUB_WATCHLIST_RANKING_REPOSITORY?.trim() || DEFAULT_REPOSITORY;
@@ -135,7 +159,7 @@ async function dispatchWatchlistRankingWorkflow(env: Env, jobId: string) {
       "user-agent": "CSTDAlphaWatchlist/1.0",
       "x-github-api-version": "2022-11-28",
     },
-    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
+    body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, run_token: runToken } }),
   });
   if (!response.ok) throw new Error(`GitHub watchlist ranking dispatch failed: ${response.status}`);
 }

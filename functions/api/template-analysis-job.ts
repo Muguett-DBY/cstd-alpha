@@ -11,6 +11,7 @@ import {
   fetchTemplateEvidence,
   fullAnalysisTemplate,
   normalizeGeneratedAnalysis,
+  StaleAnalysisRunError,
   templateEvidenceCacheHash,
   templateVersionHash,
   writeAnalysisFailure,
@@ -25,6 +26,7 @@ type Env = {
 
 type CompleteBody = {
   jobId?: string;
+  runToken?: string;
   generated?: unknown;
   markdown?: unknown;
   error?: unknown;
@@ -41,10 +43,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const jobId = url.searchParams.get("jobId")?.trim();
   if (!jobId) return json({ error: "缺少模板任务 ID。" }, 400);
+  const runToken = url.searchParams.get("runToken")?.trim();
+  if (!isValidRunToken(runToken)) return json({ error: "缺少模板任务运行令牌。" }, 400);
   const row = await readAnalysisRowById(env.REPORT_LIBRARY_DB, jobId);
   if (!row) return json({ error: "模板任务不存在。" }, 404);
   const analysis = analysisRowToResult(row);
-  if (analysis.status !== "running") return json({ error: "模板任务不是运行中状态。" }, 409);
+  if (analysis.status !== "running" || row.run_token !== runToken) return staleRunResponse();
 
   const watchlist = await readWatchlistRowForJob(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
@@ -62,6 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       "failed",
       row.started_at || row.updated_at,
       row.evidence_hash || undefined,
+      runToken,
     );
     return json({ cancelled: true, error: "模板已删除或未启用，后台任务已取消。", analysis: failed }, 410);
   }
@@ -96,8 +101,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as CompleteBody | null;
   const jobId = stringValue(body?.jobId);
   if (!jobId) return json({ error: "缺少模板任务 ID。" }, 400);
+  const runToken = stringValue(body?.runToken);
+  if (!isValidRunToken(runToken)) return json({ error: "缺少模板任务运行令牌。" }, 400);
   const row = await readAnalysisRowById(env.REPORT_LIBRARY_DB, jobId);
   if (!row) return json({ error: "模板任务不存在。" }, 404);
+  if (analysisRowToResult(row).status !== "running" || row.run_token !== runToken) return staleRunResponse();
   const watchlist = await readWatchlistRowForJob(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id);
   if (!watchlist) return json({ error: "自选股不存在。" }, 404);
   const templates = await readUserResearchTemplates(env.REPORT_LIBRARY_DB, row.user_key);
@@ -108,28 +116,73 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const evidenceHash = stringValue(body?.evidenceHash) || row.evidence_hash || undefined;
   const startedAt = row.started_at || row.updated_at || new Date().toISOString();
-  const childResults = Array.isArray(body?.childResults) ? body.childResults : [];
-  for (const child of childResults) {
-    const childTemplateId = stringValue(child.templateId);
-    const childTemplate = activeTemplates.find((item) => item.id === childTemplateId);
-    if (!childTemplate || !isRecord(child.generated)) continue;
-    const generated = normalizeCallbackGenerated(child.generated, childTemplate);
-    await persistGenerated(storageEnv, row.user_key, watchlist, childTemplate, generated, stringValue(child.markdown) || stringValue(child.generated.markdown) || generated.markdown, startedAt, stringValue(child.evidenceHash) || evidenceHash);
-  }
-
   const error = stringValue(body?.error);
-  if (error) {
-    const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, error, "failed_retryable", startedAt, evidenceHash);
-    return json({ analysis: failed });
+  if (!error && !isPlainRecord(body?.generated)) return json({ error: "缺少模板生成结果。" }, 400);
+  const finalizingToken = await claimTemplateRun(env.REPORT_LIBRARY_DB, jobId, runToken);
+  if (!finalizingToken) return staleRunResponse();
+
+  try {
+    if (error) {
+      const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, error, "failed_retryable", startedAt, evidenceHash, finalizingToken);
+      return json({ analysis: failed });
+    }
+    if (resolved.stale) {
+      const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, "模板已删除或未启用，后台任务已取消。", "failed", startedAt, evidenceHash, finalizingToken);
+      return json({ cancelled: true, analysis: failed });
+    }
+    const childResults = Array.isArray(body?.childResults) ? body.childResults.slice(0, activeTemplates.length) : [];
+    for (const child of childResults) {
+      const childTemplateId = stringValue(child.templateId);
+      const childTemplate = activeTemplates.find((item) => item.id === childTemplateId);
+      if (!childTemplate || !isPlainRecord(child.generated)) continue;
+      const generated = normalizeCallbackGenerated(child.generated, childTemplate);
+      await persistGenerated(
+        storageEnv,
+        row.user_key,
+        watchlist,
+        childTemplate,
+        generated,
+        stringValue(child.markdown) || stringValue(child.generated.markdown) || generated.markdown,
+        startedAt,
+        stringValue(child.evidenceHash) || evidenceHash,
+        runToken,
+        { skipIfRunning: true },
+      );
+    }
+
+    const generated = normalizeCallbackGenerated(body!.generated as Record<string, unknown>, template);
+    const analysis = await persistGenerated(
+      storageEnv,
+      row.user_key,
+      watchlist,
+      template,
+      generated,
+      stringValue(body?.markdown) || stringValue((body?.generated as Record<string, unknown>).markdown) || generated.markdown,
+      startedAt,
+      evidenceHash,
+      runToken,
+      { expectedRunToken: finalizingToken },
+    );
+    return json({ analysis });
+  } catch (callbackError) {
+    if (callbackError instanceof StaleAnalysisRunError) return staleRunResponse();
+    try {
+      const failed = await writeAnalysisFailure(
+        env.REPORT_LIBRARY_DB,
+        row.user_key,
+        watchlist,
+        template,
+        callbackError instanceof Error ? callbackError.message : "模板后台结果保存失败。",
+        "failed_retryable",
+        startedAt,
+        evidenceHash,
+        finalizingToken,
+      );
+      return json({ analysis: failed });
+    } catch (writeError) {
+      return writeError instanceof StaleAnalysisRunError ? staleRunResponse() : json({ error: "模板后台结果保存失败。" }, 500);
+    }
   }
-  if (resolved.stale) {
-    const failed = await writeAnalysisFailure(env.REPORT_LIBRARY_DB, row.user_key, watchlist, template, "模板已删除或未启用，后台任务已取消。", "failed", startedAt, evidenceHash);
-    return json({ cancelled: true, analysis: failed });
-  }
-  if (!isRecord(body?.generated)) return json({ error: "缺少模板生成结果。" }, 400);
-  const generated = normalizeCallbackGenerated(body.generated, template);
-  const analysis = await persistGenerated(storageEnv, row.user_key, watchlist, template, generated, stringValue(body.markdown) || stringValue(body.generated.markdown) || generated.markdown, startedAt, evidenceHash);
-  return json({ analysis });
 };
 
 function normalizeCallbackGenerated(value: Record<string, unknown>, template: ResearchTemplate): ReturnType<typeof normalizeGeneratedAnalysis> & { modelUsed?: string } {
@@ -147,15 +200,18 @@ async function persistGenerated(
   markdown: string,
   startedAt: string,
   evidenceHash?: string,
+  runToken?: string,
+  writeOptions: { expectedRunToken?: string; skipIfRunning?: boolean } = {},
 ) {
   const templateHash = await templateVersionHash(template);
-  const objectKey = `user-research/v1/${userId}/${watchlist.id}/${template.id}-${templateHash.slice(0, 12)}.md`;
+  const runSuffix = runToken ? `-${runToken.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 48)}` : "";
+  const objectKey = `user-research/v1/${userId}/${watchlist.id}/${template.id}-${templateHash.slice(0, 12)}${runSuffix}.md`;
   const completedAt = new Date().toISOString();
   await env.REPORT_LIBRARY_BUCKET.put(objectKey, markdown, {
     httpMetadata: { contentType: "text/markdown; charset=utf-8" },
     customMetadata: { templateId: template.id, templateHash, ticker: watchlist.ticker },
   });
-  return writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, { ...generated, markdown }, objectKey, startedAt, completedAt, evidenceHash);
+  return writeCompletedAnalysis(env.REPORT_LIBRARY_DB, userId, watchlist, template, { ...generated, markdown }, objectKey, startedAt, completedAt, evidenceHash, writeOptions);
 }
 
 function resolveTemplateForJob(row: AnalysisRow, activeTemplates: ResearchTemplate[], snapshot?: ResearchTemplate) {
@@ -196,7 +252,7 @@ async function readCompletedChildren(env: Env, userId: string, watchlistId: stri
 async function readAnalysisRowById(db: D1Database, id: string) {
   return db
     .prepare(
-      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json
+      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json, run_token
        FROM template_analysis
        WHERE id = ?1`,
     )
@@ -207,7 +263,7 @@ async function readAnalysisRowById(db: D1Database, id: string) {
 async function readAnalysisByWatchlistTemplate(db: D1Database, userId: string, watchlistId: string, templateId: string) {
   return db
     .prepare(
-      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json
+      `SELECT id, user_id, user_key, watchlist_id, template_id, template_title, company_name, ticker, market, model, status, title, score, verdict, summary, content_json, object_key, created_at, updated_at, started_at, completed_at, error_message, template_hash, evidence_hash, template_snapshot_json, run_token
        FROM template_analysis
        WHERE user_key = ?1 AND watchlist_id = ?2 AND template_id = ?3`,
     )
@@ -237,6 +293,28 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidRunToken(value: string | null | undefined): value is string {
+  return Boolean(value && value.length <= 100);
+}
+
+async function claimTemplateRun(db: D1Database, jobId: string, runToken: string) {
+  const finalizingToken = `finalizing:${runToken}`;
+  const now = new Date().toISOString();
+  const result = await db
+    .prepare(
+      `UPDATE template_analysis
+       SET run_token = ?1, updated_at = ?2
+       WHERE id = ?3 AND status = 'running' AND run_token = ?4`,
+    )
+    .bind(finalizingToken, now, jobId, runToken)
+    .run();
+  return (result.meta?.changes ?? 1) > 0 ? finalizingToken : null;
+}
+
+function staleRunResponse() {
+  return json({ error: "模板任务运行已更新，本次回调已忽略。" }, 409);
 }

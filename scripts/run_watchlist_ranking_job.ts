@@ -12,13 +12,15 @@ type JobPayload = {
 const endpoint = process.env.WATCHLIST_RANKING_WORKER_URL || "https://alpha.custard.top/api/watchlist-ranking-job";
 const token = process.env.WATCHLIST_RANKING_WORKER_TOKEN || process.env.TEMPLATE_ANALYSIS_WORKER_TOKEN;
 const jobId = process.env.WATCHLIST_RANKING_JOB_ID || process.argv.find((arg) => arg.startsWith("--job-id="))?.slice("--job-id=".length);
+const runToken = process.env.WATCHLIST_RANKING_RUN_TOKEN || process.argv.find((arg) => arg.startsWith("--run-token="))?.slice("--run-token=".length);
 
-export async function runWatchlistRankingJob(input: { endpoint: string; token?: string; jobId?: string }) {
+export async function runWatchlistRankingJob(input: { endpoint: string; token?: string; jobId?: string; runToken?: string }) {
   if (!input.token) throw new Error("WATCHLIST_RANKING_WORKER_TOKEN or TEMPLATE_ANALYSIS_WORKER_TOKEN is required.");
   if (!input.jobId) throw new Error("WATCHLIST_RANKING_JOB_ID or --job-id is required.");
+  if (!input.runToken) throw new Error("WATCHLIST_RANKING_RUN_TOKEN or --run-token is required.");
   let payload: JobPayload;
   try {
-    payload = await readJob(input.jobId, input);
+    payload = await readJob(input.jobId, input.runToken, input);
   } catch (error) {
     if (error instanceof StaleWatchlistRankingJobError) {
       console.warn(error.message);
@@ -35,10 +37,10 @@ export async function runWatchlistRankingJob(input: { endpoint: string; token?: 
       payload.watchlist,
       payload.evidence,
     );
-    const completed = await completeJob({ jobId: input.jobId, generated, evidenceHash: payload.evidenceHash }, input);
+    const completed = await completeJob({ jobId: input.jobId, runToken: input.runToken, generated, evidenceHash: payload.evidenceHash }, input);
     if (completed.stale) console.warn(`Watchlist ranking job skipped: ${completed.message}`);
   } catch (error) {
-    const completed = await completeJob({ jobId: input.jobId, error: error instanceof Error ? error.message : "自选排行评分失败。", evidenceHash: payload.evidenceHash }, input);
+    const completed = await completeJob({ jobId: input.jobId, runToken: input.runToken, error: error instanceof Error ? error.message : "自选排行评分失败。", evidenceHash: payload.evidenceHash }, input);
     if (completed.stale) {
       console.warn(`Watchlist ranking job skipped: ${completed.message}`);
       return;
@@ -47,11 +49,11 @@ export async function runWatchlistRankingJob(input: { endpoint: string; token?: 
   }
 }
 
-export async function readJob(id: string, options: { endpoint: string; token?: string }): Promise<JobPayload> {
-  const response = await fetch(`${options.endpoint}?jobId=${encodeURIComponent(id)}`, {
+export async function readJob(id: string, runToken: string, options: { endpoint: string; token?: string }): Promise<JobPayload> {
+  const response = await fetch(`${options.endpoint}?jobId=${encodeURIComponent(id)}&runToken=${encodeURIComponent(runToken)}`, {
     headers: { authorization: `Bearer ${options.token}` },
   });
-  if (response.status === 404) throw new StaleWatchlistRankingJobError((await response.text()).slice(0, 500));
+  if (response.status === 404 || response.status === 409) throw new StaleWatchlistRankingJobError((await response.text()).slice(0, 500));
   if (!response.ok) throw new Error(`Watchlist ranking job read failed: ${response.status} ${(await response.text()).slice(0, 500)}`);
   return (await response.json()) as JobPayload;
 }
@@ -62,9 +64,9 @@ export async function completeJob(body: Record<string, unknown>, options: { endp
     headers: { authorization: `Bearer ${options.token}`, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (response.status === 404) {
+  if (response.status === 404 || response.status === 409) {
     const text = (await response.text()).slice(0, 500);
-    if (text.includes("自选股不存在") || text.includes("not found")) return { stale: true, message: text };
+    if (response.status === 409 || text.includes("自选股不存在") || text.includes("not found")) return { stale: true, message: text };
     throw new Error(`Watchlist ranking completion failed: ${response.status} ${text}`);
   }
   if (!response.ok) throw new Error(`Watchlist ranking completion failed: ${response.status} ${(await response.text()).slice(0, 500)}`);
@@ -83,4 +85,4 @@ function isCliEntry() {
   return Boolean(entry && import.meta.url.endsWith(entry.split("/").pop() ?? ""));
 }
 
-if (isCliEntry()) await runWatchlistRankingJob({ endpoint, token, jobId });
+if (isCliEntry()) await runWatchlistRankingJob({ endpoint, token, jobId, runToken });

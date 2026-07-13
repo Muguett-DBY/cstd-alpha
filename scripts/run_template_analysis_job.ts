@@ -18,11 +18,13 @@ type GeneratedResult = Awaited<ReturnType<typeof requestTemplateReport>>;
 const endpoint = process.env.TEMPLATE_ANALYSIS_WORKER_URL || "https://alpha.custard.top/api/template-analysis-job";
 const token = process.env.TEMPLATE_ANALYSIS_WORKER_TOKEN;
 const jobId = process.env.TEMPLATE_ANALYSIS_JOB_ID || process.argv.find((arg) => arg.startsWith("--job-id="))?.slice("--job-id=".length);
+const runToken = process.env.TEMPLATE_ANALYSIS_RUN_TOKEN || process.argv.find((arg) => arg.startsWith("--run-token="))?.slice("--run-token=".length);
 
 if (!token) throw new Error("TEMPLATE_ANALYSIS_WORKER_TOKEN is required.");
 if (!jobId) throw new Error("TEMPLATE_ANALYSIS_JOB_ID or --job-id is required.");
+if (!runToken) throw new Error("TEMPLATE_ANALYSIS_RUN_TOKEN or --run-token is required.");
 
-const payload = await readJob(jobId);
+const payload = await readJob(jobId, runToken);
 if (!payload) process.exit(0);
 try {
   const childResults: Array<{ templateId: string; generated: GeneratedResult; markdown: string; evidenceHash?: string }> = [];
@@ -65,14 +67,14 @@ try {
   }
 
   const generated = await requestTemplateReport(modelEnv(), payload.watchlist, payload.evidence, payload.template, children);
-  await completeJob({ jobId, generated, markdown: generated.markdown, evidenceHash: payload.evidenceHash, childResults });
+  await completeJob({ jobId, runToken, generated, markdown: generated.markdown, evidenceHash: payload.evidenceHash, childResults });
 } catch (error) {
-  await completeJob({ jobId, error: error instanceof Error ? error.message : "模板后台分析失败。", evidenceHash: payload.evidenceHash });
-  throw error;
+  const applied = await completeJob({ jobId, runToken, error: error instanceof Error ? error.message : "模板后台分析失败。", evidenceHash: payload.evidenceHash });
+  if (applied) throw error;
 }
 
-async function readJob(id: string): Promise<JobPayload | null> {
-  const response = await fetch(`${endpoint}?jobId=${encodeURIComponent(id)}`, {
+async function readJob(id: string, currentRunToken: string): Promise<JobPayload | null> {
+  const response = await fetch(`${endpoint}?jobId=${encodeURIComponent(id)}&runToken=${encodeURIComponent(currentRunToken)}`, {
     headers: { authorization: `Bearer ${token}` },
   });
   if (response.status === 410) {
@@ -89,11 +91,8 @@ async function readJob(id: string): Promise<JobPayload | null> {
   }
   if (response.status === 409) {
     const text = (await response.text()).slice(0, 500);
-    if (/不是运行中状态|not running/i.test(text)) {
-      console.log(`Template job ${id} is no longer running and will be skipped: ${text}`);
-      return null;
-    }
-    throw new Error(`Template job read failed: ${response.status} ${text}`);
+    console.log(`Template job ${id} is no longer current and will be skipped: ${text}`);
+    return null;
   }
   if (!response.ok) throw new Error(`Template job read failed: ${response.status} ${(await response.text()).slice(0, 500)}`);
   return (await response.json()) as JobPayload;
@@ -105,7 +104,12 @@ async function completeJob(body: Record<string, unknown>) {
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (response.status === 409) {
+    console.log(`Template job completion was superseded and will be skipped: ${(await response.text()).slice(0, 500)}`);
+    return false;
+  }
   if (!response.ok) throw new Error(`Template job completion failed: ${response.status} ${(await response.text()).slice(0, 500)}`);
+  return true;
 }
 
 function modelEnv() {

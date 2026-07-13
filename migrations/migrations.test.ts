@@ -90,6 +90,16 @@ describe("D1 migrations", () => {
     for (const column of ["company_quality_score", "investment_attractiveness_score", "overall_score", "model", "updated_at"]) expect(columns).toContain(column);
   });
 
+  test("job run token migration protects both asynchronous result tables", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(readMigration("0002_user_research.sql"));
+    db.exec(readMigration("0008_watchlist_ranking_score.sql"));
+
+    expect(() => db.exec(readMigration("0018_job_run_tokens.sql"))).not.toThrow();
+    expect(tableColumns(db, "template_analysis")).toContain("run_token");
+    expect(tableColumns(db, "watchlist_ranking_score")).toContain("run_token");
+  });
+
   test("assistant migration stores chat, memory, tools, and usage history", () => {
     const db = new DatabaseSync(":memory:");
     expect(() => db.exec(readMigration("0008_assistant.sql"))).not.toThrow();

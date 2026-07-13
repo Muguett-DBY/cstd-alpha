@@ -7,6 +7,10 @@ on:
         description: Watchlist ranking job id created by the website
         required: true
         type: string
+      run_token:
+        description: Unique token for this ranking attempt
+        required: true
+        type: string
 
 concurrency:
   group: watchlist-ranking-${{ inputs.job_id }}
@@ -26,6 +30,7 @@ jobs:
       WATCHLIST_RANKING_WORKER_URL: ${{ secrets.WATCHLIST_RANKING_WORKER_URL }}
       WATCHLIST_RANKING_WORKER_TOKEN: ${{ secrets.WATCHLIST_RANKING_WORKER_TOKEN || secrets.TEMPLATE_ANALYSIS_WORKER_TOKEN }}
       WATCHLIST_RANKING_JOB_ID: ${{ inputs.job_id }}
+      WATCHLIST_RANKING_RUN_TOKEN: ${{ inputs.run_token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -44,6 +49,7 @@ jobs:
       - name: Validate job id
         run: |
           node -e "const id=process.env.WATCHLIST_RANKING_JOB_ID||''; if(!/^[a-f0-9]{64}$/i.test(id)){throw new Error('Invalid watchlist ranking job id')}"
+          node -e "const token=process.env.WATCHLIST_RANKING_RUN_TOKEN||''; if(!/^[a-f0-9-]{36}$/i.test(token)){throw new Error('Invalid watchlist ranking run token')}"
 
       - name: Run DeepSeek watchlist ranking score
         run: npx tsx scripts/run_watchlist_ranking_job.ts

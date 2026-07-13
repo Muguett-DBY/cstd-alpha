@@ -30,11 +30,12 @@ describe("worker job callback payload validation", () => {
     expect(db.sqls.some((sql) => /FROM watchlist_ranking_score/i.test(sql))).toBe(false);
   });
 
-  test("normalizes malformed watchlist ranking scores before completion writes", async () => {
+  test("rejects watchlist ranking callbacks that omit the required component scores", async () => {
     const db = watchlistRankingCompletionDb();
 
     const response = await onWatchlistRankingJobPost(context("https://alpha.custard.top/api/watchlist-ranking-job", db.db, {
       jobId: "ranking-job-1",
+      runToken: "current-run-token",
       generated: {
         companyQualityScore: "bad",
         investmentAttractivenessScore: { score: 70 },
@@ -45,13 +46,11 @@ describe("worker job callback payload validation", () => {
         riskFlags: [{ risk: "missing" }],
       },
     }));
-    const body = await response.json() as { ok?: boolean };
+    const body = await response.json() as { error?: string };
 
-    expect(response.status).toBe(200);
-    expect(body.ok).toBe(true);
-    const completionBind = db.binds.find((item) => /INSERT INTO watchlist_ranking_score/i.test(item.sql));
-    expect(completionBind?.args.slice(7, 10)).toEqual([50, 40, 45.5]);
-    expect(completionBind?.args.some((arg) => typeof arg === "number" && Number.isNaN(arg))).toBe(false);
+    expect(response.status).toBe(422);
+    expect(body.error).toBe("自选排行评分结果缺少有效的公司质量分或投资吸引力分。");
+    expect(db.sqls.some((sql) => /SET status = 'completed'/i.test(sql))).toBe(false);
   });
 
   test("rejects malformed template analysis generated payloads before report writes", async () => {
@@ -59,6 +58,7 @@ describe("worker job callback payload validation", () => {
 
     const response = await onTemplateAnalysisJobPost(context("https://alpha.custard.top/api/template-analysis-job", db.db, {
       jobId: "template-job-1",
+      runToken: "current-run-token",
       generated: "not-an-object",
     }));
     const body = await response.json() as { error?: string };
@@ -67,9 +67,105 @@ describe("worker job callback payload validation", () => {
     expect(body.error).toBe("缺少模板生成结果。");
     expect(db.sqls.some((sql) => /INSERT INTO template_analysis/i.test(sql))).toBe(false);
   });
+
+  test("rejects a stale watchlist ranking run token before any completion write", async () => {
+    const db = watchlistRankingCompletionDb();
+
+    const response = await onWatchlistRankingJobPost(context("https://alpha.custard.top/api/watchlist-ranking-job", db.db, {
+      jobId: "ranking-job-1",
+      runToken: "stale-run-token",
+      generated: {
+        companyQualityScore: 80,
+        investmentAttractivenessScore: 65,
+        verdict: "观察",
+        summary: "质量较好，估值仍需复核。",
+      },
+    }));
+
+    expect(response.status).toBe(409);
+    expect(db.sqls.some((sql) => /SET status = 'completed'/i.test(sql))).toBe(false);
+  });
+
+  test("rejects a stale template analysis run token before writing report objects", async () => {
+    const template = RESEARCH_TEMPLATES[0];
+    const db = templateAnalysisCompletionDb(template);
+    const bucketPut = vi.fn(async () => undefined);
+
+    const response = await onTemplateAnalysisJobPost(context("https://alpha.custard.top/api/template-analysis-job", db.db, {
+      jobId: "template-job-1",
+      runToken: "stale-run-token",
+      generated: {
+        title: "贵州茅台模板分析",
+        score: 80,
+        verdict: "观察",
+        summary: "证据完整。",
+        keyPoints: ["盈利质量稳定"],
+        riskFlags: ["估值需复核"],
+        followUps: ["跟踪最新财报"],
+        sections: [],
+        markdown: "# 贵州茅台模板分析",
+      },
+    }, bucketPut));
+
+    expect(response.status).toBe(409);
+    expect(bucketPut).not.toHaveBeenCalled();
+    expect(db.sqls.some((sql) => /INSERT INTO template_analysis/i.test(sql))).toBe(false);
+  });
+
+  test("claims and completes the current watchlist ranking run atomically", async () => {
+    const db = watchlistRankingCompletionDb();
+
+    const response = await onWatchlistRankingJobPost(context("https://alpha.custard.top/api/watchlist-ranking-job", db.db, {
+      jobId: "ranking-job-1",
+      runToken: "current-run-token",
+      generated: {
+        companyQualityScore: 80,
+        investmentAttractivenessScore: 65,
+        verdict: "观察",
+        summary: "质量较好，估值仍需复核。",
+        keyPoints: ["盈利质量稳定"],
+        riskFlags: ["估值需复核"],
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    const rankingClaim = db.binds.find((item) => /SET run_token = \?1/i.test(item.sql))?.args;
+    expect(rankingClaim?.[0]).toBe("finalizing:current-run-token");
+    expect(rankingClaim?.slice(-2)).toEqual(["ranking-job-1", "current-run-token"]);
+    expect(db.binds.find((item) => /SET status = 'completed'/i.test(item.sql))?.args.at(-1)).toBe("finalizing:current-run-token");
+  });
+
+  test("claims and completes the current template analysis run with an attempt-scoped object", async () => {
+    const template = RESEARCH_TEMPLATES[0];
+    const db = templateAnalysisCompletionDb(template);
+    const bucketPut = vi.fn(async () => undefined);
+
+    const response = await onTemplateAnalysisJobPost(context("https://alpha.custard.top/api/template-analysis-job", db.db, {
+      jobId: "template-job-1",
+      runToken: "current-run-token",
+      generated: {
+        title: "贵州茅台模板分析",
+        score: 80,
+        verdict: "观察",
+        summary: "证据完整。",
+        keyPoints: ["盈利质量稳定"],
+        riskFlags: ["估值需复核"],
+        followUps: ["跟踪最新财报"],
+        sections: [],
+        markdown: "# 贵州茅台模板分析",
+      },
+    }, bucketPut));
+
+    expect(response.status).toBe(200);
+    expect(bucketPut.mock.calls[0]?.[0]).toContain("current-run-token.md");
+    const templateClaim = db.binds.find((item) => /SET run_token = \?1/i.test(item.sql))?.args;
+    expect(templateClaim?.[0]).toBe("finalizing:current-run-token");
+    expect(templateClaim?.slice(-2)).toEqual(["template-job-1", "current-run-token"]);
+    expect(db.binds.find((item) => /SET model = \?1, status = \?2/i.test(item.sql))?.args.at(-1)).toBe("finalizing:current-run-token");
+  });
 });
 
-function context(url: string, db: D1Database, body: unknown) {
+function context(url: string, db: D1Database, body: unknown, bucketPut = vi.fn(async () => undefined)) {
   return {
     request: new Request(url, {
       method: "POST",
@@ -83,7 +179,7 @@ function context(url: string, db: D1Database, body: unknown) {
       TEMPLATE_ANALYSIS_WORKER_TOKEN: "worker-token",
       WATCHLIST_RANKING_WORKER_TOKEN: "worker-token",
       REPORT_LIBRARY_DB: db,
-      REPORT_LIBRARY_BUCKET: {} as R2Bucket,
+      REPORT_LIBRARY_BUCKET: { put: bucketPut } as unknown as R2Bucket,
     },
   } as unknown as Parameters<typeof onTemplateAnalysisJobPost>[0] & Parameters<typeof onWatchlistRankingJobPost>[0];
 }
@@ -153,6 +249,7 @@ function watchlistRankingCompletionDb() {
             started_at: "2026-07-01T00:00:00.000Z",
             completed_at: null,
             error_message: null,
+            run_token: "current-run-token",
           } as T;
         }
         if (/FROM user_watchlist/i.test(sql)) {
@@ -191,10 +288,13 @@ function watchlistRankingCompletionDb() {
 
 function templateAnalysisCompletionDb(template: ResearchTemplate) {
   const sqls: string[] = [];
+  const binds: Array<{ sql: string; args: unknown[] }> = [];
+  const now = new Date().toISOString();
   const prepare = vi.fn((sql: string) => {
     sqls.push(sql);
     const statement = {
-      bind() {
+      bind(...args: unknown[]) {
+        binds.push({ sql, args });
         return statement;
       },
       async run() {
@@ -220,14 +320,15 @@ function templateAnalysisCompletionDb(template: ResearchTemplate) {
             summary: "模板深度报告正在生成。",
             content_json: "{}",
             object_key: null,
-            created_at: "2026-07-01T00:00:00.000Z",
-            updated_at: "2026-07-01T00:00:00.000Z",
-            started_at: "2026-07-01T00:00:00.000Z",
+            created_at: now,
+            updated_at: now,
+            started_at: now,
             completed_at: null,
             error_message: null,
             template_hash: "template-hash",
             evidence_hash: "evidence-a",
             template_snapshot_json: JSON.stringify(template),
+            run_token: "current-run-token",
           } as T;
         }
         if (/FROM user_watchlist/i.test(sql)) {
@@ -263,6 +364,7 @@ function templateAnalysisCompletionDb(template: ResearchTemplate) {
       batch: vi.fn(async () => []),
     } as unknown as D1Database,
     sqls,
+    binds,
   };
 }
 

@@ -1,6 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import type { EvidenceBundle } from "./providers";
-import { sha256, type WatchlistRankingRow, type WatchlistRow } from "./user-research-db";
+import { sha256, STALE_RUNNING_MS, type WatchlistRankingRow, type WatchlistRow } from "./user-research-db";
 import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "./opencode-go";
 
 const WATCHLIST_RANKING_SCHEMA_VERSION = "v1";
@@ -29,14 +29,16 @@ export async function watchlistRankingJobId(userId: string, watchlistId: string)
 export async function writeWatchlistRankingRunning(db: D1Database, userId: string, watchlist: WatchlistRow, evidenceHash?: string) {
   const now = new Date().toISOString();
   const id = await watchlistRankingJobId(userId, watchlist.id);
+  const runToken = crypto.randomUUID();
   await db
     .prepare(
       `INSERT INTO watchlist_ranking_score (
         id, user_key, watchlist_id, company_name, ticker, market, status, model,
         company_quality_score, investment_attractiveness_score, overall_score, verdict, summary,
-        content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', 'deepseek-v4-flash', NULL, NULL, NULL, '评分中', '后台正在基于公司证据包重新评分。', ?7, ?8, ?9, ?9, ?9, NULL, NULL)
+        content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message, run_token
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', 'deepseek-v4-flash', NULL, NULL, NULL, '评分中', '后台正在基于公司证据包重新评分。', ?7, ?8, ?9, ?9, ?9, NULL, NULL, ?10)
       ON CONFLICT(user_key, watchlist_id) DO UPDATE SET
+        id = excluded.id,
         status = 'running',
         model = 'deepseek-v4-flash',
         verdict = '评分中',
@@ -46,57 +48,43 @@ export async function writeWatchlistRankingRunning(db: D1Database, userId: strin
         updated_at = excluded.updated_at,
         started_at = excluded.started_at,
         completed_at = NULL,
-        error_message = NULL`,
+        error_message = NULL,
+        run_token = excluded.run_token`,
     )
-    .bind(id, userId, watchlist.id, watchlist.company_name, watchlist.ticker, watchlist.market, JSON.stringify({ keyPoints: [], riskFlags: [] }), evidenceHash ?? null, now)
+    .bind(id, userId, watchlist.id, watchlist.company_name, watchlist.ticker, watchlist.market, JSON.stringify({ keyPoints: [], riskFlags: [] }), evidenceHash ?? null, now, runToken)
     .run();
-  return id;
+  return { jobId: id, runToken };
 }
 
-export async function writeWatchlistRankingFailure(db: D1Database, userId: string, watchlistId: string, error: unknown, evidenceHash?: string) {
+export async function writeWatchlistRankingFailure(db: D1Database, userId: string, watchlistId: string, error: unknown, evidenceHash: string | undefined, expectedRunToken: string) {
   const now = new Date().toISOString();
   const id = await watchlistRankingJobId(userId, watchlistId);
-  await db
+  const result = await db
     .prepare(
       `UPDATE watchlist_ranking_score
-       SET status = 'failed_retryable', updated_at = ?1, error_message = ?2, evidence_hash = COALESCE(?3, evidence_hash)
-       WHERE user_key = ?4 AND id = ?5`,
+       SET status = 'failed_retryable', updated_at = ?1, completed_at = ?1, error_message = ?2,
+           evidence_hash = COALESCE(?3, evidence_hash), run_token = NULL
+       WHERE user_key = ?4 AND id = ?5 AND status = 'running' AND run_token = ?6`,
     )
-    .bind(now, error instanceof Error ? error.message : String(error ?? "自选评分失败。"), evidenceHash ?? null, userId, id)
+    .bind(now, error instanceof Error ? error.message : String(error ?? "自选评分失败。"), evidenceHash ?? null, userId, id, expectedRunToken)
     .run();
+  return statementChanged(result);
 }
 
-export async function writeCompletedWatchlistRanking(db: D1Database, userId: string, watchlist: WatchlistRow, generated: GeneratedWatchlistRanking, evidenceHash?: string) {
+export async function writeCompletedWatchlistRanking(db: D1Database, userId: string, watchlist: WatchlistRow, generated: GeneratedWatchlistRanking, evidenceHash: string | undefined, expectedRunToken: string) {
   const now = new Date().toISOString();
   const id = await watchlistRankingJobId(userId, watchlist.id);
-  await db
+  const result = await db
     .prepare(
-      `INSERT INTO watchlist_ranking_score (
-        id, user_key, watchlist_id, company_name, ticker, market, status, model,
-        company_quality_score, investment_attractiveness_score, overall_score, verdict, summary,
-        content_json, evidence_hash, created_at, updated_at, started_at, completed_at, error_message
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'completed', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, COALESCE((SELECT started_at FROM watchlist_ranking_score WHERE user_key = ?2 AND watchlist_id = ?3), ?15), ?15, NULL)
-      ON CONFLICT(user_key, watchlist_id) DO UPDATE SET
-        status = 'completed',
-        model = excluded.model,
-        company_quality_score = excluded.company_quality_score,
-        investment_attractiveness_score = excluded.investment_attractiveness_score,
-        overall_score = excluded.overall_score,
-        verdict = excluded.verdict,
-        summary = excluded.summary,
-        content_json = excluded.content_json,
-        evidence_hash = excluded.evidence_hash,
-        updated_at = excluded.updated_at,
-        completed_at = excluded.completed_at,
-        error_message = NULL`,
+      `UPDATE watchlist_ranking_score
+       SET status = 'completed', model = ?1, company_quality_score = ?2,
+           investment_attractiveness_score = ?3, overall_score = ?4, verdict = ?5,
+           summary = ?6, content_json = ?7, evidence_hash = ?8, updated_at = ?9,
+           completed_at = ?9, error_message = NULL, run_token = NULL
+       WHERE id = ?10 AND user_key = ?11 AND watchlist_id = ?12
+         AND status = 'running' AND run_token = ?13`,
     )
     .bind(
-      id,
-      userId,
-      watchlist.id,
-      watchlist.company_name,
-      watchlist.ticker,
-      watchlist.market,
       generated.modelUsed || "deepseek-v4-flash",
       clampScore(generated.companyQualityScore),
       clampScore(generated.investmentAttractivenessScore),
@@ -106,9 +94,13 @@ export async function writeCompletedWatchlistRanking(db: D1Database, userId: str
       JSON.stringify({ keyPoints: generated.keyPoints.slice(0, 8), riskFlags: generated.riskFlags.slice(0, 8) }),
       evidenceHash ?? null,
       now,
+      id,
+      userId,
+      watchlist.id,
+      expectedRunToken,
     )
     .run();
-  return id;
+  return statementChanged(result);
 }
 
 export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, watchlist: WatchlistRow, evidence: EvidenceBundle): Promise<GeneratedWatchlistRanking> {
@@ -139,12 +131,18 @@ export async function requestWatchlistRankingScore(env: WatchlistRankingEnv, wat
       lastError = new Error(`${route.model} 未返回自选排行评分。`);
       continue;
     }
+    let generated: unknown;
     try {
-      return applyEvidenceCoverageCaps({ ...normalizeGeneratedRanking(JSON.parse(jsonrepair(content))), modelUsed: route.model }, coverage);
+      generated = JSON.parse(jsonrepair(content));
     } catch (error) {
       lastError = new Error(`${route.model} 返回的自选排行内容不是可解析 JSON。`, { cause: error });
       continue;
     }
+    if (!hasRequiredRankingScores(generated)) {
+      lastError = new Error(`${route.model} 返回的自选排行缺少公司质量分或投资吸引力分。`);
+      continue;
+    }
+    return applyEvidenceCoverageCaps({ ...normalizeGeneratedRanking(generated), modelUsed: route.model }, coverage);
   }
   throw lastError instanceof Error ? lastError : new Error("DeepSeek 未返回自选排行评分。");
 }
@@ -214,25 +212,35 @@ function buildWatchlistRankingBody(route: DeepSeekFallbackRoute, watchlist: Watc
   };
 }
 
+const COMPANY_QUALITY_SCORE_KEYS = ["companyQualityScore", "company_quality_score", "qualityScore", "quality_score", "quality", "公司质量分", "公司质量评分", "公司质量", "质量分", "质量评分", "质量"];
+const INVESTMENT_ATTRACTIVENESS_SCORE_KEYS = [
+  "investmentAttractivenessScore",
+  "investment_attractiveness_score",
+  "attractivenessScore",
+  "attractiveness_score",
+  "investmentScore",
+  "investment_score",
+  "attractiveness",
+  "投资吸引力分",
+  "投资吸引力评分",
+  "投资吸引力",
+  "吸引力分",
+  "吸引力评分",
+  "吸引力",
+];
+
+export function hasRequiredRankingScores(value: unknown) {
+  if (!isRecord(value)) return false;
+  const records = candidateRankingRecords(value);
+  return Number.isFinite(firstNumberValue(records, COMPANY_QUALITY_SCORE_KEYS))
+    && Number.isFinite(firstNumberValue(records, INVESTMENT_ATTRACTIVENESS_SCORE_KEYS));
+}
+
 export function normalizeGeneratedRanking(value: unknown): GeneratedWatchlistRanking {
   const record = isRecord(value) ? value : {};
   const records = candidateRankingRecords(record);
-  const cqsRaw = firstNumberValue(records, ["companyQualityScore", "company_quality_score", "qualityScore", "quality_score", "quality", "公司质量分", "公司质量评分", "公司质量", "质量分", "质量评分", "质量"]);
-  const iasRaw = firstNumberValue(records, [
-    "investmentAttractivenessScore",
-    "investment_attractiveness_score",
-    "attractivenessScore",
-    "attractiveness_score",
-    "investmentScore",
-    "investment_score",
-    "attractiveness",
-    "投资吸引力分",
-    "投资吸引力评分",
-    "投资吸引力",
-    "吸引力分",
-    "吸引力评分",
-    "吸引力",
-  ]);
+  const cqsRaw = firstNumberValue(records, COMPANY_QUALITY_SCORE_KEYS);
+  const iasRaw = firstNumberValue(records, INVESTMENT_ATTRACTIVENESS_SCORE_KEYS);
   const rawOverall = firstNumberValue(records, ["overallScore", "overall_score", "totalScore", "total_score", "overall", "score", "综合分", "综合评分", "综合", "总分", "总评分"]);
   const cqs = clampScore(Number.isFinite(cqsRaw) ? cqsRaw : 50);
   const ias = clampScore(Number.isFinite(iasRaw) ? iasRaw : 40);
@@ -305,6 +313,12 @@ function applyRankingRiskCaps(ranking: GeneratedWatchlistRanking): GeneratedWatc
 
 export function rankingCacheReusable(row: Pick<WatchlistRankingRow, "status" | "evidence_hash"> | null | undefined, evidenceHash?: string, forceRefresh = false) {
   return !forceRefresh && row?.status === "completed" && !!evidenceHash && row.evidence_hash === evidenceHash;
+}
+
+export function rankingRefreshAlreadyRunning(row: Pick<WatchlistRankingRow, "status"> & Partial<Pick<WatchlistRankingRow, "updated_at">> | null | undefined, now = Date.now()) {
+  if (row?.status !== "running") return false;
+  const updatedAt = row.updated_at ? Date.parse(row.updated_at) : Number.NaN;
+  return !Number.isFinite(updatedAt) || now - updatedAt <= STALE_RUNNING_MS;
 }
 
 function compactEvidence(evidence: EvidenceBundle) {
@@ -385,6 +399,10 @@ function sourceFamily(source: string) {
 function clampScore(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
+}
+
+function statementChanged(result: { meta?: { changes?: number } }) {
+  return (result.meta?.changes ?? 1) > 0;
 }
 
 function numberValue(value: unknown) {

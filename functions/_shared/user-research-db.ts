@@ -10,7 +10,7 @@ import {
   type WatchlistRankingStatus,
 } from "../../src/shared/user-research";
 
-const STALE_RUNNING_MS = 20 * 60 * 1000;
+export const STALE_RUNNING_MS = 20 * 60 * 1000;
 
 export type UserResearchEnv = {
   AUTH_SECRET: string;
@@ -69,6 +69,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
           started_at TEXT,
           completed_at TEXT,
           error_message TEXT,
+          run_token TEXT,
           UNIQUE(user_key, watchlist_id, template_id)
         )`,
       ),
@@ -128,6 +129,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
           started_at TEXT,
           completed_at TEXT,
           error_message TEXT,
+          run_token TEXT,
           UNIQUE(user_key, watchlist_id)
         )`,
       ),
@@ -144,6 +146,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
     ensureColumn(db, "template_analysis", "template_hash", "TEXT"),
     ensureColumn(db, "template_analysis", "evidence_hash", "TEXT"),
     ensureColumn(db, "template_analysis", "template_snapshot_json", "TEXT"),
+    ensureColumn(db, "template_analysis", "run_token", "TEXT"),
     ensureColumn(db, "user_research_templates", "section_requirements_json", "TEXT"),
     ensureColumn(db, "user_research_templates", "default_section_requirements_json", "TEXT"),
     ensureColumn(db, "watchlist_ranking_score", "model", "TEXT"),
@@ -155,6 +158,7 @@ export async function ensureUserResearchSchema(db: D1Database) {
     ensureColumn(db, "watchlist_ranking_score", "started_at", "TEXT"),
     ensureColumn(db, "watchlist_ranking_score", "completed_at", "TEXT"),
     ensureColumn(db, "watchlist_ranking_score", "error_message", "TEXT"),
+    ensureColumn(db, "watchlist_ranking_score", "run_token", "TEXT"),
   ]);
 }
 
@@ -439,6 +443,7 @@ export type AnalysisRow = {
   template_hash?: string | null;
   evidence_hash?: string | null;
   template_snapshot_json?: string | null;
+  run_token?: string | null;
 };
 
 export type WatchlistRankingRow = {
@@ -462,6 +467,7 @@ export type WatchlistRankingRow = {
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
+  run_token?: string | null;
 };
 
 export function rankingRowToEntry(row: WatchlistRankingRow, watchlist?: WatchlistRow | null): WatchlistRankingEntry {

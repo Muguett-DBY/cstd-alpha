@@ -78,5 +78,11 @@ describe("project hygiene", () => {
     ]) {
       expect(readWorkflow(workflow)).toMatch(/\$\{\{\s*inputs\.job_id\s*\}\}/);
     }
+
+    for (const workflow of ["template-analysis.yml", "watchlist-ranking.yml"]) {
+      const content = readWorkflow(workflow);
+      expect(content).toMatch(/run_token:/);
+      expect(content).toMatch(/\$\{\{\s*inputs\.run_token\s*\}\}/);
+    }
   });
 });
