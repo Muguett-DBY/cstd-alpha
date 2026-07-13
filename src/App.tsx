@@ -787,7 +787,7 @@ function App() {
           ) : renderedView === "valuation" ? (
             <ValuationLabView />
           ) : renderedView === "ranking" ? (
-            <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} />
+            <RankingView market={rankingMarket} onOpenEntry={openRankingEntry} canManageGlobalLibrary={user?.role === "admin"} />
           ) : renderedView === "watchlist-ranking" ? (
             <WatchlistRankingView onOpenEntry={openWatchlistRankingEntry} />
           ) : renderedView === "mine" ? (

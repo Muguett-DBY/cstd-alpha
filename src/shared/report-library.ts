@@ -27,6 +27,14 @@ export type ImportedLibraryReport = {
 };
 
 const REPORT_CONCLUSIONS = ["买入", "加仓", "持有", "观察", "减仓", "卖出", "回避"] as const;
+export const REPORT_LIBRARY_IMPORT_BATCH_LIMIT = 25;
+
+export class ReportLibraryImportLimitError extends Error {
+  constructor(limit = REPORT_LIBRARY_IMPORT_BATCH_LIMIT) {
+    super(`单次最多导入 ${limit} 份报告，请拆分后重试。`);
+    this.name = "ReportLibraryImportLimitError";
+  }
+}
 
 export function isReportLibraryEntry(value: unknown): value is ReportLibraryEntry {
   if (!isRecord(value)) return false;
@@ -60,6 +68,7 @@ export function describeReportLibraryDataHealth(skippedEntries: number, availabl
 
 export function parseReportLibraryReports(value: unknown): InvestmentReport[] {
   const candidates = extractReportCandidates(value);
+  if (candidates.length > REPORT_LIBRARY_IMPORT_BATCH_LIMIT) throw new ReportLibraryImportLimitError();
   const reports = candidates.map((item) => validateLibraryReport(item));
   if (!reports.length) throw new Error("没有识别到可导入的报告 JSON。");
   return reports;
