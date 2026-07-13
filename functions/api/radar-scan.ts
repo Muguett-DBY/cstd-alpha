@@ -245,6 +245,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   const session = await readSessionCookie(request.headers.get("cookie"), env);
   if (!session) return json({ error: "Unauthorized." }, 401);
+  if (session.role !== "admin") return json({ error: "Forbidden." }, 403);
 
   const cached = await readRadarCache(env);
   const freshness = await readRadarEvidenceFreshness(env, RADAR_EVIDENCE_SNAPSHOT_KEY, RADAR_EVIDENCE_SNAPSHOT_VERSION);

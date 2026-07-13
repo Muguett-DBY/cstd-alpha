@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { fetchReportLibrary, importReportLibraryReports } from "./api";
-import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson, upsertImportedRankingReports } from "./ranking-storage";
+import { fetchReportLibrary } from "./api";
+import { persistRankingReportImport } from "./ranking-import";
+import { deleteImportedRankingReport, loadImportedRankingReports, parseRankingReportJson } from "./ranking-storage";
 import { A_SHARE_INDUSTRY_GROUPS } from "./shared/industry";
 import { describeReportLibraryDataHealth, type ReportLibraryEntry } from "./shared/report-library";
 import { buildRankingEntries, type RankingEntry, type RankingSeed } from "./shared/ranking";
@@ -11,6 +12,7 @@ export type RankingMarket = "a-share" | "us" | "hk";
 type RankingViewProps = {
   market: RankingMarket;
   onOpenEntry: (entry: RankingEntry) => void | Promise<void>;
+  canManageGlobalLibrary: boolean;
 };
 
 type SortMode = "rank" | "ias" | "cqs" | "name" | "code" | "sector";
@@ -59,7 +61,7 @@ const RANKING_CONFIG: Record<
   },
 };
 
-export function RankingView({ market, onOpenEntry }: RankingViewProps) {
+export function RankingView({ market, onOpenEntry, canManageGlobalLibrary }: RankingViewProps) {
   const config = RANKING_CONFIG[market];
   const usesClientSideLibrary = market !== "a-share";
   const [imported, setImported] = useState(() => loadImportedRankingReports());
@@ -196,13 +198,18 @@ export function RankingView({ market, onOpenEntry }: RankingViewProps) {
     setError("");
     try {
       const reports = parseRankingReportJson(importText);
-      const saved = await importReportLibraryReports(reports);
-      const nextImported = upsertImportedRankingReports(reports);
-      setImported(nextImported);
-      setLibraryEntries((current) => mergeLibraryEntries(current, saved));
-      setLibraryTotal((current) => Math.max(current, mergeLibraryEntries(libraryEntries, saved).length));
+      const result = await persistRankingReportImport(reports, canManageGlobalLibrary);
+      setImported(result.imported);
+      if (result.saved.length) {
+        setLibraryEntries((current) => mergeLibraryEntries(current, result.saved));
+        setLibraryTotal((current) => Math.max(current, mergeLibraryEntries(libraryEntries, result.saved).length));
+      }
       setImportText("");
-      setNotice(`已导入 ${reports.length} 份报告到服务端报告库，排行榜已按深度报告评分更新。`);
+      setNotice(
+        result.scope === "global"
+          ? `已导入 ${reports.length} 份报告到服务端报告库，排行榜已按深度报告评分更新。`
+          : `已在本机导入 ${reports.length} 份报告，排行榜已按深度报告评分更新。`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "导入失败，请检查 JSON。");
     }

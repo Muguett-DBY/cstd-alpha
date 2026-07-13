@@ -1,4 +1,4 @@
-import { verifySessionCookie } from "../_shared/auth";
+import { readSessionCookie, verifySessionCookie } from "../_shared/auth";
 import {
   buildReportLibraryEntry,
   cleanIndustryLabel,
@@ -7,6 +7,7 @@ import {
   normalizeEntryPositionAdvice,
   normalizeEntryValuationView,
   parseReportLibraryReports,
+  ReportLibraryImportLimitError,
   reportLibraryIdentity,
   validateLibraryReport,
   type ReportLibraryEntry,
@@ -62,8 +63,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const authenticated = await verifySessionCookie(request.headers.get("cookie"), env);
-  if (!authenticated) return json({ error: "Unauthorized." }, 401);
+  const session = await readSessionCookie(request.headers.get("cookie"), env);
+  if (!session) return json({ error: "Unauthorized." }, 401);
+  if (session.role !== "admin") return json({ error: "Forbidden." }, 403);
   if (!hasDurableLibrary(env)) return json({ error: "REPORT_LIBRARY_DB/REPORT_LIBRARY_BUCKET is not configured." }, 500);
 
   try {
@@ -73,7 +75,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const entries = await Promise.all(reports.map((report) => writeReportRecord(env, report, importedAt)));
     return json({ imported: entries });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "报告导入失败。" }, 400);
+    return json(
+      { error: error instanceof Error ? error.message : "报告导入失败。" },
+      error instanceof ReportLibraryImportLimitError ? 413 : 400,
+    );
   }
 };
 

@@ -4,6 +4,8 @@ vi.mock("../_shared/auth", () => ({
   readSessionCookie: vi.fn(async () => ({ userId: "user-admin", username: "admin", displayName: "admin", role: "admin", sessionId: "session", expiresAt: new Date(Date.now() + 3600_000).toISOString() })),
 }));
 
+import { readSessionCookie } from "../_shared/auth";
+
 import {
   RADAR_ANALYSIS_JOB_LATEST_KEY,
   RADAR_ANALYSIS_JOB_PREFIX,
@@ -96,6 +98,48 @@ describe("radar scan model contract", () => {
   });
 });
 describe("radar scan async job API", () => {
+  test("keeps cached radar readable for non-admin sessions without admin diagnostics", async () => {
+    vi.mocked(readSessionCookie).mockResolvedValueOnce({
+      userId: "user-1",
+      username: "reader",
+      displayName: "Reader",
+      role: "user",
+      sessionId: "session-user",
+      expiresAt: "2999-01-01T00:00:00.000Z",
+    });
+    const payload = cachedRadarPayload();
+
+    const response = await onRequestGet(context("GET", {
+      AUTH_SECRET: "secret",
+      REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload }),
+    }));
+    const body = await response.json() as { radar?: { id?: string }; diagnostics?: unknown };
+
+    expect(response.status).toBe(200);
+    expect(body.radar?.id).toBe("radar-1");
+    expect(body.diagnostics).toBeNull();
+  });
+
+  test("rejects radar refreshes from non-admin sessions before creating a job", async () => {
+    vi.mocked(readSessionCookie).mockResolvedValueOnce({
+      userId: "user-1",
+      username: "reader",
+      displayName: "Reader",
+      role: "user",
+      sessionId: "session-user",
+      expiresAt: "2999-01-01T00:00:00.000Z",
+    });
+    const store: Record<string, unknown> = {};
+    const cache = kvWith(store);
+
+    const response = await onRequestPost(context("POST", { AUTH_SECRET: "secret", REPORT_CACHE: cache }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Forbidden." });
+    expect(cache.put).not.toHaveBeenCalled();
+    expect(store).toEqual({});
+  });
+
   test("GET returns cached radar and latest job status without calling upstream APIs", async () => {
     const payload = cachedRadarPayload();
     const job = radarJob("running");

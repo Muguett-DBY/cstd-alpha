@@ -20,6 +20,12 @@ describe("ranking report storage", () => {
     expect(reports[0].company.ticker).toBe("000333");
   });
 
+  test("rejects oversized report batches before validating every item", () => {
+    const reports = Array.from({ length: 26 }, () => ({}));
+
+    expect(() => parseRankingReportJson(JSON.stringify({ reports }))).toThrow("单次最多导入 25 份报告");
+  });
+
   test("rejects shallow imports without item-level scores", () => {
     expect(() =>
       parseRankingReportJson(

@@ -1,14 +1,78 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { onRequestGet } from "./report-library";
-import { verifySessionCookie } from "../_shared/auth";
+import { onRequestGet, onRequestPost } from "./report-library";
+import { readSessionCookie, verifySessionCookie } from "../_shared/auth";
 
 vi.mock("../_shared/auth", () => ({
+  readSessionCookie: vi.fn(),
   verifySessionCookie: vi.fn(),
 }));
 
 describe("report library API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(verifySessionCookie).mockResolvedValue(true);
+    vi.mocked(readSessionCookie).mockResolvedValue({
+      userId: "user-admin",
+      username: "admin",
+      displayName: "Admin",
+      role: "admin",
+      sessionId: "session-admin",
+      expiresAt: "2999-01-01T00:00:00.000Z",
+    });
+  });
+
+  test("rejects global report imports from non-admin sessions before parsing or writing", async () => {
+    vi.mocked(readSessionCookie).mockResolvedValueOnce({
+      userId: "user-1",
+      username: "reader",
+      displayName: "Reader",
+      role: "user",
+      sessionId: "session-user",
+      expiresAt: "2999-01-01T00:00:00.000Z",
+    });
+    const bucketPut = vi.fn();
+    const dbPrepare = vi.fn();
+
+    const response = await onRequestPost({
+      request: new Request("https://example.test/api/report-library", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: "session=reader" },
+        body: JSON.stringify({ reports: [] }),
+      }),
+      env: {
+        AUTH_SECRET: "test-secret",
+        REPORT_LIBRARY_DB: { prepare: dbPrepare } as unknown as D1Database,
+        REPORT_LIBRARY_BUCKET: { put: bucketPut } as unknown as R2Bucket,
+      },
+    } as Parameters<typeof onRequestPost>[0]);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Forbidden." });
+    expect(dbPrepare).not.toHaveBeenCalled();
+    expect(bucketPut).not.toHaveBeenCalled();
+  });
+
+  test("rejects oversized report import batches before validating or writing items", async () => {
+    const bucketPut = vi.fn();
+    const dbPrepare = vi.fn();
+
+    const response = await onRequestPost({
+      request: new Request("https://example.test/api/report-library", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: "session=admin" },
+        body: JSON.stringify({ reports: Array.from({ length: 26 }, () => ({})) }),
+      }),
+      env: {
+        AUTH_SECRET: "test-secret",
+        REPORT_LIBRARY_DB: { prepare: dbPrepare } as unknown as D1Database,
+        REPORT_LIBRARY_BUCKET: { put: bucketPut } as unknown as R2Bucket,
+      },
+    } as Parameters<typeof onRequestPost>[0]);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "单次最多导入 25 份报告，请拆分后重试。" });
+    expect(dbPrepare).not.toHaveBeenCalled();
+    expect(bucketPut).not.toHaveBeenCalled();
   });
 
   test("matches durable ticker filters regardless of query casing", async () => {
