@@ -135,6 +135,48 @@ describe("worker job callback payload validation", () => {
     expect(db.binds.find((item) => /SET status = 'completed'/i.test(item.sql))?.args.at(-1)).toBe("finalizing:current-run-token");
   });
 
+  test("marks a claimed watchlist ranking run retryable when completion persistence throws", async () => {
+    const db = watchlistRankingCompletionDb({ failCompletion: true });
+
+    const response = await onWatchlistRankingJobPost(context("https://alpha.custard.top/api/watchlist-ranking-job", db.db, {
+      jobId: "ranking-job-1",
+      runToken: "current-run-token",
+      generated: {
+        companyQualityScore: 80,
+        investmentAttractivenessScore: 65,
+        verdict: "观察",
+        summary: "质量较好，估值仍需复核。",
+      },
+    }));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("自选排行评分结果保存失败，请稍后重试。");
+    const recovery = db.binds.find((item) => /SET status = 'failed_retryable'/i.test(item.sql))?.args;
+    expect(recovery?.[1]).toBe("自选排行评分结果保存失败，请稍后重试。");
+    expect(recovery?.at(-1)).toBe("finalizing:current-run-token");
+  });
+
+  test("returns a sanitized response when watchlist ranking completion and recovery both throw", async () => {
+    const db = watchlistRankingCompletionDb({ failCompletion: true, failRecovery: true });
+
+    const response = await onWatchlistRankingJobPost(context("https://alpha.custard.top/api/watchlist-ranking-job", db.db, {
+      jobId: "ranking-job-1",
+      runToken: "current-run-token",
+      generated: {
+        companyQualityScore: 80,
+        investmentAttractivenessScore: 65,
+        verdict: "观察",
+        summary: "质量较好，估值仍需复核。",
+      },
+    }));
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("自选排行评分结果保存失败，请稍后重试。");
+    expect(JSON.stringify(body)).not.toContain("sensitive D1 failure");
+  });
+
   test("claims and completes the current template analysis run with an attempt-scoped object", async () => {
     const template = RESEARCH_TEMPLATES[0];
     const db = templateAnalysisCompletionDb(template);
@@ -213,9 +255,11 @@ function jobCallbackDb() {
   };
 }
 
-function watchlistRankingCompletionDb() {
+function watchlistRankingCompletionDb(options: { failCompletion?: boolean; failRecovery?: boolean } = {}) {
   const sqls: string[] = [];
   const binds: Array<{ sql: string; args: unknown[] }> = [];
+  let completionFailed = false;
+  let recoveryFailed = false;
   const prepare = vi.fn((sql: string) => {
     sqls.push(sql);
     const statement = {
@@ -224,6 +268,14 @@ function watchlistRankingCompletionDb() {
         return statement;
       },
       async run() {
+        if (options.failCompletion && !completionFailed && /SET status = 'completed'/i.test(sql)) {
+          completionFailed = true;
+          throw new Error("sensitive D1 failure while completing ranking");
+        }
+        if (options.failRecovery && !recoveryFailed && /SET status = 'failed_retryable'/i.test(sql)) {
+          recoveryFailed = true;
+          throw new Error("sensitive D1 failure while recovering ranking");
+        }
         return { success: true };
       },
       async first<T>() {
