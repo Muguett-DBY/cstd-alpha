@@ -1,3 +1,4 @@
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("../_shared/auth", () => ({
@@ -5,6 +6,7 @@ vi.mock("../_shared/auth", () => ({
 }));
 
 import { readSessionCookie } from "../_shared/auth";
+import { readCurrentRadarAnalysisJob } from "../_shared/radar-jobs";
 
 import {
   RADAR_ANALYSIS_JOB_LATEST_KEY,
@@ -157,7 +159,7 @@ describe("radar scan async job API", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  test("POST creates a KV job, dispatches the GitHub Action, and never calls DeepSeek in Cloudflare", async () => {
+  test("POST atomically creates a D1 run, mirrors it to KV, and dispatches its token", async () => {
     const payload = cachedRadarPayload();
     const store = {
       [RADAR_CACHE_KEY]: payload,
@@ -167,11 +169,13 @@ describe("radar scan async job API", () => {
       AUTH_SECRET: "secret",
       GITHUB_RADAR_DISPATCH_TOKEN: "github-token",
       REPORT_CACHE: kvWith(store),
+      REPORT_LIBRARY_DB: sqliteD1(),
     };
     const fetchedUrls: string[] = [];
+    const dispatchBodies: Array<{ inputs?: { job_id?: string; run_token?: string } }> = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchedUrls.push(String(input));
-      expect(String(init?.body)).toContain("job_id");
+      dispatchBodies.push(JSON.parse(String(init?.body)) as { inputs?: { job_id?: string; run_token?: string } });
       return new Response(null, { status: 204 });
     }) as typeof fetch;
 
@@ -185,27 +189,48 @@ describe("radar scan async job API", () => {
     expect(json.diagnostics?.evidenceHash).toBe("abc123");
     expect(json.job?.id).toMatch(/^radar-/);
     expect(fetchedUrls).toEqual(["https://api.github.com/repos/Muguett-DBY/cstd-alpha/actions/workflows/radar-analysis.yml/dispatches"]);
+    expect(dispatchBodies[0]?.inputs).toEqual({
+      job_id: json.job?.id,
+      run_token: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+    });
     expect(fetchedUrls.some((url) => url.includes(["deepseek", "com"].join(".")))).toBe(false);
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(`${RADAR_ANALYSIS_JOB_PREFIX}${json.job?.id}`, expect.stringContaining('"queued"'), expect.anything());
     expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_ANALYSIS_JOB_LATEST_KEY, expect.stringContaining('"queued"'), expect.anything());
   });
 
-  test("POST reuses a running job so repeated clicks do not duplicate DeepSeek spend", async () => {
+  test("POST reuses the current D1 job so repeated clicks do not duplicate DeepSeek spend", async () => {
     const payload = cachedRadarPayload();
-    const job = radarJob("running");
     const env = {
       AUTH_SECRET: "secret",
       GITHUB_RADAR_DISPATCH_TOKEN: "github-token",
-      REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload, [RADAR_ANALYSIS_JOB_LATEST_KEY]: job }),
+      REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload }),
+      REPORT_LIBRARY_DB: sqliteD1(),
     };
-    globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 })) as typeof fetch;
 
+    const firstResponse = await onRequestPost(context("POST", env));
+    const first = (await firstResponse.json()) as { job?: { id?: string; status?: string } };
     const response = await onRequestPost(context("POST", env));
     const json = (await response.json()) as { radar?: { fromCache?: boolean }; job?: { id?: string; status?: string } };
 
     expect(response.status).toBe(202);
     expect(json.radar?.fromCache).toBe(true);
-    expect(json.job).toMatchObject({ id: job.id, status: "running" });
+    expect(json.job).toMatchObject({ id: first.job?.id, status: "queued" });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("POST refuses to queue an unguarded radar run when D1 is unavailable", async () => {
+    const cache = kvWith({ [RADAR_CACHE_KEY]: cachedRadarPayload() });
+    globalThis.fetch = vi.fn(async () => new Response("unexpected")) as typeof fetch;
+
+    const response = await onRequestPost(context("POST", {
+      AUTH_SECRET: "secret",
+      GITHUB_RADAR_DISPATCH_TOKEN: "github-token",
+      REPORT_CACHE: cache,
+    }));
+
+    expect(response.status).toBe(500);
+    expect(cache.put).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -227,6 +252,7 @@ describe("radar scan async job API", () => {
       AUTH_SECRET: "secret",
       GITHUB_RADAR_DISPATCH_TOKEN: "github-token",
       REPORT_CACHE: kvWith({ [RADAR_CACHE_KEY]: payload, [RADAR_EVIDENCE_SNAPSHOT_KEY]: radarEvidenceSnapshot() }),
+      REPORT_LIBRARY_DB: sqliteD1(),
     };
     globalThis.fetch = vi.fn(async () => new Response("bad token", { status: 401 })) as typeof fetch;
     const waitUntilTasks: Promise<unknown>[] = [];
@@ -240,7 +266,7 @@ describe("radar scan async job API", () => {
     expect(json.warning).toBeUndefined();
     expect(JSON.stringify(json)).not.toContain("bad token");
     await Promise.all(waitUntilTasks);
-    expect(env.REPORT_CACHE.put).toHaveBeenCalledWith(RADAR_ANALYSIS_JOB_LATEST_KEY, expect.stringContaining('"failed"'), expect.anything());
+    await expect(readCurrentRadarAnalysisJob(env.REPORT_LIBRARY_DB)).resolves.toMatchObject({ state: "failed", job: { status: "failed" } });
   });
 });
 describe("radar evidence tiers", () => {
@@ -290,6 +316,37 @@ function kvWith(store: Record<string, unknown>) {
       store[key] = JSON.parse(value) as unknown;
     }),
   };
+}
+
+function sqliteD1() {
+  const sqlite = new DatabaseSync(":memory:");
+  const db = {
+    prepare(sql: string) {
+      let bindings: unknown[] = [];
+      let prepared: StatementSync | undefined;
+      const statement = {
+        bind(...args: unknown[]) {
+          bindings = args;
+          return statement;
+        },
+        async run() {
+          prepared ??= sqlite.prepare(sql);
+          const result = prepared.run(...bindings);
+          return { success: true, meta: { changes: Number(result.changes) } };
+        },
+        async first<T>() {
+          prepared ??= sqlite.prepare(sql);
+          return (prepared.get(...bindings) ?? null) as T | null;
+        },
+        async all<T>() {
+          prepared ??= sqlite.prepare(sql);
+          return { success: true, results: prepared.all(...bindings) } as T;
+        },
+      };
+      return statement;
+    },
+  };
+  return db as unknown as D1Database;
 }
 
 function cachedRadarPayload(): RadarCachePayload {

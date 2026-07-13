@@ -72,14 +72,15 @@ describe("project hygiene", () => {
     }
 
     for (const workflow of [
-      "radar-analysis.yml",
       "template-analysis.yml",
       "watchlist-ranking.yml",
     ]) {
       expect(readWorkflow(workflow)).toMatch(/\$\{\{\s*inputs\.job_id\s*\}\}/);
     }
 
-    for (const workflow of ["template-analysis.yml", "watchlist-ranking.yml"]) {
+    expect(readWorkflow("radar-analysis.yml")).toMatch(/group:\s*radar-analysis\s*$/m);
+
+    for (const workflow of ["radar-analysis.yml", "template-analysis.yml", "watchlist-ranking.yml"]) {
       const content = readWorkflow(workflow);
       expect(content).toMatch(/run_token:/);
       expect(content).toMatch(/\$\{\{\s*inputs\.run_token\s*\}\}/);

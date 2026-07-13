@@ -43,6 +43,7 @@
 - `POST /api/company-evidence-refresh`：受 `COMPANY_EVIDENCE_REFRESH_TOKEN` 保护的公司证据包刷新入口，供 GitHub Actions 每日刷新"我的"自选股证据包。
 - `GET/POST /api/template-analysis-job`：受 `TEMPLATE_ANALYSIS_WORKER_TOKEN` 保护的后台模板分析任务接口，供 GitHub Actions 读取 queued/running 任务并回写结果。
 - `GET/POST /api/radar-scan`：读取或刷新行业雷达；`POST` 只创建后台分析 job 并触发 GitHub Action，页面继续显示旧缓存并轮询 job 状态，DeepSeek 不在 Cloudflare Pages 请求内运行。
+- `POST /api/radar-analysis-job`：受后台 worker token 保护，使用 D1 运行令牌原子认领雷达任务并发布当前结果，过期 Action 回调不会覆盖新结果。
 - `GET/POST /api/watchlist-ranking`：自选股评分排行。
 - `GET/POST /api/valuations`：估值任务管理。
 - `GET/POST /api/valuation-workspace`：读取 A 股量化估值工作区或保存不可变后继版本。
@@ -87,7 +88,7 @@ CSTD_USER_PASSWORD="..." node scripts/create-fixed-user.mjs --username=alice --d
 
 模板深度报告由 `.github/workflows/template-analysis.yml` 在用户点击模板生成时触发：Pages Function 只创建/复用 running 任务并触发 GitHub workflow dispatch；Action 读取受保护任务接口，调用 DeepSeek，完成后通过同一接口写回 D1/R2。定时公司证据刷新不会调用 DeepSeek。
 
-行业雷达深度分析由 `.github/workflows/radar-analysis.yml` 在用户点击“雷达扫描”时触发：Pages Function 只写入 `radar-analysis:job:*` 并调用 GitHub workflow dispatch；Action 读取完整证据库和上次报告，调用 DeepSeek，完成后写回 `radar-scan:v2:latest`。
+行业雷达深度分析由 `.github/workflows/radar-analysis.yml` 在用户点击“雷达扫描”时触发：Pages Function 用 D1 原子创建当前运行并镜像任务状态到 KV，再调用 GitHub workflow dispatch；Action 读取完整证据库和上次报告，调用 DeepSeek，完成后通过受保护回调认领当前运行并写回 `radar-scan:v2:latest`。
 
 GitHub 仓库 secrets：
 
@@ -104,6 +105,8 @@ GitHub 仓库 secrets：
 - `COMPANY_EVIDENCE_REFRESH_URL`
 - `COMPANY_EVIDENCE_REFRESH_TOKEN`
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`
+- `RADAR_ANALYSIS_WORKER_TOKEN`（可选；缺省复用 `TEMPLATE_ANALYSIS_WORKER_TOKEN`）
+- `RADAR_ANALYSIS_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/radar-analysis-job`）
 - `TEMPLATE_ANALYSIS_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/template-analysis-job`）
 - `WATCHLIST_RANKING_WORKER_TOKEN`（可选；缺省复用 `TEMPLATE_ANALYSIS_WORKER_TOKEN`）
 - `WATCHLIST_RANKING_WORKER_URL`（可选，默认 `https://alpha.custard.top/api/watchlist-ranking-job`）
@@ -118,6 +121,7 @@ Cloudflare Pages secrets：
 - `GITHUB_TEMPLATE_DISPATCH_TOKEN`（可选；缺省复用 `GITHUB_RADAR_DISPATCH_TOKEN`）
 - `GITHUB_WATCHLIST_RANKING_DISPATCH_TOKEN`（可选；缺省复用模板或雷达 dispatch token）
 - `TEMPLATE_ANALYSIS_WORKER_TOKEN`（和 GitHub secret 保持一致，仅供后台模板 Action 读写任务）
+- `RADAR_ANALYSIS_WORKER_TOKEN`（可选；缺省复用模板 worker token，仅供雷达 Action 原子发布结果）
 - `COMPANY_EVIDENCE_REFRESH_TOKEN`（和 GitHub secret 保持一致，仅供后台公司证据刷新）
 - `ANYSEARCH_API_KEY`（模板分析和助手的外部搜索增强）
 - `SEARXNG_ENDPOINTS`（助手、模板分析的免费元搜索增强；SearXNG API 使用 `/search?q=...&format=json`）
