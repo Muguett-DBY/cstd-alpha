@@ -3,14 +3,18 @@ import { readSessionCookie } from "../_shared/auth";
 import { buildDeepSeekRequestInit, cacheStableUserContent, withCacheProtocol } from "../_shared/deepseek-cache";
 import { buildDeepSeekFallbackRoutes, type DeepSeekFallbackRoute } from "../_shared/opencode-go";
 import {
-  createRadarAnalysisJob,
+  RADAR_ANALYSIS_JOB_LATEST_KEY,
+  RADAR_ANALYSIS_JOB_PREFIX,
+  RADAR_RESULT_CACHE_KEY,
+  abortRadarAnalysisJobRun,
+  claimRadarAnalysisJobFailure,
   dispatchRadarAnalysisWorkflow,
+  finishRadarAnalysisJobFailure,
+  queueRadarAnalysisJob,
   radarDiagnostics,
-  readActiveRadarJob,
   readLatestRadarJob,
   readRadarEvidenceFreshness,
   readRadarEvidenceHash,
-  updateRadarJob,
   writeRadarJob,
 } from "../_shared/radar-jobs";
 import { decorateNewsSentiment, filterRecentNews, parseGoogleNewsRss, type NewsItem } from "../../src/shared/news";
@@ -103,15 +107,14 @@ type RadarEvidenceSnapshotPayload = {
 };
 
 export const RADAR_CACHE_VERSION = "v2";
-export const RADAR_CACHE_KEY = `radar-scan:${RADAR_CACHE_VERSION}:latest`;
+export const RADAR_CACHE_KEY = RADAR_RESULT_CACHE_KEY;
 export const RADAR_SOURCE_CACHE_VERSION = "v2";
 export const RADAR_SOURCE_CACHE_KEY = `radar-sources:${RADAR_SOURCE_CACHE_VERSION}:latest`;
 export const RADAR_DIGEST_CACHE_VERSION = "v3";
 export const RADAR_DIGEST_CACHE_KEY = `radar-digest:${RADAR_DIGEST_CACHE_VERSION}:latest`;
 export const RADAR_EVIDENCE_SNAPSHOT_VERSION = "v1";
 export const RADAR_EVIDENCE_SNAPSHOT_KEY = `radar-evidence:${RADAR_EVIDENCE_SNAPSHOT_VERSION}:latest`;
-export const RADAR_ANALYSIS_JOB_PREFIX = "radar-analysis:job:";
-export const RADAR_ANALYSIS_JOB_LATEST_KEY = `${RADAR_ANALYSIS_JOB_PREFIX}latest`;
+export { RADAR_ANALYSIS_JOB_LATEST_KEY, RADAR_ANALYSIS_JOB_PREFIX } from "../_shared/radar-jobs";
 const LEGACY_RADAR_CACHE_KEYS = ["radar-scan:v1:latest"];
 const LEGACY_RADAR_SOURCE_CACHE_KEYS = ["radar-sources:v1:latest"];
 const MIN_RADAR_SOURCE_COUNT = 36;
@@ -246,25 +249,40 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const session = await readSessionCookie(request.headers.get("cookie"), env);
   if (!session) return json({ error: "Unauthorized." }, 401);
   if (session.role !== "admin") return json({ error: "Forbidden." }, 403);
+  if (!env.REPORT_LIBRARY_DB || !env.REPORT_CACHE) return json({ error: "REPORT_LIBRARY_DB/REPORT_CACHE is not configured." }, 500);
 
   const cached = await readRadarCache(env);
   const freshness = await readRadarEvidenceFreshness(env, RADAR_EVIDENCE_SNAPSHOT_KEY, RADAR_EVIDENCE_SNAPSHOT_VERSION);
-  const activeJob = await readActiveRadarJob(env, RADAR_ANALYSIS_JOB_LATEST_KEY);
-  if (activeJob) {
+  const evidenceHash = freshness?.evidenceHash ?? (await readRadarEvidenceHash(env, RADAR_EVIDENCE_SNAPSHOT_KEY));
+  const queued = await queueRadarAnalysisJob(env.REPORT_LIBRARY_DB, evidenceHash);
+  if (!queued.created) {
     return json({
       radar: cached ? markCached(withRadarFreshness(cached.radar, freshness)) : null,
-      job: activeJob,
-      diagnostics: session.role === "admin" ? radarDiagnostics(cached, activeJob, freshness) : null,
+      job: queued.job,
+      diagnostics: session.role === "admin" ? radarDiagnostics(cached, queued.job, freshness) : null,
     }, 202);
   }
 
-  const evidenceHash = freshness?.evidenceHash ?? (await readRadarEvidenceHash(env, RADAR_EVIDENCE_SNAPSHOT_KEY));
-  const job = createRadarAnalysisJob(evidenceHash);
-  await writeRadarJob(env, job, RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
+  const job = queued.job;
+  try {
+    await writeRadarJob(env, job, RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
+  } catch {
+    await abortRadarAnalysisJobRun(env.REPORT_LIBRARY_DB, job.id, queued.runToken, "本次后台分析未能启动，已保留上次扫描。");
+    return json({ error: "雷达任务状态暂时不可用。" }, 500);
+  }
 
-  const dispatchTask = dispatchRadarAnalysisWorkflow(env, job.id, { repository: GITHUB_RADAR_REPOSITORY, workflow: GITHUB_RADAR_WORKFLOW }).catch(async (error) => {
+  const dispatchTask = dispatchRadarAnalysisWorkflow(env, job.id, queued.runToken, { repository: GITHUB_RADAR_REPOSITORY, workflow: GITHUB_RADAR_WORKFLOW }).catch(async (error) => {
     logRadarFailure(error, "refresh", Boolean(cached));
-    await writeRadarJob(env, updateRadarJob(job, "failed", "本次后台分析未能启动，已保留上次扫描。"), RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
+    const failing = await claimRadarAnalysisJobFailure(env.REPORT_LIBRARY_DB!, job.id, queued.runToken);
+    if (!failing) return;
+    const message = "本次后台分析未能启动，已保留上次扫描。";
+    const failedJob = { ...failing.job, status: "failed" as const, updatedAt: new Date().toISOString(), message };
+    try {
+      await writeRadarJob(env, failedJob, RADAR_ANALYSIS_JOB_PREFIX, RADAR_ANALYSIS_JOB_LATEST_KEY);
+      await finishRadarAnalysisJobFailure(env.REPORT_LIBRARY_DB!, job.id, queued.runToken, message);
+    } catch {
+      await abortRadarAnalysisJobRun(env.REPORT_LIBRARY_DB!, job.id, queued.runToken, message);
+    }
   });
   context.waitUntil(dispatchTask);
   return json({

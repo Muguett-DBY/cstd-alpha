@@ -5,16 +5,23 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("background radar analyzer", () => {
-  test("workflow refuses to run DeepSeek unless a fresh queued website job exists", () => {
+  test("workflow claims the current run before DeepSeek and publishes only through the guarded callback", () => {
     const workflow = readFileSync(".github/workflows/radar-analysis.yml", "utf8");
-    const validateIndex = workflow.indexOf("Validate queued radar job");
+    const validateIndex = workflow.indexOf("Validate job id and run token");
+    const startIndex = workflow.indexOf("Start current radar job");
     const deepSeekIndex = workflow.indexOf("Run DeepSeek radar analysis");
+    const publishIndex = workflow.indexOf("Publish current radar result");
 
     expect(validateIndex).toBeGreaterThanOrEqual(0);
-    expect(deepSeekIndex).toBeGreaterThan(validateIndex);
-    expect(workflow).toContain('job.status !== "queued"');
-    expect(workflow).toContain("refusing to run DeepSeek analysis");
-    expect(workflow).toContain("steps.validate_job.outcome == 'success'");
+    expect(startIndex).toBeGreaterThan(validateIndex);
+    expect(deepSeekIndex).toBeGreaterThan(startIndex);
+    expect(publishIndex).toBeGreaterThan(deepSeekIndex);
+    expect(workflow).toContain("RADAR_ANALYSIS_RUN_TOKEN: ${{ inputs.run_token }}");
+    expect(workflow).toContain("scripts/radar-analysis-job-client.ts start");
+    expect(workflow).toContain("scripts/radar-analysis-job-client.ts complete");
+    expect(workflow).toContain("scripts/radar-analysis-job-client.ts fail");
+    expect(workflow).not.toContain('wrangler kv key put "radar-scan:v2:latest"');
+    expect(workflow).not.toContain('wrangler kv key put "radar-analysis:job:latest"');
   });
 
   test("reads full evidence facts, previous radar, and writes a normalized radar cache payload", () => {

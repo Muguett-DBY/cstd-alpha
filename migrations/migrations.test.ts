@@ -100,6 +100,27 @@ describe("D1 migrations", () => {
     expect(tableColumns(db, "watchlist_ranking_score")).toContain("run_token");
   });
 
+  test("radar analysis state migration stores one guarded current run", () => {
+    const db = new DatabaseSync(":memory:");
+
+    expect(() => db.exec(readMigration("0019_radar_analysis_state.sql"))).not.toThrow();
+
+    const columns = tableColumns(db, "radar_analysis_state");
+    for (const column of [
+      "singleton_id",
+      "job_id",
+      "run_token",
+      "status",
+      "evidence_hash",
+      "message",
+      "radar_generated_at",
+      "token_usage_json",
+      "created_at",
+      "updated_at",
+      "completed_at",
+    ]) expect(columns).toContain(column);
+  });
+
   test("assistant migration stores chat, memory, tools, and usage history", () => {
     const db = new DatabaseSync(":memory:");
     expect(() => db.exec(readMigration("0008_assistant.sql"))).not.toThrow();
