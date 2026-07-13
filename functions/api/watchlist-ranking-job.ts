@@ -17,6 +17,8 @@ type CompleteBody = {
   error?: string;
 };
 
+const PERSISTENCE_FAILURE_MESSAGE = "自选排行评分结果保存失败，请稍后重试。";
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const auth = requireWorkerAuth(request, env);
   if (auth) return auth;
@@ -68,14 +70,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   const finalizingToken = await claimRankingRun(env.REPORT_LIBRARY_DB, jobId, runToken);
   if (!finalizingToken) return staleRunResponse();
-  if (error) {
-    const applied = await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id, error, evidenceHash, finalizingToken);
+
+  try {
+    if (error) {
+      const applied = await writeWatchlistRankingFailure(env.REPORT_LIBRARY_DB, row.user_key, row.watchlist_id, error, evidenceHash, finalizingToken);
+      if (!applied) return staleRunResponse();
+      return json({ ok: true });
+    }
+    const applied = await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGeneratedRanking(body?.generated), evidenceHash, finalizingToken);
     if (!applied) return staleRunResponse();
     return json({ ok: true });
+  } catch {
+    try {
+      const recovered = await writeWatchlistRankingFailure(
+        env.REPORT_LIBRARY_DB,
+        row.user_key,
+        row.watchlist_id,
+        PERSISTENCE_FAILURE_MESSAGE,
+        evidenceHash,
+        finalizingToken,
+      );
+      if (!recovered) return staleRunResponse();
+    } catch {
+      return json({ error: PERSISTENCE_FAILURE_MESSAGE }, 500);
+    }
+    return json({ error: PERSISTENCE_FAILURE_MESSAGE }, 500);
   }
-  const applied = await writeCompletedWatchlistRanking(env.REPORT_LIBRARY_DB, row.user_key, watchlist, normalizeGeneratedRanking(body?.generated), evidenceHash, finalizingToken);
-  if (!applied) return staleRunResponse();
-  return json({ ok: true });
 };
 
 async function readRankingRowById(db: D1Database, id: string) {
