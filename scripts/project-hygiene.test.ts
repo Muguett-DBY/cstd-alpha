@@ -19,8 +19,7 @@ describe("project hygiene", () => {
 
     expect(packageJson.allowScripts).toMatchObject({
       "esbuild@0.28.1": true,
-      "sharp@0.34.5": true,
-      "workerd@1.20260708.1": true,
+      "workerd@1.20260801.1": true,
     });
   });
 

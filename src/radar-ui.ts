@@ -1,8 +1,41 @@
-import type { RadarCitation, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem } from "./shared/radar";
+import type { RadarAnalysisJob, RadarCitation, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem, RadarScan } from "./shared/radar";
 
 export function radarRefreshFallbackMessage(hasExistingRadar: boolean, error: unknown) {
   if (hasExistingRadar) return "本次刷新失败，已保留上次扫描。请稍后重试。";
   return error instanceof Error ? error.message : "雷达扫描失败。";
+}
+
+type RadarResultStateInput = {
+  radar: Pick<RadarScan, "refreshWarning"> | null;
+  job?: Pick<RadarAnalysisJob, "status" | "message"> | null;
+  warning?: string;
+};
+
+export function resolveRadarResultState(result: RadarResultStateInput, hasExistingRadar: boolean) {
+  const warning = result.warning ?? result.radar?.refreshWarning ?? "";
+  const jobRunning = result.job?.status === "queued" || result.job?.status === "running";
+  if (jobRunning) {
+    return {
+      phase: result.radar || hasExistingRadar ? "refreshing" as const : "loading" as const,
+      error: warning,
+    };
+  }
+  if (result.job?.status === "failed") {
+    const hasRadar = Boolean(result.radar || hasExistingRadar);
+    return {
+      phase: hasRadar ? "ready" as const : "error" as const,
+      error: result.job.message?.trim() || warning || (hasRadar
+        ? "本次刷新失败，已保留上次扫描。请稍后重试。"
+        : "雷达扫描失败，请稍后重试。"),
+    };
+  }
+  return { phase: result.radar ? "ready" as const : "error" as const, error: warning };
+}
+
+export function radarStatusLabel(radar: Pick<RadarScan, "fromCache">, job: Pick<RadarAnalysisJob, "status"> | null) {
+  if (job?.status === "queued" || job?.status === "running") return "后台分析中";
+  if (job?.status === "failed") return "刷新失败，已保留上次扫描";
+  return radar.fromCache ? "复用稳定扫描" : "本次新扫描";
 }
 
 export type RadarChangeBuckets = {

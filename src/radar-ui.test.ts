@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPriority, radarPacketGapExplanation, radarRefreshFallbackMessage } from "./radar-ui";
+import { isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPriority, radarPacketGapExplanation, radarRefreshFallbackMessage, radarStatusLabel, resolveRadarResultState } from "./radar-ui";
 import type { RadarIndustryPacket, RadarItem } from "./shared/radar";
 
 describe("radarRefreshFallbackMessage", () => {
@@ -13,6 +13,32 @@ describe("radarRefreshFallbackMessage", () => {
 
   test("generic message when error is not an Error instance", () => {
     expect(radarRefreshFallbackMessage(false, "string error")).toBe("雷达扫描失败。");
+  });
+});
+
+describe("resolveRadarResultState", () => {
+  test("keeps the previous radar visible and surfaces a failed job message", () => {
+    expect(resolveRadarResultState({
+      radar: { refreshWarning: undefined },
+      job: { status: "failed", message: "后台分析失败，已保留旧扫描。" },
+    }, true)).toEqual({ phase: "ready", error: "后台分析失败，已保留旧扫描。" });
+    expect(radarStatusLabel({ fromCache: true }, { status: "failed" })).toBe("刷新失败，已保留上次扫描");
+  });
+
+  test("enters the error state when a failed job has no radar to retain", () => {
+    expect(resolveRadarResultState({ radar: null, job: { status: "failed" } }, false)).toEqual({
+      phase: "error",
+      error: "雷达扫描失败，请稍后重试。",
+    });
+  });
+
+  test("preserves running and successful radar states", () => {
+    expect(resolveRadarResultState({ radar: null, job: { status: "running" }, warning: "仍在处理" }, true)).toEqual({
+      phase: "refreshing",
+      error: "仍在处理",
+    });
+    expect(radarStatusLabel({ fromCache: true }, { status: "completed" })).toBe("复用稳定扫描");
+    expect(radarStatusLabel({ fromCache: false }, { status: "completed" })).toBe("本次新扫描");
   });
 });
 
