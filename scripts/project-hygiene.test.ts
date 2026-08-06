@@ -85,4 +85,12 @@ describe("project hygiene", () => {
       expect(content).toMatch(/\$\{\{\s*inputs\.run_token\s*\}\}/);
     }
   });
+
+  test("prepares the required R2 bucket before production deployment", () => {
+    const deployment = readWorkflow("pages.yml");
+
+    expect(deployment).toContain("ensure_assistant_bucket");
+    expect(deployment).toContain("wrangler r2 bucket list");
+    expect(deployment).toContain("wrangler r2 bucket create cstd-alpha-report-library");
+  });
 });

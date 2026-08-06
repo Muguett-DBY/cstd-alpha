@@ -50,6 +50,38 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           timeout 180s npx wrangler d1 migrations apply cstd-alpha-report-library --remote
+          ensure_assistant_bucket() {
+            for attempt in 1 2 3; do
+              echo "Cloudflare R2 bucket info attempt ${attempt}/3"
+              bucket_list_log="$(mktemp)"
+              if timeout 120s npx wrangler r2 bucket list > "$bucket_list_log" 2>&1 \
+                && grep -qE '^name:[[:space:]]+cstd-alpha-report-library([[:space:]]*)$' "$bucket_list_log"; then
+                cat "$bucket_list_log"
+                rm -f "$bucket_list_log"
+                return 0
+              fi
+              cat "$bucket_list_log"
+              rm -f "$bucket_list_log"
+              sleep $((attempt * 10))
+            done
+
+            echo "Cloudflare R2 bucket is missing; trying idempotent create"
+            bucket_create_log="$(mktemp)"
+            if timeout 120s npx wrangler r2 bucket create cstd-alpha-report-library > "$bucket_create_log" 2>&1; then
+              cat "$bucket_create_log"
+              rm -f "$bucket_create_log"
+              return 0
+            fi
+            cat "$bucket_create_log"
+            if grep -qiE "already exists|already taken" "$bucket_create_log"; then
+              echo "Assistant R2 bucket already exists; continuing"
+              rm -f "$bucket_create_log"
+              return 0
+            fi
+            rm -f "$bucket_create_log"
+            return 1
+          }
+          ensure_assistant_bucket
           ensure_assistant_queue() {
             for attempt in 1 2 3; do
               echo "Cloudflare queue info attempt ${attempt}/3"
