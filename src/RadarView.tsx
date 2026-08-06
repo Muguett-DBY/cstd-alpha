@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { RadarVisualCharts } from "./RadarVisualCharts";
-import { buildRadarSourceLibrary, isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation } from "./radar-ui";
+import { buildRadarSourceLibrary, isWeakRadarPacket, radarCardInsights, radarChangeBuckets, radarPacketDisplayPlan, radarPacketGapExplanation, radarStatusLabel } from "./radar-ui";
 import type { RadarAnalysisJob, RadarCitation, RadarCoverageItem, RadarCoverageReview, RadarDiagnostics, RadarEvidenceBreakdown, RadarEvidenceType, RadarIndustryPacket, RadarIndustryStage, RadarItem, RadarList, RadarScan } from "./shared/radar";
 
 export type RadarPhase = "idle" | "loading" | "refreshing" | "ready" | "error";
@@ -132,7 +132,7 @@ export function RadarView({
             <InfoTile title="信息截止" value={radar.asOfDate} />
             <InfoTile title="公开来源" value={`${radar.sourceCount} 条`} />
             <InfoTile title="模型" value={radar.model} />
-            <InfoTile title="状态" value={jobRunning ? "后台分析中" : radar.fromCache ? "复用稳定扫描" : "本次新扫描"} />
+            <InfoTile title="状态" value={radarStatusLabel(radar, job)} />
             <InfoTile title="证据新鲜度" value={radar.evidenceFreshness?.generatedAt ? `${radar.evidenceFreshness.ageHours ?? 0} 小时` : "待确认"} />
           </div>
 

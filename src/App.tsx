@@ -17,7 +17,7 @@ import { usePwaInstallPrompt } from "./usePwaInstallPrompt";
 import { canPersistLocalReportStorage, clearLocalReportStorage, loadCachedChart, loadCachedReport, loadLastReportEntry, saveCachedChart, saveCachedReport, saveLastReport } from "./storage";
 import { canPersistRecentSearches, loadRecentSearches, rememberRecentSearch } from "./recent-searches";
 import { canPersistImportedRankingReports, clearImportedRankingReports } from "./ranking-storage";
-import { radarRefreshFallbackMessage } from "./radar-ui";
+import { radarRefreshFallbackMessage, resolveRadarResultState } from "./radar-ui";
 import { describeAppViewLoading, type AppViewLoadingTarget } from "./app-view-loading";
 import { resolveAppViewPresentation } from "./app-view-presentation";
 import { hasRecentPreloadRecovery, PRELOAD_RECOVERY_NOTICE } from "./preload-recovery";
@@ -108,12 +108,9 @@ function App() {
         else if (!hasExistingRadar) setRadar(null);
         setRadarJob(nextRadar.job ?? null);
         setRadarDiagnostics(nextRadar.diagnostics ?? null);
-        if (nextRadar.job?.status === "queued" || nextRadar.job?.status === "running") {
-          setRadarPhase(nextRadar.radar || hasExistingRadar ? "refreshing" : "loading");
-        } else {
-          setRadarPhase(nextRadar.radar ? "ready" : "error");
-        }
-        setRadarError(nextRadar.warning ?? nextRadar.radar?.refreshWarning ?? "");
+        const state = resolveRadarResultState(nextRadar, hasExistingRadar);
+        setRadarPhase(state.phase);
+        setRadarError(state.error);
       } catch (err) {
         setRadarPhase(hasExistingRadar ? "ready" : "error");
         setRadarError(radarRefreshFallbackMessage(hasExistingRadar, err));
@@ -130,12 +127,9 @@ function App() {
           if (result.radar) setRadar(result.radar);
           setRadarJob(result.job ?? null);
           setRadarDiagnostics(result.diagnostics ?? null);
-          if (result.job?.status === "queued" || result.job?.status === "running") {
-            setRadarPhase((prev) => prev === "loading" ? "loading" : "refreshing");
-          } else {
-            setRadarPhase(result.radar ? "ready" : "error");
-          }
-          setRadarError(result.warning ?? result.radar?.refreshWarning ?? "");
+          const state = resolveRadarResultState(result, Boolean(radarRef.current));
+          setRadarPhase(state.phase);
+          setRadarError(state.error);
         })
         .catch(() => {});
     }, 5000);
