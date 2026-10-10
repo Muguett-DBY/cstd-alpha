@@ -52,3 +52,5 @@ npm run typecheck:functions
 - `scripts/` and `.github/workflows/` — evidence collection and background jobs.
 
 Keep credentials in local environment files or platform secrets.
+
+Original code is available for noncommercial use under [PolyForm Noncommercial 1.0.0](LICENSE). See [license scope and third-party assets](docs/LICENSE_SCOPE.md).
