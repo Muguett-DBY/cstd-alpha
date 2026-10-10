@@ -1,8 +1,17 @@
-# CSTD Alpha
+<!-- Project artwork created for this repository. -->
+<p align="center">
+  <img src="./docs/assets/readme-banner.svg" width="100%" alt="CSTD Alpha — Company research, with the evidence close at hand." />
+</p>
+
+<h1 align="center">CSTD Alpha</h1>
+
+<p align="center">
+  <img src="./docs/assets/readme-badges.svg" alt="Personal research · React · TypeScript · Cloudflare Pages · D1 / R2" />
+</p>
 
 **A personal workspace for researching companies and keeping investment evidence in one place.**
 
-`React` · `TypeScript` · `Cloudflare Pages` · `D1 / R2`
+<p align="center"><a href="#what-it-does">What it does</a> &nbsp; · &nbsp; <a href="#run-locally">Run locally</a> &nbsp; · &nbsp; <a href="#checks-and-code">Checks and code</a></p>
 
 ## What it does
 
